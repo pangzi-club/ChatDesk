@@ -154,15 +154,15 @@ function DashboardPage() {
         </h1>
 
         <form
-          className="mt-7 flex h-12 w-full max-w-3xl items-center gap-2 rounded-full bg-white px-4 text-zinc-700 shadow-[0_6px_18px_rgba(55,55,55,0.22)] sm:h-13 sm:px-5"
+          className="mt-7 flex h-12 w-full max-w-3xl items-center gap-2 rounded-full bg-card px-4 text-foreground shadow-[0_6px_18px_rgba(55,55,55,0.22)] sm:h-13 sm:px-5"
           onSubmit={searchGoogle}
         >
-          <Search className="size-5 shrink-0 text-zinc-500" />
+          <Search className="size-5 shrink-0 text-muted-foreground" />
           <label className="sr-only" htmlFor="dashboard-search">
             Google 搜索
           </label>
           <input
-            className="min-w-0 flex-1 bg-transparent font-medium text-[15px] text-zinc-700 outline-none placeholder:text-zinc-500 sm:text-lg"
+            className="min-w-0 flex-1 bg-transparent font-medium text-[15px] text-foreground outline-none placeholder:text-muted-foreground sm:text-lg"
             id="dashboard-search"
             onChange={(event) => setQuery(event.target.value)}
             placeholder="在 Google 中搜索或输入网址"
@@ -171,21 +171,21 @@ function DashboardPage() {
           />
           <button
             aria-label="语音搜索"
-            className="hidden size-8 shrink-0 items-center justify-center rounded-full text-zinc-700 transition hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-zinc-400/40 sm:flex"
+            className="hidden size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40 sm:flex"
             type="button"
           >
             <Mic className="size-5" />
           </button>
           <button
             aria-label="图片搜索"
-            className="hidden size-8 shrink-0 items-center justify-center rounded-full text-zinc-700 transition hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-zinc-400/40 sm:flex"
+            className="hidden size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40 sm:flex"
             type="button"
           >
             <Camera className="size-5" />
           </button>
           <button
             aria-label="AI 模式"
-            className="flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-zinc-100 px-3 font-semibold text-sm text-zinc-800 transition hover:bg-zinc-200 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-zinc-400/40 max-sm:px-2.5"
+            className="flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-muted px-3 font-semibold text-sm text-foreground transition hover:bg-accent focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40 max-sm:px-2.5"
             type="button"
           >
             <Sparkles className="size-4" />
@@ -206,11 +206,11 @@ function DashboardPage() {
             />
           ))}
           <button
-            className="group flex min-w-0 flex-col items-center gap-3 rounded-lg px-1.5 py-1.5 text-center outline-none transition hover:bg-white/10 focus-visible:ring-3 focus-visible:ring-white/45"
+            className="group flex min-w-0 flex-col items-center gap-3 rounded-lg px-1.5 py-1.5 text-center outline-none transition hover:bg-foreground/10 focus-visible:ring-3 focus-visible:ring-foreground/45"
             onClick={openAddBookmark}
             type="button"
           >
-            <span className="flex size-15 items-center justify-center rounded-full bg-white/80 text-zinc-800 shadow-sm backdrop-blur">
+            <span className="flex size-15 items-center justify-center rounded-full bg-foreground/80 text-background shadow-sm backdrop-blur">
               <Plus className="size-7" />
             </span>
             <span className="max-w-full truncate font-medium text-sm text-white leading-5 drop-shadow">
@@ -246,12 +246,12 @@ function BookmarkTile({
   return (
     <div className="group relative min-w-0">
       <button
-        className="flex w-full min-w-0 flex-col items-center gap-3 rounded-lg px-1.5 py-1.5 text-center outline-none transition hover:bg-white/10 focus-visible:ring-3 focus-visible:ring-white/45"
+        className="flex w-full min-w-0 flex-col items-center gap-3 rounded-lg px-1.5 py-1.5 text-center outline-none transition hover:bg-foreground/10 focus-visible:ring-3 focus-visible:ring-foreground/45"
         onClick={onOpen}
         title={bookmark.url}
         type="button"
       >
-        <span className="flex size-15 items-center justify-center rounded-full bg-white/80 shadow-sm backdrop-blur">
+        <span className="flex size-15 items-center justify-center rounded-full bg-foreground/80 shadow-sm backdrop-blur">
           <span
             className={`relative flex size-9 items-center justify-center overflow-hidden rounded-md bg-gradient-to-br ${bookmark.color} text-white shadow-inner`}
           >
@@ -274,7 +274,7 @@ function BookmarkTile({
       </button>
       <button
         aria-label={`编辑 ${bookmark.title}`}
-        className="absolute top-0 right-1 flex size-7 items-center justify-center rounded-full bg-white/95 text-zinc-700 opacity-100 shadow-md transition hover:bg-white focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-white/45 sm:opacity-0 sm:group-hover:opacity-100"
+        className="absolute top-0 right-1 flex size-7 items-center justify-center rounded-full bg-card/95 text-foreground opacity-100 shadow-md transition hover:bg-card focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-foreground/45 sm:opacity-0 sm:group-hover:opacity-100"
         onClick={onEdit}
         type="button"
       >
@@ -302,18 +302,18 @@ function BookmarkEditor({
   return (
     <div
       aria-modal="true"
-      className="fixed inset-0 z-20 flex items-center justify-center bg-zinc-950/35 px-4 backdrop-blur-sm"
+      className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm"
       role="dialog"
     >
       <form
-        className="w-full max-w-sm rounded-lg bg-white p-4 text-zinc-900 shadow-2xl"
+        className="w-full max-w-sm rounded-lg bg-card p-4 text-card-foreground shadow-2xl"
         onSubmit={onSubmit}
       >
         <div className="mb-4 flex items-center justify-between gap-4">
           <h2 className="font-semibold text-lg">{isEditing ? "编辑快捷方式" : "添加快捷方式"}</h2>
           <button
             aria-label="关闭"
-            className="flex size-8 items-center justify-center rounded-full text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-zinc-400/30"
+            className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
             onClick={onClose}
             type="button"
           >
@@ -321,11 +321,11 @@ function BookmarkEditor({
           </button>
         </div>
 
-        <label className="block font-medium text-sm text-zinc-600" htmlFor="bookmark-title">
+        <label className="block font-medium text-sm text-muted-foreground" htmlFor="bookmark-title">
           名称
         </label>
         <input
-          className="mt-1.5 h-9 w-full rounded-md border border-zinc-200 bg-zinc-50 px-3 text-sm outline-none transition focus:border-zinc-400 focus:bg-white focus:ring-3 focus:ring-zinc-300/45"
+          className="mt-1.5 h-9 w-full rounded-md border border-border bg-muted px-3 text-sm outline-none transition focus:border-ring focus:bg-background focus:ring-3 focus:ring-ring/30"
           id="bookmark-title"
           onChange={(event) => onChange({ ...draft, title: event.target.value })}
           required
@@ -333,11 +333,11 @@ function BookmarkEditor({
           value={draft.title}
         />
 
-        <label className="mt-3 block font-medium text-sm text-zinc-600" htmlFor="bookmark-url">
+        <label className="mt-3 block font-medium text-sm text-muted-foreground" htmlFor="bookmark-url">
           网址
         </label>
         <input
-          className="mt-1.5 h-9 w-full rounded-md border border-zinc-200 bg-zinc-50 px-3 text-sm outline-none transition focus:border-zinc-400 focus:bg-white focus:ring-3 focus:ring-zinc-300/45"
+          className="mt-1.5 h-9 w-full rounded-md border border-border bg-muted px-3 text-sm outline-none transition focus:border-ring focus:bg-background focus:ring-3 focus:ring-ring/30"
           id="bookmark-url"
           onChange={(event) => onChange({ ...draft, url: event.target.value })}
           placeholder="https://example.com"
@@ -349,7 +349,7 @@ function BookmarkEditor({
         <div className="mt-5 flex items-center justify-between gap-3">
           {isEditing ? (
             <Button
-              className="text-red-600 hover:bg-red-50 hover:text-red-700"
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
               onClick={onDelete}
               type="button"
               variant="ghost"
