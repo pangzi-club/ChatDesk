@@ -88,3 +88,32 @@
     -webkit-text-size-adjust: 100%;
   }
 }
+
+.dashboard-wallpaper {
+  background:
+    linear-gradient(116deg, rgb(187 199 194 / 78%) 0 18%, transparent 18%),
+    linear-gradient(160deg, rgb(230 224 212 / 70%) 0 28%, transparent 28%),
+    linear-gradient(42deg, transparent 0 48%, rgb(230 213 201 / 72%) 48% 75%, transparent 75%),
+    linear-gradient(73deg, rgb(178 190 185 / 74%) 0 42%, rgb(213 216 207 / 76%) 42% 100%);
+}
+
+.dashboard-wallpaper::before {
+  position: absolute;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  background:
+    linear-gradient(74deg, transparent 0 14%, rgb(162 169 165 / 20%) 14% 32%, transparent 32%),
+    linear-gradient(283deg, transparent 0 20%, rgb(245 232 220 / 38%) 20% 42%, transparent 42%),
+    linear-gradient(198deg, transparent 0 54%, rgb(176 185 184 / 30%) 54% 78%, transparent 78%),
+    linear-gradient(17deg, rgb(216 202 193 / 40%) 0 18%, transparent 18% 100%);
+  opacity: 0.9;
+}
+
+.dashboard-wallpaper::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  background: rgb(255 255 255 / 14%);
+}

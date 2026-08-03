@@ -17,9 +17,12 @@ function AppShell() {
   return (
     <main className="min-h-screen overflow-hidden bg-white text-zinc-950">
       <div className="flex min-h-screen w-full overflow-hidden bg-white">
-        <aside className="flex w-[272px] shrink-0 flex-col border-zinc-200 border-r bg-zinc-50/95 max-md:w-[88px] max-sm:w-16">
+        <aside className="flex w-[280px] shrink-0 flex-col border-zinc-200 border-r bg-zinc-50/95 max-md:w-[72px] max-sm:w-14">
           <SidebarHeader />
-          <nav className="space-y-1 px-4 py-3 max-md:px-3 max-sm:px-2" aria-label="Main navigation">
+          <nav
+            className="space-y-1 px-3 py-2 max-md:px-2 max-sm:px-1.5"
+            aria-label="Main navigation"
+          >
             {navItems.map((item) => {
               const Icon = item.icon;
 
@@ -30,7 +33,7 @@ function AppShell() {
                       isActive
                         ? "bg-white text-zinc-950 shadow-xs ring-1 ring-zinc-200"
                         : "text-zinc-600 hover:bg-white/70 hover:text-zinc-950"
-                    } max-md:justify-center max-md:px-0 max-sm:h-9`
+                    } max-md:justify-center max-md:px-0 max-sm:h-8`
                   }
                   key={item.to}
                   to={item.to}
@@ -44,7 +47,7 @@ function AppShell() {
 
           <div className="min-h-0 flex-1" />
 
-          <footer className="mt-auto flex h-14 items-center justify-between border-zinc-200 border-t px-4 max-md:justify-center max-md:px-0">
+          <footer className="mt-auto flex h-12 items-center justify-between border-zinc-200 border-t px-3 max-md:justify-center max-md:px-0">
             <div className="flex min-w-0 items-center gap-2">
               <Settings className="size-4 shrink-0 text-zinc-600" />
               <span className="truncate font-semibold text-sm text-zinc-700 max-md:hidden">
@@ -54,7 +57,7 @@ function AppShell() {
           </footer>
         </aside>
 
-        <section className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-white max-sm:w-[calc(100vw-4rem)]">
+        <section className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-white max-sm:w-[calc(100vw-3.5rem)]">
           <TopActions />
           <Outlet />
         </section>
@@ -65,8 +68,8 @@ function AppShell() {
 
 function SidebarHeader() {
   return (
-    <header className="flex items-center justify-between px-4 pt-6 pb-5 max-md:justify-center max-md:px-3 max-sm:px-2">
-      <h1 className="truncate font-semibold text-lg text-zinc-700 max-md:hidden">m-dashboard</h1>
+    <header className="flex items-center justify-between px-3 pt-4 pb-3 max-md:justify-center max-md:px-2 max-sm:px-1.5">
+      <h1 className="truncate font-semibold text-base text-zinc-700 max-md:hidden">m-dashboard</h1>
       <Button
         aria-label="Collapse sidebar"
         className="size-8 text-zinc-400 max-md:hidden"
@@ -82,7 +85,7 @@ function SidebarHeader() {
 
 function TopActions() {
   return (
-    <div className="absolute top-5 right-5 z-10 flex items-center gap-3 text-zinc-400 max-sm:right-3 max-sm:gap-1">
+    <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5 text-zinc-400 max-sm:right-2 max-sm:gap-0.5">
       <Button
         aria-label="Minimize panel"
         className="size-8"
