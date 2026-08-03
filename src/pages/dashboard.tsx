@@ -147,8 +147,8 @@ function DashboardPage() {
   }
 
   return (
-    <div className="dashboard-wallpaper relative min-h-screen overflow-hidden text-white">
-      <main className="relative z-10 flex min-h-screen flex-col items-center px-3 pt-[9vh] pb-6 sm:px-6 lg:px-10">
+    <div className="dashboard-wallpaper relative min-h-full overflow-hidden text-white">
+      <main className="relative z-10 flex min-h-full flex-col items-center px-3 pt-[9vh] pb-6 sm:px-6 lg:px-10">
         <h1 className="select-none font-medium text-[clamp(3.25rem,7vw,5.25rem)] text-white/88 leading-none tracking-normal drop-shadow-md">
           Google
         </h1>

@@ -10,11 +10,14 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "m-dashboard",
         "width": 1440,
-        "height": 900
+        "height": 900,
+        "decorations": false,
+        "transparent": true
       }
     ],
     "security": {
