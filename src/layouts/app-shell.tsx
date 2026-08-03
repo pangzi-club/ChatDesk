@@ -1,14 +1,14 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { LayoutDashboard, Lock, Monitor, PanelLeft, Settings } from "lucide-react";
+import { ChartColumn, LayoutDashboard, Lock, Monitor, PanelLeft, Settings } from "lucide-react";
 import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-
-import { Button } from "@/components/ui/button";
 import { TitlebarDragRegion, TrafficLights } from "@/components/titlebar";
+import { Button } from "@/components/ui/button";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/analytics", label: "Analytics", icon: ChartColumn },
   { to: "/encrypt", label: "Encrypt", icon: Lock },
   { to: "/settings", label: "Settings", icon: Settings },
 ] satisfies Array<{
@@ -107,7 +107,9 @@ function AppShell() {
 function SidebarHeader() {
   return (
     <header className="flex items-center justify-between px-3 pt-4 pb-3 max-md:justify-center max-md:px-2 max-sm:px-1.5">
-      <h1 className="truncate font-semibold text-base text-muted-foreground max-md:hidden">m-dashboard</h1>
+      <h1 className="truncate font-semibold text-base text-muted-foreground max-md:hidden">
+        m-dashboard
+      </h1>
       <Button
         aria-label="Collapse sidebar"
         className="size-8 text-muted-foreground max-md:hidden"

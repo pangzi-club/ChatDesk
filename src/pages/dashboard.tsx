@@ -333,7 +333,10 @@ function BookmarkEditor({
           value={draft.title}
         />
 
-        <label className="mt-3 block font-medium text-sm text-muted-foreground" htmlFor="bookmark-url">
+        <label
+          className="mt-3 block font-medium text-sm text-muted-foreground"
+          htmlFor="bookmark-url"
+        >
           网址
         </label>
         <input

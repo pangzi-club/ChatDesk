@@ -62,11 +62,9 @@ function WindowButton({
       type="button"
     >
       {/* 图标仅在悬停按钮组时显示，模拟 macOS 行为 */}
-      <span className="opacity-0 transition-opacity group-hover:opacity-100">
-        {children}
-      </span>
+      <span className="opacity-0 transition-opacity group-hover:opacity-100">{children}</span>
     </button>
   );
 }
 
-export { TrafficLights, TitlebarDragRegion };
+export { TitlebarDragRegion, TrafficLights };

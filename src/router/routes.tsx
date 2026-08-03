@@ -1,6 +1,7 @@
 import { createHashRouter, Navigate, RouterProvider } from "react-router-dom";
 
 import { AppShell } from "@/layouts/app-shell";
+import { AnalyticsPage } from "@/pages/analytics";
 import { DashboardPage } from "@/pages/dashboard";
 import { EncryptPage } from "@/pages/encrypt";
 import { SettingsPage } from "@/pages/settings";
@@ -17,6 +18,10 @@ const router = createHashRouter([
       {
         path: "dashboard",
         element: <DashboardPage />,
+      },
+      {
+        path: "analytics",
+        element: <AnalyticsPage />,
       },
       {
         path: "encrypt",
