@@ -1,5 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { LayoutDashboard, Monitor, PanelLeft, Settings } from "lucide-react";
+import { LayoutDashboard, Lock, Monitor, PanelLeft, Settings } from "lucide-react";
 import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
@@ -9,6 +9,7 @@ import { TitlebarDragRegion, TrafficLights } from "@/components/titlebar";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/encrypt", label: "Encrypt", icon: Lock },
   { to: "/settings", label: "Settings", icon: Settings },
 ] satisfies Array<{
   to: string;

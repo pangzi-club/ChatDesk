@@ -6,7 +6,7 @@ function SettingsPage() {
   const { theme, setTheme } = useTheme();
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 py-20 sm:px-10">
+    <div className="flex w-full flex-1 flex-col px-6 pt-14 pb-10 sm:px-10">
       <header className="mb-8">
         <p className="font-medium text-sm text-muted-foreground">Settings</p>
         <h1 className="mt-2 font-semibold text-3xl text-foreground tracking-normal">工作区设置</h1>
