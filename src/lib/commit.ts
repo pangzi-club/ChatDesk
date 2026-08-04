@@ -1,12 +1,10 @@
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
-import { LazyStore } from "@tauri-apps/plugin-store";
+import { settingsStore } from "@/lib/settings-store";
 
 export const COMMIT_API_BASE_URL =
   import.meta.env.VITE_COMMIT_API_BASE_URL ?? "https://commit-summary.bj050323.workers.dev";
 const COMMIT_API_KEY_STORE_KEY = "commitApiKey";
 const COMMIT_API_KEY_STORAGE_KEY = "m-dashboard-commit-api-key-v1";
-const settingsStore = new LazyStore("settings.json");
-
 function isTauri() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }

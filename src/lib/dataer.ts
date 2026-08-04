@@ -1,5 +1,5 @@
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
-import { LazyStore } from "@tauri-apps/plugin-store";
+import { settingsStore } from "@/lib/settings-store";
 
 // —— 配置 ——
 
@@ -7,8 +7,6 @@ export const DATAER_BASE_URL = "https://tandataer.com";
 const DATAER_TIMEOUT_MS = 15_000;
 const DATAER_API_KEY_STORE_KEY = "dataerApiKey";
 const DATAER_API_KEY_STORAGE_KEY = "m-dashboard-dataer-api-key-v1";
-const settingsStore = new LazyStore("settings.json");
-
 function isTauri() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }

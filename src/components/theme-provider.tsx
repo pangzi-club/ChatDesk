@@ -1,5 +1,5 @@
-import { LazyStore } from "@tauri-apps/plugin-store";
 import { createContext, useContext, useEffect, useState } from "react";
+import { settingsStore } from "@/lib/settings-store";
 
 type Theme = "dark" | "light" | "system";
 
@@ -21,7 +21,6 @@ const initialState: ThemeProviderState = {
 
 const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
 
-const settingsStore = new LazyStore("settings.json");
 const THEME_STORE_KEY = "theme";
 
 function isTheme(value: unknown): value is Theme {

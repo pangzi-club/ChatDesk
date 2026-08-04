@@ -1,11 +1,9 @@
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
-import { LazyStore } from "@tauri-apps/plugin-store";
+import { settingsStore } from "@/lib/settings-store";
 
 const LOOKER_API_KEY_STORE_KEY = "lookerApiKey";
 const LOOKER_API_KEY_STORAGE_KEY = "m-dashboard-looker-api-key-v1";
 export const LOOKER_API_BASE_URL = "https://pointyarrow.net";
-const settingsStore = new LazyStore("settings.json");
-
 function isTauri() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
