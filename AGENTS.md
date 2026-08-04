@@ -14,6 +14,11 @@ These instructions apply to the entire repository.
 - Review the formatting changes and include all task-related formatted files in the final result.
 - Run any additional checks appropriate to the change, such as `pnpm check` or `pnpm build`, after formatting.
 
+## Development Server
+
+- Never start or open a development server.
+- Never attempt to repair, recreate, reinstall, or otherwise modify `node_modules`; report dependency issues instead.
+
 ## List Data and Loading States
 
 - Use `@tanstack/react-query` for asynchronous list fetching, caching, refetching, and request state. Do not implement list request lifecycles with ad hoc `useEffect` and local loading state.
