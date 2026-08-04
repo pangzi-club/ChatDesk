@@ -149,8 +149,8 @@ function DashboardPage() {
   return (
     <div className="dashboard-wallpaper relative min-h-full overflow-hidden text-white">
       <main className="relative z-10 flex min-h-full flex-col items-center px-3 pt-[9vh] pb-6 sm:px-6 lg:px-10">
-        <h1 className="select-none font-medium text-[clamp(3.25rem,7vw,5.25rem)] text-white/88 leading-none tracking-normal drop-shadow-md">
-          Google
+        <h1 className="select-none font-medium text-[clamp(2.5rem,5vw,4rem)] text-white/88 leading-none tracking-normal drop-shadow-md">
+          工作台
         </h1>
 
         <form
@@ -159,13 +159,13 @@ function DashboardPage() {
         >
           <Search className="size-5 shrink-0 text-muted-foreground" />
           <label className="sr-only" htmlFor="dashboard-search">
-            Google 搜索
+            工作台搜索
           </label>
           <input
             className="min-w-0 flex-1 bg-transparent font-medium text-[15px] text-foreground outline-none placeholder:text-muted-foreground sm:text-lg"
             id="dashboard-search"
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="在 Google 中搜索或输入网址"
+            placeholder="在工作台中搜索或输入网址"
             type="text"
             value={query}
           />
