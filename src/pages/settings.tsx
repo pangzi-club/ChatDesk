@@ -17,7 +17,17 @@ import { type FormEvent, useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 
 import { type Theme, useTheme } from "@/components/theme-provider";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { clearCommitApiKey, loadCommitApiKey, saveCommitApiKey } from "@/lib/commit";
 import { clearDataerApiKey, loadDataerApiKey, saveDataerApiKey } from "@/lib/dataer";
 import { clearLookerApiKey, loadLookerApiKey, saveLookerApiKey } from "@/lib/looker";
@@ -274,9 +284,9 @@ function ApiKeyCard({ config }: { config: KeyConfig }) {
               {config.keyName}
             </label>
             <div className="mt-1.5 flex flex-wrap gap-2">
-              <input
+              <Input
                 autoComplete="off"
-                className="h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-3 font-mono text-xs outline-none transition focus:border-ring focus:ring-3 focus:ring-ring/30 sm:max-w-md"
+                className="h-9 min-w-0 flex-1 font-mono text-xs sm:max-w-md"
                 id={config.keyName}
                 onChange={(event) => setDraftKey(event.target.value)}
                 placeholder={hasSavedKey ? "已保存 ········（输入新值可覆盖）" : "输入 API Key"}
@@ -488,9 +498,7 @@ function ModelsSettingsPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="truncate font-medium text-sm">{model.name}</h3>
                     {model.isDefault ? (
-                      <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] text-primary-foreground">
-                        默认
-                      </span>
+                      <Badge className="px-2 py-0.5 text-[10px]">默认</Badge>
                     ) : null}
                   </div>
                   <p className="mt-1 truncate text-muted-foreground text-xs">
@@ -656,20 +664,24 @@ function ModelDialog({
         </div>
         <div className="space-y-5 px-6 py-5">
           <div className="flex items-end gap-3">
-            <label className="block min-w-0 flex-1 text-sm">
+            <div className="block min-w-0 flex-1 text-sm">
               <span className="font-medium">提供商</span>
-              <select
-                className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3"
-                onChange={(event) => handleProviderChange(event.target.value as ProviderKey)}
+              <Select
                 value={providerKey}
+                onValueChange={(value) => handleProviderChange(value as ProviderKey)}
               >
-                {(Object.keys(providerPresets) as ProviderKey[]).map((key) => (
-                  <option key={key} value={key}>
-                    {providerPresets[key].label}
-                  </option>
-                ))}
-              </select>
-            </label>
+                <SelectTrigger className="mt-2 h-10 w-full bg-background">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(providerPresets) as ProviderKey[]).map((key) => (
+                    <SelectItem key={key} value={key}>
+                      {providerPresets[key].label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             {providerKey === "deepseek" ? (
               <a
                 className="mb-2 inline-flex shrink-0 items-center gap-1 text-sm text-sky-500 hover:text-sky-400"
@@ -690,21 +702,27 @@ function ModelDialog({
             ) : null}
           </div>
           {providerKey === "custom" ? (
-            <label className="block text-sm">
-              <span className="font-medium">接口地址</span>
-              <input
-                className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 outline-none focus:ring-2 focus:ring-ring/30"
+            <div className="block text-sm">
+              <label className="font-medium" htmlFor="model-base-url">
+                接口地址
+              </label>
+              <Input
+                className="mt-2 h-10 bg-background"
+                id="model-base-url"
                 onChange={(event) => update("baseUrl", event.target.value)}
                 placeholder="https://api.example.com/v1/chat/completions"
                 value={model.baseUrl}
               />
-            </label>
+            </div>
           ) : null}
-          <label className="block text-sm">
-            <span className="font-medium">API Key</span>
+          <div className="block text-sm">
+            <label className="font-medium" htmlFor="model-api-key">
+              API Key
+            </label>
             <div className="relative mt-2">
-              <input
-                className="h-10 w-full rounded-md border border-input bg-background px-3 pr-10 outline-none focus:ring-2 focus:ring-ring/30"
+              <Input
+                className="h-10 bg-background pr-10"
+                id="model-api-key"
                 onChange={(event) => update("apiKey", event.target.value)}
                 placeholder="输入你的 API Key"
                 type={showKey ? "text" : "password"}
@@ -719,25 +737,27 @@ function ModelDialog({
                 {showKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
               </button>
             </div>
-          </label>
+          </div>
           <div className="block text-sm">
             <label className="font-medium" htmlFor="model-name">
               模型名称
             </label>
             {providerKey === "deepseek" ? (
-              <select
-                className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3"
-                id="model-name"
-                onChange={(event) => handleDeepSeekModelChange(event.target.value)}
-                value={model.name}
-              >
-                {providerPresets.deepseek.models.map((preset) => (
-                  <option key={preset.name}>{preset.name}</option>
-                ))}
-              </select>
+              <Select value={model.name} onValueChange={handleDeepSeekModelChange}>
+                <SelectTrigger className="mt-2 h-10 w-full bg-background" id="model-name">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {providerPresets.deepseek.models.map((preset) => (
+                    <SelectItem key={preset.name} value={preset.name}>
+                      {preset.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             ) : (
-              <input
-                className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 outline-none focus:ring-2 focus:ring-ring/30"
+              <Input
+                className="mt-2 h-10 bg-background"
                 id="model-name"
                 onChange={(event) => update("name", event.target.value)}
                 placeholder="例如 gpt-4o 或 openai/gpt-4o"
@@ -822,16 +842,17 @@ function Toggle({
   checked: boolean;
   onChange: (value: boolean) => void;
 }) {
+  const inputId = `model-toggle-${label}`;
+
   return (
-    <label className="flex items-center gap-2 text-sm">
-      <input
+    <div className="flex items-center gap-2 text-sm">
+      <Checkbox
         checked={checked}
-        className="size-4 accent-primary"
-        onChange={(event) => onChange(event.target.checked)}
-        type="checkbox"
+        id={inputId}
+        onCheckedChange={(value) => onChange(value === true)}
       />
-      {label}
-    </label>
+      <label htmlFor={inputId}>{label}</label>
+    </div>
   );
 }
 
@@ -851,8 +872,8 @@ function NumberField({
       <label className="font-medium" htmlFor={`model-${label}`}>
         {label}
       </label>
-      <input
-        className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3"
+      <Input
+        className="mt-2 h-10 bg-background"
         id={`model-${label}`}
         min="1"
         onChange={(event) => onChange(event.target.value ? Number(event.target.value) : undefined)}

@@ -3,6 +3,7 @@ import { ChartColumn, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DataerApiError,
@@ -73,18 +74,15 @@ function AnalyticsPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {INTERVALS.map((item) => (
-            <button
-              className={`h-9 rounded-md border px-3 text-sm transition-colors ${
-                interval === item.value
-                  ? "border-foreground bg-foreground text-background"
-                  : "border-border bg-background text-muted-foreground hover:bg-muted"
-              }`}
+            <Button
+              className="h-9"
               key={item.value}
               onClick={() => setInterval(item.value)}
               type="button"
+              variant={interval === item.value ? "default" : "outline"}
             >
               {item.label}
-            </button>
+            </Button>
           ))}
           <Button
             disabled={analyticsQuery.isFetching}
@@ -158,15 +156,15 @@ function AnalyticsPage() {
                       {row.stats ? formatPercent(row.stats.bounceRate) : cellPlaceholder(row)}
                     </td>
                     <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${
+                      <Badge
+                        className={
                           row.site.enabled
-                            ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                            : "bg-muted text-muted-foreground"
-                        }`}
+                            ? "border-transparent bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                            : "border-transparent bg-muted text-muted-foreground"
+                        }
                       >
                         {row.site.enabled ? "启用" : "停用"}
-                      </span>
+                      </Badge>
                     </td>
                   </tr>
                 ))}

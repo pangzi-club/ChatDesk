@@ -25,6 +25,7 @@ import {
 } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { TitlebarDragRegion } from "@/components/titlebar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 
 const navItems = [
@@ -113,9 +114,11 @@ function AppShell() {
                 <details className="group">
                   <summary className="flex h-12 cursor-pointer list-none items-center justify-between rounded-md px-3 text-left text-sm font-semibold text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground max-md:justify-center max-md:px-0 max-sm:h-10 [&::-webkit-details-marker]:hidden">
                     <span className="flex min-w-0 items-center gap-2">
-                      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-foreground text-[10px] font-bold text-background">
-                        O
-                      </span>
+                      <Avatar className="size-6 bg-foreground text-[10px] font-bold text-background">
+                        <AvatarFallback className="bg-foreground text-[10px] font-bold text-background">
+                          O
+                        </AvatarFallback>
+                      </Avatar>
                       <span className="truncate max-md:hidden">OpenAI</span>
                     </span>
                   </summary>

@@ -9,6 +9,7 @@
     "ignoreUnknown": true,
     "includes": [
       "src/**",
+      "!!src/components/ui",
       "*.css",
       "*.html",
       "*.js",

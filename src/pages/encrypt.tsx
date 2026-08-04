@@ -2,6 +2,8 @@ import { Check, Copy, Lock, LockOpen } from "lucide-react";
 import { type FormEvent, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { decryptText, encryptText } from "@/lib/crypto";
 
 function EncryptPage() {
@@ -56,8 +58,8 @@ function EncryptPanel() {
       </h2>
       <form className="mt-4 flex flex-col gap-4" onSubmit={handleEncrypt}>
         <Field label="要加密的文本" htmlFor="encrypt-input">
-          <textarea
-            className="min-h-24 w-full max-w-2xl resize-y rounded-md border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-ring focus:ring-3 focus:ring-ring/30"
+          <Textarea
+            className="min-h-24 w-full max-w-2xl resize-y bg-background"
             id="encrypt-input"
             onChange={(event) => setPlainText(event.target.value)}
             placeholder="输入需要加密的文本…"
@@ -65,9 +67,9 @@ function EncryptPanel() {
           />
         </Field>
         <Field label="密钥" htmlFor="encrypt-key">
-          <input
+          <Input
             autoComplete="off"
-            className="h-9 w-full max-w-sm rounded-md border border-border bg-background px-3 text-sm outline-none transition focus:border-ring focus:ring-3 focus:ring-ring/30"
+            className="h-9 w-full max-w-sm bg-background"
             id="encrypt-key"
             onChange={(event) => setPassphrase(event.target.value)}
             placeholder="双方约定好的密钥"
@@ -126,8 +128,8 @@ function DecryptPanel() {
       </h2>
       <form className="mt-4 flex flex-col gap-4" onSubmit={handleDecrypt}>
         <Field label="加密字符串" htmlFor="decrypt-input">
-          <textarea
-            className="min-h-24 w-full max-w-2xl resize-y rounded-md border border-border bg-background px-3 py-2 font-mono text-sm outline-none transition focus:border-ring focus:ring-3 focus:ring-ring/30"
+          <Textarea
+            className="min-h-24 w-full max-w-2xl resize-y bg-background font-mono"
             id="decrypt-input"
             onChange={(event) => setCipherText(event.target.value)}
             placeholder="粘贴收到的加密字符串…"
@@ -135,9 +137,9 @@ function DecryptPanel() {
           />
         </Field>
         <Field label="密钥" htmlFor="decrypt-key">
-          <input
+          <Input
             autoComplete="off"
-            className="h-9 w-full max-w-sm rounded-md border border-border bg-background px-3 text-sm outline-none transition focus:border-ring focus:ring-3 focus:ring-ring/30"
+            className="h-9 w-full max-w-sm bg-background"
             id="decrypt-key"
             onChange={(event) => setPassphrase(event.target.value)}
             placeholder="双方约定好的密钥"
