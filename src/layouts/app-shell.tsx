@@ -9,6 +9,7 @@ import {
   GitCommitHorizontal,
   LayoutDashboard,
   Lock,
+  MessageCircle,
   Monitor,
   PanelLeft,
   Search,
@@ -30,6 +31,7 @@ import { Button } from "@/components/ui/button";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/chat", label: "Chat", icon: MessageCircle },
   { to: "/analytics", label: "Analytics", icon: ChartColumn },
   { to: "/commit", label: "Commit", icon: GitCommitHorizontal },
   { to: "/looker", label: "Looker", icon: Eye },

@@ -341,10 +341,10 @@ const providerPresets = {
   },
   deepseek: {
     label: "深度求索 / DeepSeek",
-    baseUrl: "https://api.deepseek.com/v1/chat/completions",
+    baseUrl: "https://api.deepseek.com/chat/completions",
     models: [
       {
-        name: "DeepSeek-V4 Flash",
+        name: "deepseek-v4-flash",
         supportsTools: true,
         supportsImages: false,
         supportsReasoning: false,
@@ -352,27 +352,11 @@ const providerPresets = {
         outputContext: 8_000,
       },
       {
-        name: "DeepSeek-V4 Pro",
+        name: "deepseek-v4-pro",
         supportsTools: true,
         supportsImages: false,
         supportsReasoning: true,
         inputContext: 128_000,
-        outputContext: 64_000,
-      },
-      {
-        name: "deepseek-chat",
-        supportsTools: true,
-        supportsImages: false,
-        supportsReasoning: false,
-        inputContext: 64_000,
-        outputContext: 8_000,
-      },
-      {
-        name: "deepseek-reasoner",
-        supportsTools: false,
-        supportsImages: false,
-        supportsReasoning: true,
-        inputContext: 64_000,
         outputContext: 64_000,
       },
     ],

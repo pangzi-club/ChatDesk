@@ -2,6 +2,7 @@ import { createHashRouter, Navigate, RouterProvider } from "react-router-dom";
 
 import { AppShell } from "@/layouts/app-shell";
 import { AnalyticsPage } from "@/pages/analytics";
+import { ChatPage } from "@/pages/chat";
 import { CommitPage } from "@/pages/commit";
 import { DashboardPage } from "@/pages/dashboard";
 import { EncryptPage } from "@/pages/encrypt";
@@ -26,6 +27,10 @@ const router = createHashRouter([
       {
         path: "dashboard",
         element: <DashboardPage />,
+      },
+      {
+        path: "chat",
+        element: <ChatPage />,
       },
       {
         path: "analytics",
