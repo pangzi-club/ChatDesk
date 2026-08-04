@@ -1,3 +1,4 @@
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   ArrowDown,
   ArrowUp,
@@ -5,6 +6,7 @@ import {
   CornerDownLeft,
   ExternalLink,
   Eye,
+  GitCommitHorizontal,
   LayoutDashboard,
   Lock,
   Monitor,
@@ -13,7 +15,6 @@ import {
   Settings,
   SquareTerminal,
 } from "lucide-react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   type ComponentType,
   type KeyboardEvent,
@@ -29,6 +30,7 @@ import { Button } from "@/components/ui/button";
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/analytics", label: "Analytics", icon: ChartColumn },
+  { to: "/commit", label: "Commit", icon: GitCommitHorizontal },
   { to: "/looker", label: "Looker", icon: Eye },
   { to: "/encrypt", label: "Encrypt", icon: Lock },
   { to: "/vite-ports", label: "VitePorts", icon: SquareTerminal },

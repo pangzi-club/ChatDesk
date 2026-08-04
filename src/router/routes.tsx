@@ -2,6 +2,7 @@ import { createHashRouter, Navigate, RouterProvider } from "react-router-dom";
 
 import { AppShell } from "@/layouts/app-shell";
 import { AnalyticsPage } from "@/pages/analytics";
+import { CommitPage } from "@/pages/commit";
 import { DashboardPage } from "@/pages/dashboard";
 import { EncryptPage } from "@/pages/encrypt";
 import { LookerDetailPage, LookerPage } from "@/pages/looker";
@@ -24,6 +25,10 @@ const router = createHashRouter([
       {
         path: "analytics",
         element: <AnalyticsPage />,
+      },
+      {
+        path: "commit",
+        element: <CommitPage />,
       },
       {
         path: "looker",
