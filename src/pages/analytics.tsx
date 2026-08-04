@@ -1,5 +1,6 @@
+import { useQuery } from "@tanstack/react-query";
 import { ChartColumn, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,8 @@ const INTERVALS: Array<{ value: DataerInterval; label: string }> = [
 ];
 
 const REPORT_CONCURRENCY = 4;
+const TABLE_SKELETON_ROWS = ["one", "two", "three", "four", "five"];
+const TABLE_SKELETON_COLUMNS = ["site", "domain", "views", "visitors", "bounceRate", "status"];
 
 interface SiteRow {
   site: DataerSite;
@@ -29,72 +32,21 @@ interface SiteRow {
   error: string | null;
 }
 
-type LoadState = "loading" | "ready" | "no-api-key" | "error";
+interface AnalyticsData {
+  rows: SiteRow[];
+  hasApiKey: boolean;
+}
 
 function AnalyticsPage() {
   const [interval, setInterval] = useState<DataerInterval>("7d");
-  const [rows, setRows] = useState<SiteRow[]>([]);
-  const [loadState, setLoadState] = useState<LoadState>("loading");
-  const [errorMessage, setErrorMessage] = useState("");
-  const [refreshToken, setRefreshToken] = useState(0);
-
-  const load = useCallback(async () => {
-    setLoadState("loading");
-    setErrorMessage("");
-    setRows([]);
-
-    const apiKey = (await loadDataerApiKey()).trim();
-    if (!apiKey) {
-      setLoadState("no-api-key");
-      return;
-    }
-
-    let sites: DataerSite[];
-    try {
-      sites = await fetchAllSites(apiKey);
-    } catch (error) {
-      setErrorMessage(describeError(error));
-      setLoadState("error");
-      return;
-    }
-
-    const initialRows: SiteRow[] = sites.map((site) => ({ site, stats: null, error: null }));
-    setRows(initialRows);
-
-    // 限流并发地拉取每个网站的报表，逐行填充
-    const queue = [...sites];
-    async function worker() {
-      while (queue.length > 0) {
-        const site = queue.shift();
-        if (!site) {
-          return;
-        }
-
-        try {
-          const report = await fetchSiteReport(apiKey, site.ref, interval);
-          setRows((currentRows) =>
-            currentRows.map((row) =>
-              row.site.ref === site.ref ? { ...row, stats: report.stats } : row,
-            ),
-          );
-        } catch (error) {
-          setRows((currentRows) =>
-            currentRows.map((row) =>
-              row.site.ref === site.ref ? { ...row, error: describeError(error) } : row,
-            ),
-          );
-        }
-      }
-    }
-
-    await Promise.all(Array.from({ length: REPORT_CONCURRENCY }, () => worker()));
-    setLoadState("ready");
-  }, [interval]);
-
-  useEffect(() => {
-    void refreshToken; // refreshToken 变化时重新加载
-    void load();
-  }, [load, refreshToken]);
+  const analyticsQuery = useQuery<AnalyticsData, DataerApiError>({
+    queryKey: ["dataer", "analytics", interval],
+    queryFn: () => fetchAnalytics(interval),
+    placeholderData: (previous) => previous,
+  });
+  const rows = analyticsQuery.data?.rows ?? [];
+  const isInitialLoading = analyticsQuery.isPending && !analyticsQuery.data;
+  const isNoApiKey = analyticsQuery.data?.hasApiKey === false;
 
   const totals = rows.reduce(
     (acc, row) => {
@@ -135,18 +87,18 @@ function AnalyticsPage() {
             </button>
           ))}
           <Button
-            disabled={loadState === "loading"}
-            onClick={() => setRefreshToken((token) => token + 1)}
+            disabled={analyticsQuery.isFetching}
+            onClick={() => void analyticsQuery.refetch()}
             type="button"
             variant="ghost"
           >
-            <RefreshCw className={`size-4 ${loadState === "loading" ? "animate-spin" : ""}`} />
+            <RefreshCw className={`size-4 ${analyticsQuery.isFetching ? "animate-spin" : ""}`} />
             刷新
           </Button>
         </div>
       </header>
 
-      {loadState === "no-api-key" ? (
+      {isNoApiKey ? (
         <section className="rounded-lg border border-border bg-muted/60 p-5">
           <h2 className="flex items-center gap-2 font-semibold text-foreground">
             <ChartColumn className="size-4" />
@@ -162,13 +114,17 @@ function AnalyticsPage() {
         </section>
       ) : null}
 
-      {loadState === "error" ? (
+      {analyticsQuery.isError ? (
         <section className="rounded-lg border border-destructive/40 bg-destructive/10 p-5">
-          <p className="text-destructive text-sm">加载失败：{errorMessage}</p>
+          <p className="text-destructive text-sm">
+            加载失败：{describeError(analyticsQuery.error)}
+          </p>
         </section>
       ) : null}
 
-      {loadState !== "no-api-key" && loadState !== "error" ? (
+      {isInitialLoading && !isNoApiKey ? <AnalyticsTableSkeleton /> : null}
+
+      {!isInitialLoading && !isNoApiKey && analyticsQuery.data ? (
         <section className="overflow-hidden rounded-lg border border-border bg-muted/60">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[720px] text-left text-sm">
@@ -214,14 +170,7 @@ function AnalyticsPage() {
                     </td>
                   </tr>
                 ))}
-                {loadState === "loading" && rows.length === 0 ? (
-                  <tr>
-                    <td className="px-4 py-8 text-center text-muted-foreground" colSpan={6}>
-                      正在加载网站数据…
-                    </td>
-                  </tr>
-                ) : null}
-                {loadState === "ready" && rows.length === 0 ? (
+                {analyticsQuery.isSuccess && rows.length === 0 ? (
                   <tr>
                     <td className="px-4 py-8 text-center text-muted-foreground" colSpan={6}>
                       没有找到任何网站。
@@ -252,6 +201,75 @@ function AnalyticsPage() {
         </section>
       ) : null}
     </div>
+  );
+}
+
+async function fetchAnalytics(interval: DataerInterval): Promise<AnalyticsData> {
+  const apiKey = (await loadDataerApiKey()).trim();
+  if (!apiKey) {
+    return { rows: [], hasApiKey: false };
+  }
+
+  const sites = await fetchAllSites(apiKey);
+  const rows: SiteRow[] = sites.map((site) => ({ site, stats: null, error: null }));
+  const queue = [...sites];
+
+  async function worker() {
+    while (queue.length > 0) {
+      const site = queue.shift();
+      if (!site) {
+        return;
+      }
+
+      const row = rows.find((item) => item.site.ref === site.ref);
+      if (!row) {
+        continue;
+      }
+
+      try {
+        const report = await fetchSiteReport(apiKey, site.ref, interval);
+        row.stats = report.stats;
+      } catch (error) {
+        row.error = describeError(error);
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: REPORT_CONCURRENCY }, () => worker()));
+  return { rows, hasApiKey: true };
+}
+
+function AnalyticsTableSkeleton() {
+  return (
+    <section
+      className="overflow-hidden rounded-lg border border-border bg-muted/60"
+      aria-label="正在加载分析数据"
+    >
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[720px] text-left text-sm">
+          <thead>
+            <tr className="border-border border-b text-muted-foreground">
+              {TABLE_SKELETON_COLUMNS.map((column) => (
+                <th className="px-4 py-3" key={column}>
+                  <div className="h-4 w-16 animate-pulse rounded bg-muted-foreground/15" />
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {TABLE_SKELETON_ROWS.map((row) => (
+              <tr className="border-border border-b last:border-b-0" key={row}>
+                {TABLE_SKELETON_COLUMNS.map((cell) => (
+                  <td className="px-4 py-4" key={cell}>
+                    <div className="h-4 w-full max-w-32 animate-pulse rounded bg-muted-foreground/15" />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
