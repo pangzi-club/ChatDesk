@@ -15,7 +15,7 @@
     "http:default",
     {
       "identifier": "http:allow-fetch",
-      "allow": [{ "url": "https://tandataer.com/*" }]
+      "allow": [{ "url": "https://tandataer.com/*" }, { "url": "https://pointyarrow.net/*" }]
     }
   ]
 }

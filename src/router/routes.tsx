@@ -4,6 +4,7 @@ import { AppShell } from "@/layouts/app-shell";
 import { AnalyticsPage } from "@/pages/analytics";
 import { DashboardPage } from "@/pages/dashboard";
 import { EncryptPage } from "@/pages/encrypt";
+import { LookerDetailPage, LookerPage } from "@/pages/looker";
 import { SettingsPage } from "@/pages/settings";
 
 const router = createHashRouter([
@@ -22,6 +23,14 @@ const router = createHashRouter([
       {
         path: "analytics",
         element: <AnalyticsPage />,
+      },
+      {
+        path: "looker",
+        element: <LookerPage />,
+      },
+      {
+        path: "looker/:ref",
+        element: <LookerDetailPage />,
       },
       {
         path: "encrypt",

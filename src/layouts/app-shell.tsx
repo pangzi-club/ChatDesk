@@ -1,5 +1,13 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { ChartColumn, LayoutDashboard, Lock, Monitor, PanelLeft, Settings } from "lucide-react";
+import {
+  ChartColumn,
+  Eye,
+  LayoutDashboard,
+  Lock,
+  Monitor,
+  PanelLeft,
+  Settings,
+} from "lucide-react";
 import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
@@ -9,6 +17,7 @@ import { Button } from "@/components/ui/button";
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/analytics", label: "Analytics", icon: ChartColumn },
+  { to: "/looker", label: "Looker", icon: Eye },
   { to: "/encrypt", label: "Encrypt", icon: Lock },
   { to: "/settings", label: "Settings", icon: Settings },
 ] satisfies Array<{
