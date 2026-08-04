@@ -6,6 +6,7 @@ import {
   Monitor,
   PanelLeft,
   Settings,
+  SquareTerminal,
 } from "lucide-react";
 import type { ComponentType } from "react";
 import { NavLink, Outlet } from "react-router-dom";
@@ -18,6 +19,7 @@ const navItems = [
   { to: "/looker", label: "Looker", icon: Eye },
   { to: "/encrypt", label: "Encrypt", icon: Lock },
   { to: "/settings", label: "Settings", icon: Settings },
+  { to: "/vite-ports", label: "VitePorts", icon: SquareTerminal },
 ] satisfies Array<{
   to: string;
   label: string;

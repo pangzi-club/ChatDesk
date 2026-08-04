@@ -6,6 +6,7 @@ import { DashboardPage } from "@/pages/dashboard";
 import { EncryptPage } from "@/pages/encrypt";
 import { LookerDetailPage, LookerPage } from "@/pages/looker";
 import { SettingsPage } from "@/pages/settings";
+import { VitePortsPage } from "@/pages/vite-ports";
 
 const router = createHashRouter([
   {
@@ -39,6 +40,10 @@ const router = createHashRouter([
       {
         path: "settings",
         element: <SettingsPage />,
+      },
+      {
+        path: "vite-ports",
+        element: <VitePortsPage />,
       },
     ],
   },
