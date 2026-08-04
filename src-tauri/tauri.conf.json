@@ -10,14 +10,15 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "m-dashboard",
+        "hiddenTitle": true,
         "width": 1280,
         "height": 720,
-        "decorations": false,
-        "transparent": true
+        "decorations": true,
+        "titleBarStyle": "Overlay",
+        "trafficLightPosition": { "x": 16, "y": 16 }
       }
     ],
     "security": {

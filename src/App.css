@@ -88,7 +88,7 @@
     -webkit-text-size-adjust: 100%;
   }
 
-  /* 窗口 transparent: true，底色交给 #root 内的容器绘制 */
+  /* WebView background stays transparent around the native macOS titlebar. */
   html,
   body,
   #root {

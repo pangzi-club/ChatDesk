@@ -1,4 +1,3 @@
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   ChartColumn,
   Eye,
@@ -9,9 +8,8 @@ import {
   Settings,
 } from "lucide-react";
 import type { ComponentType } from "react";
-import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { TitlebarDragRegion, TrafficLights } from "@/components/titlebar";
+import { TitlebarDragRegion } from "@/components/titlebar";
 import { Button } from "@/components/ui/button";
 
 const navItems = [
@@ -27,36 +25,12 @@ const navItems = [
 }>;
 
 function AppShell() {
-  const [maximized, setMaximized] = useState(false);
-
-  // 最大化/全屏时去掉圆角和描边，恢复正常矩形窗口
-  useEffect(() => {
-    const win = getCurrentWindow();
-    let unlisten: (() => void) | undefined;
-
-    win.isMaximized().then(setMaximized);
-    win
-      .onResized(() => {
-        win.isMaximized().then(setMaximized);
-      })
-      .then((fn) => {
-        unlisten = fn;
-      });
-
-    return () => unlisten?.();
-  }, []);
-
   return (
-    <main
-      className={`flex h-screen flex-col overflow-hidden bg-background text-foreground ${
-        maximized ? "" : "rounded-[10px] ring-1 ring-black/10 dark:ring-border"
-      }`}
-    >
+    <main className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
       <div className="flex min-h-0 w-full flex-1 overflow-hidden bg-background">
         {/* 左列：红绿灯 + 侧栏同一背景，连成一体 */}
         <aside className="flex w-[280px] shrink-0 flex-col border-border border-r bg-card max-md:w-[72px] max-sm:w-16">
-          <div className="flex h-10 shrink-0 items-center select-none">
-            <TrafficLights />
+          <div className="flex h-8 shrink-0 items-center select-none">
             <TitlebarDragRegion />
           </div>
           <SidebarHeader />
@@ -103,7 +77,7 @@ function AppShell() {
           <section className="min-h-0 flex-1 overflow-y-auto">
             <Outlet />
           </section>
-          <div className="absolute inset-x-0 top-0 z-10 flex h-10 items-center">
+          <div className="absolute inset-x-0 top-0 z-10 flex h-8 items-center">
             <TitlebarDragRegion />
             <TopActions />
           </div>
@@ -115,19 +89,10 @@ function AppShell() {
 
 function SidebarHeader() {
   return (
-    <header className="flex items-center justify-between px-3 pt-4 pb-3 max-md:justify-center max-md:px-2 max-sm:px-1.5">
-      <h1 className="truncate font-semibold text-base text-muted-foreground max-md:hidden">
+    <header className="flex items-center px-3 pt-4 pb-3 max-md:justify-center max-md:px-2 max-sm:px-1.5">
+      <h1 className="truncate pl-2 font-semibold text-base text-muted-foreground max-md:hidden">
         m-dashboard
       </h1>
-      <Button
-        aria-label="Collapse sidebar"
-        className="size-8 text-muted-foreground max-md:hidden"
-        size="icon"
-        type="button"
-        variant="ghost"
-      >
-        <PanelLeft className="size-4" />
-      </Button>
     </header>
   );
 }
