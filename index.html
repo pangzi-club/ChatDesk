@@ -7,10 +7,10 @@
     <title>m-dashboard</title>
     <script>
       // Apply theme before paint to prevent flash of wrong theme
-      (function () {
+      (() => {
         try {
-          var stored = localStorage.getItem("vite-ui-theme");
-          var resolved =
+          const stored = localStorage.getItem("vite-ui-theme");
+          const resolved =
             stored === "light" || stored === "dark"
               ? stored
               : window.matchMedia("(prefers-color-scheme: dark)").matches
@@ -19,7 +19,7 @@
           document.documentElement.classList.remove("light", "dark");
           document.documentElement.classList.add(resolved);
           document.documentElement.style.colorScheme = resolved;
-        } catch (e) {}
+        } catch {}
       })();
     </script>
   </head>

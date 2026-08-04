@@ -125,8 +125,8 @@ function ActivityPanel({
               className="commit-month-row"
               style={{ gridTemplateColumns: `repeat(${weeks.length}, 10px)` }}
             >
-              {weeks.map((week, index) => (
-                <span key={`${week.monthLabel ?? "empty"}-${index}`}>{week.monthLabel}</span>
+              {weeks.map((week) => (
+                <span key={week.cells[0]?.date ?? "empty"}>{week.monthLabel}</span>
               ))}
             </div>
             <div
@@ -149,7 +149,7 @@ function ActivityPanel({
 
       <div className="commit-panel-footer">
         <span>{periodLabel}</span>
-        <div className="commit-legend" aria-label="提交次数图例">
+        <div className="commit-legend">
           <span>少</span>
           {[0, 1, 2, 3, 4].map((level) => (
             <i className={`commit-cell commit-cell-${level}`} key={level} />
@@ -249,7 +249,7 @@ function buildCalendar(
   if (activity.length === 0 && !rangeStart && !rangeEnd) return [];
   const sorted = [...activity].sort((a, b) => a.date.localeCompare(b.date));
   const start = parseDate(rangeStart || sorted[0]?.date || rangeEnd);
-  const end = parseDate(rangeEnd || sorted.at(-1)?.date || rangeStart);
+  const end = parseDate(rangeEnd || sorted[sorted.length - 1]?.date || rangeStart);
   const data = new Map(sorted.map((day) => [day.date, day.count]));
   const max = Math.max(...sorted.map((day) => day.count), 1);
   const calendarStart = shiftDate(start, -start.getDay());
