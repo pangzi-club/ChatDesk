@@ -21,8 +21,7 @@
         { "url": "https://tandataer.com/*" },
         { "url": "https://pointyarrow.net/*" },
         { "url": "https://commit-summary.bj050323.workers.dev/*" },
-        { "url": "https://*/*" },
-        { "url": "http://*/*" }
+        { "url": "https://*/*" }
       ]
     }
   ]
