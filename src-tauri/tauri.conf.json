@@ -14,8 +14,8 @@
     "windows": [
       {
         "title": "m-dashboard",
-        "width": 1440,
-        "height": 900,
+        "width": 1280,
+        "height": 720,
         "decorations": false,
         "transparent": true
       }
