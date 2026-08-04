@@ -18,7 +18,6 @@ const navItems = [
   { to: "/analytics", label: "Analytics", icon: ChartColumn },
   { to: "/looker", label: "Looker", icon: Eye },
   { to: "/encrypt", label: "Encrypt", icon: Lock },
-  { to: "/settings", label: "Settings", icon: Settings },
   { to: "/vite-ports", label: "VitePorts", icon: SquareTerminal },
 ] satisfies Array<{
   to: string;
@@ -64,13 +63,32 @@ function AppShell() {
 
           <div className="min-h-0 flex-1" />
 
-          <footer className="mt-auto flex h-12 items-center justify-between border-border border-t px-3 max-md:justify-center max-md:px-0">
-            <div className="flex min-w-0 items-center gap-2">
-              <Settings className="size-4 shrink-0 text-muted-foreground" />
-              <span className="truncate font-semibold text-sm text-muted-foreground max-md:hidden">
-                OpenAI
-              </span>
-            </div>
+          <footer className="relative mt-auto border-border border-t px-3 max-md:px-2 max-sm:px-1.5">
+            <details className="group">
+              <summary className="flex h-12 cursor-pointer list-none items-center justify-between rounded-md px-3 text-left text-sm font-semibold text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground max-md:justify-center max-md:px-0 max-sm:h-10 [&::-webkit-details-marker]:hidden">
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-foreground text-[10px] font-bold text-background">
+                    O
+                  </span>
+                  <span className="truncate max-md:hidden">OpenAI</span>
+                </span>
+              </summary>
+              <div className="absolute right-3 bottom-full left-3 mb-2 overflow-hidden rounded-md border border-border bg-popover p-1 shadow-lg max-md:right-2 max-md:left-2 max-sm:right-1.5 max-sm:left-1.5">
+                <NavLink
+                  className={({ isActive }) =>
+                    `flex h-9 items-center gap-2 rounded-sm px-2 text-sm transition-colors ${
+                      isActive
+                        ? "bg-accent text-accent-foreground"
+                        : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                    } max-md:justify-center max-md:px-0`
+                  }
+                  to="/settings"
+                >
+                  <Settings className="size-4 shrink-0" />
+                  <span className="max-md:hidden">Settings</span>
+                </NavLink>
+              </div>
+            </details>
           </footer>
         </aside>
 
