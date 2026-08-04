@@ -1,4 +1,18 @@
-import { ArrowLeft, KeyRound, Palette, Search, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  KeyRound,
+  Package,
+  Palette,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 
@@ -7,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { clearCommitApiKey, loadCommitApiKey, saveCommitApiKey } from "@/lib/commit";
 import { clearDataerApiKey, loadDataerApiKey, saveDataerApiKey } from "@/lib/dataer";
 import { clearLookerApiKey, loadLookerApiKey, saveLookerApiKey } from "@/lib/looker";
+import { loadModels, type ModelConfig, saveModels } from "@/lib/models";
 
 const themes: Array<{ value: Theme; label: string; description: string }> = [
   { value: "system", label: "跟随系统", description: "根据操作系统自动切换" },
@@ -40,6 +55,7 @@ function SettingsLayout() {
         <nav className="space-y-1" aria-label="设置导航">
           <SettingsNavItem to="/settings/theme" icon={Palette} label="主题" />
           <SettingsNavItem to="/settings/keys" icon={KeyRound} label="API Keys" />
+          <SettingsNavItem to="/settings/models" icon={Package} label="模型" />
         </nav>
         <div className="mt-auto border-border border-t py-5 text-muted-foreground text-xs max-sm:hidden">
           m-dashboard
@@ -293,4 +309,572 @@ function ApiKeyCard({ config }: { config: KeyConfig }) {
   );
 }
 
-export { ApiKeysSettingsPage, SettingsLayout, ThemeSettingsPage };
+const emptyModel: Omit<ModelConfig, "id"> = {
+  name: "",
+  provider: "自定义 / Custom",
+  baseUrl: "",
+  apiKey: "",
+  supportsTools: true,
+  supportsImages: false,
+  supportsReasoning: false,
+  customProtocol: false,
+  inputContext: undefined,
+  outputContext: undefined,
+  isDefault: false,
+};
+
+const providerPresets = {
+  custom: {
+    label: "自定义 / Custom",
+    baseUrl: "",
+    models: [],
+  },
+  deepseek: {
+    label: "深度求索 / DeepSeek",
+    baseUrl: "https://api.deepseek.com/v1/chat/completions",
+    models: [
+      {
+        name: "DeepSeek-V4 Flash",
+        supportsTools: true,
+        supportsImages: false,
+        supportsReasoning: false,
+        inputContext: 128_000,
+        outputContext: 8_000,
+      },
+      {
+        name: "DeepSeek-V4 Pro",
+        supportsTools: true,
+        supportsImages: false,
+        supportsReasoning: true,
+        inputContext: 128_000,
+        outputContext: 64_000,
+      },
+      {
+        name: "deepseek-chat",
+        supportsTools: true,
+        supportsImages: false,
+        supportsReasoning: false,
+        inputContext: 64_000,
+        outputContext: 8_000,
+      },
+      {
+        name: "deepseek-reasoner",
+        supportsTools: false,
+        supportsImages: false,
+        supportsReasoning: true,
+        inputContext: 64_000,
+        outputContext: 64_000,
+      },
+    ],
+  },
+} as const;
+
+type ProviderKey = keyof typeof providerPresets;
+
+function ModelsSettingsPage() {
+  const [models, setModels] = useState<ModelConfig[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [notice, setNotice] = useState("");
+  const [editing, setEditing] = useState<ModelConfig | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void loadModels()
+      .then((stored) => {
+        if (active) setModels(stored);
+      })
+      .catch(() => {
+        if (active) setNotice("读取模型配置失败，请重试。");
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  function openCreate() {
+    setNotice("");
+    setEditing({ ...emptyModel, id: crypto.randomUUID() });
+    setIsModalOpen(true);
+  }
+
+  function openEdit(model: ModelConfig) {
+    setNotice("");
+    setEditing({ ...model });
+    setIsModalOpen(true);
+  }
+
+  async function handleSave(model: ModelConfig) {
+    const nextModels = models.some((item) => item.id === model.id)
+      ? models.map((item) => (item.id === model.id ? model : item))
+      : [...models, model];
+    const normalized = model.isDefault
+      ? nextModels.map((item) => ({ ...item, isDefault: item.id === model.id }))
+      : nextModels;
+    await saveModels(normalized);
+    setModels(normalized);
+    setIsModalOpen(false);
+    setEditing(null);
+  }
+
+  async function handleDelete(model: ModelConfig) {
+    if (!window.confirm(`确定删除模型“${model.name}”吗？`)) return;
+    const remaining = models.filter((item) => item.id !== model.id);
+    if (model.isDefault && remaining.length > 0)
+      remaining[0] = { ...remaining[0], isDefault: true };
+    try {
+      await saveModels(remaining);
+      setModels(remaining);
+    } catch {
+      setNotice("删除失败，请重试。");
+    }
+  }
+
+  async function handleSetDefault(model: ModelConfig) {
+    const nextModels = models.map((item) => ({ ...item, isDefault: item.id === model.id }));
+    try {
+      await saveModels(nextModels);
+      setModels(nextModels);
+    } catch {
+      setNotice("设置默认模型失败，请重试。");
+    }
+  }
+
+  return (
+    <>
+      <SettingsHeading
+        eyebrow="Models"
+        title="模型"
+        description="管理可用的 OpenAI 兼容模型配置，密钥仅保存在当前设备。"
+      />
+      <section className="rounded-lg border border-border bg-card">
+        <div className="flex items-center justify-between gap-4 border-border border-b px-5 py-4">
+          <div>
+            <h2 className="font-medium text-sm">自定义模型</h2>
+            <p className="mt-1 text-muted-foreground text-xs">
+              支持 OpenAI Chat Completions 兼容接口。
+            </p>
+          </div>
+          <Button onClick={openCreate} size="sm" type="button">
+            <Plus className="size-3.5" /> 添加模型
+          </Button>
+        </div>
+        {notice ? <p className="px-5 pt-4 text-destructive text-xs">{notice}</p> : null}
+        {isLoading ? (
+          <div className="space-y-3 p-5">
+            <div className="h-16 animate-pulse rounded-md bg-accent" />
+            <div className="h-16 animate-pulse rounded-md bg-accent" />
+          </div>
+        ) : models.length === 0 ? (
+          <div className="px-5 py-14 text-center">
+            <Package className="mx-auto size-8 text-muted-foreground" />
+            <p className="mt-3 font-medium text-sm">还没有模型配置</p>
+            <p className="mt-1 text-muted-foreground text-xs">添加一个 OpenAI 兼容模型开始使用。</p>
+          </div>
+        ) : (
+          <div className="space-y-3 p-5">
+            {models.map((model) => (
+              <div
+                className="flex items-center gap-3 rounded-md border border-border bg-background px-4 py-3"
+                key={model.id}
+              >
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-accent text-muted-foreground">
+                  <Package className="size-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="truncate font-medium text-sm">{model.name}</h3>
+                    {model.isDefault ? (
+                      <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] text-primary-foreground">
+                        默认
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="mt-1 truncate text-muted-foreground text-xs">
+                    {model.provider} · {model.baseUrl}
+                  </p>
+                </div>
+                {!model.isDefault ? (
+                  <Button
+                    aria-label={`设为 ${model.name} 的默认模型`}
+                    onClick={() => void handleSetDefault(model)}
+                    size="icon"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <Check className="size-4" />
+                  </Button>
+                ) : null}
+                <Button
+                  aria-label={`编辑 ${model.name}`}
+                  onClick={() => openEdit(model)}
+                  size="icon"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Pencil className="size-4" />
+                </Button>
+                <Button
+                  aria-label={`删除 ${model.name}`}
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => void handleDelete(model)}
+                  size="icon"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+      {isModalOpen && editing ? (
+        <ModelDialog
+          initialModel={editing}
+          onClose={() => {
+            setIsModalOpen(false);
+            setEditing(null);
+          }}
+          onSave={handleSave}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function ModelDialog({
+  initialModel,
+  onClose,
+  onSave,
+}: {
+  initialModel: ModelConfig;
+  onClose: () => void;
+  onSave: (model: ModelConfig) => Promise<void>;
+}) {
+  const [model, setModel] = useState(initialModel);
+  const [showKey, setShowKey] = useState(false);
+  const [error, setError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const providerKey: ProviderKey =
+    model.provider === providerPresets.deepseek.label ? "deepseek" : "custom";
+  const update = <K extends keyof ModelConfig>(key: K, value: ModelConfig[K]) =>
+    setModel((current) => ({ ...current, [key]: value }));
+
+  function handleProviderChange(nextProvider: ProviderKey) {
+    const preset = providerPresets[nextProvider];
+    const firstModel = preset.models[0];
+    setModel((current) => ({
+      ...current,
+      provider: preset.label,
+      baseUrl: nextProvider === "deepseek" ? preset.baseUrl : "",
+      ...(nextProvider === "deepseek" && firstModel
+        ? {
+            name: firstModel.name,
+            supportsTools: firstModel.supportsTools,
+            supportsImages: firstModel.supportsImages,
+            supportsReasoning: firstModel.supportsReasoning,
+            customProtocol: false,
+            inputContext: firstModel.inputContext,
+            outputContext: firstModel.outputContext,
+          }
+        : {}),
+    }));
+  }
+
+  function handleDeepSeekModelChange(name: string) {
+    const preset = providerPresets.deepseek.models.find((item) => item.name === name);
+    if (!preset) return;
+    setModel((current) => ({
+      ...current,
+      name: preset.name,
+      baseUrl: providerPresets.deepseek.baseUrl,
+      supportsTools: preset.supportsTools,
+      supportsImages: preset.supportsImages,
+      supportsReasoning: preset.supportsReasoning,
+      customProtocol: false,
+      inputContext: preset.inputContext,
+      outputContext: preset.outputContext,
+    }));
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = model.name.trim();
+    const baseUrl = model.baseUrl.trim();
+    const apiKey = model.apiKey.trim();
+    if (!name || !baseUrl || !apiKey) {
+      setError("请填写模型名称、接口地址和 API Key。");
+      return;
+    }
+    try {
+      const url = new URL(baseUrl);
+      if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error();
+    } catch {
+      setError("接口地址必须是合法的 http 或 https URL。");
+      return;
+    }
+    if (
+      (model.inputContext !== undefined &&
+        (!Number.isInteger(model.inputContext) || model.inputContext <= 0)) ||
+      (model.outputContext !== undefined &&
+        (!Number.isInteger(model.outputContext) || model.outputContext <= 0))
+    ) {
+      setError("输入和输出上限必须是正整数。");
+      return;
+    }
+    setIsSaving(true);
+    setError("");
+    try {
+      await onSave({ ...model, name, baseUrl, apiKey });
+    } catch {
+      setError("保存失败，请重试。");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <form
+        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-border bg-card shadow-xl"
+        onSubmit={submit}
+      >
+        <div className="flex items-center justify-between border-border border-b px-6 py-4">
+          <div className="flex items-center gap-3">
+            <h2 className="font-semibold text-lg">{initialModel.name ? "编辑模型" : "添加模型"}</h2>
+            <span className="rounded-full border border-border px-2 py-0.5 text-muted-foreground text-xs">
+              仅支持 OpenAI 兼容协议
+            </span>
+          </div>
+          <Button aria-label="关闭" onClick={onClose} size="icon" type="button" variant="ghost">
+            <X className="size-4" />
+          </Button>
+        </div>
+        <div className="space-y-5 px-6 py-5">
+          <div className="flex items-end gap-3">
+            <label className="block min-w-0 flex-1 text-sm">
+              <span className="font-medium">提供商</span>
+              <select
+                className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3"
+                onChange={(event) => handleProviderChange(event.target.value as ProviderKey)}
+                value={providerKey}
+              >
+                {(Object.keys(providerPresets) as ProviderKey[]).map((key) => (
+                  <option key={key} value={key}>
+                    {providerPresets[key].label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {providerKey === "deepseek" ? (
+              <a
+                className="mb-2 inline-flex shrink-0 items-center gap-1 text-sm text-sky-500 hover:text-sky-400"
+                href="https://platform.deepseek.com/api-docs"
+                onClick={(event) => {
+                  event.preventDefault();
+                  window.open(
+                    "https://platform.deepseek.com/api-docs",
+                    "_blank",
+                    "noopener,noreferrer",
+                  );
+                }}
+                rel="noreferrer"
+                target="_blank"
+              >
+                查看文档 <ExternalLink className="size-3.5" />
+              </a>
+            ) : null}
+          </div>
+          {providerKey === "custom" ? (
+            <label className="block text-sm">
+              <span className="font-medium">接口地址</span>
+              <input
+                className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 outline-none focus:ring-2 focus:ring-ring/30"
+                onChange={(event) => update("baseUrl", event.target.value)}
+                placeholder="https://api.example.com/v1/chat/completions"
+                value={model.baseUrl}
+              />
+            </label>
+          ) : null}
+          <label className="block text-sm">
+            <span className="font-medium">API Key</span>
+            <div className="relative mt-2">
+              <input
+                className="h-10 w-full rounded-md border border-input bg-background px-3 pr-10 outline-none focus:ring-2 focus:ring-ring/30"
+                onChange={(event) => update("apiKey", event.target.value)}
+                placeholder="输入你的 API Key"
+                type={showKey ? "text" : "password"}
+                value={model.apiKey}
+              />
+              <button
+                aria-label={showKey ? "隐藏 API Key" : "显示 API Key"}
+                className="absolute top-1/2 right-3 -translate-y-1/2 text-muted-foreground"
+                onClick={() => setShowKey((visible) => !visible)}
+                type="button"
+              >
+                {showKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+              </button>
+            </div>
+          </label>
+          <div className="block text-sm">
+            <label className="font-medium" htmlFor="model-name">
+              模型名称
+            </label>
+            {providerKey === "deepseek" ? (
+              <select
+                className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3"
+                id="model-name"
+                onChange={(event) => handleDeepSeekModelChange(event.target.value)}
+                value={model.name}
+              >
+                {providerPresets.deepseek.models.map((preset) => (
+                  <option key={preset.name}>{preset.name}</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 outline-none focus:ring-2 focus:ring-ring/30"
+                id="model-name"
+                onChange={(event) => update("name", event.target.value)}
+                placeholder="例如 gpt-4o 或 openai/gpt-4o"
+                value={model.name}
+              />
+            )}
+          </div>
+          {providerKey === "custom" ? (
+            <fieldset>
+              <legend className="font-medium text-sm">高级配置</legend>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <Toggle
+                  label="工具调用"
+                  checked={model.supportsTools}
+                  onChange={(value) => update("supportsTools", value)}
+                />
+                <Toggle
+                  label="图片输入"
+                  checked={model.supportsImages}
+                  onChange={(value) => update("supportsImages", value)}
+                />
+                <Toggle
+                  label="思考模式"
+                  checked={model.supportsReasoning}
+                  onChange={(value) => update("supportsReasoning", value)}
+                />
+                <Toggle
+                  label="自定义协议"
+                  checked={model.customProtocol}
+                  onChange={(value) => update("customProtocol", value)}
+                />
+              </div>
+            </fieldset>
+          ) : null}
+          {providerKey === "custom" ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <NumberField
+                label="输入上限"
+                presets={[
+                  { label: "32K", value: 32_000 },
+                  { label: "64K", value: 64_000 },
+                  { label: "128K", value: 128_000 },
+                  { label: "256K", value: 256_000 },
+                ]}
+                value={model.inputContext}
+                onChange={(value) => update("inputContext", value)}
+              />
+              <NumberField
+                label="输出上限"
+                presets={[
+                  { label: "8K", value: 8_000 },
+                  { label: "16K", value: 16_000 },
+                  { label: "32K", value: 32_000 },
+                  { label: "64K", value: 64_000 },
+                ]}
+                value={model.outputContext}
+                onChange={(value) => update("outputContext", value)}
+              />
+            </div>
+          ) : null}
+          {error ? <p className="text-destructive text-xs">{error}</p> : null}
+        </div>
+        <div className="flex justify-end gap-2 border-border border-t px-6 py-4">
+          <Button onClick={onClose} type="button" variant="outline">
+            取消
+          </Button>
+          <Button disabled={isSaving} type="submit">
+            {isSaving ? "保存中…" : "保存"}
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function Toggle({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center gap-2 text-sm">
+      <input
+        checked={checked}
+        className="size-4 accent-primary"
+        onChange={(event) => onChange(event.target.checked)}
+        type="checkbox"
+      />
+      {label}
+    </label>
+  );
+}
+
+function NumberField({
+  label,
+  presets,
+  value,
+  onChange,
+}: {
+  label: string;
+  presets: Array<{ label: string; value: number }>;
+  value?: number;
+  onChange: (value?: number) => void;
+}) {
+  return (
+    <div className="block text-sm">
+      <label className="font-medium" htmlFor={`model-${label}`}>
+        {label}
+      </label>
+      <input
+        className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3"
+        id={`model-${label}`}
+        min="1"
+        onChange={(event) => onChange(event.target.value ? Number(event.target.value) : undefined)}
+        placeholder="使用提供商默认值"
+        type="number"
+        value={value ?? ""}
+      />
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {presets.map((preset) => (
+          <button
+            aria-label={`设置${label}为 ${preset.label}`}
+            className={`rounded-md px-2.5 py-1 text-xs transition-colors ${value === preset.value ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"}`}
+            key={preset.value}
+            onClick={() => onChange(preset.value)}
+            type="button"
+          >
+            {preset.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export { ApiKeysSettingsPage, ModelsSettingsPage, SettingsLayout, ThemeSettingsPage };

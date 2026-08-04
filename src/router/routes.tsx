@@ -6,7 +6,12 @@ import { CommitPage } from "@/pages/commit";
 import { DashboardPage } from "@/pages/dashboard";
 import { EncryptPage } from "@/pages/encrypt";
 import { LookerDetailPage, LookerPage } from "@/pages/looker";
-import { ApiKeysSettingsPage, SettingsLayout, ThemeSettingsPage } from "@/pages/settings";
+import {
+  ApiKeysSettingsPage,
+  ModelsSettingsPage,
+  SettingsLayout,
+  ThemeSettingsPage,
+} from "@/pages/settings";
 import { VitePortsPage } from "@/pages/vite-ports";
 
 const router = createHashRouter([
@@ -49,6 +54,7 @@ const router = createHashRouter([
           { index: true, element: <Navigate replace to="theme" /> },
           { path: "theme", element: <ThemeSettingsPage /> },
           { path: "keys", element: <ApiKeysSettingsPage /> },
+          { path: "models", element: <ModelsSettingsPage /> },
         ],
       },
       {
