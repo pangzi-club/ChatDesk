@@ -30,6 +30,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { TitlebarDragRegion } from "@/components/titlebar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { applyTrayEnabled, loadTrayEnabled } from "@/lib/tray";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -65,6 +66,13 @@ function AppShell() {
 
     return () => unlisten?.();
   }, [navigate]);
+
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    void loadTrayEnabled()
+      .then((enabled) => applyTrayEnabled(enabled))
+      .catch((error) => console.error("Failed to apply tray setting", error));
+  }, []);
 
   useEffect(() => {
     function handleGlobalShortcut(event: globalThis.KeyboardEvent) {

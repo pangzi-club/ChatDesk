@@ -7,6 +7,7 @@ import {
   KeyRound,
   Package,
   Palette,
+  PanelTop,
   Pencil,
   Plus,
   Search,
@@ -19,8 +20,8 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { type Theme, useTheme } from "@/components/theme-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -28,10 +29,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { clearCommitApiKey, loadCommitApiKey, saveCommitApiKey } from "@/lib/commit";
 import { clearDataerApiKey, loadDataerApiKey, saveDataerApiKey } from "@/lib/dataer";
 import { clearLookerApiKey, loadLookerApiKey, saveLookerApiKey } from "@/lib/looker";
 import { loadModels, type ModelConfig, saveModels } from "@/lib/models";
+import { loadTrayEnabled, saveTrayEnabled } from "@/lib/tray";
 
 const themes: Array<{ value: Theme; label: string; description: string }> = [
   { value: "system", label: "跟随系统", description: "根据操作系统自动切换" },
@@ -66,6 +69,7 @@ function SettingsLayout() {
           <SettingsNavItem to="/settings/theme" icon={Palette} label="主题" />
           <SettingsNavItem to="/settings/keys" icon={KeyRound} label="API Keys" />
           <SettingsNavItem to="/settings/models" icon={Package} label="模型" />
+          <SettingsNavItem to="/settings/tray" icon={PanelTop} label="托盘" />
         </nav>
         <div className="mt-auto border-border border-t py-5 text-muted-foreground text-xs max-sm:hidden">
           m-dashboard
@@ -139,27 +143,96 @@ function ThemeSettingsPage() {
             你可以随时切换，也可以让它跟随系统偏好。
           </p>
         </div>
-        <div className="divide-y divide-border">
+        <RadioGroup
+          className="divide-y divide-border"
+          onValueChange={(value) => setTheme(value as Theme)}
+          value={theme}
+        >
           {themes.map((item) => (
-            <label
-              className="flex cursor-pointer items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-accent/40"
+            <div
+              className="flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-accent/40"
               key={item.value}
             >
-              <span className="min-w-0">
+              <label className="min-w-0 flex-1 cursor-pointer" htmlFor={`theme-${item.value}`}>
                 <span className="block font-medium text-sm">{item.label}</span>
                 <span className="mt-1 block text-muted-foreground text-xs">{item.description}</span>
-              </span>
-              <input
-                checked={theme === item.value}
-                className="size-4 accent-primary"
-                name="theme"
-                onChange={() => setTheme(item.value)}
-                type="radio"
-                value={item.value}
-              />
-            </label>
+              </label>
+              <RadioGroupItem id={`theme-${item.value}`} value={item.value} />
+            </div>
           ))}
-        </div>
+        </RadioGroup>
+      </section>
+    </>
+  );
+}
+
+function TraySettingsPage() {
+  const [enabled, setEnabled] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    void loadTrayEnabled()
+      .then((value) => {
+        if (active) setEnabled(value);
+      })
+      .catch(() => {
+        if (active) setNotice("读取托盘设置失败，请重试。 ");
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function handleChange(nextEnabled: boolean) {
+    const previous = enabled;
+    setEnabled(nextEnabled);
+    setIsSaving(true);
+    setNotice("");
+    try {
+      await saveTrayEnabled(nextEnabled);
+    } catch {
+      setEnabled(previous);
+      setNotice("保存托盘设置失败，请重试。 ");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <>
+      <SettingsHeading
+        eyebrow="System"
+        title="托盘"
+        description="控制 m-dashboard 是否显示在操作系统的菜单栏或系统托盘中。"
+      />
+      <section className="overflow-hidden rounded-lg border border-border bg-card">
+        <label
+          className="flex cursor-pointer items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-accent/40"
+          htmlFor="tray-enabled"
+        >
+          <span className="min-w-0">
+            <span className="block font-medium text-sm">显示托盘图标</span>
+            <span className="mt-1 block text-muted-foreground text-xs">
+              关闭后仍可从应用窗口正常使用 m-dashboard。
+            </span>
+          </span>
+          <Switch
+            aria-label="显示托盘图标"
+            checked={enabled}
+            disabled={isLoading || isSaving}
+            id="tray-enabled"
+            onCheckedChange={(checked) => void handleChange(checked === true)}
+          />
+        </label>
+        {notice ? (
+          <p className="border-border border-t px-5 py-3 text-muted-foreground text-xs">{notice}</p>
+        ) : null}
       </section>
     </>
   );
@@ -830,7 +903,7 @@ function Toggle({
 
   return (
     <div className="flex items-center gap-2 text-sm">
-      <Checkbox
+      <Switch
         checked={checked}
         id={inputId}
         onCheckedChange={(value) => onChange(value === true)}
@@ -882,4 +955,10 @@ function NumberField({
   );
 }
 
-export { ApiKeysSettingsPage, ModelsSettingsPage, SettingsLayout, ThemeSettingsPage };
+export {
+  ApiKeysSettingsPage,
+  ModelsSettingsPage,
+  SettingsLayout,
+  ThemeSettingsPage,
+  TraySettingsPage,
+};

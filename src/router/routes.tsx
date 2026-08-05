@@ -13,6 +13,7 @@ import {
   ModelsSettingsPage,
   SettingsLayout,
   ThemeSettingsPage,
+  TraySettingsPage,
 } from "@/pages/settings";
 import { VitePortsPage } from "@/pages/vite-ports";
 
@@ -65,6 +66,7 @@ const router = createHashRouter([
           { path: "theme", element: <ThemeSettingsPage /> },
           { path: "keys", element: <ApiKeysSettingsPage /> },
           { path: "models", element: <ModelsSettingsPage /> },
+          { path: "tray", element: <TraySettingsPage /> },
         ],
       },
       {

@@ -3,11 +3,20 @@ mod models;
 mod services;
 
 use tauri::{
+    AppHandle,
     image::Image,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
     Emitter, Manager,
 };
+
+#[tauri::command]
+fn set_tray_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let tray = app
+        .tray_by_id("main-tray")
+        .ok_or_else(|| "main tray is not available".to_string())?;
+    tray.set_visible(enabled).map_err(|error| error.to_string())
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -20,7 +29,7 @@ pub fn run() {
                 MenuItem::with_id(app, "dashboard", "Dashboard", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&dashboard_item])?;
 
-            TrayIconBuilder::new()
+            TrayIconBuilder::with_id("main-tray")
                 .menu(&menu)
                 .show_menu_on_left_click(true)
                 .icon(Image::new(include_bytes!("../icons/tray.rgba"), 32, 32))
@@ -44,6 +53,7 @@ pub fn run() {
             commands::greet::greet,
             commands::vite::list_vite_processes,
             commands::vite::kill_vite_process,
+            set_tray_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
