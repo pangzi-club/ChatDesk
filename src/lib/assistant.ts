@@ -113,6 +113,10 @@ export async function loadAssistantMessages(conversationId: string) {
   return invoke<AssistantMessage[]>("assistant_get_messages", { conversationId });
 }
 
+export async function loadAssistantReceivedMessages() {
+  return invoke<AssistantMessageEvent[]>("assistant_list_received_messages");
+}
+
 export async function markAssistantConversationRead(conversationId: string) {
   return invoke<void>("assistant_mark_conversation_read", { conversationId });
 }

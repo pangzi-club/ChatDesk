@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { MessageCircle, Send, Settings2, Trash2, WifiOff } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Bug, MessageCircle, RefreshCw, Send, Settings2, Trash2, WifiOff } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   AlertDialog,
@@ -13,7 +13,15 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -26,6 +34,7 @@ import {
   loadAssistantConversations,
   loadAssistantEnabled,
   loadAssistantMessages,
+  loadAssistantReceivedMessages,
   loadAssistantStatus,
   loadFeishuCredentials,
   markAssistantConversationRead,
@@ -49,6 +58,8 @@ export function AssistantPage() {
   const [text, setText] = useState("");
   const [eventError, setEventError] = useState("");
   const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
+  const [debugOpen, setDebugOpen] = useState(false);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const statusQuery = useQuery({
     queryKey: ["assistant-status"],
     queryFn: loadAssistantStatus,
@@ -68,6 +79,11 @@ export function AssistantPage() {
     queryKey: ["assistant-messages", activeId],
     queryFn: () => loadAssistantMessages(activeId as string),
     enabled: Boolean(activeId),
+  });
+  const receivedMessagesQuery = useQuery({
+    queryKey: ["assistant-received-messages"],
+    queryFn: loadAssistantReceivedMessages,
+    enabled: debugOpen,
   });
   const sendMutation = useMutation({
     mutationFn: ({ id, value }: { id: string; value: string }) => sendAssistantMessage(id, value),
@@ -130,6 +146,7 @@ export function AssistantPage() {
       ),
       listenAssistantMessage((event) => {
         queryClient.invalidateQueries({ queryKey: ["assistant-conversations"] });
+        queryClient.invalidateQueries({ queryKey: ["assistant-received-messages"] });
         queryClient.setQueryData(
           ["assistant-messages", event.message.conversationId],
           (old: typeof messagesQuery.data = []) => [
@@ -163,6 +180,11 @@ export function AssistantPage() {
       markReadMutation.mutate(activeId);
     }
   }, [activeConversation?.unreadCount, activeId, markReadMutation.mutate]);
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container || (activeId && messagesQuery.data === undefined)) return;
+    container.scrollTo({ top: container.scrollHeight, behavior: "auto" });
+  }, [activeId, messagesQuery.data]);
   const connectionEnabled =
     status?.status === "connected" || status?.status === "starting"
       ? true
@@ -203,6 +225,17 @@ export function AssistantPage() {
             title={connectionEnabled ? "断开飞书连接" : "连接飞书"}
             className="dark:data-[state=checked]:bg-cyan-400 dark:data-[state=unchecked]:bg-neutral-700"
           />
+          <Button
+            aria-label="打开消息调试"
+            className="size-8"
+            onClick={() => setDebugOpen(true)}
+            title="消息调试"
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <Bug className="size-4" />
+          </Button>
           <Button
             asChild
             aria-label="打开助理设置"
@@ -293,7 +326,10 @@ export function AssistantPage() {
                   {activeConversation?.openId}
                 </p>
               </div>
-              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-6">
+              <div
+                className="min-h-0 flex-1 space-y-3 overflow-y-auto p-6"
+                ref={messagesContainerRef}
+              >
                 {messagesQuery.isPending ? (
                   <>
                     <div className="ml-auto h-12 w-2/5 animate-pulse rounded-md bg-accent" />
@@ -366,6 +402,82 @@ export function AssistantPage() {
           )}
         </section>
       </div>
+      <Dialog open={debugOpen} onOpenChange={setDebugOpen}>
+        <DialogContent className="flex h-[min(760px,calc(100vh-2rem))] max-w-5xl flex-col gap-0 p-0">
+          <DialogHeader className="shrink-0 border-border border-b px-6 py-5 pr-14">
+            <DialogTitle>消息调试</DialogTitle>
+            <DialogDescription>
+              所有收到的飞书入站消息，已追加保存到本地记录文件。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex shrink-0 items-center justify-between border-border border-b px-6 py-3">
+              <span className="text-muted-foreground text-xs">
+                共 {receivedMessagesQuery.data?.length ?? 0} 条记录
+              </span>
+              <Button
+                aria-label="刷新消息记录"
+                disabled={receivedMessagesQuery.isFetching}
+                onClick={() => void receivedMessagesQuery.refetch()}
+                size="sm"
+                title="刷新消息记录"
+                type="button"
+                variant="ghost"
+              >
+                <RefreshCw
+                  className={`size-3.5 ${receivedMessagesQuery.isFetching ? "animate-spin" : ""}`}
+                />
+                刷新
+              </Button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              {receivedMessagesQuery.isPending ? (
+                <div className="space-y-2">
+                  {(["one", "two", "three", "four"] as const).map((item) => (
+                    <div className="h-16 animate-pulse rounded-md bg-accent" key={item} />
+                  ))}
+                </div>
+              ) : receivedMessagesQuery.isError ? (
+                <p className="py-12 text-center text-destructive text-sm">
+                  读取消息记录失败，请重试。
+                </p>
+              ) : receivedMessagesQuery.data?.length ? (
+                <div className="space-y-2">
+                  {receivedMessagesQuery.data.map((event) => (
+                    <article
+                      className="rounded-md border border-border bg-card p-3"
+                      key={event.message.id}
+                    >
+                      <div className="flex flex-wrap items-center gap-2 text-xs">
+                        <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300">
+                          收到
+                        </Badge>
+                        <span className="font-medium text-foreground">
+                          {event.conversation.displayName || event.conversation.id}
+                        </span>
+                        <span className="font-mono text-muted-foreground">
+                          {new Date(event.message.timestamp).toLocaleString("zh-CN")}
+                        </span>
+                      </div>
+                      <p className="mt-2 whitespace-pre-wrap break-words text-foreground text-sm">
+                        {event.message.text}
+                      </p>
+                      <p className="mt-2 truncate font-mono text-[10px] text-muted-foreground">
+                        message_id: {event.message.id} · conversation_id:{" "}
+                        {event.message.conversationId}
+                      </p>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-16 text-center text-muted-foreground text-sm">
+                  暂无收到的飞书消息
+                </div>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
       <AlertDialog
         onOpenChange={(open) => {
           if (!open && !deleteMutation.isPending) setConversationToDelete(null);

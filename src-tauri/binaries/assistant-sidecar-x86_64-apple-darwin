@@ -7,7 +7,19 @@ const appSecret = process.env.FEISHU_APP_SECRET;
 const client = appId && appSecret ? new Lark.Client({ appId, appSecret, domain: Lark.Domain.Feishu }) : null;
 let outputClosed = false;
 const displayNameCache = new Map();
-const silentLogger = { error() {}, warn() {}, info() {}, debug() {}, trace() {} };
+const sidecarLogger = {
+  error(...args) {
+    emit({ type: "log", level: "error", message: args.map(String).join(" ") });
+  },
+  warn(...args) {
+    emit({ type: "log", level: "warning", message: args.map(String).join(" ") });
+  },
+  info(...args) {
+    emit({ type: "log", level: "info", message: args.map(String).join(" ") });
+  },
+  debug() {},
+  trace() {},
+};
 process.stdout.on("error", (error) => {
   if (error?.code === "EPIPE") outputClosed = true;
 });
@@ -70,6 +82,8 @@ async function main() {
     return;
   }
 
+  emit({ type: "status", status: "starting", detail: "正在连接飞书长连接" });
+
   const dispatcher = new Lark.EventDispatcher({}).register({
     "im.message.receive_v1": async (data) => {
       try {
@@ -111,7 +125,7 @@ async function main() {
     appId,
     appSecret,
     domain: Lark.Domain.Feishu,
-    logger: silentLogger,
+    logger: sidecarLogger,
     handshakeTimeoutMs: 10_000,
     onReady: () => emit({ type: "ready" }),
     onReconnecting: () => emit({ type: "status", status: "starting", detail: "飞书长连接重连中" }),

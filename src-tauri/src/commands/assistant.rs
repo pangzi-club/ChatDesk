@@ -1,4 +1,6 @@
-use crate::models::assistant::{AssistantConnection, AssistantConversation, AssistantMessage};
+use crate::models::assistant::{
+    AssistantConnection, AssistantConversation, AssistantMessage, AssistantMessageEvent,
+};
 use crate::services::assistant;
 use tauri::AppHandle;
 
@@ -36,6 +38,12 @@ pub fn assistant_get_messages(
     conversation_id: String,
 ) -> Result<Vec<AssistantMessage>, String> {
     assistant::messages(&app, &conversation_id)
+}
+#[tauri::command]
+pub fn assistant_list_received_messages(
+    app: AppHandle,
+) -> Result<Vec<AssistantMessageEvent>, String> {
+    assistant::received_messages(&app)
 }
 #[tauri::command]
 pub fn assistant_mark_conversation_read(

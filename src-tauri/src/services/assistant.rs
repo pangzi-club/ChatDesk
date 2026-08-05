@@ -1,4 +1,4 @@
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -8,6 +8,7 @@ use chrono::Utc;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::commands::system_log::append_system_log;
 use crate::models::assistant::{
     AssistantConnection, AssistantConversation, AssistantMessage, AssistantMessageEvent,
 };
@@ -171,6 +172,17 @@ fn read_events(app: AppHandle, stdout: impl std::io::Read + Send + 'static) {
         };
         match event.get("type").and_then(Value::as_str) {
             Some("ready") => set_status(&app, connection("connected", None)),
+            Some("log") => {
+                let level = event
+                    .get("level")
+                    .and_then(Value::as_str)
+                    .unwrap_or("info");
+                let message = event
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .unwrap_or("sidecar log");
+                let _ = append_system_log(&app, level, "飞书助理连接", message);
+            }
             Some("status") => {
                 let value = event
                     .get("status")
@@ -191,6 +203,9 @@ fn read_events(app: AppHandle, stdout: impl std::io::Read + Send + 'static) {
                 if let Ok(message_event) = serde_json::from_value::<AssistantMessageEvent>(
                     event.get("payload").cloned().unwrap_or_default(),
                 ) {
+                    if message_event.message.direction == "inbound" {
+                        let _ = record_received_message(&app, &message_event);
+                    }
                     let _ = persist_message(&app, &message_event);
                     let _ = app.emit("assistant-message", message_event);
                 }
@@ -228,6 +243,9 @@ fn conversations_path(app: &AppHandle) -> Result<PathBuf, String> {
 fn messages_path(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
     Ok(assistant_directory(app)?.join(format!("messages-{id}.json")))
 }
+fn received_messages_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(assistant_directory(app)?.join("received-messages.jsonl"))
+}
 fn atomic_write(path: &PathBuf, value: &Value) -> Result<(), String> {
     let temporary = path.with_extension("tmp");
     fs::write(
@@ -248,6 +266,48 @@ pub fn messages(app: &AppHandle, id: &str) -> Result<Vec<AssistantMessage>, Stri
     }
     let data = fs::read_to_string(messages_path(app, id)?).unwrap_or_else(|_| "[]".to_owned());
     Ok(serde_json::from_str(&data).unwrap_or_default())
+}
+
+pub fn record_received_message(app: &AppHandle, event: &AssistantMessageEvent) -> Result<(), String> {
+    let path = received_messages_path(app)?;
+    let line = serde_json::to_string(event).map_err(|error| error.to_string())?;
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|error| error.to_string())?;
+    writeln!(file, "{line}").map_err(|error| error.to_string())
+}
+
+pub fn received_messages(app: &AppHandle) -> Result<Vec<AssistantMessageEvent>, String> {
+    let path = received_messages_path(app)?;
+    let contents = match fs::read_to_string(path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return historical_messages(app),
+        Err(error) => return Err(error.to_string()),
+    };
+    let mut events: Vec<AssistantMessageEvent> = contents
+        .lines()
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .collect();
+    events.sort_by(|left, right| right.message.timestamp.cmp(&left.message.timestamp));
+    Ok(events)
+}
+
+fn historical_messages(app: &AppHandle) -> Result<Vec<AssistantMessageEvent>, String> {
+    let mut events = Vec::new();
+    for conversation in list_conversations(app)? {
+        for message in messages(app, &conversation.id)? {
+            if message.direction == "inbound" {
+                events.push(AssistantMessageEvent {
+                    conversation: conversation.clone(),
+                    message,
+                });
+            }
+        }
+    }
+    events.sort_by(|left, right| right.message.timestamp.cmp(&left.message.timestamp));
+    Ok(events)
 }
 
 pub fn mark_conversation_read(app: &AppHandle, id: &str) -> Result<(), String> {
