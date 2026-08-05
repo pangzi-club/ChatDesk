@@ -2,6 +2,7 @@ import { createHashRouter, Navigate, RouterProvider } from "react-router-dom";
 
 import { AppShell } from "@/layouts/app-shell";
 import { AnalyticsPage } from "@/pages/analytics";
+import { AutomationsPage } from "@/pages/automations";
 import { ChatPage } from "@/pages/chat";
 import { CommitPage } from "@/pages/commit";
 import { DashboardPage } from "@/pages/dashboard";
@@ -42,6 +43,10 @@ const router = createHashRouter([
       {
         path: "analytics",
         element: <AnalyticsPage />,
+      },
+      {
+        path: "automations",
+        element: <AutomationsPage />,
       },
       {
         path: "commit",

@@ -4,6 +4,7 @@ import {
   ArrowDown,
   ArrowUp,
   ChartColumn,
+  Clock3,
   CornerDownLeft,
   ExternalLink,
   Eye,
@@ -35,6 +36,7 @@ import { applyTrayEnabled, loadTrayEnabled } from "@/lib/tray";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/automations", label: "Automations", icon: Clock3 },
   { to: "/analytics", label: "Analytics", icon: ChartColumn },
   { to: "/commit", label: "Commit", icon: GitCommitHorizontal },
   { to: "/looker", label: "Looker", icon: Eye },
