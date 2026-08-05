@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { settingsStore } from "@/lib/settings-store";
+import { appendSystemLog } from "@/lib/system-log";
 
 type Theme = "dark" | "light" | "system";
 
@@ -103,6 +104,13 @@ export function ThemeProvider({
     setTheme: (theme: Theme) => {
       window.localStorage.setItem(storageKey, theme);
       setTheme(theme);
+      void appendSystemLog({
+        level: "success",
+        source: "主题",
+        message: `已切换为${theme === "system" ? "跟随系统" : theme === "dark" ? "深色" : "浅色"}主题`,
+      }).catch(() => {
+        // Logging must never prevent a theme change.
+      });
 
       // Also persist to Tauri Store
       settingsStore

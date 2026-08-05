@@ -12,6 +12,7 @@ import {
   ApiKeysSettingsPage,
   ModelsSettingsPage,
   SettingsLayout,
+  SystemLogsSettingsPage,
   ThemeSettingsPage,
   TraySettingsPage,
 } from "@/pages/settings";
@@ -67,6 +68,7 @@ const router = createHashRouter([
           { path: "keys", element: <ApiKeysSettingsPage /> },
           { path: "models", element: <ModelsSettingsPage /> },
           { path: "tray", element: <TraySettingsPage /> },
+          { path: "logs", element: <SystemLogsSettingsPage /> },
         ],
       },
       {

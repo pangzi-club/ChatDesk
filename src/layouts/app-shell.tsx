@@ -30,6 +30,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { TitlebarDragRegion } from "@/components/titlebar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { appendSystemLog } from "@/lib/system-log";
 import { applyTrayEnabled, loadTrayEnabled } from "@/lib/tray";
 
 const navItems = [
@@ -55,6 +56,12 @@ function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
   const isSettings = location.pathname.startsWith("/settings");
+
+  useEffect(() => {
+    void appendSystemLog({ level: "info", source: "应用", message: "应用窗口已启动" }).catch(() => {
+      // Logging must never prevent the app from rendering.
+    });
+  }, []);
 
   useEffect(() => {
     if (!("__TAURI_INTERNALS__" in window)) return;

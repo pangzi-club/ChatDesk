@@ -1,3 +1,4 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Check,
@@ -10,6 +11,8 @@ import {
   PanelTop,
   Pencil,
   Plus,
+  RefreshCw,
+  ScrollText,
   Search,
   Trash2,
   X,
@@ -34,6 +37,12 @@ import { clearCommitApiKey, loadCommitApiKey, saveCommitApiKey } from "@/lib/com
 import { clearDataerApiKey, loadDataerApiKey, saveDataerApiKey } from "@/lib/dataer";
 import { clearLookerApiKey, loadLookerApiKey, saveLookerApiKey } from "@/lib/looker";
 import { loadModels, type ModelConfig, saveModels } from "@/lib/models";
+import {
+  clearSystemLogs,
+  loadSystemLogs,
+  type SystemLog,
+  type SystemLogLevel,
+} from "@/lib/system-log";
 import { loadTrayEnabled, saveTrayEnabled } from "@/lib/tray";
 
 const themes: Array<{ value: Theme; label: string; description: string }> = [
@@ -70,6 +79,7 @@ function SettingsLayout() {
           <SettingsNavItem to="/settings/keys" icon={KeyRound} label="API Keys" />
           <SettingsNavItem to="/settings/models" icon={Package} label="模型" />
           <SettingsNavItem to="/settings/tray" icon={PanelTop} label="托盘" />
+          <SettingsNavItem to="/settings/logs" icon={ScrollText} label="系统日志" />
         </nav>
         <div className="mt-auto border-border border-t py-5 text-muted-foreground text-xs max-sm:hidden">
           m-dashboard
@@ -82,6 +92,143 @@ function SettingsLayout() {
         </div>
       </main>
     </div>
+  );
+}
+
+const logLevelLabels: Record<SystemLogLevel, string> = {
+  info: "信息",
+  success: "成功",
+  warning: "警告",
+  error: "错误",
+};
+
+const logLevelClasses: Record<SystemLogLevel, string> = {
+  info: "bg-accent text-muted-foreground",
+  success: "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300",
+  warning: "bg-amber-500/12 text-amber-700 dark:text-amber-300",
+  error: "bg-destructive/12 text-destructive",
+};
+
+function SystemLogsSettingsPage() {
+  const queryClient = useQueryClient();
+  const [level, setLevel] = useState<"all" | SystemLogLevel>("all");
+  const logsQuery = useQuery({ queryKey: ["system-logs"], queryFn: loadSystemLogs });
+  const clearMutation = useMutation({
+    mutationFn: clearSystemLogs,
+    onSuccess: () => queryClient.setQueryData<SystemLog[]>(["system-logs"], []),
+  });
+  const logs = (logsQuery.data ?? []).filter((log) => level === "all" || log.level === level);
+
+  return (
+    <>
+      <SettingsHeading
+        eyebrow="System"
+        title="系统日志"
+        description="查看最近的应用运行记录，帮助定位设置保存、窗口状态和连接问题。"
+      />
+      <section className="overflow-hidden rounded-lg border border-border bg-card">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-border border-b px-5 py-4">
+          <div>
+            <h2 className="font-medium text-sm">最近记录</h2>
+            <p className="mt-1 text-muted-foreground text-xs">
+              保留最近 200 条记录，仅存储在当前设备。
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Select
+              onValueChange={(value) => setLevel(value as "all" | SystemLogLevel)}
+              value={level}
+            >
+              <SelectTrigger aria-label="按级别筛选日志" className="w-[112px] text-xs" size="sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部级别</SelectItem>
+                {(Object.keys(logLevelLabels) as SystemLogLevel[]).map((item) => (
+                  <SelectItem key={item} value={item}>
+                    {logLevelLabels[item]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              aria-label="刷新系统日志"
+              disabled={logsQuery.isFetching}
+              onClick={() => void logsQuery.refetch()}
+              size="icon"
+              type="button"
+              variant="outline"
+            >
+              <RefreshCw className={logsQuery.isFetching ? "size-4 animate-spin" : "size-4"} />
+            </Button>
+            <Button
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+              disabled={clearMutation.isPending || (logsQuery.data?.length ?? 0) === 0}
+              onClick={() => void clearMutation.mutateAsync()}
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              <Trash2 className="size-3.5" /> 清空
+            </Button>
+          </div>
+        </div>
+        {logsQuery.isPending ? (
+          <div className="space-y-3 p-5" aria-busy="true" role="status">
+            <div className="h-16 animate-pulse rounded-md bg-accent" />
+            <div className="h-16 animate-pulse rounded-md bg-accent" />
+            <div className="h-16 animate-pulse rounded-md bg-accent" />
+          </div>
+        ) : logsQuery.isError ? (
+          <div className="px-5 py-14 text-center">
+            <p className="font-medium text-sm">读取系统日志失败</p>
+            <p className="mt-1 text-muted-foreground text-xs">请点击右上角刷新后重试。</p>
+          </div>
+        ) : logs.length === 0 ? (
+          <div className="px-5 py-14 text-center">
+            <ScrollText className="mx-auto size-8 text-muted-foreground" />
+            <p className="mt-3 font-medium text-sm">暂无系统日志</p>
+            <p className="mt-1 text-muted-foreground text-xs">应用运行后，相关记录会显示在这里。</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-border">
+            {logs.map((log) => (
+              <SystemLogRow key={log.id} log={log} />
+            ))}
+          </div>
+        )}
+      </section>
+    </>
+  );
+}
+
+function SystemLogRow({ log }: { log: SystemLog }) {
+  return (
+    <article className="flex gap-3 px-5 py-4 transition-colors hover:bg-accent/30">
+      <span
+        className={`mt-0.5 inline-flex h-5 shrink-0 items-center rounded-full px-2 text-[10px] font-medium ${logLevelClasses[log.level]}`}
+      >
+        {logLevelLabels[log.level]}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <h3 className="font-medium text-sm">{log.message}</h3>
+          <time className="font-mono text-[11px] text-muted-foreground" dateTime={log.timestamp}>
+            {formatLogTime(log.timestamp)}
+          </time>
+        </div>
+        <p className="mt-1 text-muted-foreground text-xs">
+          {log.source}
+          {log.details ? ` · ${log.details}` : ""}
+        </p>
+      </div>
+    </article>
+  );
+}
+
+function formatLogTime(timestamp: string) {
+  return new Intl.DateTimeFormat("zh-CN", { dateStyle: "short", timeStyle: "medium" }).format(
+    new Date(timestamp),
   );
 }
 
@@ -959,6 +1106,7 @@ export {
   ApiKeysSettingsPage,
   ModelsSettingsPage,
   SettingsLayout,
+  SystemLogsSettingsPage,
   ThemeSettingsPage,
   TraySettingsPage,
 };

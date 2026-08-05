@@ -3,11 +3,10 @@ mod models;
 mod services;
 
 use tauri::{
-    AppHandle,
     image::Image,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    Emitter, Manager,
+    AppHandle, Emitter, Manager,
 };
 
 #[tauri::command]
@@ -51,6 +50,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::greet::greet,
+            commands::system_log::read_system_logs,
+            commands::system_log::write_system_logs,
             commands::vite::list_vite_processes,
             commands::vite::kill_vite_process,
             set_tray_enabled,
