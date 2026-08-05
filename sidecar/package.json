@@ -1,0 +1,11 @@
+{
+  "name": "m-dashboard-assistant-sidecar",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "@larksuiteoapi/node-sdk": "1.72.0"
+  }
+}

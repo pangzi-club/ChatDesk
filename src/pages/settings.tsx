@@ -6,6 +6,7 @@ import {
   Eye,
   EyeOff,
   KeyRound,
+  MessagesSquare,
   Package,
   Palette,
   PanelTop,
@@ -45,6 +46,18 @@ import {
   type SystemLogLevel,
 } from "@/lib/system-log";
 import { loadTrayEnabled, saveTrayEnabled } from "@/lib/tray";
+import {
+  clearFeishuCredentials,
+  listenAssistantError,
+  listenAssistantStatus,
+  loadAssistantStatus,
+  loadFeishuCredentials,
+  restartAssistant,
+  saveFeishuCredentials,
+  startAssistant,
+  stopAssistant,
+  type AssistantConnection,
+} from "@/lib/assistant";
 
 const themes: Array<{ value: Theme; label: string; description: string }> = [
   { value: "system", label: "跟随系统", description: "根据操作系统自动切换" },
@@ -80,6 +93,7 @@ function SettingsLayout() {
           <SettingsNavItem to="/settings/keys" icon={KeyRound} label="API Keys" />
           <SettingsNavItem to="/settings/models" icon={Package} label="模型" />
           <SettingsNavItem to="/settings/tray" icon={PanelTop} label="托盘" />
+          <SettingsNavItem to="/settings/assistant" icon={MessagesSquare} label="助理" />
           <SettingsNavItem to="/settings/logs" icon={ScrollText} label="系统日志" />
         </nav>
         <div className="mt-auto border-border border-t py-5 text-muted-foreground text-xs max-sm:hidden">
@@ -381,6 +395,203 @@ function TraySettingsPage() {
         {notice ? (
           <p className="border-border border-t px-5 py-3 text-muted-foreground text-xs">{notice}</p>
         ) : null}
+      </section>
+    </>
+  );
+}
+
+function AssistantSettingsPage() {
+  const [appId, setAppId] = useState("");
+  const [appSecret, setAppSecret] = useState("");
+  const [hasSecret, setHasSecret] = useState(false);
+  const [status, setStatus] = useState<AssistantConnection | null>(null);
+  const [notice, setNotice] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    let cleanups: Array<() => void> = [];
+    void Promise.all([loadFeishuCredentials(), loadAssistantStatus()])
+      .then(([credentials, connection]) => {
+        if (!active) return;
+        setAppId(credentials.appId);
+        setHasSecret(Boolean(credentials.appSecret));
+        setStatus(connection);
+      })
+      .catch(() => {
+        if (active) setNotice("读取助理设置失败，请重试。");
+      });
+    void Promise.all([
+      listenAssistantStatus((connection) => {
+        if (active) setStatus(connection);
+      }),
+      listenAssistantError((message) => {
+        if (active) setNotice(message);
+      }),
+    ]).then((items) => {
+      cleanups = items;
+    });
+    return () => {
+      active = false;
+      cleanups.forEach((cleanup) => cleanup());
+    };
+  }, []);
+
+  async function handleSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const nextAppId = appId.trim();
+    const credentials = await loadFeishuCredentials();
+    const nextSecret = appSecret.trim() || credentials.appSecret;
+    if (!nextAppId || !nextSecret) {
+      setNotice("请输入飞书 App ID 和 App Secret。");
+      return;
+    }
+    setIsSaving(true);
+    setNotice("");
+    try {
+      await saveFeishuCredentials(nextAppId, nextSecret);
+      setStatus(await restartAssistant(nextAppId, nextSecret));
+      setHasSecret(true);
+      setAppSecret("");
+      setNotice("已保存并重新连接飞书。");
+    } catch {
+      setNotice("保存或连接失败，请检查凭据和网络。");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleClear() {
+    setIsSaving(true);
+    setNotice("");
+    try {
+      await clearFeishuCredentials();
+      setAppId("");
+      setAppSecret("");
+      setHasSecret(false);
+      setStatus(await stopAssistant());
+      setNotice("已清除飞书凭据并停止连接。");
+    } catch {
+      setNotice("清除失败，请重试。");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleReconnect() {
+    setIsSaving(true);
+    setNotice("");
+    try {
+      const credentials = await loadFeishuCredentials();
+      setStatus(await startAssistant(credentials.appId, credentials.appSecret));
+    } catch {
+      setNotice("重连失败，请检查凭据。");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  const statusLabel =
+    {
+      unconfigured: "未配置",
+      starting: "连接中",
+      connected: "已连接",
+      stopped: "已停止",
+      error: "错误",
+    }[status?.status ?? "stopped"] ?? status?.status;
+  return (
+    <>
+      <SettingsHeading
+        eyebrow="Connections"
+        title="助理"
+        description="配置飞书应用凭据，接收用户消息并在助理页面回复。凭据仅保存在当前设备。"
+      />
+      <section className="rounded-lg border border-border bg-card px-5 py-4">
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-accent text-muted-foreground">
+            <MessagesSquare className="size-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 className="font-medium text-sm">飞书应用</h2>
+            <p className="mt-1 text-muted-foreground text-xs leading-5">
+              需要在飞书开放平台启用机器人和事件订阅，并配置长连接权限。
+            </p>
+            <form className="mt-4 space-y-3" onSubmit={handleSave}>
+              <div>
+                <label
+                  className="font-mono text-[11px] text-muted-foreground"
+                  htmlFor="feishu-app-id"
+                >
+                  FEISHU_APP_ID
+                </label>
+                <Input
+                  autoComplete="off"
+                  className="mt-1.5 h-9 font-mono text-xs"
+                  id="feishu-app-id"
+                  onChange={(event) => setAppId(event.target.value)}
+                  placeholder="cli_xxxxxxxxx"
+                  value={appId}
+                />
+              </div>
+              <div>
+                <label
+                  className="font-mono text-[11px] text-muted-foreground"
+                  htmlFor="feishu-app-secret"
+                >
+                  FEISHU_APP_SECRET
+                </label>
+                <Input
+                  autoComplete="new-password"
+                  className="mt-1.5 h-9 font-mono text-xs"
+                  id="feishu-app-secret"
+                  onChange={(event) => setAppSecret(event.target.value)}
+                  placeholder={hasSecret ? "已保存 ········（输入新值可覆盖）" : "输入 App Secret"}
+                  type="password"
+                  value={appSecret}
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button disabled={isSaving} size="sm" type="submit">
+                  <MessagesSquare className="size-3.5" />
+                  {isSaving ? "保存中…" : "保存并连接"}
+                </Button>
+                {hasSecret ? (
+                  <>
+                    <Button
+                      disabled={isSaving}
+                      onClick={() => void handleReconnect()}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      <RefreshCw className="size-3.5" />
+                      重连
+                    </Button>
+                    <Button
+                      className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      disabled={isSaving}
+                      onClick={() => void handleClear()}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <Trash2 className="size-3.5" />
+                      清除
+                    </Button>
+                  </>
+                ) : null}
+              </div>
+            </form>
+            <div className="mt-4 flex items-center gap-2 border-border border-t pt-3 text-muted-foreground text-xs">
+              <span
+                className={`inline-flex size-2 rounded-full ${status?.status === "connected" ? "bg-emerald-500" : "bg-amber-500"}`}
+              />
+              连接状态：{statusLabel}
+              {status?.detail ? ` · ${status.detail}` : ""}
+            </div>
+            {notice ? <p className="mt-3 text-muted-foreground text-xs">{notice}</p> : null}
+          </div>
+        </div>
       </section>
     </>
   );
@@ -1113,6 +1324,7 @@ function NumberField({
 
 export {
   ApiKeysSettingsPage,
+  AssistantSettingsPage,
   ModelsSettingsPage,
   SettingsLayout,
   SystemLogsSettingsPage,

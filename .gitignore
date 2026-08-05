@@ -8,6 +8,8 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+src-tauri/binaries/*
+!src-tauri/binaries/assistant-sidecar-x86_64-apple-darwin
 dist
 dist-ssr
 *.local

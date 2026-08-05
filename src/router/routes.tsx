@@ -2,6 +2,7 @@ import { createHashRouter, Navigate, RouterProvider } from "react-router-dom";
 
 import { AppShell } from "@/layouts/app-shell";
 import { AnalyticsPage } from "@/pages/analytics";
+import { AssistantPage } from "@/pages/assistant";
 import { AutomationsPage } from "@/pages/automations";
 import { ChatPage } from "@/pages/chat";
 import { CommitPage } from "@/pages/commit";
@@ -12,6 +13,7 @@ import { InputsPage } from "@/pages/inputs";
 import { LookerDetailPage, LookerPage } from "@/pages/looker";
 import {
   ApiKeysSettingsPage,
+  AssistantSettingsPage,
   ModelsSettingsPage,
   SettingsLayout,
   SystemLogsSettingsPage,
@@ -37,6 +39,14 @@ const router = createHashRouter([
       {
         path: "chat",
         element: <ChatPage />,
+      },
+      {
+        path: "assistant",
+        element: <AssistantPage />,
+      },
+      {
+        path: "assistant",
+        element: <AssistantPage />,
       },
       {
         path: "inputs",
@@ -79,6 +89,7 @@ const router = createHashRouter([
           { path: "keys", element: <ApiKeysSettingsPage /> },
           { path: "models", element: <ModelsSettingsPage /> },
           { path: "tray", element: <TraySettingsPage /> },
+          { path: "assistant", element: <AssistantSettingsPage /> },
           { path: "logs", element: <SystemLogsSettingsPage /> },
         ],
       },
