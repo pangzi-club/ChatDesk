@@ -20,11 +20,22 @@ import {
   RefreshCw,
   Settings2,
   Sparkles,
+  Trash2,
   User,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -38,6 +49,7 @@ import {
   type ChatIndexItem,
   type ChatSession,
   createSessionId,
+  deleteChatSession,
   deriveChatTitle,
   loadChatIndex,
   loadChatSession,
@@ -96,6 +108,8 @@ function ChatPage() {
   const initializedHistoryRef = useRef(false);
   const savedFingerprintRef = useRef("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const isComposingRef = useRef(false);
+  const [sessionToDelete, setSessionToDelete] = useState<ChatIndexItem | null>(null);
   const selectedModel = models.find((model) => model.id === selectedModelId) ?? models[0];
   const transport = useMemo(() => createModelTransport(selectedModel), [selectedModel]);
   const { messages, setMessages, sendMessage, stop, status, error } = useChat({
@@ -199,8 +213,28 @@ function ChatPage() {
     });
   }
 
+  async function confirmRemoveSession() {
+    const item = sessionToDelete;
+    if (!item) return;
+    try {
+      await deleteChatSession(item.id);
+      await queryClient.invalidateQueries({ queryKey: ["chat-index"] });
+      if (item.id === sessionId) startNewSession();
+    } catch (deleteError) {
+      console.error("Failed to delete chat session", deleteError);
+    } finally {
+      setSessionToDelete(null);
+    }
+  }
+
   function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && !event.shiftKey) {
+    if (
+      event.key === "Enter" &&
+      !event.shiftKey &&
+      !event.nativeEvent.isComposing &&
+      event.keyCode !== 229 &&
+      !isComposingRef.current
+    ) {
       event.preventDefault();
       submitMessage();
     }
@@ -254,14 +288,27 @@ function ChatPage() {
                 <DropdownMenuItem disabled>暂无历史对话</DropdownMenuItem>
               )}
               {chatIndex.map((item) => (
-                <DropdownMenuItem
-                  className="chat-history-menu-item"
-                  key={item.id}
-                  onSelect={() => openSession(item)}
-                >
-                  <span className="chat-history-menu-title">{item.title}</span>
-                  <span className="chat-history-menu-count">{item.messageCount}</span>
-                </DropdownMenuItem>
+                <div className="chat-history-menu-item" key={item.id}>
+                  <button
+                    className="chat-history-menu-open"
+                    type="button"
+                    onClick={() => openSession(item)}
+                  >
+                    <span className="chat-history-menu-title">{item.title}</span>
+                    <span className="chat-history-menu-count">{item.messageCount}</span>
+                  </button>
+                  <span className="chat-history-menu-actions">
+                    <button
+                      aria-label={`删除${item.title}`}
+                      className="chat-history-menu-delete"
+                      title="删除对话"
+                      type="button"
+                      onClick={() => setSessionToDelete(item)}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </span>
+                </div>
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
@@ -307,6 +354,12 @@ function ChatPage() {
             aria-label="输入消息"
             value={input}
             onChange={(event) => setInput(event.target.value)}
+            onCompositionStart={() => {
+              isComposingRef.current = true;
+            }}
+            onCompositionEnd={() => {
+              isComposingRef.current = false;
+            }}
             onKeyDown={handleKeyDown}
             placeholder="问问你的工作空间..."
             rows={2}
@@ -378,6 +431,27 @@ function ChatPage() {
         </div>
         <p className="chat-disclaimer">AI 生成的内容可能存在偏差，请核实重要信息。</p>
       </div>
+      <AlertDialog
+        open={sessionToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setSessionToDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除历史对话？</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除“{sessionToDelete?.title ?? "这条对话"}”吗？删除后无法恢复。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => void confirmRemoveSession()}>
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

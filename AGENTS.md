@@ -25,3 +25,7 @@ These instructions apply to the entire repository.
 - Show a layout-matching skeleton while a list's initial query is loading. Do not replace the list with plain loading text or a spinner.
 - Preserve existing content during background refetches when practical; reserve the full skeleton for the initial load or for cases where no usable list data is available.
 - Keep empty, error, and loading states distinct.
+
+## Destructive Confirmation
+
+- Use the shared shadcn `AlertDialog` for destructive actions that require confirmation. Do not use `window.confirm` or other native confirmation dialogs.

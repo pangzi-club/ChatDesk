@@ -167,6 +167,10 @@ export async function saveChatSession(session: ChatSession): Promise<void> {
 export async function deleteChatSession(id: string): Promise<void> {
   if (isTauri()) {
     await invoke("delete_chat_session", { sessionId: id });
+    const index = await loadChatIndex();
+    await invoke("write_chat_index", {
+      contents: JSON.stringify(index.filter((entry) => entry.id !== id)),
+    });
   } else {
     window.localStorage.removeItem(`${SESSION_KEY_PREFIX}${id}`);
     const index = await loadChatIndex();

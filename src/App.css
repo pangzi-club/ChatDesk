@@ -183,6 +183,26 @@
   justify-content: space-between;
   gap: 12px;
 }
+.chat-history-menu-open {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  padding: 6px 8px;
+  border-radius: 4px;
+  color: inherit;
+  cursor: pointer;
+  background: transparent;
+  text-align: left;
+}
+.chat-history-menu-open:hover,
+.chat-history-menu-open:focus-visible {
+  background: var(--accent);
+  outline: none;
+}
 .chat-history-menu-title {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -193,6 +213,30 @@
   flex-shrink: 0;
   color: var(--chat-muted);
   font-size: 10px;
+}
+.chat-history-menu-actions {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+}
+.chat-history-menu-delete {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 4px;
+  color: var(--chat-muted);
+  cursor: pointer;
+  background: transparent;
+}
+.chat-history-menu-delete:hover,
+.chat-history-menu-delete:focus-visible {
+  color: var(--destructive);
+  background: color-mix(in srgb, var(--destructive) 10%, transparent);
+  outline: none;
 }
 .dark .chat-page {
   --chat-ink: #edf3f1;
