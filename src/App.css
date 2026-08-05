@@ -163,8 +163,34 @@
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
   background: #f7f9f8;
   color: var(--chat-ink);
+}
+.chat-history-menu-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.chat-history-menu {
+  width: 280px;
+}
+.chat-history-menu-item {
+  display: flex;
+  min-width: 0;
+  justify-content: space-between;
+  gap: 12px;
+}
+.chat-history-menu-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.chat-history-menu-count {
+  flex-shrink: 0;
+  color: var(--chat-muted);
+  font-size: 10px;
 }
 .dark .chat-page {
   --chat-ink: #edf3f1;

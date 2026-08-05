@@ -60,6 +60,12 @@ pub fn run() {
             commands::vite::kill_vite_process,
             set_tray_enabled,
             commands::automation::sync_automation_tasks,
+            commands::chat::read_chat_index,
+            commands::chat::write_chat_index,
+            commands::chat::read_chat_session,
+            commands::chat::write_chat_session,
+            commands::chat::write_chat_attachment,
+            commands::chat::delete_chat_session,
             commands::workspaces::select_workspace_directory,
             commands::workspaces::inspect_workspace,
         ])

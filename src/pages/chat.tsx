@@ -1,5 +1,5 @@
 import { useChat } from "@ai-sdk/react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import type { ChatTransport, UIMessage, UIMessageChunk } from "ai";
 import {
@@ -9,6 +9,7 @@ import {
   CircleStop,
   Copy,
   FilePlus2,
+  History,
   Mic,
   MoreHorizontal,
   Paperclip,
@@ -22,6 +23,23 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  type ChatIndexItem,
+  type ChatSession,
+  createSessionId,
+  deriveChatTitle,
+  loadChatIndex,
+  loadChatSession,
+  saveChatSession,
+} from "@/lib/chat-store";
 import { loadModels, type ModelConfig } from "@/lib/models";
 
 const demoModels: ModelConfig[] = [
@@ -52,6 +70,11 @@ const demoModels: ModelConfig[] = [
 ];
 
 function ChatPage() {
+  const queryClient = useQueryClient();
+  const { data: chatIndex = [], isLoading: isChatHistoryLoading } = useQuery({
+    queryKey: ["chat-index"],
+    queryFn: loadChatIndex,
+  });
   const { data: configuredModels, isLoading: isModelsLoading } = useQuery({
     queryKey: ["models"],
     queryFn: loadModels,
@@ -62,11 +85,18 @@ function ChatPage() {
   );
   const [selectedModelId, setSelectedModelId] = useState("");
   const [input, setInput] = useState("");
+  const [sessionId, setSessionId] = useState(createSessionId);
+  const [sessionTitle, setSessionTitle] = useState("新对话");
+  const sessionCreatedAtRef = useRef(new Date().toISOString());
+  const suppressSaveRef = useRef(false);
+  const pendingSessionRef = useRef<ChatSession | null>(null);
+  const initializedHistoryRef = useRef(false);
+  const savedFingerprintRef = useRef("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const selectedModel = models.find((model) => model.id === selectedModelId) ?? models[0];
   const transport = useMemo(() => createModelTransport(selectedModel), [selectedModel]);
   const { messages, setMessages, sendMessage, stop, status, error } = useChat({
-    id: "m-dashboard-chat",
+    id: sessionId,
     transport,
   });
   const isGenerating = status === "submitted" || status === "streaming";
@@ -80,6 +110,57 @@ function ChatPage() {
     }
   }, [models, selectedModelId]);
 
+  useEffect(() => {
+    if (initializedHistoryRef.current || isChatHistoryLoading) return;
+    initializedHistoryRef.current = true;
+    const latest = chatIndex[0];
+    if (!latest) return;
+    void loadChatSession(latest.id).then((session) => {
+      if (!session) return;
+      pendingSessionRef.current = session;
+      setSessionId(session.id);
+    });
+  }, [chatIndex, isChatHistoryLoading]);
+
+  useEffect(() => {
+    const session = pendingSessionRef.current;
+    if (!session || session.id !== sessionId) return;
+    pendingSessionRef.current = null;
+    suppressSaveRef.current = true;
+    setSessionTitle(session.title);
+    sessionCreatedAtRef.current = session.createdAt;
+    setMessages(session.messages);
+    if (session.modelId) setSelectedModelId(session.modelId);
+  }, [sessionId, setMessages]);
+
+  useEffect(() => {
+    if (status !== "ready" || messages.length === 0) return;
+    if (suppressSaveRef.current) {
+      suppressSaveRef.current = false;
+      return;
+    }
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage?.role !== "assistant" || !messageText(lastMessage).trim()) return;
+    const fingerprint = `${sessionId}:${messages.length}:${lastMessage.id}:${messageText(lastMessage)}`;
+    if (savedFingerprintRef.current === fingerprint) return;
+    savedFingerprintRef.current = fingerprint;
+    const now = new Date().toISOString();
+    const title = deriveChatTitle(messages);
+    setSessionTitle(title);
+    void saveChatSession({
+      schemaVersion: 1,
+      id: sessionId,
+      title,
+      createdAt: sessionCreatedAtRef.current,
+      updatedAt: now,
+      modelId: selectedModel?.id,
+      messages,
+      attachments: [],
+    })
+      .then(() => queryClient.invalidateQueries({ queryKey: ["chat-index"] }))
+      .catch((saveError) => console.error("Failed to save chat session", saveError));
+  }, [messages, queryClient, selectedModel?.id, sessionId, status]);
+
   // Scroll when a message arrives or the local response indicator changes.
   // biome-ignore lint/correctness/useExhaustiveDependencies: these values intentionally trigger the scroll effect.
   useEffect(() => {
@@ -91,6 +172,28 @@ function ChatPage() {
     if (!text || isGenerating) return;
     setInput("");
     void sendMessage({ text });
+  }
+
+  function startNewSession() {
+    stop();
+    setSessionId(createSessionId());
+    sessionCreatedAtRef.current = new Date().toISOString();
+    setSessionTitle("新对话");
+    savedFingerprintRef.current = "";
+    suppressSaveRef.current = false;
+    setMessages([]);
+    setInput("");
+  }
+
+  function openSession(item: ChatIndexItem) {
+    if (item.id === sessionId) return;
+    void loadChatSession(item.id).then((session) => {
+      if (!session) return;
+      stop();
+      savedFingerprintRef.current = "";
+      pendingSessionRef.current = session;
+      setSessionId(session.id);
+    });
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -109,7 +212,7 @@ function ChatPage() {
           </div>
           <div>
             <p className="chat-kicker">Workspace assistant</p>
-            <h1>新对话</h1>
+            <h1>{sessionTitle}</h1>
           </div>
         </div>
         <div className="chat-header-actions">
@@ -119,19 +222,46 @@ function ChatPage() {
             size="icon"
             variant="ghost"
             type="button"
-            onClick={() => setMessages([])}
+            onClick={startNewSession}
           >
             <Plus className="size-4" />
           </Button>
-          <Button
-            aria-label="更多选项"
-            className="chat-icon-button"
-            size="icon"
-            variant="ghost"
-            type="button"
-          >
-            <MoreHorizontal className="size-4" />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                aria-label="更多选项"
+                className="chat-icon-button"
+                size="icon"
+                variant="ghost"
+                type="button"
+              >
+                <MoreHorizontal className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="chat-history-menu" sideOffset={8}>
+              <DropdownMenuLabel>
+                <span className="chat-history-menu-label">
+                  <History className="size-3.5" />
+                  历史对话
+                </span>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {isChatHistoryLoading && <DropdownMenuItem disabled>加载中...</DropdownMenuItem>}
+              {!isChatHistoryLoading && chatIndex.length === 0 && (
+                <DropdownMenuItem disabled>暂无历史对话</DropdownMenuItem>
+              )}
+              {chatIndex.map((item) => (
+                <DropdownMenuItem
+                  className="chat-history-menu-item"
+                  key={item.id}
+                  onSelect={() => openSession(item)}
+                >
+                  <span className="chat-history-menu-title">{item.title}</span>
+                  <span className="chat-history-menu-count">{item.messageCount}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
 
