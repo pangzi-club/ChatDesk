@@ -1,4 +1,3 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -16,7 +15,6 @@ import {
   LayoutDashboard,
   Lock,
   MessageCircle,
-  MessagesSquare,
   Monitor,
   Package,
   Palette,
@@ -40,25 +38,11 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { TitlebarDragRegion } from "@/components/titlebar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import {
-  type AssistantConversation,
-  type AssistantMessage,
-  listenAssistantMessage,
-  loadAssistantConversations,
-  loadAssistantEnabled,
-  loadAssistantNotificationsEnabled,
-  loadFeishuCredentials,
-  sendAssistantMessage,
-  showAssistantNotification,
-  startAssistant,
-} from "@/lib/assistant";
-import { respondToTrafficTrigger } from "@/lib/assistant-automation";
 import { appendSystemLog } from "@/lib/system-log";
 import { applyTrayEnabled, loadTrayEnabled } from "@/lib/tray";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/assistant", label: "Assistant", icon: MessagesSquare },
   { to: "/automations", label: "Automations", icon: Clock3 },
   { to: "/analytics", label: "Analytics", icon: ChartColumn },
   { to: "/commit", label: "Commit", icon: GitCommitHorizontal },
@@ -84,20 +68,13 @@ const commandItems = [
   { ...navItems[5], keywords: ["文本加密", "加密"] },
   { ...navItems[6], keywords: ["端口", "开发服务"] },
   { ...navItems[7], keywords: ["对话", "聊天"] },
-  { ...navItems[8], keywords: ["飞书", "助理", "用户消息"] },
-  { ...navItems[10], keywords: ["输入", "表单"] },
-  { ...navItems[9], keywords: ["图片", "生成", "image"] },
+  { ...navItems[8], keywords: ["图片", "生成", "image"] },
+  { ...navItems[9], keywords: ["输入", "表单"] },
   { to: "/settings", label: "Settings", icon: Settings, keywords: ["设置"] },
   { to: "/settings/theme", label: "主题", icon: Palette, keywords: ["theme", "外观"] },
   { to: "/settings/keys", label: "API Keys", icon: KeyRound, keywords: ["设置", "密钥", "api"] },
   { to: "/settings/models", label: "模型", icon: Package, keywords: ["设置", "models", "model"] },
   { to: "/settings/tray", label: "托盘", icon: PanelTop, keywords: ["设置", "tray"] },
-  {
-    to: "/settings/assistant",
-    label: "助理",
-    icon: MessagesSquare,
-    keywords: ["设置", "飞书", "助理"],
-  },
   { to: "/settings/logs", label: "系统日志", icon: ScrollText, keywords: ["设置", "日志", "logs"] },
   {
     to: "/workspaces",
@@ -117,88 +94,12 @@ function AppShell() {
   const [isCommandMenuOpen, setIsCommandMenuOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const isSettings = location.pathname.startsWith("/settings");
-  const conversationsQuery = useQuery({
-    queryKey: ["assistant-conversations"],
-    queryFn: loadAssistantConversations,
-  });
-  const unreadCount = (conversationsQuery.data ?? []).reduce(
-    (total, conversation) => total + conversation.unreadCount,
-    0,
-  );
 
   useEffect(() => {
     void appendSystemLog({ level: "info", source: "应用", message: "应用窗口已启动" }).catch(() => {
       // Logging must never prevent the app from rendering.
     });
-  }, []);
-
-  useEffect(() => {
-    let cleanup: (() => void) | undefined;
-    void listenAssistantMessage((event) => {
-      queryClient.setQueryData<AssistantConversation[]>(
-        ["assistant-conversations"],
-        (items = []) => {
-          const existing = items.find((item) => item.id === event.conversation.id);
-          if (!existing) return [event.conversation, ...items];
-          return items.map((item) =>
-            item.id === event.conversation.id ? event.conversation : item,
-          );
-        },
-      );
-      queryClient.setQueryData<AssistantMessage[]>(
-        ["assistant-messages", event.message.conversationId],
-        (items = []) => [...items.filter((item) => item.id !== event.message.id), event.message],
-      );
-      queryClient.invalidateQueries({ queryKey: ["assistant-conversations"] });
-      void respondToTrafficTrigger(event, async (conversationId, text) => {
-        const sent = await sendAssistantMessage(conversationId, text);
-        queryClient.setQueryData<AssistantMessage[]>(
-          ["assistant-messages", conversationId],
-          (items = []) => [...items.filter((item) => item.id !== sent.id), sent],
-        );
-        queryClient.setQueryData<AssistantConversation[]>(
-          ["assistant-conversations"],
-          (items = []) =>
-            items.map((item) =>
-              item.id === conversationId
-                ? {
-                    ...item,
-                    lastMessage: sent.text,
-                    lastMessageAt: sent.timestamp,
-                    unreadCount: 0,
-                  }
-                : item,
-            ),
-        );
-        return sent;
-      }).catch((error) => console.error("Failed to respond to traffic trigger", error));
-      if (location.pathname === "/assistant") return;
-      void loadAssistantNotificationsEnabled().then((enabled) => {
-        if (enabled) {
-          showAssistantNotification(event.conversation.displayName, event.message.text);
-        }
-      });
-    }).then((unlisten) => {
-      cleanup = unlisten;
-    });
-    return () => cleanup?.();
-  }, [location.pathname, queryClient]);
-
-  useEffect(() => {
-    let active = true;
-    void Promise.all([loadAssistantEnabled(), loadFeishuCredentials()]).then(
-      ([enabled, { appId, appSecret }]) => {
-        if (active && enabled && appId && appSecret)
-          void startAssistant(appId, appSecret).catch((error) =>
-            console.error("Failed to start Feishu assistant", error),
-          );
-      },
-    );
-    return () => {
-      active = false;
-    };
   }, []);
 
   useEffect(() => {
@@ -258,7 +159,6 @@ function AppShell() {
               >
                 {navItems.map((item) => {
                   const Icon = item.icon;
-                  const isAssistant = item.to === "/assistant";
 
                   return (
                     <NavLink
@@ -274,16 +174,6 @@ function AppShell() {
                     >
                       <Icon className="size-4 shrink-0" />
                       <span className="max-md:hidden">{item.label}</span>
-                      {isAssistant && unreadCount > 0 ? (
-                        <span
-                          aria-label={`未读消息 ${unreadCount} 条`}
-                          className="ml-auto inline-flex min-w-4 items-center justify-center rounded-full bg-primary/12 px-1.5 py-0.5 font-medium text-[10px] text-primary dark:bg-cyan-400/20 dark:text-cyan-200 max-md:hidden"
-                          role="status"
-                          title={`未读消息 ${unreadCount} 条`}
-                        >
-                          {unreadCount > 99 ? "99+" : unreadCount}
-                        </span>
-                      ) : null}
                     </NavLink>
                   );
                 })}

@@ -2,7 +2,6 @@ mod commands;
 mod models;
 mod services;
 
-use services::assistant::AssistantState;
 use services::automation::AutomationScheduler;
 use tauri::{
     image::Image,
@@ -28,7 +27,6 @@ pub fn run() {
         .setup(|app| {
             let scheduler = AutomationScheduler::start(app.handle())?;
             app.manage(scheduler);
-            app.manage(AssistantState::default());
             let dashboard_item =
                 MenuItem::with_id(app, "dashboard", "Dashboard", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&dashboard_item])?;
@@ -54,16 +52,6 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::assistant::assistant_start,
-            commands::assistant::assistant_stop,
-            commands::assistant::assistant_restart,
-            commands::assistant::assistant_status,
-            commands::assistant::assistant_list_conversations,
-            commands::assistant::assistant_get_messages,
-            commands::assistant::assistant_list_received_messages,
-            commands::assistant::assistant_mark_conversation_read,
-            commands::assistant::assistant_delete_conversation,
-            commands::assistant::assistant_send_message,
             commands::greet::greet,
             commands::image::save_image_file,
             commands::system_log::read_system_logs,

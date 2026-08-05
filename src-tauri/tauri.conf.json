@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "org.bohao.mdashboard",
   "build": {
-    "beforeDevCommand": "pnpm assistant:build && pnpm dev",
+    "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm assistant:build && pnpm build",
+    "beforeBuildCommand": "pnpm build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -34,7 +34,6 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ],
-    "externalBin": ["binaries/assistant-sidecar"]
+    ]
   }
 }

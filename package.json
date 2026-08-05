@@ -7,7 +7,6 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "assistant:build": "node sidecar/build.mjs",
     "check": "biome check .",
     "check:write": "biome check --write .",
     "format": "biome format --write .",
@@ -17,7 +16,6 @@
   },
   "dependencies": {
     "@ai-sdk/react": "^4.0.54",
-    "@larksuiteoapi/node-sdk": "^1.72.0",
     "@radix-ui/react-slot": "^1.3.3",
     "@streamdown/code": "^1.1.1",
     "@tanstack/react-query": "^5.101.0",

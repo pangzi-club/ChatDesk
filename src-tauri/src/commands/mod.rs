@@ -1,4 +1,3 @@
-pub mod assistant;
 pub mod automation;
 pub mod chat;
 pub mod greet;
