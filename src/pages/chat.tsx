@@ -1,7 +1,10 @@
 import { useChat } from "@ai-sdk/react";
+import { code } from "@streamdown/code";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import type { ChatTransport, UIMessage, UIMessageChunk } from "ai";
+import { Streamdown } from "streamdown";
+import "streamdown/styles.css";
 import {
   ArrowUp,
   Bot,
@@ -274,7 +277,11 @@ function ChatPage() {
             <span>本地会话</span>
           </div>
           {messages.map((message) => (
-            <MessageBubble key={message.id} message={message} />
+            <MessageBubble
+              key={message.id}
+              message={message}
+              isStreaming={status === "streaming" && message.id === lastMessage?.id}
+            />
           ))}
           {isGenerating && !hasAssistantMessage && (
             <div className="chat-message assistant-message">
@@ -375,7 +382,7 @@ function ChatPage() {
   );
 }
 
-function MessageBubble({ message }: { message: UIMessage }) {
+function MessageBubble({ message, isStreaming }: { message: UIMessage; isStreaming: boolean }) {
   const text = messageText(message);
   const isUser = message.role === "user";
   if (!isUser && !text.trim()) return null;
@@ -391,9 +398,9 @@ function MessageBubble({ message }: { message: UIMessage }) {
           <span>{isUser ? "刚刚" : "已完成"}</span>
         </div>
         <div className="chat-message-text">
-          {text.split("\n").map((line) => (
-            <p key={`${message.id}-${line}`}>{line || "\u00a0"}</p>
-          ))}
+          <Streamdown isAnimating={!isUser && isStreaming} plugins={{ code }}>
+            {text}
+          </Streamdown>
         </div>
         {!isUser && (
           <div className="chat-message-actions">
