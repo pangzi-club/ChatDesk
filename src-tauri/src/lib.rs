@@ -60,6 +60,8 @@ pub fn run() {
             commands::vite::kill_vite_process,
             set_tray_enabled,
             commands::automation::sync_automation_tasks,
+            commands::workspaces::select_workspace_directory,
+            commands::workspaces::inspect_workspace,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

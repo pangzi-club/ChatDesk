@@ -19,6 +19,7 @@ import {
   TraySettingsPage,
 } from "@/pages/settings";
 import { VitePortsPage } from "@/pages/vite-ports";
+import { WorkspaceDetailPage, WorkspacesPage } from "@/pages/workspaces";
 
 const router = createHashRouter([
   {
@@ -84,6 +85,14 @@ const router = createHashRouter([
       {
         path: "vite-ports",
         element: <VitePortsPage />,
+      },
+      {
+        path: "workspaces",
+        element: <WorkspacesPage />,
+      },
+      {
+        path: "workspaces/:projectId",
+        element: <WorkspaceDetailPage />,
       },
     ],
   },

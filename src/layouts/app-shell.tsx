@@ -8,6 +8,7 @@ import {
   CornerDownLeft,
   ExternalLink,
   Eye,
+  FolderGit2,
   GitCommitHorizontal,
   Image,
   KeyRound,
@@ -51,6 +52,7 @@ const navItems = [
   { to: "/chat", label: "Chat", icon: MessageCircle },
   { to: "/image-generation", label: "Image", icon: Image },
   { to: "/inputs", label: "Inputs", icon: TextCursorInput },
+  { to: "/workspaces", label: "Workspaces", icon: FolderGit2 },
 ] satisfies Array<{
   to: string;
   label: string;
@@ -74,6 +76,12 @@ const commandItems = [
   { to: "/settings/models", label: "模型", icon: Package, keywords: ["设置", "models", "model"] },
   { to: "/settings/tray", label: "托盘", icon: PanelTop, keywords: ["设置", "tray"] },
   { to: "/settings/logs", label: "系统日志", icon: ScrollText, keywords: ["设置", "日志", "logs"] },
+  {
+    to: "/workspaces",
+    label: "Workspaces",
+    icon: FolderGit2,
+    keywords: ["项目", "工作区", "workspace", "git"],
+  },
 ] satisfies Array<{
   to: string;
   label: string;
