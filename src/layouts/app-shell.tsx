@@ -41,14 +41,18 @@ import { TitlebarDragRegion } from "@/components/titlebar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
+  type AssistantConversation,
+  type AssistantMessage,
   listenAssistantMessage,
   loadAssistantConversations,
   loadAssistantEnabled,
   loadAssistantNotificationsEnabled,
   loadFeishuCredentials,
+  sendAssistantMessage,
   showAssistantNotification,
   startAssistant,
 } from "@/lib/assistant";
+import { respondToTrafficTrigger } from "@/lib/assistant-automation";
 import { appendSystemLog } from "@/lib/system-log";
 import { applyTrayEnabled, loadTrayEnabled } from "@/lib/tray";
 
@@ -133,7 +137,43 @@ function AppShell() {
   useEffect(() => {
     let cleanup: (() => void) | undefined;
     void listenAssistantMessage((event) => {
+      queryClient.setQueryData<AssistantConversation[]>(
+        ["assistant-conversations"],
+        (items = []) => {
+          const existing = items.find((item) => item.id === event.conversation.id);
+          if (!existing) return [event.conversation, ...items];
+          return items.map((item) =>
+            item.id === event.conversation.id ? event.conversation : item,
+          );
+        },
+      );
+      queryClient.setQueryData<AssistantMessage[]>(
+        ["assistant-messages", event.message.conversationId],
+        (items = []) => [...items.filter((item) => item.id !== event.message.id), event.message],
+      );
       queryClient.invalidateQueries({ queryKey: ["assistant-conversations"] });
+      void respondToTrafficTrigger(event, async (conversationId, text) => {
+        const sent = await sendAssistantMessage(conversationId, text);
+        queryClient.setQueryData<AssistantMessage[]>(
+          ["assistant-messages", conversationId],
+          (items = []) => [...items.filter((item) => item.id !== sent.id), sent],
+        );
+        queryClient.setQueryData<AssistantConversation[]>(
+          ["assistant-conversations"],
+          (items = []) =>
+            items.map((item) =>
+              item.id === conversationId
+                ? {
+                    ...item,
+                    lastMessage: sent.text,
+                    lastMessageAt: sent.timestamp,
+                    unreadCount: 0,
+                  }
+                : item,
+            ),
+        );
+        return sent;
+      }).catch((error) => console.error("Failed to respond to traffic trigger", error));
       if (location.pathname === "/assistant") return;
       void loadAssistantNotificationsEnabled().then((enabled) => {
         if (enabled) {
