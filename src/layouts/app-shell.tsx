@@ -15,6 +15,7 @@ import {
   Search,
   Settings,
   SquareTerminal,
+  TextCursorInput,
 } from "lucide-react";
 import {
   type ComponentType,
@@ -31,12 +32,13 @@ import { Button } from "@/components/ui/button";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/chat", label: "Chat", icon: MessageCircle },
   { to: "/analytics", label: "Analytics", icon: ChartColumn },
   { to: "/commit", label: "Commit", icon: GitCommitHorizontal },
   { to: "/looker", label: "Looker", icon: Eye },
   { to: "/encrypt", label: "Encrypt", icon: Lock },
   { to: "/vite-ports", label: "VitePorts", icon: SquareTerminal },
+  { to: "/chat", label: "Chat", icon: MessageCircle },
+  { to: "/inputs", label: "Inputs", icon: TextCursorInput },
 ] satisfies Array<{
   to: string;
   label: string;

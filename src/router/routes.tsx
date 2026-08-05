@@ -6,6 +6,7 @@ import { ChatPage } from "@/pages/chat";
 import { CommitPage } from "@/pages/commit";
 import { DashboardPage } from "@/pages/dashboard";
 import { EncryptPage } from "@/pages/encrypt";
+import { InputsPage } from "@/pages/inputs";
 import { LookerDetailPage, LookerPage } from "@/pages/looker";
 import {
   ApiKeysSettingsPage,
@@ -31,6 +32,10 @@ const router = createHashRouter([
       {
         path: "chat",
         element: <ChatPage />,
+      },
+      {
+        path: "inputs",
+        element: <InputsPage />,
       },
       {
         path: "analytics",
