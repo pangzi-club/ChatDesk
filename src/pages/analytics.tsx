@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { ChartColumn, RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +12,9 @@ import {
   type DataerSiteStats,
   fetchAllSites,
   fetchSiteReport,
+  loadDataerAnalyticsInterval,
   loadDataerApiKey,
+  saveDataerAnalyticsInterval,
 } from "@/lib/dataer";
 
 const INTERVALS: Array<{ value: DataerInterval; label: string }> = [
@@ -39,10 +41,30 @@ interface AnalyticsData {
 }
 
 function AnalyticsPage() {
-  const [interval, setInterval] = useState<DataerInterval>("7d");
+  const [interval, setInterval] = useState<DataerInterval | null>(null);
+  useEffect(() => {
+    let active = true;
+    void loadDataerAnalyticsInterval().then((storedInterval) => {
+      if (active) {
+        setInterval(storedInterval);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleIntervalChange = (nextInterval: DataerInterval) => {
+    setInterval(nextInterval);
+    void saveDataerAnalyticsInterval(nextInterval);
+  };
+
+  const selectedInterval = interval ?? "7d";
   const analyticsQuery = useQuery<AnalyticsData, DataerApiError>({
-    queryKey: ["dataer", "analytics", interval],
-    queryFn: () => fetchAnalytics(interval),
+    enabled: interval !== null,
+    queryKey: ["dataer", "analytics", selectedInterval],
+    queryFn: () => fetchAnalytics(selectedInterval),
     placeholderData: (previous) => previous,
   });
   const rows = analyticsQuery.data?.rows ?? [];
@@ -77,9 +99,9 @@ function AnalyticsPage() {
             <Button
               className="h-9"
               key={item.value}
-              onClick={() => setInterval(item.value)}
+              onClick={() => handleIntervalChange(item.value)}
               type="button"
-              variant={interval === item.value ? "default" : "outline"}
+              variant={selectedInterval === item.value ? "default" : "outline"}
             >
               {item.label}
             </Button>

@@ -7,6 +7,8 @@ export const DATAER_BASE_URL = "https://tandataer.com";
 const DATAER_TIMEOUT_MS = 15_000;
 const DATAER_API_KEY_STORE_KEY = "dataerApiKey";
 const DATAER_API_KEY_STORAGE_KEY = "m-dashboard-dataer-api-key-v1";
+const DATAER_INTERVAL_STORE_KEY = "dataerAnalyticsInterval";
+const DATAER_INTERVAL_STORAGE_KEY = "m-dashboard-dataer-analytics-interval-v1";
 function isTauri() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
@@ -65,6 +67,43 @@ export async function clearDataerApiKey() {
 // —— 类型 ——
 
 export type DataerInterval = "today" | "yesterday" | "7d" | "30d" | "90d";
+
+const DATAER_INTERVALS: readonly DataerInterval[] = ["today", "yesterday", "7d", "30d", "90d"];
+
+function isDataerInterval(value: unknown): value is DataerInterval {
+  return typeof value === "string" && DATAER_INTERVALS.includes(value as DataerInterval);
+}
+
+export async function loadDataerAnalyticsInterval(): Promise<DataerInterval> {
+  if (isTauri()) {
+    try {
+      const stored = await settingsStore.get<unknown>(DATAER_INTERVAL_STORE_KEY);
+      if (isDataerInterval(stored)) {
+        return stored;
+      }
+    } catch (error) {
+      console.error("Failed to load analytics interval from Tauri Store", error);
+    }
+  }
+
+  const stored = window.localStorage.getItem(DATAER_INTERVAL_STORAGE_KEY);
+  return isDataerInterval(stored) ? stored : "7d";
+}
+
+export async function saveDataerAnalyticsInterval(interval: DataerInterval): Promise<void> {
+  if (isTauri()) {
+    try {
+      await settingsStore.set(DATAER_INTERVAL_STORE_KEY, interval);
+      await settingsStore.save();
+      window.localStorage.removeItem(DATAER_INTERVAL_STORAGE_KEY);
+      return;
+    } catch (error) {
+      console.error("Failed to save analytics interval to Tauri Store", error);
+    }
+  }
+
+  window.localStorage.setItem(DATAER_INTERVAL_STORAGE_KEY, interval);
+}
 
 export interface DataerSite {
   ref: string;
