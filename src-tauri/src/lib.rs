@@ -2,6 +2,7 @@ mod commands;
 mod models;
 mod services;
 
+use services::automation::AutomationScheduler;
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
@@ -24,6 +25,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
         .setup(|app| {
+            let scheduler = AutomationScheduler::start(app.handle())?;
+            app.manage(scheduler);
             let dashboard_item =
                 MenuItem::with_id(app, "dashboard", "Dashboard", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&dashboard_item])?;
@@ -55,6 +58,7 @@ pub fn run() {
             commands::vite::list_vite_processes,
             commands::vite::kill_vite_process,
             set_tray_enabled,
+            commands::automation::sync_automation_tasks,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

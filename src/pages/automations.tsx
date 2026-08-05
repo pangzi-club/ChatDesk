@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Clock3, Edit3, ListChecks, MoreHorizontal, Pause, Play, Plus, Trash2 } from "lucide-react";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -26,7 +26,6 @@ import {
   loadAutomationTasks,
   saveAutomationTasks,
 } from "@/lib/automation";
-import { appendSystemLog } from "@/lib/system-log";
 
 const AUTOMATION_QUERY_KEY = ["automation-tasks"];
 
@@ -54,29 +53,8 @@ function AutomationsPage() {
   const tasks = tasksQuery.data ?? [];
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<AutomationTask | null>(null);
+  const [pendingDeleteTask, setPendingDeleteTask] = useState<AutomationTask | null>(null);
   const [draft, setDraft] = useState<TaskDraft>(emptyDraft);
-
-  useEffect(() => {
-    const timers = tasks
-      .filter((task) => task.enabled)
-      .map((task) =>
-        window.setInterval(() => {
-          if (task.type === "log-current-time") {
-            void appendSystemLog({
-              level: "info",
-              source: `自动化 · ${task.name}`,
-              message: `当前时间：${new Intl.DateTimeFormat("zh-CN", { dateStyle: "short", timeStyle: "medium" }).format(new Date())}`,
-            }).catch(() => undefined);
-          }
-        }, task.intervalMinutes * 60_000),
-      );
-
-    return () => {
-      timers.forEach((timer) => {
-        window.clearInterval(timer);
-      });
-    };
-  }, [tasks]);
 
   const activeCount = useMemo(() => tasks.filter((task) => task.enabled).length, [tasks]);
 
@@ -134,9 +112,17 @@ function AutomationsPage() {
     closeEditor();
   }
 
-  async function deleteTask(task: AutomationTask) {
-    if (!window.confirm(`确定删除“${task.name}”？`)) return;
-    await saveMutation.mutateAsync(tasks.filter((item) => item.id !== task.id));
+  async function confirmDeleteTask() {
+    if (!pendingDeleteTask) return;
+    const task = pendingDeleteTask;
+    setPendingDeleteTask(null);
+    const nextTasks = tasks.filter((item) => item.id !== task.id);
+    queryClient.setQueryData<AutomationTask[]>(AUTOMATION_QUERY_KEY, nextTasks);
+    try {
+      await saveMutation.mutateAsync(nextTasks);
+    } catch {
+      queryClient.invalidateQueries({ queryKey: AUTOMATION_QUERY_KEY });
+    }
   }
 
   async function toggleTask(task: AutomationTask) {
@@ -212,7 +198,7 @@ function AutomationsPage() {
               {tasks.map((task) => (
                 <TaskRow
                   key={task.id}
-                  onDelete={() => void deleteTask(task)}
+                  onDelete={() => setPendingDeleteTask(task)}
                   onEdit={() => openEdit(task)}
                   onToggle={() => void toggleTask(task)}
                   task={task}
@@ -290,6 +276,36 @@ function AutomationsPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        onOpenChange={(open) => !open && setPendingDeleteTask(null)}
+        open={pendingDeleteTask !== null}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>删除自动任务？</DialogTitle>
+            <DialogDescription>
+              确定删除“{pendingDeleteTask?.name}”吗？删除后将停止执行且无法恢复。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              onClick={() => setPendingDeleteTask(null)}
+              type="button"
+              variant="outline"
+            >
+              取消
+            </Button>
+            <Button
+              disabled={saveMutation.isPending}
+              onClick={() => void confirmDeleteTask()}
+              type="button"
+              variant="destructive"
+            >
+              删除任务
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </main>

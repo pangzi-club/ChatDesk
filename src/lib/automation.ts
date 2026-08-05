@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { settingsStore } from "@/lib/settings-store";
 
 export const AUTOMATION_TASKS_STORE_KEY = "automation-tasks";
@@ -40,6 +41,15 @@ export async function saveAutomationTasks(tasks: AutomationTask[]) {
     await settingsStore.save();
   } catch {
     window.localStorage.setItem(AUTOMATION_TASKS_LOCAL_STORAGE_KEY, JSON.stringify(tasks));
+  }
+  await syncAutomationTasks(tasks);
+}
+
+async function syncAutomationTasks(tasks: AutomationTask[]) {
+  try {
+    await invoke("sync_automation_tasks", { tasks });
+  } catch {
+    // The web preview has no Rust scheduler.
   }
 }
 

@@ -9,11 +9,16 @@ import {
   ExternalLink,
   Eye,
   GitCommitHorizontal,
+  KeyRound,
   LayoutDashboard,
   Lock,
   MessageCircle,
   Monitor,
+  Package,
+  Palette,
   PanelLeft,
+  PanelTop,
+  ScrollText,
   Search,
   Settings,
   SquareTerminal,
@@ -50,7 +55,28 @@ const navItems = [
   icon: ComponentType<{ className?: string }>;
 }>;
 
-const commandItems = [...navItems, { to: "/settings", label: "Settings", icon: Settings }];
+const commandItems = [
+  { ...navItems[0], keywords: ["仪表盘", "首页"] },
+  { ...navItems[1], keywords: ["自动化", "任务"] },
+  { ...navItems[2], keywords: ["流量分析", "数据"] },
+  { ...navItems[3], keywords: ["提交", "代码提交"] },
+  { ...navItems[4], label: "Looker", keywords: ["监控"] },
+  { ...navItems[5], keywords: ["文本加密", "加密"] },
+  { ...navItems[6], keywords: ["端口", "开发服务"] },
+  { ...navItems[7], keywords: ["对话", "聊天"] },
+  { ...navItems[8], keywords: ["输入", "表单"] },
+  { to: "/settings", label: "Settings", icon: Settings, keywords: ["设置"] },
+  { to: "/settings/theme", label: "主题", icon: Palette, keywords: ["theme", "外观"] },
+  { to: "/settings/keys", label: "API Keys", icon: KeyRound, keywords: ["设置", "密钥", "api"] },
+  { to: "/settings/models", label: "模型", icon: Package, keywords: ["设置", "models", "model"] },
+  { to: "/settings/tray", label: "托盘", icon: PanelTop, keywords: ["设置", "tray"] },
+  { to: "/settings/logs", label: "系统日志", icon: ScrollText, keywords: ["设置", "日志", "logs"] },
+] satisfies Array<{
+  to: string;
+  label: string;
+  icon: ComponentType<{ className?: string }>;
+  keywords: string[];
+}>;
 type CommandItem = (typeof commandItems)[number];
 
 function AppShell() {
@@ -247,7 +273,11 @@ function CommandMenu({ onClose }: { onClose: () => void }) {
   const matches = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     if (!normalizedQuery) return commandItems;
-    return commandItems.filter((item) => item.label.toLowerCase().includes(normalizedQuery));
+    return commandItems.filter((item) =>
+      [item.label, item.to, ...item.keywords].some((value) =>
+        value.toLowerCase().includes(normalizedQuery),
+      ),
+    );
   }, [query]);
   const hasGoogleSearch = query.trim().length > 0 && matches.length === 0;
   const resultCount = matches.length + (hasGoogleSearch ? 1 : 0);
