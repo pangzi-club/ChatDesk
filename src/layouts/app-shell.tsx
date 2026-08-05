@@ -9,6 +9,7 @@ import {
   ExternalLink,
   Eye,
   GitCommitHorizontal,
+  Image,
   KeyRound,
   LayoutDashboard,
   Lock,
@@ -48,6 +49,7 @@ const navItems = [
   { to: "/encrypt", label: "Encrypt", icon: Lock },
   { to: "/vite-ports", label: "VitePorts", icon: SquareTerminal },
   { to: "/chat", label: "Chat", icon: MessageCircle },
+  { to: "/image-generation", label: "Image", icon: Image },
   { to: "/inputs", label: "Inputs", icon: TextCursorInput },
 ] satisfies Array<{
   to: string;
@@ -65,6 +67,7 @@ const commandItems = [
   { ...navItems[6], keywords: ["端口", "开发服务"] },
   { ...navItems[7], keywords: ["对话", "聊天"] },
   { ...navItems[8], keywords: ["输入", "表单"] },
+  { ...navItems[9], keywords: ["图片", "生成", "image"] },
   { to: "/settings", label: "Settings", icon: Settings, keywords: ["设置"] },
   { to: "/settings/theme", label: "主题", icon: Palette, keywords: ["theme", "外观"] },
   { to: "/settings/keys", label: "API Keys", icon: KeyRound, keywords: ["设置", "密钥", "api"] },

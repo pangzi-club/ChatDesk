@@ -290,11 +290,7 @@ function AutomationsPage() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button
-              onClick={() => setPendingDeleteTask(null)}
-              type="button"
-              variant="outline"
-            >
+            <Button onClick={() => setPendingDeleteTask(null)} type="button" variant="outline">
               取消
             </Button>
             <Button

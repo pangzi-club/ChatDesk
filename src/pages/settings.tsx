@@ -35,6 +35,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { clearCommitApiKey, loadCommitApiKey, saveCommitApiKey } from "@/lib/commit";
 import { clearDataerApiKey, loadDataerApiKey, saveDataerApiKey } from "@/lib/dataer";
+import { clearKieApiKey, loadKieApiKey, saveKieApiKey } from "@/lib/image-generation";
 import { clearLookerApiKey, loadLookerApiKey, saveLookerApiKey } from "@/lib/looker";
 import { loadModels, type ModelConfig, saveModels } from "@/lib/models";
 import {
@@ -56,7 +57,7 @@ function SettingsLayout() {
 
   return (
     <div className="flex min-h-full w-full bg-background">
-      <aside className="flex w-[272px] shrink-0 flex-col border-border border-r bg-card/80 px-4 pt-10 max-md:w-[220px] max-sm:w-[76px] max-sm:px-2">
+      <aside className="sticky top-0 flex h-screen w-[272px] shrink-0 flex-col border-border border-r bg-card/80 px-4 pt-10 max-md:w-[220px] max-sm:w-[76px] max-sm:px-2">
         <Button
           aria-label="返回应用"
           className="mb-5 justify-start gap-2 px-2 text-muted-foreground hover:text-foreground max-sm:justify-center max-sm:px-0"
@@ -418,6 +419,14 @@ const keyConfigs: KeyConfig[] = [
     load: loadCommitApiKey,
     save: saveCommitApiKey,
     clear: clearCommitApiKey,
+  },
+  {
+    title: "KIE Image",
+    keyName: "KIE_API_KEY",
+    description: "用于图片生成页面调用 GPT Image 2。",
+    load: loadKieApiKey,
+    save: saveKieApiKey,
+    clear: clearKieApiKey,
   },
 ];
 

@@ -53,6 +53,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::greet::greet,
+            commands::image::save_image_file,
             commands::system_log::read_system_logs,
             commands::system_log::write_system_logs,
             commands::vite::list_vite_processes,

@@ -7,6 +7,7 @@ import { ChatPage } from "@/pages/chat";
 import { CommitPage } from "@/pages/commit";
 import { DashboardPage } from "@/pages/dashboard";
 import { EncryptPage } from "@/pages/encrypt";
+import { ImageGenerationPage } from "@/pages/image-generation";
 import { InputsPage } from "@/pages/inputs";
 import { LookerDetailPage, LookerPage } from "@/pages/looker";
 import {
@@ -39,6 +40,10 @@ const router = createHashRouter([
       {
         path: "inputs",
         element: <InputsPage />,
+      },
+      {
+        path: "image-generation",
+        element: <ImageGenerationPage />,
       },
       {
         path: "analytics",
