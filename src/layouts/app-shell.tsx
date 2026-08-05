@@ -1,3 +1,4 @@
+import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   ArrowDown,
@@ -51,7 +52,19 @@ type CommandItem = (typeof commandItems)[number];
 function AppShell() {
   const [isCommandMenuOpen, setIsCommandMenuOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
   const isSettings = location.pathname.startsWith("/settings");
+
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+
+    let unlisten: (() => void) | undefined;
+    void listen("tray-dashboard", () => navigate("/dashboard")).then((cleanup) => {
+      unlisten = cleanup;
+    });
+
+    return () => unlisten?.();
+  }, [navigate]);
 
   useEffect(() => {
     function handleGlobalShortcut(event: globalThis.KeyboardEvent) {
