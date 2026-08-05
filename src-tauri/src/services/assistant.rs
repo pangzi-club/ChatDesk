@@ -250,6 +250,21 @@ pub fn messages(app: &AppHandle, id: &str) -> Result<Vec<AssistantMessage>, Stri
     Ok(serde_json::from_str(&data).unwrap_or_default())
 }
 
+pub fn mark_conversation_read(app: &AppHandle, id: &str) -> Result<(), String> {
+    if id.is_empty() || id.contains('/') || id.contains('\\') {
+        return Err("invalid conversation id".to_owned());
+    }
+    let path = conversations_path(app)?;
+    let mut conversations = list_conversations(app)?;
+    if let Some(conversation) = conversations.iter_mut().find(|item| item.id == id) {
+        conversation.unread_count = 0;
+    }
+    atomic_write(
+        &path,
+        &serde_json::to_value(&conversations).map_err(|error| error.to_string())?,
+    )
+}
+
 pub fn delete_conversation(app: &AppHandle, id: &str) -> Result<(), String> {
     if id.is_empty() || id.contains('/') || id.contains('\\') {
         return Err("invalid conversation id".to_owned());

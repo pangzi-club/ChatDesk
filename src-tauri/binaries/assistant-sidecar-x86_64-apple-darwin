@@ -78,7 +78,6 @@ async function main() {
         const openId = data?.sender?.sender_id?.open_id ?? "";
         const text = textFromContent(message?.content);
         if (!conversationId || !text) return;
-        console.error(`[assistant] received conversation=${conversationId} open_id=${openId} text_length=${text.length}`);
         const displayName = await displayNameWithTimeout(openId);
         const timestamp = now();
         emit({

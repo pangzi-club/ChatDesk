@@ -38,6 +38,13 @@ pub fn assistant_get_messages(
     assistant::messages(&app, &conversation_id)
 }
 #[tauri::command]
+pub fn assistant_mark_conversation_read(
+    app: AppHandle,
+    conversation_id: String,
+) -> Result<(), String> {
+    assistant::mark_conversation_read(&app, &conversation_id)
+}
+#[tauri::command]
 pub fn assistant_delete_conversation(
     app: AppHandle,
     conversation_id: String,

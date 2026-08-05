@@ -60,6 +60,7 @@ pub fn run() {
             commands::assistant::assistant_status,
             commands::assistant::assistant_list_conversations,
             commands::assistant::assistant_get_messages,
+            commands::assistant::assistant_mark_conversation_read,
             commands::assistant::assistant_delete_conversation,
             commands::assistant::assistant_send_message,
             commands::greet::greet,

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { MessageCircle, RefreshCw, Send, Settings2, Trash2, WifiOff } from "lucide-react";
+import { MessageCircle, Send, Settings2, Trash2, WifiOff } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -12,18 +12,27 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  type AssistantConnection,
+  type AssistantConversation,
+  deleteAssistantConversation,
   listenAssistantError,
   listenAssistantMessage,
   listenAssistantStatus,
-  deleteAssistantConversation,
   loadAssistantConversations,
+  loadAssistantEnabled,
   loadAssistantMessages,
   loadAssistantStatus,
+  loadFeishuCredentials,
+  markAssistantConversationRead,
+  saveAssistantEnabled,
   sendAssistantMessage,
-  type AssistantConnection,
+  startAssistant,
+  stopAssistant,
 } from "@/lib/assistant";
 
 const statusLabels: Record<string, string> = {
@@ -44,6 +53,10 @@ export function AssistantPage() {
     queryKey: ["assistant-status"],
     queryFn: loadAssistantStatus,
     refetchInterval: 15_000,
+  });
+  const assistantEnabledQuery = useQuery({
+    queryKey: ["assistant-enabled"],
+    queryFn: loadAssistantEnabled,
   });
   const conversationsQuery = useQuery({
     queryKey: ["assistant-conversations"],
@@ -76,6 +89,38 @@ export function AssistantPage() {
       setConversationToDelete(null);
     },
   });
+  const markReadMutation = useMutation({
+    mutationFn: markAssistantConversationRead,
+    onSuccess: (_, conversationId) => {
+      queryClient.setQueryData<AssistantConversation[]>(["assistant-conversations"], (items = []) =>
+        items.map((item) => (item.id === conversationId ? { ...item, unreadCount: 0 } : item)),
+      );
+    },
+  });
+  const connectionMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      let connection: AssistantConnection;
+      if (!enabled) {
+        connection = await stopAssistant();
+      } else {
+        const credentials = await loadFeishuCredentials();
+        if (!credentials.appId || !credentials.appSecret) {
+          throw new Error("missing credentials");
+        }
+        connection = await startAssistant(credentials.appId, credentials.appSecret);
+      }
+      await saveAssistantEnabled(enabled);
+      return connection;
+    },
+    onError: () => setEventError("连接操作失败，请检查飞书配置。"),
+    onSuccess: (connection, enabled) => {
+      queryClient.setQueryData(["assistant-enabled"], enabled);
+      queryClient.setQueryData(["assistant-status"], connection);
+      if (connection.status === "connected") {
+        void conversationsQuery.refetch();
+      }
+    },
+  });
 
   useEffect(() => {
     let cleanups: Array<() => void> = [];
@@ -97,7 +142,11 @@ export function AssistantPage() {
     ]).then((items) => {
       cleanups = items;
     });
-    return () => cleanups.forEach((cleanup) => cleanup());
+    return () => {
+      cleanups.forEach((cleanup) => {
+        cleanup();
+      });
+    };
   }, [queryClient]);
 
   function submit() {
@@ -109,35 +158,61 @@ export function AssistantPage() {
     () => conversations.find((item) => item.id === activeId),
     [activeId, conversations],
   );
+  useEffect(() => {
+    if (activeId && activeConversation?.unreadCount) {
+      markReadMutation.mutate(activeId);
+    }
+  }, [activeConversation?.unreadCount, activeId, markReadMutation.mutate]);
+  const connectionEnabled =
+    status?.status === "connected" || status?.status === "starting"
+      ? true
+      : (assistantEnabledQuery.data ?? false);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex shrink-0 items-center justify-between border-border border-b px-8 pt-12 pb-4">
+      <header className="flex shrink-0 items-center justify-between border-border border-b px-8 pt-12 pb-4 dark:bg-neutral-950/40">
         <div>
           <p className="font-medium text-muted-foreground text-xs uppercase tracking-[0.16em]">
             Assistant
           </p>
           <h1 className="mt-1 font-semibold text-2xl">飞书助理</h1>
         </div>
-        <div className="flex items-center gap-2 text-muted-foreground text-xs">
-          <span
-            className={`inline-flex size-2 rounded-full ${status?.status === "connected" ? "bg-emerald-500" : "bg-amber-500"}`}
+        <div className="flex items-center gap-3 text-muted-foreground text-xs">
+          <span className="flex items-center gap-1.5 whitespace-nowrap">
+            <span
+              className={`inline-flex size-2 rounded-full ${status?.status === "connected" ? "bg-emerald-500" : "bg-amber-500"}`}
+            />
+            <span>
+              {statusLabels[status?.status ?? "stopped"]}
+              {status?.status !== "stopped" && status?.detail ? ` · ${status.detail}` : ""}
+            </span>
+          </span>
+          <Switch
+            aria-label={connectionEnabled ? "断开飞书连接" : "连接飞书"}
+            checked={connectionEnabled}
+            disabled={
+              connectionMutation.isPending ||
+              statusQuery.isPending ||
+              status?.status === "unconfigured"
+            }
+            onCheckedChange={(checked) => {
+              setEventError("");
+              connectionMutation.mutate(checked === true);
+            }}
+            size="sm"
+            title={connectionEnabled ? "断开飞书连接" : "连接飞书"}
+            className="dark:data-[state=checked]:bg-cyan-400 dark:data-[state=unchecked]:bg-neutral-700"
           />
-          {statusLabels[status?.status ?? "stopped"]}
-          {status?.detail ? ` · ${status.detail}` : ""}
           <Button
-            aria-label="刷新助理状态"
-            disabled={statusQuery.isFetching}
-            onClick={() => void Promise.all([statusQuery.refetch(), conversationsQuery.refetch()])}
+            asChild
+            aria-label="打开助理设置"
+            className="size-8"
+            title="打开助理设置"
             size="icon"
             variant="ghost"
           >
-            <RefreshCw className={statusQuery.isFetching ? "size-4 animate-spin" : "size-4"} />
-          </Button>
-          <Button asChild aria-label="打开助理设置" size="sm" variant="outline">
             <Link to="/settings/assistant">
-              <Settings2 className="size-3.5" />
-              设置
+              <Settings2 className="size-4" />
             </Link>
           </Button>
         </div>
@@ -148,7 +223,7 @@ export function AssistantPage() {
         </p>
       ) : null}
       <div className="flex min-h-0 flex-1">
-        <aside className="w-[280px] shrink-0 overflow-y-auto border-border border-r p-3">
+        <aside className="w-[280px] shrink-0 overflow-y-auto border-border border-r bg-card p-3 dark:bg-slate-950/30">
           <p className="px-2 py-2 font-medium text-muted-foreground text-xs">用户会话</p>
           {conversationsQuery.isPending ? (
             <div className="space-y-2 p-2">
@@ -163,7 +238,7 @@ export function AssistantPage() {
           ) : (
             conversations.map((conversation) => (
               <div
-                className={`mb-1 flex items-stretch rounded-md transition-colors ${conversation.id === activeId ? "bg-accent" : "hover:bg-accent/60"}`}
+                className={`mb-1 flex items-stretch rounded-md transition-colors ${conversation.id === activeId ? "bg-accent dark:bg-indigo-500/20 dark:text-indigo-50" : "hover:bg-accent/60 dark:hover:bg-indigo-500/10"}`}
                 key={conversation.id}
               >
                 <button
@@ -174,12 +249,19 @@ export function AssistantPage() {
                   <div className="flex items-center justify-between gap-2">
                     <span className="truncate font-medium text-sm">{conversation.displayName}</span>
                     {conversation.unreadCount > 0 ? (
-                      <span className="rounded-full bg-primary px-1.5 text-[10px] text-primary-foreground">
-                        {conversation.unreadCount}
+                      <span
+                        aria-label={`未读消息 ${conversation.unreadCount} 条`}
+                        className="inline-flex min-w-4 shrink-0 items-center justify-center rounded-full bg-primary/12 px-1.5 py-0.5 font-medium text-[10px] text-primary dark:bg-cyan-400/20 dark:text-cyan-200"
+                        role="status"
+                        title={`未读消息 ${conversation.unreadCount} 条`}
+                      >
+                        {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
                       </span>
                     ) : null}
                   </div>
-                  <p className="mt-1 truncate text-muted-foreground text-xs">{conversation.lastMessage}</p>
+                  <p className="mt-1 truncate text-muted-foreground text-xs">
+                    {conversation.lastMessage}
+                  </p>
                 </button>
                 <Button
                   aria-label={`删除会话 ${conversation.displayName}`}
@@ -196,7 +278,7 @@ export function AssistantPage() {
             ))
           )}
         </aside>
-        <section className="flex min-w-0 flex-1 flex-col">
+        <section className="flex min-w-0 flex-1 flex-col dark:bg-neutral-950/20">
           {!activeId ? (
             <div className="flex flex-1 flex-col items-center justify-center text-muted-foreground">
               <WifiOff className="size-8" />
@@ -205,7 +287,7 @@ export function AssistantPage() {
             </div>
           ) : (
             <>
-              <div className="border-border border-b px-6 py-4">
+              <div className="border-border border-b px-6 py-4 dark:bg-neutral-950/30">
                 <h2 className="font-medium text-sm">{activeConversation?.displayName}</h2>
                 <p className="mt-1 font-mono text-muted-foreground text-[11px]">
                   {activeConversation?.openId}
@@ -220,11 +302,21 @@ export function AssistantPage() {
                 ) : (
                   (messagesQuery.data ?? []).map((message) => (
                     <div
-                      className={`flex ${message.direction === "outbound" ? "justify-end" : "justify-start"}`}
+                      className={`flex items-start gap-2 ${message.direction === "outbound" ? "justify-end" : "justify-start"}`}
                       key={message.id}
                     >
+                      {message.direction === "inbound" ? (
+                        <Avatar
+                          aria-label={`${activeConversation?.displayName ?? "用户"}头像`}
+                          size="sm"
+                        >
+                          <AvatarFallback className="dark:bg-emerald-500/20 dark:text-emerald-200">
+                            {activeConversation?.displayName?.slice(0, 1) ?? "用"}
+                          </AvatarFallback>
+                        </Avatar>
+                      ) : null}
                       <div
-                        className={`max-w-[72%] rounded-lg px-3 py-2 text-sm ${message.direction === "outbound" ? "bg-primary text-primary-foreground" : "bg-accent"}`}
+                        className={`max-w-[72%] rounded-lg px-3 py-2 text-sm ${message.direction === "outbound" ? "bg-primary text-primary-foreground dark:bg-cyan-400 dark:text-cyan-950" : "bg-accent dark:bg-emerald-950/50 dark:text-emerald-50"}`}
                       >
                         <p className="whitespace-pre-wrap">{message.text}</p>
                         <time className="mt-1 block text-[10px] opacity-60">

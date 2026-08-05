@@ -36,6 +36,38 @@ export type AssistantMessageEvent = {
 
 export const FEISHU_APP_ID_KEY = "FEISHU_APP_ID";
 export const FEISHU_APP_SECRET_KEY = "FEISHU_APP_SECRET";
+export const ASSISTANT_ENABLED_KEY = "ASSISTANT_ENABLED";
+export const ASSISTANT_NOTIFICATIONS_KEY = "ASSISTANT_NOTIFICATIONS";
+
+export async function loadAssistantEnabled() {
+  return (await settingsStore.get<boolean>(ASSISTANT_ENABLED_KEY)) ?? true;
+}
+
+export async function saveAssistantEnabled(enabled: boolean) {
+  await settingsStore.set(ASSISTANT_ENABLED_KEY, enabled);
+  await settingsStore.save();
+}
+
+export async function loadAssistantNotificationsEnabled() {
+  return (await settingsStore.get<boolean>(ASSISTANT_NOTIFICATIONS_KEY)) ?? true;
+}
+
+export async function saveAssistantNotificationsEnabled(enabled: boolean) {
+  await settingsStore.set(ASSISTANT_NOTIFICATIONS_KEY, enabled);
+  await settingsStore.save();
+}
+
+export async function requestAssistantNotificationPermission() {
+  if (!("Notification" in globalThis)) return false;
+  if (Notification.permission === "granted") return true;
+  if (Notification.permission === "denied") return false;
+  return (await Notification.requestPermission()) === "granted";
+}
+
+export function showAssistantNotification(title: string, body: string) {
+  if (!("Notification" in globalThis) || Notification.permission !== "granted") return;
+  new Notification(title, { body });
+}
 
 export async function loadFeishuCredentials() {
   const [appId, appSecret] = await Promise.all([
@@ -79,6 +111,10 @@ export async function loadAssistantConversations() {
 
 export async function loadAssistantMessages(conversationId: string) {
   return invoke<AssistantMessage[]>("assistant_get_messages", { conversationId });
+}
+
+export async function markAssistantConversationRead(conversationId: string) {
+  return invoke<void>("assistant_mark_conversation_read", { conversationId });
 }
 
 export async function deleteAssistantConversation(conversationId: string) {

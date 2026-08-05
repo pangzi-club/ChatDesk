@@ -34,6 +34,22 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import {
+  type AssistantConnection,
+  clearFeishuCredentials,
+  listenAssistantError,
+  listenAssistantStatus,
+  loadAssistantNotificationsEnabled,
+  loadAssistantStatus,
+  loadFeishuCredentials,
+  requestAssistantNotificationPermission,
+  restartAssistant,
+  saveAssistantEnabled,
+  saveAssistantNotificationsEnabled,
+  saveFeishuCredentials,
+  startAssistant,
+  stopAssistant,
+} from "@/lib/assistant";
 import { clearCommitApiKey, loadCommitApiKey, saveCommitApiKey } from "@/lib/commit";
 import { clearDataerApiKey, loadDataerApiKey, saveDataerApiKey } from "@/lib/dataer";
 import { clearKieApiKey, loadKieApiKey, saveKieApiKey } from "@/lib/image-generation";
@@ -46,18 +62,6 @@ import {
   type SystemLogLevel,
 } from "@/lib/system-log";
 import { loadTrayEnabled, saveTrayEnabled } from "@/lib/tray";
-import {
-  clearFeishuCredentials,
-  listenAssistantError,
-  listenAssistantStatus,
-  loadAssistantStatus,
-  loadFeishuCredentials,
-  restartAssistant,
-  saveFeishuCredentials,
-  startAssistant,
-  stopAssistant,
-  type AssistantConnection,
-} from "@/lib/assistant";
 
 const themes: Array<{ value: Theme; label: string; description: string }> = [
   { value: "system", label: "跟随系统", description: "根据操作系统自动切换" },
@@ -401,22 +405,29 @@ function TraySettingsPage() {
 }
 
 function AssistantSettingsPage() {
+  const navigate = useNavigate();
   const [appId, setAppId] = useState("");
   const [appSecret, setAppSecret] = useState("");
   const [hasSecret, setHasSecret] = useState(false);
   const [status, setStatus] = useState<AssistantConnection | null>(null);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [notice, setNotice] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     let active = true;
     let cleanups: Array<() => void> = [];
-    void Promise.all([loadFeishuCredentials(), loadAssistantStatus()])
-      .then(([credentials, connection]) => {
+    void Promise.all([
+      loadFeishuCredentials(),
+      loadAssistantStatus(),
+      loadAssistantNotificationsEnabled(),
+    ])
+      .then(([credentials, connection, notifications]) => {
         if (!active) return;
         setAppId(credentials.appId);
         setHasSecret(Boolean(credentials.appSecret));
         setStatus(connection);
+        setNotificationsEnabled(notifications);
       })
       .catch(() => {
         if (active) setNotice("读取助理设置失败，请重试。");
@@ -433,7 +444,9 @@ function AssistantSettingsPage() {
     });
     return () => {
       active = false;
-      cleanups.forEach((cleanup) => cleanup());
+      cleanups.forEach((cleanup) => {
+        cleanup();
+      });
     };
   }, []);
 
@@ -451,6 +464,7 @@ function AssistantSettingsPage() {
     try {
       await saveFeishuCredentials(nextAppId, nextSecret);
       setStatus(await restartAssistant(nextAppId, nextSecret));
+      await saveAssistantEnabled(true);
       setHasSecret(true);
       setAppSecret("");
       setNotice("已保存并重新连接飞书。");
@@ -470,6 +484,7 @@ function AssistantSettingsPage() {
       setAppSecret("");
       setHasSecret(false);
       setStatus(await stopAssistant());
+      await saveAssistantEnabled(false);
       setNotice("已清除飞书凭据并停止连接。");
     } catch {
       setNotice("清除失败，请重试。");
@@ -491,6 +506,24 @@ function AssistantSettingsPage() {
     }
   }
 
+  async function handleNotificationChange(enabled: boolean) {
+    setIsSaving(true);
+    setNotice("");
+    try {
+      if (enabled && !(await requestAssistantNotificationPermission())) {
+        setNotificationsEnabled(false);
+        setNotice("当前环境未授予系统通知权限。");
+        return;
+      }
+      await saveAssistantNotificationsEnabled(enabled);
+      setNotificationsEnabled(enabled);
+    } catch {
+      setNotice("保存通知设置失败，请重试。");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   const statusLabel =
     {
       unconfigured: "未配置",
@@ -501,6 +534,15 @@ function AssistantSettingsPage() {
     }[status?.status ?? "stopped"] ?? status?.status;
   return (
     <>
+      <Button
+        className="-ml-2 mb-4 h-8 px-2 text-muted-foreground hover:text-foreground"
+        onClick={() => navigate("/assistant")}
+        type="button"
+        variant="ghost"
+      >
+        <ArrowLeft className="size-4" />
+        返回助理
+      </Button>
       <SettingsHeading
         eyebrow="Connections"
         title="助理"
@@ -592,6 +634,26 @@ function AssistantSettingsPage() {
             {notice ? <p className="mt-3 text-muted-foreground text-xs">{notice}</p> : null}
           </div>
         </div>
+      </section>
+      <section className="mt-3 rounded-lg border border-border bg-card px-5 py-4">
+        <label
+          className="flex cursor-pointer items-center justify-between gap-4"
+          htmlFor="assistant-notifications"
+        >
+          <span>
+            <span className="block font-medium text-sm">新消息系统通知</span>
+            <span className="mt-1 block text-muted-foreground text-xs">
+              不在助理页面时，收到飞书消息显示系统通知。
+            </span>
+          </span>
+          <Switch
+            aria-label="新消息系统通知"
+            checked={notificationsEnabled}
+            disabled={isSaving}
+            id="assistant-notifications"
+            onCheckedChange={(checked) => void handleNotificationChange(checked === true)}
+          />
+        </label>
       </section>
     </>
   );
