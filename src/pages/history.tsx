@@ -1,7 +1,7 @@
 import { code } from "@streamdown/code";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import type { UIMessage } from "ai";
+import { type UIMessage, getToolName, isToolUIPart } from "ai";
 import {
   ArrowLeft,
   ChartColumn,
@@ -20,6 +20,7 @@ import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
 
+import { ChatToolCallCard } from "@/components/chat-tool-call-card";
 import { HistoryImportDialog } from "@/components/history-import-dialog";
 import {
   AlertDialog,
@@ -39,6 +40,7 @@ import {
   type ArchiveIndexItem,
   type ArchiveMessage,
   type ArchiveSource,
+  type ArchiveToolCall,
   deleteArchiveSession,
   loadArchiveIndex,
   loadArchiveSession,
@@ -422,7 +424,12 @@ function HistoryDetailPage() {
         const messages = session.messages
           .filter((message) => message.role === "user" || message.role === "assistant")
           .map(uiMessageToArchiveMessage)
-          .filter((message) => message.text.trim().length > 0 || (message.assets?.length ?? 0) > 0);
+          .filter(
+            (message) =>
+              message.text.trim().length > 0 ||
+              (message.assets?.length ?? 0) > 0 ||
+              (message.toolCalls?.length ?? 0) > 0,
+          );
         return {
           source: "native",
           id: session.id,
@@ -614,10 +621,21 @@ function uiMessageToArchiveMessage(message: UIMessage): ArchiveMessage {
     .map((part) => part.text)
     .join("\n")
     .trim();
+  const toolCalls = message.parts.filter(isToolUIPart).map((part): ArchiveToolCall => {
+    return {
+      id: part.toolCallId,
+      toolName: getToolName(part),
+      state: part.state,
+      input: "input" in part ? part.input : undefined,
+      output: "output" in part ? part.output : undefined,
+      errorText: "errorText" in part ? part.errorText : undefined,
+    };
+  });
   return {
     id: message.id,
     role: message.role === "user" ? "user" : "assistant",
     text,
+    ...(toolCalls.length > 0 ? { toolCalls } : {}),
   };
 }
 
@@ -626,6 +644,7 @@ function ArchiveMessageBubble({ message }: { message: ArchiveMessage }) {
   const markdown = useMemo(() => prepareArchiveMarkdown(message.text), [message.text]);
   const collapsible = useMemo(() => shouldCollapseMessage(message.text), [message.text]);
   const [expanded, setExpanded] = useState(false);
+  const toolCalls = message.toolCalls ?? [];
 
   return (
     <article className={`flex w-full ${isUser ? "justify-end" : "justify-start"}`}>
@@ -644,6 +663,21 @@ function ArchiveMessageBubble({ message }: { message: ArchiveMessage }) {
             </span>
           ) : null}
         </div>
+
+        {!isUser && toolCalls.length > 0 ? (
+          <div className="chat-tool-calls mb-3">
+            {toolCalls.map((call) => (
+              <ChatToolCallCard
+                key={call.id}
+                toolName={call.toolName}
+                state={call.state}
+                input={call.input}
+                output={call.output}
+                errorText={call.errorText}
+              />
+            ))}
+          </div>
+        ) : null}
 
         {message.text ? (
           <div className="relative">

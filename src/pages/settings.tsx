@@ -399,7 +399,7 @@ function ToolsSettingsPage() {
       <SettingsHeading
         eyebrow="Chat"
         title="Tools"
-        description="启用 Analytics、Commit、Looker 等工具包后，在 Chat 中用自然语言提问即可自动调用。"
+        description="启用 Analytics、Commit、Looker、Web Search 等工具包后，在 Chat 中用自然语言提问即可自动调用。"
       />
       <section className="rounded-lg border border-border bg-card px-5 py-5">
         {toolsQuery.isPending ? (

@@ -23,6 +23,15 @@ export type ArchiveTokenUsage = {
   reasoningOutputTokens?: number;
 };
 
+export type ArchiveToolCall = {
+  id: string;
+  toolName: string;
+  state: string;
+  input?: unknown;
+  output?: unknown;
+  errorText?: string;
+};
+
 export type ArchiveMessage = {
   id: string;
   role: "user" | "assistant";
@@ -30,6 +39,7 @@ export type ArchiveMessage = {
   createdAt?: string;
   assets?: ArchiveAsset[];
   usage?: ArchiveTokenUsage;
+  toolCalls?: ArchiveToolCall[];
 };
 
 export type ArchiveSession = {
@@ -142,6 +152,17 @@ function isArchiveTokenUsage(value: unknown): value is ArchiveTokenUsage {
   return keys.every((key) => usage[key] === undefined || typeof usage[key] === "number");
 }
 
+function isArchiveToolCall(value: unknown): value is ArchiveToolCall {
+  if (!value || typeof value !== "object") return false;
+  const call = value as Partial<ArchiveToolCall>;
+  return (
+    typeof call.id === "string" &&
+    typeof call.toolName === "string" &&
+    typeof call.state === "string" &&
+    (call.errorText === undefined || typeof call.errorText === "string")
+  );
+}
+
 function isArchiveMessage(value: unknown): value is ArchiveMessage {
   if (!value || typeof value !== "object") return false;
   const message = value as Partial<ArchiveMessage>;
@@ -151,7 +172,9 @@ function isArchiveMessage(value: unknown): value is ArchiveMessage {
     typeof message.text === "string" &&
     (message.assets === undefined ||
       (Array.isArray(message.assets) && message.assets.every(isArchiveAsset))) &&
-    (message.usage === undefined || isArchiveTokenUsage(message.usage))
+    (message.usage === undefined || isArchiveTokenUsage(message.usage)) &&
+    (message.toolCalls === undefined ||
+      (Array.isArray(message.toolCalls) && message.toolCalls.every(isArchiveToolCall)))
   );
 }
 

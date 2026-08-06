@@ -238,13 +238,18 @@ function ChatPage() {
 
   useEffect(() => {
     let active = true;
-    void resolveAvailablePacks(chatTools, selectedModel?.supportsTools === true).then((packs) => {
+    void resolveAvailablePacks(
+      chatTools,
+      selectedModel
+        ? { supportsTools: selectedModel.supportsTools, responsive: selectedModel.responsive }
+        : undefined,
+    ).then((packs) => {
       if (active) setAvailablePacks(packs);
     });
     return () => {
       active = false;
     };
-  }, [chatTools, selectedModel?.supportsTools]);
+  }, [chatTools, selectedModel?.supportsTools, selectedModel?.responsive]);
 
   useEffect(() => {
     if (models.length > 0 && !models.some((model) => model.id === selectedModelId)) {

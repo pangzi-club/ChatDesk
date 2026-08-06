@@ -1,6 +1,6 @@
 import { settingsStore } from "@/lib/settings-store";
 
-export type ChatToolPackId = "analytics" | "commit" | "looker";
+export type ChatToolPackId = "analytics" | "commit" | "looker" | "web_search";
 
 export type ChatToolsSettings = Record<ChatToolPackId, boolean>;
 
@@ -8,6 +8,7 @@ export const DEFAULT_CHAT_TOOLS: ChatToolsSettings = {
   analytics: false,
   commit: false,
   looker: false,
+  web_search: false,
 };
 
 export type ChatToolPackMeta = {
@@ -15,8 +16,11 @@ export type ChatToolPackMeta = {
   label: string;
   description: string;
   examples: string[];
-  keyLabel: string;
-  keysPath: "/settings/keys";
+  /** 业务 API Key 名称；缺省表示不需要额外 Key（如 provider 内置工具）。 */
+  keyLabel?: string;
+  keysPath?: "/settings/keys";
+  /** 需要模型开启 Responses API（如 OpenAI web_search）。 */
+  requiresResponsive?: boolean;
 };
 
 export const CHAT_TOOL_PACKS: ChatToolPackMeta[] = [
@@ -44,13 +48,26 @@ export const CHAT_TOOL_PACKS: ChatToolPackMeta[] = [
     keyLabel: "Looker API Key",
     keysPath: "/settings/keys",
   },
+  {
+    id: "web_search",
+    label: "Web Search",
+    description: "通过 Responses API 联网搜索近期公开信息（OpenAI web_search）。",
+    examples: [
+      "上周旧金山发生了什么？",
+      "搜索今天 AI 领域的重要新闻",
+      "查一下这个库的最新 release",
+    ],
+    requiresResponsive: true,
+  },
 ];
 
 const CHAT_TOOLS_STORE_KEY = "chatTools";
 const CHAT_TOOLS_STORAGE_KEY = "m-dashboard-chat-tools-v1";
 
 function isChatToolPackId(value: unknown): value is ChatToolPackId {
-  return value === "analytics" || value === "commit" || value === "looker";
+  return (
+    value === "analytics" || value === "commit" || value === "looker" || value === "web_search"
+  );
 }
 
 function normalizeChatTools(value: unknown): ChatToolsSettings {
@@ -62,6 +79,7 @@ function normalizeChatTools(value: unknown): ChatToolsSettings {
     analytics: record.analytics === true,
     commit: record.commit === true,
     looker: record.looker === true,
+    web_search: record.web_search === true,
   };
 }
 

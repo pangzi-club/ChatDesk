@@ -16,19 +16,22 @@ type ChatToolsSettingsProps = {
   settings: ChatToolsSettingsValue;
   onSettingsChange: (settings: ChatToolsSettingsValue) => void;
   modelSupportsTools?: boolean;
+  modelResponsive?: boolean;
   idPrefix?: string;
 };
 
 async function loadPackHasKey(pack: ChatToolPackId): Promise<boolean> {
   if (pack === "analytics") return Boolean((await loadDataerApiKey()).trim());
   if (pack === "commit") return Boolean((await loadCommitApiKey()).trim());
-  return Boolean((await loadLookerApiKey()).trim());
+  if (pack === "looker") return Boolean((await loadLookerApiKey()).trim());
+  return true;
 }
 
 export function ChatToolsSettings({
   settings,
   onSettingsChange,
   modelSupportsTools = true,
+  modelResponsive,
   idPrefix = "chat-tools",
 }: ChatToolsSettingsProps) {
   const keyQueries = useQueries({
@@ -60,8 +63,9 @@ export function ChatToolsSettings({
 
       <div className="divide-y divide-border rounded-lg border border-border">
         {CHAT_TOOL_PACKS.map((pack, index) => {
-          const hasKey = keyQueries[index]?.data === true;
+          const hasKey = !pack.keyLabel || keyQueries[index]?.data === true;
           const switchId = `${idPrefix}-${pack.id}`;
+          const needsResponsive = pack.requiresResponsive === true;
           return (
             <div className="space-y-3 px-4 py-4" key={pack.id}>
               <div className="flex items-start justify-between gap-4">
@@ -79,14 +83,33 @@ export function ChatToolsSettings({
                 />
               </div>
 
-              {settings[pack.id] && !hasKey ? (
+              {settings[pack.id] && pack.keyLabel && !hasKey ? (
                 <p className="text-amber-700 text-xs dark:text-amber-300">
                   未配置 {pack.keyLabel}，当前不会对模型启用。请先到{" "}
-                  <Link className="underline underline-offset-2" to={pack.keysPath}>
+                  <Link
+                    className="underline underline-offset-2"
+                    to={pack.keysPath ?? "/settings/keys"}
+                  >
                     API Keys
                   </Link>{" "}
                   配置。
                 </p>
+              ) : null}
+
+              {settings[pack.id] && needsResponsive ? (
+                modelResponsive === false ? (
+                  <p className="text-amber-700 text-xs dark:text-amber-300">
+                    需要模型开启 Responses API，当前不会对模型启用。请到{" "}
+                    <Link className="underline underline-offset-2" to="/settings/models">
+                      模型设置
+                    </Link>{" "}
+                    中打开「Responses」。
+                  </p>
+                ) : (
+                  <p className="text-muted-foreground text-xs">
+                    仅在模型开启 Responses API 时注册（OpenAI 兼容 web_search）。
+                  </p>
+                )
               ) : null}
 
               <div className="space-y-1.5">

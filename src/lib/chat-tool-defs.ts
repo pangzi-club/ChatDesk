@@ -1,3 +1,4 @@
+import { openai } from "@ai-sdk/openai";
 import { type ToolSet, tool } from "ai";
 import { z } from "zod";
 
@@ -19,6 +20,7 @@ import type { ModelConfig } from "@/lib/models";
 
 const INTERVAL_SCHEMA = z.enum(["today", "yesterday", "7d", "30d", "90d"]);
 const REPORT_CONCURRENCY = 4;
+const BUSINESS_PACKS = new Set<ChatToolPackId>(["analytics", "commit", "looker"]);
 
 export const CHAT_TOOL_DISPLAY_NAMES: Record<string, string> = {
   list_analytics_sites: "Analytics · 站点列表",
@@ -28,6 +30,7 @@ export const CHAT_TOOL_DISPLAY_NAMES: Record<string, string> = {
   list_recent_commits: "Commit · 最近提交",
   list_monitors: "Looker · 监控列表",
   read_monitor: "Looker · 监控详情",
+  web_search: "Web Search · 联网搜索",
 };
 
 export type ResolveActiveToolsResult = {
@@ -238,16 +241,37 @@ function createLookerTools(apiKey: string): ToolSet {
 async function loadPackApiKey(pack: ChatToolPackId): Promise<string> {
   if (pack === "analytics") return (await loadDataerApiKey()).trim();
   if (pack === "commit") return (await loadCommitApiKey()).trim();
-  return (await loadLookerApiKey()).trim();
+  if (pack === "looker") return (await loadLookerApiKey()).trim();
+  return "";
 }
 
 function createPackTools(pack: ChatToolPackId, apiKey: string): ToolSet {
   if (pack === "analytics") return createAnalyticsTools(apiKey);
   if (pack === "commit") return createCommitTools(apiKey);
-  return createLookerTools(apiKey);
+  if (pack === "looker") return createLookerTools(apiKey);
+  return {};
 }
 
-/** 按启用 ∩ API Key ∩ 模型能力，动态组装当前可用 tools。 */
+function createWebSearchTools(): ToolSet {
+  // Provider-executed tools are accepted by streamText, but ToolSet's
+  // intersection with Pick<..., 'execute' | ...> is too strict for them.
+  return {
+    web_search: openai.tools.webSearch({}) as unknown as ToolSet[string],
+  };
+}
+
+function canActivatePack(
+  pack: (typeof CHAT_TOOL_PACKS)[number],
+  model: Pick<ModelConfig, "supportsTools" | "responsive">,
+  apiKey: string,
+): boolean {
+  if (!model.supportsTools) return false;
+  if (pack.requiresResponsive && !model.responsive) return false;
+  if (pack.keyLabel && !apiKey) return false;
+  return true;
+}
+
+/** 按启用 ∩ API Key / Responses ∩ 模型能力，动态组装当前可用 tools。 */
 export async function resolveActiveTools(
   enabled: ChatToolsSettings,
   model: ModelConfig | undefined,
@@ -261,9 +285,13 @@ export async function resolveActiveTools(
 
   for (const pack of CHAT_TOOL_PACKS) {
     if (!enabled[pack.id]) continue;
-    const apiKey = await loadPackApiKey(pack.id);
-    if (!apiKey) continue;
-    Object.assign(tools, createPackTools(pack.id, apiKey));
+    const apiKey = BUSINESS_PACKS.has(pack.id) ? await loadPackApiKey(pack.id) : "";
+    if (!canActivatePack(pack, model, apiKey)) continue;
+    if (pack.id === "web_search") {
+      Object.assign(tools, createWebSearchTools());
+    } else {
+      Object.assign(tools, createPackTools(pack.id, apiKey));
+    }
     activePacks.push(pack.id);
   }
 
@@ -274,17 +302,17 @@ export async function resolveActiveTools(
   };
 }
 
-/** 供 UI 判断哪些包「对模型实际可用」（启用且有 Key）。 */
+/** 供 UI 判断哪些包「对模型实际可用」（启用且满足 Key / Responses 等前置条件）。 */
 export async function resolveAvailablePacks(
   enabled: ChatToolsSettings,
-  modelSupportsTools: boolean,
+  model: Pick<ModelConfig, "supportsTools" | "responsive"> | undefined,
 ): Promise<ChatToolPackId[]> {
-  if (!modelSupportsTools) return [];
+  if (!model?.supportsTools) return [];
   const available: ChatToolPackId[] = [];
   for (const pack of CHAT_TOOL_PACKS) {
     if (!enabled[pack.id]) continue;
-    const apiKey = await loadPackApiKey(pack.id);
-    if (apiKey) available.push(pack.id);
+    const apiKey = BUSINESS_PACKS.has(pack.id) ? await loadPackApiKey(pack.id) : "";
+    if (canActivatePack(pack, model, apiKey)) available.push(pack.id);
   }
   return available;
 }
@@ -293,8 +321,8 @@ export function formatToolsSystemHint(activePacks: ChatToolPackId[]): string {
   if (activePacks.length === 0) return "";
 
   const lines = [
-    "你可以使用下列工具查询用户工作区数据。需要事实数据时主动调用工具，不要编造。",
-    "用中文简洁总结工具结果；需要多步时先列表再取详情。",
+    "你可以使用下列工具获取信息。需要事实或实时数据时主动调用工具，不要编造。",
+    "用中文简洁总结工具结果；需要多步时先列表再取详情；联网搜索请注明来源要点。",
     "当前可用工具包：",
   ];
 
