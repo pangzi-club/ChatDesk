@@ -1386,3 +1386,42 @@
     font-size: 14px;
   }
 }
+
+.history-message-user {
+  background: color-mix(in srgb, var(--muted) 55%, var(--card));
+}
+
+.history-message-collapsed {
+  max-height: 12.5rem;
+  overflow: hidden;
+}
+
+.history-message-fade {
+  pointer-events: none;
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 4.5rem;
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--card) 96%, transparent) 20%,
+    transparent
+  );
+}
+
+.history-message-user .history-message-fade {
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--muted) 55%, var(--card)) 20%,
+    transparent
+  );
+}
+
+.history-message-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.history-message-text [data-streamdown="code-block"] {
+  max-width: 100%;
+}

@@ -6,6 +6,7 @@ import { AutomationsPage } from "@/pages/automations";
 import { ChatPage } from "@/pages/chat";
 import { CommitPage } from "@/pages/commit";
 import { DashboardPage } from "@/pages/dashboard";
+import { HistoryDetailPage, HistoryPage } from "@/pages/history";
 import { DevToolsLayout, DevToolsPage } from "@/pages/dev-tools";
 import { EncryptPage } from "@/pages/encrypt";
 import { ImageGenerationPage } from "@/pages/image-generation";
@@ -40,6 +41,14 @@ const router = createHashRouter([
       {
         path: "chat",
         element: <ChatPage />,
+      },
+      {
+        path: "history",
+        element: <HistoryPage />,
+      },
+      {
+        path: "history/:source/:id",
+        element: <HistoryDetailPage />,
       },
       {
         path: "image-generation",

@@ -11,6 +11,7 @@ import {
   Eye,
   FolderGit2,
   GitCommitHorizontal,
+  History,
   Image,
   KeyRound,
   LayoutDashboard,
@@ -47,6 +48,7 @@ import { applyTrayEnabled, loadTrayEnabled } from "@/lib/tray";
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/chat", label: "Chat", icon: MessageCircle },
+  { to: "/history", label: "History", icon: History },
   { to: "/automations", label: "Automations", icon: Clock3 },
   { to: "/analytics", label: "Analytics", icon: ChartColumn },
   { to: "/commit", label: "Commit", icon: GitCommitHorizontal },
@@ -62,6 +64,12 @@ const navItems = [
 const commandItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, keywords: ["仪表盘", "首页"] },
   { to: "/chat", label: "Chat", icon: MessageCircle, keywords: ["对话", "聊天"] },
+  {
+    to: "/history",
+    label: "History",
+    icon: History,
+    keywords: ["历史", "对话历史", "归档", "导入", "codex", "claude"],
+  },
   { to: "/automations", label: "Automations", icon: Clock3, keywords: ["自动化", "任务"] },
   { to: "/analytics", label: "Analytics", icon: ChartColumn, keywords: ["流量分析", "数据"] },
   { to: "/commit", label: "Commit", icon: GitCommitHorizontal, keywords: ["提交", "代码提交"] },

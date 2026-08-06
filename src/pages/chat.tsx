@@ -38,7 +38,7 @@ import {
   User,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import { ChatMemoryDialog } from "@/components/chat-memory-dialog";
 import { ChatSettingsDialog } from "@/components/chat-settings-dialog";
@@ -133,6 +133,8 @@ const demoModels: ModelConfig[] = [
 
 function ChatPage() {
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedSessionId = searchParams.get("sessionId");
   const { data: chatIndex = [], isLoading: isChatHistoryLoading } = useQuery({
     queryKey: ["chat-index"],
     queryFn: loadChatIndex,
@@ -245,7 +247,40 @@ function ChatPage() {
   }, [models, selectedModelId]);
 
   useEffect(() => {
-    if (initializedHistoryRef.current || isChatHistoryLoading) return;
+    if (isChatHistoryLoading) return;
+
+    if (requestedSessionId) {
+      initializedHistoryRef.current = true;
+      const clearRequestedSession = () => {
+        setSearchParams(
+          (prev) => {
+            const next = new URLSearchParams(prev);
+            next.delete("sessionId");
+            return next;
+          },
+          { replace: true },
+        );
+      };
+      if (requestedSessionId === sessionId) {
+        clearRequestedSession();
+        return;
+      }
+      void loadChatSession(requestedSessionId).then((session) => {
+        if (!session) {
+          clearRequestedSession();
+          return;
+        }
+        stop();
+        savedFingerprintRef.current = "";
+        extractedFingerprintRef.current = "";
+        pendingSessionRef.current = session;
+        setSessionId(session.id);
+        clearRequestedSession();
+      });
+      return;
+    }
+
+    if (initializedHistoryRef.current) return;
     initializedHistoryRef.current = true;
     const latest = chatIndex[0];
     if (!latest) return;
@@ -254,7 +289,7 @@ function ChatPage() {
       pendingSessionRef.current = session;
       setSessionId(session.id);
     });
-  }, [chatIndex, isChatHistoryLoading]);
+  }, [chatIndex, isChatHistoryLoading, requestedSessionId, sessionId, setSearchParams, stop]);
 
   useEffect(() => {
     const session = pendingSessionRef.current;
