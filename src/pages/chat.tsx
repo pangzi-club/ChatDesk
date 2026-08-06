@@ -1,8 +1,16 @@
+import { createOpenAI } from "@ai-sdk/openai";
 import { useChat } from "@ai-sdk/react";
 import { code } from "@streamdown/code";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
-import type { ChatTransport, UIMessage, UIMessageChunk } from "ai";
+import {
+  type ChatTransport,
+  convertToModelMessages,
+  streamText,
+  toUIMessageStream,
+  type UIMessage,
+  type UIMessageChunk,
+} from "ai";
 import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
 import {
@@ -76,6 +84,7 @@ const demoModels: ModelConfig[] = [
     supportsImages: false,
     supportsReasoning: true,
     customProtocol: false,
+    responsive: false,
     isDefault: true,
   },
   {
@@ -88,6 +97,7 @@ const demoModels: ModelConfig[] = [
     supportsImages: false,
     supportsReasoning: false,
     customProtocol: false,
+    responsive: false,
     isDefault: false,
   },
 ];
@@ -427,7 +437,7 @@ function ChatPage() {
                 >
                   {models.map((model) => (
                     <option key={model.id} value={model.id}>
-                      {model.name}
+                      {formatModelLabel(model)}
                     </option>
                   ))}
                 </select>
@@ -541,11 +551,18 @@ function makeId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function formatModelLabel(model: ModelConfig) {
+  return model.responsive ? `${model.name} · Responses` : model.name;
+}
+
 function createModelTransport(model: ModelConfig | undefined): ChatTransport<UIMessage> {
   return {
     async sendMessages({ messages, abortSignal }) {
       if (!model || model.baseUrl.startsWith("local://")) {
         throw new Error("请先在设置中配置一个真实的模型 API。");
+      }
+      if (model.responsive) {
+        return sendResponsiveMessages(model, messages, abortSignal);
       }
       const response = await resolveFetch()(model.baseUrl, {
         method: "POST",
@@ -575,6 +592,33 @@ function createModelTransport(model: ModelConfig | undefined): ChatTransport<UIM
       return null;
     },
   };
+}
+
+async function sendResponsiveMessages(
+  model: ModelConfig,
+  messages: UIMessage[],
+  abortSignal: AbortSignal | undefined,
+): Promise<ReadableStream<UIMessageChunk>> {
+  const provider = createOpenAI({
+    apiKey: model.apiKey,
+    baseURL: resolveOpenAICompatibleBaseURL(model.baseUrl),
+    fetch: resolveFetch(),
+  });
+  const result = streamText({
+    model: provider.responses(resolveModelId(model)),
+    messages: await convertToModelMessages(messages),
+    abortSignal,
+  });
+  return toUIMessageStream({ stream: result.stream });
+}
+
+/** Strip Chat Completions / Responses path suffixes so AI SDK can append `/responses`. */
+function resolveOpenAICompatibleBaseURL(baseUrl: string): string {
+  return baseUrl
+    .trim()
+    .replace(/\/+$/, "")
+    .replace(/\/chat\/completions$/i, "")
+    .replace(/\/responses$/i, "");
 }
 
 function resolveModelId(model: ModelConfig): string {

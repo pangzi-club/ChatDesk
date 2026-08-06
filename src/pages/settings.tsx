@@ -557,10 +557,18 @@ const emptyModel: Omit<ModelConfig, "id"> = {
   supportsImages: false,
   supportsReasoning: false,
   customProtocol: false,
+  responsive: false,
   inputContext: undefined,
   outputContext: undefined,
   isDefault: false,
 };
+
+const DEEPSEEK_CHAT_BASE_URL = "https://api.deepseek.com/chat/completions";
+const DEEPSEEK_RESPONSES_BASE_URL = "https://api.deepseek.com";
+
+function deepseekBaseUrl(responsive: boolean) {
+  return responsive ? DEEPSEEK_RESPONSES_BASE_URL : DEEPSEEK_CHAT_BASE_URL;
+}
 
 const providerPresets = {
   custom: {
@@ -570,7 +578,7 @@ const providerPresets = {
   },
   deepseek: {
     label: "深度求索 / DeepSeek",
-    baseUrl: "https://api.deepseek.com/chat/completions",
+    baseUrl: DEEPSEEK_CHAT_BASE_URL,
     models: [
       {
         name: "deepseek-v4-flash",
@@ -678,7 +686,7 @@ function ModelsSettingsPage() {
           <div>
             <h2 className="font-medium text-sm">自定义模型</h2>
             <p className="mt-1 text-muted-foreground text-xs">
-              支持 OpenAI Chat Completions 兼容接口。
+              支持 OpenAI Chat Completions 与 Responses API。
             </p>
           </div>
           <Button onClick={openCreate} size="sm" type="button">
@@ -791,7 +799,7 @@ function ModelDialog({
     setModel((current) => ({
       ...current,
       provider: preset.label,
-      baseUrl: nextProvider === "deepseek" ? preset.baseUrl : "",
+      baseUrl: nextProvider === "deepseek" ? deepseekBaseUrl(current.responsive) : "",
       ...(nextProvider === "deepseek" && firstModel
         ? {
             name: firstModel.name,
@@ -812,13 +820,21 @@ function ModelDialog({
     setModel((current) => ({
       ...current,
       name: preset.name,
-      baseUrl: providerPresets.deepseek.baseUrl,
+      baseUrl: deepseekBaseUrl(current.responsive),
       supportsTools: preset.supportsTools,
       supportsImages: preset.supportsImages,
       supportsReasoning: preset.supportsReasoning,
       customProtocol: false,
       inputContext: preset.inputContext,
       outputContext: preset.outputContext,
+    }));
+  }
+
+  function handleResponsiveChange(responsive: boolean) {
+    setModel((current) => ({
+      ...current,
+      responsive,
+      ...(providerKey === "deepseek" ? { baseUrl: deepseekBaseUrl(responsive) } : {}),
     }));
   }
 
@@ -923,7 +939,11 @@ function ModelDialog({
                 className="mt-2 h-10 bg-background"
                 id="model-base-url"
                 onChange={(event) => update("baseUrl", event.target.value)}
-                placeholder="https://api.example.com/v1/chat/completions"
+                placeholder={
+                  model.responsive
+                    ? "https://api.example.com/v1"
+                    : "https://api.example.com/v1/chat/completions"
+                }
                 value={model.baseUrl}
               />
             </div>
@@ -1002,9 +1022,30 @@ function ModelDialog({
                   checked={model.customProtocol}
                   onChange={(value) => update("customProtocol", value)}
                 />
+                <Toggle
+                  label="Responses API"
+                  checked={model.responsive}
+                  onChange={handleResponsiveChange}
+                />
               </div>
             </fieldset>
-          ) : null}
+          ) : (
+            <fieldset>
+              <legend className="font-medium text-sm">高级配置</legend>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <Toggle
+                  label="Responses API"
+                  checked={model.responsive}
+                  onChange={handleResponsiveChange}
+                />
+              </div>
+              {model.responsive ? (
+                <p className="mt-2 text-muted-foreground text-xs">
+                  已切换为 Responses API，请求地址为 {DEEPSEEK_RESPONSES_BASE_URL}。
+                </p>
+              ) : null}
+            </fieldset>
+          )}
           {providerKey === "custom" ? (
             <div className="grid gap-4 sm:grid-cols-2">
               <NumberField

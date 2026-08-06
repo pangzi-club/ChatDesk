@@ -12,6 +12,8 @@ export type ModelConfig = {
   supportsImages: boolean;
   supportsReasoning: boolean;
   customProtocol: boolean;
+  /** Use OpenAI Responses API via AI SDK (`openai.responses`). */
+  responsive: boolean;
   inputContext?: number;
   outputContext?: number;
   isDefault: boolean;
@@ -20,7 +22,19 @@ export type ModelConfig = {
 export async function loadModels(): Promise<ModelConfig[]> {
   const stored = await settingsStore.get<unknown>(MODELS_STORE_KEY);
   if (!Array.isArray(stored)) return [];
-  return stored.filter(isModelConfig);
+  return stored.filter(isModelConfig).map(normalizeModelConfig);
+}
+
+function normalizeModelConfig(model: ModelConfig): ModelConfig {
+  return {
+    ...model,
+    supportsTools: model.supportsTools === true,
+    supportsImages: model.supportsImages === true,
+    supportsReasoning: model.supportsReasoning === true,
+    customProtocol: model.customProtocol === true,
+    responsive: model.responsive === true,
+    isDefault: model.isDefault === true,
+  };
 }
 
 export async function saveModels(models: ModelConfig[]): Promise<void> {
