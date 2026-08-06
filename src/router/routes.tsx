@@ -1,4 +1,4 @@
-import { createHashRouter, Navigate, RouterProvider } from "react-router-dom";
+import { createHashRouter, Navigate, RouterProvider, useParams } from "react-router-dom";
 
 import { AppShell } from "@/layouts/app-shell";
 import { AnalyticsPage } from "@/pages/analytics";
@@ -6,6 +6,7 @@ import { AutomationsPage } from "@/pages/automations";
 import { ChatPage } from "@/pages/chat";
 import { CommitPage } from "@/pages/commit";
 import { DashboardPage } from "@/pages/dashboard";
+import { DevToolsLayout } from "@/pages/dev-tools";
 import { EncryptPage } from "@/pages/encrypt";
 import { ImageGenerationPage } from "@/pages/image-generation";
 import { InputsPage } from "@/pages/inputs";
@@ -41,10 +42,6 @@ const router = createHashRouter([
         element: <ChatPage />,
       },
       {
-        path: "inputs",
-        element: <InputsPage />,
-      },
-      {
         path: "image-generation",
         element: <ImageGenerationPage />,
       },
@@ -69,8 +66,16 @@ const router = createHashRouter([
         element: <LookerDetailPage />,
       },
       {
-        path: "encrypt",
-        element: <EncryptPage />,
+        path: "dev-tools",
+        element: <DevToolsLayout />,
+        children: [
+          { index: true, element: <Navigate replace to="encrypt" /> },
+          { path: "encrypt", element: <EncryptPage /> },
+          { path: "vite-ports", element: <VitePortsPage /> },
+          { path: "inputs", element: <InputsPage /> },
+          { path: "workspaces", element: <WorkspacesPage /> },
+          { path: "workspaces/:projectId", element: <WorkspaceDetailPage /> },
+        ],
       },
       {
         path: "settings",
@@ -86,17 +91,13 @@ const router = createHashRouter([
           { path: "logs", element: <SystemLogsSettingsPage /> },
         ],
       },
-      {
-        path: "vite-ports",
-        element: <VitePortsPage />,
-      },
-      {
-        path: "workspaces",
-        element: <WorkspacesPage />,
-      },
+      { path: "encrypt", element: <Navigate replace to="/dev-tools/encrypt" /> },
+      { path: "vite-ports", element: <Navigate replace to="/dev-tools/vite-ports" /> },
+      { path: "inputs", element: <Navigate replace to="/dev-tools/inputs" /> },
+      { path: "workspaces", element: <Navigate replace to="/dev-tools/workspaces" /> },
       {
         path: "workspaces/:projectId",
-        element: <WorkspaceDetailPage />,
+        element: <WorkspaceProjectRedirect />,
       },
     ],
   },
@@ -105,6 +106,11 @@ const router = createHashRouter([
     element: <Navigate replace to="/dashboard" />,
   },
 ]);
+
+function WorkspaceProjectRedirect() {
+  const { projectId } = useParams();
+  return <Navigate replace to={`/dev-tools/workspaces/${projectId ?? ""}`} />;
+}
 
 function AppRouter() {
   return <RouterProvider router={router} />;

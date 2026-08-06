@@ -26,6 +26,7 @@ import {
   Settings,
   SquareTerminal,
   TextCursorInput,
+  Wrench,
 } from "lucide-react";
 import {
   type ComponentType,
@@ -44,16 +45,13 @@ import { applyTrayEnabled, loadTrayEnabled } from "@/lib/tray";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/chat", label: "Chat", icon: MessageCircle },
   { to: "/automations", label: "Automations", icon: Clock3 },
   { to: "/analytics", label: "Analytics", icon: ChartColumn },
   { to: "/commit", label: "Commit", icon: GitCommitHorizontal },
   { to: "/looker", label: "Looker", icon: Eye },
-  { to: "/encrypt", label: "Encrypt", icon: Lock },
-  { to: "/vite-ports", label: "VitePorts", icon: SquareTerminal },
-  { to: "/chat", label: "Chat", icon: MessageCircle },
   { to: "/image-generation", label: "Image", icon: Image },
-  { to: "/inputs", label: "Inputs", icon: TextCursorInput },
-  { to: "/workspaces", label: "Workspaces", icon: FolderGit2 },
+  { to: "/dev-tools", label: "Dev Tools", icon: Wrench },
 ] satisfies Array<{
   to: string;
   label: string;
@@ -61,16 +59,48 @@ const navItems = [
 }>;
 
 const commandItems = [
-  { ...navItems[0], keywords: ["仪表盘", "首页"] },
-  { ...navItems[1], keywords: ["自动化", "任务"] },
-  { ...navItems[2], keywords: ["流量分析", "数据"] },
-  { ...navItems[3], keywords: ["提交", "代码提交"] },
-  { ...navItems[4], label: "Looker", keywords: ["监控"] },
-  { ...navItems[5], keywords: ["文本加密", "加密"] },
-  { ...navItems[6], keywords: ["端口", "开发服务"] },
-  { ...navItems[7], keywords: ["对话", "聊天"] },
-  { ...navItems[8], keywords: ["图片", "生成", "image"] },
-  { ...navItems[9], keywords: ["输入", "表单"] },
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, keywords: ["仪表盘", "首页"] },
+  { to: "/chat", label: "Chat", icon: MessageCircle, keywords: ["对话", "聊天"] },
+  { to: "/automations", label: "Automations", icon: Clock3, keywords: ["自动化", "任务"] },
+  { to: "/analytics", label: "Analytics", icon: ChartColumn, keywords: ["流量分析", "数据"] },
+  { to: "/commit", label: "Commit", icon: GitCommitHorizontal, keywords: ["提交", "代码提交"] },
+  { to: "/looker", label: "Looker", icon: Eye, keywords: ["监控"] },
+  {
+    to: "/image-generation",
+    label: "Image",
+    icon: Image,
+    keywords: ["图片", "生成", "image"],
+  },
+  {
+    to: "/dev-tools",
+    label: "Dev Tools",
+    icon: Wrench,
+    keywords: ["开发工具", "devtools", "工具"],
+  },
+  {
+    to: "/dev-tools/encrypt",
+    label: "Encrypt",
+    icon: Lock,
+    keywords: ["文本加密", "加密", "devtools"],
+  },
+  {
+    to: "/dev-tools/vite-ports",
+    label: "VitePorts",
+    icon: SquareTerminal,
+    keywords: ["端口", "开发服务", "vite", "devtools"],
+  },
+  {
+    to: "/dev-tools/inputs",
+    label: "Inputs",
+    icon: TextCursorInput,
+    keywords: ["输入", "表单", "devtools"],
+  },
+  {
+    to: "/dev-tools/workspaces",
+    label: "Workspaces",
+    icon: FolderGit2,
+    keywords: ["项目", "工作区", "workspace", "git", "devtools"],
+  },
   { to: "/settings", label: "Settings", icon: Settings, keywords: ["设置"] },
   { to: "/settings/theme", label: "主题", icon: Palette, keywords: ["theme", "外观"] },
   { to: "/settings/keys", label: "API Keys", icon: KeyRound, keywords: ["设置", "密钥", "api"] },
@@ -83,13 +113,6 @@ const commandItems = [
   },
   { to: "/settings/tray", label: "托盘", icon: PanelTop, keywords: ["设置", "tray"] },
   { to: "/settings/logs", label: "系统日志", icon: ScrollText, keywords: ["设置", "日志", "logs"] },
-
-  {
-    to: "/workspaces",
-    label: "Workspaces",
-    icon: FolderGit2,
-    keywords: ["项目", "工作区", "workspace", "git"],
-  },
 ] satisfies Array<{
   to: string;
   label: string;
@@ -102,7 +125,8 @@ function AppShell() {
   const [isCommandMenuOpen, setIsCommandMenuOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const isSettings = location.pathname.startsWith("/settings");
+  const hideMainSidebar =
+    location.pathname.startsWith("/settings") || location.pathname.startsWith("/dev-tools");
 
   useEffect(() => {
     void appendSystemLog({ level: "info", source: "应用", message: "应用窗口已启动" }).catch(() => {
@@ -143,7 +167,7 @@ function AppShell() {
   return (
     <main className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
       <div className="flex min-h-0 w-full flex-1 overflow-hidden bg-background">
-        {isSettings ? (
+        {hideMainSidebar ? (
           <div className="relative flex min-w-0 flex-1 flex-col bg-background">
             <section className="min-h-0 flex-1 overflow-y-auto">
               <Outlet />
@@ -153,7 +177,7 @@ function AppShell() {
             </div>
           </div>
         ) : null}
-        {!isSettings ? (
+        {!hideMainSidebar ? (
           <>
             {/* 左列：红绿灯 + 侧栏同一背景，连成一体 */}
             <aside className="flex w-[280px] shrink-0 flex-col border-border border-r bg-card max-md:w-[72px] max-sm:w-16">
