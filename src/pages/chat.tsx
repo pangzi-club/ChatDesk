@@ -110,35 +110,6 @@ import {
 } from "@/lib/chat-usage";
 import { loadModels, type ModelConfig } from "@/lib/models";
 
-const demoModels: ModelConfig[] = [
-  {
-    id: "local-aurora",
-    name: "Aurora 2.1",
-    provider: "m-dashboard",
-    baseUrl: "local://demo",
-    apiKey: "demo",
-    supportsTools: true,
-    supportsImages: false,
-    supportsReasoning: true,
-    customProtocol: false,
-    responsive: false,
-    isDefault: true,
-  },
-  {
-    id: "local-scribe",
-    name: "Scribe Mini",
-    provider: "m-dashboard",
-    baseUrl: "local://demo",
-    apiKey: "demo",
-    supportsTools: false,
-    supportsImages: false,
-    supportsReasoning: false,
-    customProtocol: false,
-    responsive: false,
-    isDefault: false,
-  },
-];
-
 function ChatPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -163,10 +134,7 @@ function ChatPage() {
   memoryRef.current = chatMemory;
   const toolsRef = useRef(chatTools);
   toolsRef.current = chatTools;
-  const models = useMemo(
-    () => (configuredModels && configuredModels.length > 0 ? configuredModels : demoModels),
-    [configuredModels],
-  );
+  const models = configuredModels ?? [];
   const [selectedModelId, setSelectedModelId] = useState("");
   const [input, setInput] = useState("");
   const [sessionId, setSessionId] = useState(createSessionId);
@@ -549,13 +517,17 @@ function ChatPage() {
         <div className="chat-content">
           <div className="chat-context-row">
             <span className="chat-status-dot" />
-            <span>{selectedModel?.provider ?? "m-dashboard"} workspace</span>
+            <span>{selectedModel?.provider ?? "未配置模型"}</span>
             <span className="chat-context-rule" />
             <span>本地会话</span>
           </div>
           {messages.length === 0 ? (
             <div className="chat-tools-hint">
-              {selectedModel && !selectedModel.supportsTools ? (
+              {!isModelsLoading && models.length === 0 ? (
+                <p>
+                  尚未配置模型。请先到 <Link to="/settings/models">模型设置</Link> 添加 API。
+                </p>
+              ) : selectedModel && !selectedModel.supportsTools ? (
                 <p>
                   当前模型未开启「支持 Tools」。可在 <Link to="/settings/models">模型设置</Link>{" "}
                   中开启，或更换模型。
@@ -663,10 +635,11 @@ function ChatPage() {
                 <Settings2 className="size-3.5" />
                 <select
                   aria-label="选择模型"
-                  disabled={isModelsLoading}
+                  disabled={isModelsLoading || models.length === 0}
                   value={selectedModel?.id ?? ""}
                   onChange={(event) => setSelectedModelId(event.target.value)}
                 >
+                  {models.length === 0 ? <option value="">未配置模型</option> : null}
                   {models.map((model) => (
                     <option key={model.id} value={model.id}>
                       {formatModelLabel(model)}
@@ -700,7 +673,7 @@ function ChatPage() {
               <Button
                 aria-label={isGenerating ? "停止生成" : "发送消息"}
                 className="chat-send-button"
-                disabled={!input.trim() && !isGenerating}
+                disabled={(!input.trim() || !selectedModel) && !isGenerating}
                 onClick={isGenerating ? () => stop() : submitMessage}
                 size="icon"
                 type="button"

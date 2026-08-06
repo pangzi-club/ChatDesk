@@ -25,6 +25,16 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { ChatMemorySettings } from "@/components/chat-memory-settings";
 import { ChatToolsSettings } from "@/components/chat-tools-settings";
 import { type Theme, useTheme } from "@/components/theme-provider";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -714,28 +724,13 @@ const providerPresets = {
 type ProviderKey = keyof typeof providerPresets;
 
 function ModelsSettingsPage() {
-  const [models, setModels] = useState<ModelConfig[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const modelsQuery = useQuery({ queryKey: ["models"], queryFn: loadModels });
+  const models = modelsQuery.data ?? [];
   const [notice, setNotice] = useState("");
   const [editing, setEditing] = useState<ModelConfig | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    void loadModels()
-      .then((stored) => {
-        if (active) setModels(stored);
-      })
-      .catch(() => {
-        if (active) setNotice("读取模型配置失败，请重试。");
-      })
-      .finally(() => {
-        if (active) setIsLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
+  const [modelToDelete, setModelToDelete] = useState<ModelConfig | null>(null);
 
   function openCreate() {
     setNotice("");
@@ -757,19 +752,21 @@ function ModelsSettingsPage() {
       ? nextModels.map((item) => ({ ...item, isDefault: item.id === model.id }))
       : nextModels;
     await saveModels(normalized);
-    setModels(normalized);
+    queryClient.setQueryData(["models"], normalized);
     setIsModalOpen(false);
     setEditing(null);
   }
 
-  async function handleDelete(model: ModelConfig) {
-    if (!window.confirm(`确定删除模型“${model.name}”吗？`)) return;
+  async function confirmDelete() {
+    const model = modelToDelete;
+    if (!model) return;
     const remaining = models.filter((item) => item.id !== model.id);
     if (model.isDefault && remaining.length > 0)
       remaining[0] = { ...remaining[0], isDefault: true };
     try {
       await saveModels(remaining);
-      setModels(remaining);
+      queryClient.setQueryData(["models"], remaining);
+      setModelToDelete(null);
     } catch {
       setNotice("删除失败，请重试。");
     }
@@ -779,7 +776,7 @@ function ModelsSettingsPage() {
     const nextModels = models.map((item) => ({ ...item, isDefault: item.id === model.id }));
     try {
       await saveModels(nextModels);
-      setModels(nextModels);
+      queryClient.setQueryData(["models"], nextModels);
     } catch {
       setNotice("设置默认模型失败，请重试。");
     }
@@ -804,8 +801,12 @@ function ModelsSettingsPage() {
             <Plus className="size-3.5" /> 添加模型
           </Button>
         </div>
-        {notice ? <p className="px-5 pt-4 text-destructive text-xs">{notice}</p> : null}
-        {isLoading ? (
+        {notice || modelsQuery.isError ? (
+          <p className="px-5 pt-4 text-destructive text-xs">
+            {notice || "读取模型配置失败，请重试。"}
+          </p>
+        ) : null}
+        {modelsQuery.isLoading ? (
           <div className="space-y-3 p-5">
             <div className="h-16 animate-pulse rounded-md bg-accent" />
             <div className="h-16 animate-pulse rounded-md bg-accent" />
@@ -860,7 +861,7 @@ function ModelsSettingsPage() {
                 <Button
                   aria-label={`删除 ${model.name}`}
                   className="text-destructive hover:text-destructive"
-                  onClick={() => void handleDelete(model)}
+                  onClick={() => setModelToDelete(model)}
                   size="icon"
                   type="button"
                   variant="ghost"
@@ -882,6 +883,27 @@ function ModelsSettingsPage() {
           onSave={handleSave}
         />
       ) : null}
+      <AlertDialog
+        open={modelToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setModelToDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除模型？</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除“{modelToDelete?.name ?? "这个模型"}”吗？删除后无法恢复。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => void confirmDelete()}>
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
