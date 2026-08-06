@@ -83,7 +83,7 @@ pub fn write_chat_attachment(
     attachment_id: String,
     file_name: String,
     bytes: Vec<u8>,
-) -> Result<(), String> {
+) -> Result<String, String> {
     if !valid_id(&attachment_id) {
         return Err("invalid chat attachment id".to_string());
     }
@@ -95,7 +95,8 @@ pub fn write_chat_attachment(
     let directory = session_directory(&app, &session_id)?.join("attachments");
     fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
     let path = directory.join(format!("{attachment_id}-{safe_file_name}"));
-    atomic_write(&path, &bytes)
+    atomic_write(&path, &bytes)?;
+    Ok(path.to_string_lossy().into_owned())
 }
 
 #[tauri::command]

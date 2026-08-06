@@ -107,7 +107,55 @@ interface TaskRecord {
   failMsg?: string | null;
 }
 
-async function request<T>(apiKey: string, input: RequestInit, path: string): Promise<T> {
+function mergeAbortSignals(...signals: Array<AbortSignal | undefined>): AbortSignal | undefined {
+  const active = signals.filter((signal): signal is AbortSignal => Boolean(signal));
+  if (active.length === 0) return undefined;
+  if (active.length === 1) return active[0];
+  if (typeof AbortSignal.any === "function") return AbortSignal.any(active);
+  const controller = new AbortController();
+  for (const signal of active) {
+    if (signal.aborted) {
+      controller.abort(signal.reason);
+      break;
+    }
+    signal.addEventListener("abort", () => controller.abort(signal.reason), { once: true });
+  }
+  return controller.signal;
+}
+
+async function sleep(ms: number, abortSignal?: AbortSignal) {
+  if (!abortSignal) {
+    await new Promise<void>((resolve) => setTimeout(resolve, ms));
+    return;
+  }
+  if (abortSignal.aborted) {
+    throw abortSignal.reason instanceof Error
+      ? abortSignal.reason
+      : new DOMException("Aborted", "AbortError");
+  }
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      abortSignal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(
+        abortSignal.reason instanceof Error
+          ? abortSignal.reason
+          : new DOMException("Aborted", "AbortError"),
+      );
+    };
+    abortSignal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+async function request<T>(
+  apiKey: string,
+  input: RequestInit,
+  path: string,
+  abortSignal?: AbortSignal,
+): Promise<T> {
   let response: Response;
   try {
     response = await resolveFetch()(new URL(path, KIE_API_BASE_URL), {
@@ -117,7 +165,7 @@ async function request<T>(apiKey: string, input: RequestInit, path: string): Pro
         Authorization: `Bearer ${apiKey}`,
         ...input.headers,
       },
-      signal: AbortSignal.timeout(30_000),
+      signal: mergeAbortSignals(AbortSignal.timeout(30_000), abortSignal),
     });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
@@ -142,9 +190,18 @@ function isEnvelope(value: unknown): value is KieEnvelope<unknown> {
   return typeof value === "object" && value !== null && "code" in value && "data" in value;
 }
 
-export async function generateImage(input: ImageGenerationInput): Promise<string[]> {
+export type GenerateImageResult = {
+  taskId: string;
+  urls: string[];
+};
+
+export async function generateImage(
+  input: ImageGenerationInput,
+  options?: { abortSignal?: AbortSignal },
+): Promise<GenerateImageResult> {
   const apiKey = (await loadKieApiKey()).trim();
   if (!apiKey) throw new KieApiError("请先在设置中配置 KIE_API_KEY。");
+  const abortSignal = options?.abortSignal;
   const task = await request<{ taskId: string }>(
     apiKey,
     {
@@ -153,6 +210,7 @@ export async function generateImage(input: ImageGenerationInput): Promise<string
       body: JSON.stringify({ model: input.model, input }),
     },
     "/api/v1/jobs/createTask",
+    abortSignal,
   );
   if (!task.taskId) throw new KieApiError("KIE API 未返回 taskId。");
 
@@ -161,13 +219,14 @@ export async function generateImage(input: ImageGenerationInput): Promise<string
       apiKey,
       { method: "GET" },
       `/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(task.taskId)}`,
+      abortSignal,
     );
     if (record.state === "success") {
       try {
         const parsed = JSON.parse(record.resultJson ?? "{}");
         const urls = Array.isArray(parsed.resultUrls) ? parsed.resultUrls : [];
         if (urls.every((url: unknown) => typeof url === "string") && urls.length > 0) {
-          return urls as string[];
+          return { taskId: task.taskId, urls: urls as string[] };
         }
       } catch {
         // Continue with a useful error below if the result payload is malformed.
@@ -175,7 +234,7 @@ export async function generateImage(input: ImageGenerationInput): Promise<string
       throw new KieApiError("任务已完成，但未返回图片地址。");
     }
     if (record.state === "fail") throw new KieApiError(record.failMsg || "图片生成失败。");
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+    await sleep(POLL_INTERVAL_MS, abortSignal);
   }
   throw new KieApiError("图片生成超时，请稍后重试。");
 }

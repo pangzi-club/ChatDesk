@@ -1,6 +1,12 @@
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { ChevronDown, LoaderCircle, Wrench } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
+import {
+  IMAGE_GENERATION_MEDIA_TYPE,
+  IMAGE_GENERATION_TOOL_NAME,
+  readImageGenerationOutput,
+} from "@/lib/chat-image-generation";
 import { CHAT_TOOL_DISPLAY_NAMES } from "@/lib/chat-tool-defs";
 
 type ChatToolCallCardProps = {
@@ -9,6 +15,8 @@ type ChatToolCallCardProps = {
   input?: unknown;
   output?: unknown;
   errorText?: string;
+  /** AI SDK 流式中间结果（如 image_generation partial_image）。 */
+  preliminary?: boolean;
 };
 
 function formatJson(value: unknown) {
@@ -24,6 +32,13 @@ function isEmptyInput(value: unknown) {
   if (value === undefined || value === null) return true;
   if (typeof value !== "object") return false;
   return Object.keys(value as Record<string, unknown>).length === 0;
+}
+
+/** 业务 tool 经 withToolError 失败时返回 { error }，SDK 仍标为 output-available。 */
+function extractToolOutputError(output: unknown): string | undefined {
+  if (!output || typeof output !== "object") return undefined;
+  const error = (output as { error?: unknown }).error;
+  return typeof error === "string" && error.trim() ? error.trim() : undefined;
 }
 
 /** OpenAI web_search 入参恒为空；查询词在 output.action 里。 */
@@ -79,9 +94,41 @@ function extractWebSearchSummary(output: unknown): {
   };
 }
 
-function statusLabel(state: string, errorText?: string) {
+function resolveImagePreviewSrc(output: unknown): string | null {
+  const { rawBase64, remoteUrl, materialized } = readImageGenerationOutput(output);
+  if (materialized?.url) return materialized.url;
+  if (materialized?.path) {
+    try {
+      return convertFileSrc(materialized.path);
+    } catch {
+      return null;
+    }
+  }
+  if (remoteUrl) return remoteUrl;
+  if (rawBase64) {
+    if (rawBase64.startsWith("data:")) return rawBase64;
+    return `data:${IMAGE_GENERATION_MEDIA_TYPE};base64,${rawBase64}`;
+  }
+  return null;
+}
+
+function statusLabel(options: {
+  toolName: string;
+  state: string;
+  errorText?: string;
+  preliminary?: boolean;
+  hasImagePreview: boolean;
+}) {
+  const { toolName, state, errorText, preliminary, hasImagePreview } = options;
   if (state === "output-error" || errorText) return "失败";
-  if (state === "output-available") return "成功";
+  if (toolName === IMAGE_GENERATION_TOOL_NAME) {
+    if (preliminary || state === "input-streaming" || state === "input-available") {
+      return hasImagePreview ? "预览中" : "生成中";
+    }
+    if (state === "output-available") return "成功";
+    return state;
+  }
+  if (state === "output-available") return preliminary ? "更新中" : "成功";
   if (state === "input-streaming" || state === "input-available") return "调用中";
   return state;
 }
@@ -92,17 +139,53 @@ export function ChatToolCallCard({
   input,
   output,
   errorText,
+  preliminary = false,
 }: ChatToolCallCardProps) {
   const [open, setOpen] = useState(false);
   const title = CHAT_TOOL_DISPLAY_NAMES[toolName] ?? toolName;
-  const status = statusLabel(state, errorText);
-  const pending = state === "input-streaming" || state === "input-available";
-  const failed = state === "output-error" || Boolean(errorText);
+  const outputError = extractToolOutputError(output);
+  const resolvedError = errorText || outputError;
+  const failed = state === "output-error" || Boolean(resolvedError);
   const webSearch =
     toolName === "web_search" || toolName === "web_search_preview"
       ? extractWebSearchSummary(output)
       : null;
-  const showInput = !webSearch || !isEmptyInput(input);
+  const isImageGeneration = toolName === IMAGE_GENERATION_TOOL_NAME;
+  const imagePreviewSrc = useMemo(
+    () => (isImageGeneration && !failed ? resolveImagePreviewSrc(output) : null),
+    [failed, isImageGeneration, output],
+  );
+  const imageMeta = useMemo(() => {
+    if (!isImageGeneration || failed) return null;
+    const { materialized, remoteUrl, taskId } = readImageGenerationOutput(output);
+    if (materialized) {
+      return {
+        attachmentId: materialized.attachmentId,
+        fileName: materialized.fileName as string | undefined,
+        mediaType: materialized.mediaType,
+        ...(materialized.taskId ? { taskId: materialized.taskId } : {}),
+        ...(materialized.sourceUrl ? { sourceUrl: materialized.sourceUrl } : {}),
+      };
+    }
+    if (remoteUrl || taskId) {
+      return {
+        fileName: undefined as string | undefined,
+        ...(taskId ? { taskId } : {}),
+        ...(remoteUrl ? { url: remoteUrl } : {}),
+      };
+    }
+    return null;
+  }, [failed, isImageGeneration, output]);
+  const pending =
+    !failed && (preliminary || state === "input-streaming" || state === "input-available");
+  const status = statusLabel({
+    toolName,
+    state,
+    errorText: resolvedError,
+    preliminary,
+    hasImagePreview: Boolean(imagePreviewSrc),
+  });
+  const showInput = (!webSearch && !isImageGeneration) || !isEmptyInput(input);
   const summaryQuery = webSearch?.queries[0];
 
   return (
@@ -123,10 +206,25 @@ export function ChatToolCallCard({
         <span className="chat-tool-call-title">
           {title}
           {summaryQuery ? ` · ${summaryQuery}` : ""}
+          {isImageGeneration && imageMeta?.fileName ? ` · ${imageMeta.fileName}` : ""}
         </span>
         <span className="chat-tool-call-status">{status}</span>
         <ChevronDown className={`chat-tool-call-chevron ${open ? "is-open" : ""}`} />
       </button>
+      {imagePreviewSrc && !failed ? (
+        <div className="chat-tool-call-preview px-3 pb-2">
+          {preliminary ? (
+            <p className="mb-1.5 text-[11px] text-muted-foreground">中间预览，仍在生成…</p>
+          ) : null}
+          <img
+            alt={imageMeta?.fileName ?? "generated image"}
+            className={`max-h-64 max-w-full rounded-md object-contain ${
+              preliminary ? "opacity-90" : ""
+            }`}
+            src={imagePreviewSrc}
+          />
+        </div>
+      ) : null}
       {open ? (
         <div className="chat-tool-call-body">
           {showInput ? (
@@ -149,7 +247,23 @@ export function ChatToolCallCard({
           ) : null}
           <div className="chat-tool-call-section">
             <p className="chat-tool-call-label">{failed ? "错误" : "结果"}</p>
-            <pre>{failed ? (errorText ?? formatJson(output)) : formatJson(output)}</pre>
+            {failed ? (
+              <pre>{resolvedError ?? formatJson(output)}</pre>
+            ) : isImageGeneration ? (
+              <pre>
+                {formatJson(
+                  imageMeta ?? {
+                    note: imagePreviewSrc
+                      ? preliminary
+                        ? "中间预览见上方，最终图生成中"
+                        : "图片预览见上方"
+                      : "暂无图片输出",
+                  },
+                )}
+              </pre>
+            ) : (
+              <pre>{formatJson(output)}</pre>
+            )}
           </div>
         </div>
       ) : null}

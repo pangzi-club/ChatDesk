@@ -1,6 +1,6 @@
 import { settingsStore } from "@/lib/settings-store";
 
-export type ChatToolPackId = "analytics" | "commit" | "looker" | "web_search";
+export type ChatToolPackId = "analytics" | "commit" | "looker" | "web_search" | "image_generation";
 
 export type ChatToolsSettings = Record<ChatToolPackId, boolean>;
 
@@ -9,6 +9,7 @@ export const DEFAULT_CHAT_TOOLS: ChatToolsSettings = {
   commit: false,
   looker: false,
   web_search: false,
+  image_generation: false,
 };
 
 export type ChatToolPackMeta = {
@@ -59,6 +60,18 @@ export const CHAT_TOOL_PACKS: ChatToolPackMeta[] = [
     ],
     requiresResponsive: true,
   },
+  {
+    id: "image_generation",
+    label: "Image Generation",
+    description: "通过 KIE 创建生图任务并轮询结果（与独立 Image 页同一后端）。",
+    examples: [
+      "画一只坐在窗台上的橘猫",
+      "生成一张赛博朋克风格的城市夜景",
+      "做一张极简产品海报插画",
+    ],
+    keyLabel: "KIE API Key",
+    keysPath: "/settings/keys",
+  },
 ];
 
 const CHAT_TOOLS_STORE_KEY = "chatTools";
@@ -66,7 +79,11 @@ const CHAT_TOOLS_STORAGE_KEY = "m-dashboard-chat-tools-v1";
 
 function isChatToolPackId(value: unknown): value is ChatToolPackId {
   return (
-    value === "analytics" || value === "commit" || value === "looker" || value === "web_search"
+    value === "analytics" ||
+    value === "commit" ||
+    value === "looker" ||
+    value === "web_search" ||
+    value === "image_generation"
   );
 }
 
@@ -80,6 +97,7 @@ function normalizeChatTools(value: unknown): ChatToolsSettings {
     commit: record.commit === true,
     looker: record.looker === true,
     web_search: record.web_search === true,
+    image_generation: record.image_generation === true,
   };
 }
 

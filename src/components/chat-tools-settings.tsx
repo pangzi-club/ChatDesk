@@ -10,6 +10,7 @@ import {
 } from "@/lib/chat-tools";
 import { loadCommitApiKey } from "@/lib/commit";
 import { loadDataerApiKey } from "@/lib/dataer";
+import { loadKieApiKey } from "@/lib/image-generation";
 import { loadLookerApiKey } from "@/lib/looker";
 
 type ChatToolsSettingsProps = {
@@ -24,6 +25,7 @@ async function loadPackHasKey(pack: ChatToolPackId): Promise<boolean> {
   if (pack === "analytics") return Boolean((await loadDataerApiKey()).trim());
   if (pack === "commit") return Boolean((await loadCommitApiKey()).trim());
   if (pack === "looker") return Boolean((await loadLookerApiKey()).trim());
+  if (pack === "image_generation") return Boolean((await loadKieApiKey()).trim());
   return true;
 }
 
@@ -107,7 +109,7 @@ export function ChatToolsSettings({
                   </p>
                 ) : (
                   <p className="text-muted-foreground text-xs">
-                    仅在模型开启 Responses API 时注册（OpenAI 兼容 web_search）。
+                    仅在模型开启 Responses API 时注册（OpenAI 兼容内置工具）。
                   </p>
                 )
               ) : null}

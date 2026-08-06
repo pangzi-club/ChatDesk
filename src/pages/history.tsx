@@ -1,7 +1,7 @@
 import { code } from "@streamdown/code";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { type UIMessage, getToolName, isToolUIPart } from "ai";
+import { getToolName, isToolUIPart, type UIMessage } from "ai";
 import {
   ArrowLeft,
   ChartColumn,
@@ -47,6 +47,7 @@ import {
   pathExists,
   sourceLabel,
 } from "@/lib/chat-archive";
+import { IMAGE_GENERATION_TOOL_NAME, readImageGenerationOutput } from "@/lib/chat-image-generation";
 import {
   type ChatIndexItem,
   deleteChatSession,
@@ -621,7 +622,8 @@ function uiMessageToArchiveMessage(message: UIMessage): ArchiveMessage {
     .map((part) => part.text)
     .join("\n")
     .trim();
-  const toolCalls = message.parts.filter(isToolUIPart).map((part): ArchiveToolCall => {
+  const toolParts = message.parts.filter(isToolUIPart);
+  const toolCalls = toolParts.map((part): ArchiveToolCall => {
     return {
       id: part.toolCallId,
       toolName: getToolName(part),
@@ -631,11 +633,40 @@ function uiMessageToArchiveMessage(message: UIMessage): ArchiveMessage {
       errorText: "errorText" in part ? part.errorText : undefined,
     };
   });
+  const assets = toolParts.flatMap((part): ArchiveAsset[] => {
+    if (getToolName(part) !== IMAGE_GENERATION_TOOL_NAME || !("output" in part)) return [];
+    const { materialized, rawBase64 } = readImageGenerationOutput(part.output);
+    if (materialized) {
+      return [
+        {
+          id: materialized.attachmentId,
+          kind: "image",
+          fileName: materialized.fileName,
+          mediaType: materialized.mediaType,
+          ...(materialized.path ? { path: materialized.path } : {}),
+          ...(materialized.url ? { url: materialized.url } : {}),
+        },
+      ];
+    }
+    if (rawBase64) {
+      return [
+        {
+          id: part.toolCallId,
+          kind: "image",
+          fileName: `${part.toolCallId}.png`,
+          mediaType: "image/png",
+          url: `data:image/png;base64,${rawBase64}`,
+        },
+      ];
+    }
+    return [];
+  });
   return {
     id: message.id,
     role: message.role === "user" ? "user" : "assistant",
     text,
     ...(toolCalls.length > 0 ? { toolCalls } : {}),
+    ...(assets.length > 0 ? { assets } : {}),
   };
 }
 
@@ -645,6 +676,17 @@ function ArchiveMessageBubble({ message }: { message: ArchiveMessage }) {
   const collapsible = useMemo(() => shouldCollapseMessage(message.text), [message.text]);
   const [expanded, setExpanded] = useState(false);
   const toolCalls = message.toolCalls ?? [];
+  // 生成图已在 ChatToolCallCard 预览，避免与 ArchiveAssetView 重复渲染。
+  const assets = useMemo(() => {
+    const coveredIds = new Set<string>();
+    for (const call of toolCalls) {
+      if (call.toolName !== IMAGE_GENERATION_TOOL_NAME) continue;
+      const { materialized } = readImageGenerationOutput(call.output);
+      if (materialized) coveredIds.add(materialized.attachmentId);
+      else coveredIds.add(call.id);
+    }
+    return (message.assets ?? []).filter((asset) => !coveredIds.has(asset.id));
+  }, [message.assets, toolCalls]);
 
   return (
     <article className={`flex w-full ${isUser ? "justify-end" : "justify-start"}`}>
@@ -713,9 +755,9 @@ function ArchiveMessageBubble({ message }: { message: ArchiveMessage }) {
           </div>
         ) : null}
 
-        {message.assets && message.assets.length > 0 ? (
+        {assets.length > 0 ? (
           <div className="mt-3 space-y-2">
-            {message.assets.map((asset) => (
+            {assets.map((asset) => (
               <ArchiveAssetView key={asset.id} asset={asset} />
             ))}
           </div>

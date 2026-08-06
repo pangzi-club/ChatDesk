@@ -63,6 +63,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { materializeGeneratedImages } from "@/lib/chat-image-generation";
 import {
   type ChatMemoryStore,
   DEFAULT_CHAT_MEMORY,
@@ -78,6 +79,7 @@ import {
   saveChatDisplaySettings,
 } from "@/lib/chat-settings";
 import {
+  type ChatAttachment,
   type ChatIndexItem,
   type ChatSession,
   createSessionId,
@@ -170,6 +172,7 @@ function ChatPage() {
   const [sessionId, setSessionId] = useState(createSessionId);
   const [sessionTitle, setSessionTitle] = useState("新对话");
   const sessionCreatedAtRef = useRef(new Date().toISOString());
+  const sessionAttachmentsRef = useRef<ChatAttachment[]>([]);
   const suppressSaveRef = useRef(false);
   const pendingSessionRef = useRef<ChatSession | null>(null);
   const initializedHistoryRef = useRef(false);
@@ -309,6 +312,7 @@ function ChatPage() {
     suppressSaveRef.current = true;
     setSessionTitle(session.title);
     sessionCreatedAtRef.current = session.createdAt;
+    sessionAttachmentsRef.current = session.attachments;
     setMessages(session.messages);
     if (session.modelId) setSelectedModelId(session.modelId);
   }, [sessionId, setMessages]);
@@ -336,17 +340,28 @@ function ChatPage() {
     const now = new Date().toISOString();
     const title = deriveChatTitle(messages);
     setSessionTitle(title);
-    void saveChatSession({
-      schemaVersion: 1,
-      id: sessionId,
-      title,
-      createdAt: sessionCreatedAtRef.current,
-      updatedAt: now,
-      modelId: selectedModel?.id,
-      messages,
-      attachments: [],
-    })
-      .then(() => {
+    void (async () => {
+      try {
+        const materialized = await materializeGeneratedImages(
+          sessionId,
+          messages,
+          sessionAttachmentsRef.current,
+        );
+        sessionAttachmentsRef.current = materialized.attachments;
+        await saveChatSession({
+          schemaVersion: 1,
+          id: sessionId,
+          title,
+          createdAt: sessionCreatedAtRef.current,
+          updatedAt: now,
+          modelId: selectedModel?.id,
+          messages: materialized.messages,
+          attachments: materialized.attachments,
+        });
+        if (materialized.changed) {
+          suppressSaveRef.current = true;
+          setMessages(materialized.messages);
+        }
         void queryClient.invalidateQueries({ queryKey: ["chat-index"] });
         if (extractedFingerprintRef.current === fingerprint) return;
         extractedFingerprintRef.current = fingerprint;
@@ -360,9 +375,11 @@ function ChatPage() {
             queryClient.setQueryData(["chat-memory"], store);
           },
         });
-      })
-      .catch((saveError) => console.error("Failed to save chat session", saveError));
-  }, [messages, queryClient, selectedModel, sessionId, status]);
+      } catch (saveError) {
+        console.error("Failed to save chat session", saveError);
+      }
+    })();
+  }, [messages, queryClient, selectedModel, sessionId, status, setMessages]);
 
   // Scroll when a message arrives or the local response indicator changes.
   // biome-ignore lint/correctness/useExhaustiveDependencies: these values intentionally trigger the scroll effect.
@@ -381,6 +398,7 @@ function ChatPage() {
     stop();
     setSessionId(createSessionId());
     sessionCreatedAtRef.current = new Date().toISOString();
+    sessionAttachmentsRef.current = [];
     setSessionTitle("新对话");
     savedFingerprintRef.current = "";
     extractedFingerprintRef.current = "";
@@ -767,6 +785,7 @@ function MessageBubble({
                 input={part.input}
                 output={"output" in part ? part.output : undefined}
                 errorText={"errorText" in part ? part.errorText : undefined}
+                preliminary={"preliminary" in part ? Boolean(part.preliminary) : false}
               />
             ))}
           </div>

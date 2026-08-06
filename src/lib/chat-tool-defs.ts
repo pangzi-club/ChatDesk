@@ -15,12 +15,42 @@ import {
   fetchSiteReport,
   loadDataerApiKey,
 } from "@/lib/dataer";
+import {
+  type ImageAspectRatio,
+  type ImageResolution,
+  generateImage,
+  loadKieApiKey,
+} from "@/lib/image-generation";
 import { fetchMonitor, fetchMonitors, loadLookerApiKey } from "@/lib/looker";
 import type { ModelConfig } from "@/lib/models";
 
 const INTERVAL_SCHEMA = z.enum(["today", "yesterday", "7d", "30d", "90d"]);
+const ASPECT_RATIO_SCHEMA = z.enum([
+  "auto",
+  "1:1",
+  "3:2",
+  "2:3",
+  "4:3",
+  "3:4",
+  "16:9",
+  "9:16",
+  "2:1",
+  "1:2",
+  "3:1",
+  "1:3",
+  "21:9",
+  "9:21",
+  "5:4",
+  "4:5",
+]);
+const RESOLUTION_SCHEMA = z.enum(["1K", "2K", "4K"]);
 const REPORT_CONCURRENCY = 4;
-const BUSINESS_PACKS = new Set<ChatToolPackId>(["analytics", "commit", "looker"]);
+const BUSINESS_PACKS = new Set<ChatToolPackId>([
+  "analytics",
+  "commit",
+  "looker",
+  "image_generation",
+]);
 
 export const CHAT_TOOL_DISPLAY_NAMES: Record<string, string> = {
   list_analytics_sites: "Analytics · 站点列表",
@@ -31,6 +61,7 @@ export const CHAT_TOOL_DISPLAY_NAMES: Record<string, string> = {
   list_monitors: "Looker · 监控列表",
   read_monitor: "Looker · 监控详情",
   web_search: "Web Search · 联网搜索",
+  image_generation: "Image Generation · 图片生成",
 };
 
 export type ResolveActiveToolsResult = {
@@ -242,6 +273,7 @@ async function loadPackApiKey(pack: ChatToolPackId): Promise<string> {
   if (pack === "analytics") return (await loadDataerApiKey()).trim();
   if (pack === "commit") return (await loadCommitApiKey()).trim();
   if (pack === "looker") return (await loadLookerApiKey()).trim();
+  if (pack === "image_generation") return (await loadKieApiKey()).trim();
   return "";
 }
 
@@ -249,6 +281,7 @@ function createPackTools(pack: ChatToolPackId, apiKey: string): ToolSet {
   if (pack === "analytics") return createAnalyticsTools(apiKey);
   if (pack === "commit") return createCommitTools(apiKey);
   if (pack === "looker") return createLookerTools(apiKey);
+  if (pack === "image_generation") return createImageGenerationTools();
   return {};
 }
 
@@ -257,6 +290,37 @@ function createWebSearchTools(): ToolSet {
   // intersection with Pick<..., 'execute' | ...> is too strict for them.
   return {
     web_search: openai.tools.webSearch({}) as unknown as ToolSet[string],
+  };
+}
+
+function createImageGenerationTools(): ToolSet {
+  return {
+    image_generation: tool({
+      description:
+        "根据文字描述生成图片。会创建 KIE 生图任务并等待完成后返回图片 URL；适合插画、海报、场景图等。",
+      inputSchema: z.object({
+        prompt: z.string().min(1).describe("图片描述，尽量具体"),
+        aspect_ratio: ASPECT_RATIO_SCHEMA.optional().describe("宽高比，默认 auto"),
+        resolution: RESOLUTION_SCHEMA.optional().describe("分辨率，默认 1K"),
+      }),
+      execute: async ({ prompt, aspect_ratio, resolution }, { abortSignal }) =>
+        withToolError(async () => {
+          const result = await generateImage(
+            {
+              model: "gpt-image-2-text-to-image",
+              prompt,
+              aspect_ratio: (aspect_ratio ?? "auto") as ImageAspectRatio,
+              resolution: (resolution ?? "1K") as ImageResolution,
+            },
+            { abortSignal },
+          );
+          return {
+            taskId: result.taskId,
+            urls: result.urls,
+            url: result.urls[0],
+          };
+        }),
+    }),
   };
 }
 
@@ -322,7 +386,7 @@ export function formatToolsSystemHint(activePacks: ChatToolPackId[]): string {
 
   const lines = [
     "你可以使用下列工具获取信息。需要事实或实时数据时主动调用工具，不要编造。",
-    "用中文简洁总结工具结果；需要多步时先列表再取详情；联网搜索请注明来源要点。",
+    "用中文简洁总结工具结果；需要多步时先列表再取详情；联网搜索请注明来源要点；图片生成需等待任务完成，完成后简要说明画面。",
     "当前可用工具包：",
   ];
 

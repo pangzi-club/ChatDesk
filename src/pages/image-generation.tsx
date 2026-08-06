@@ -63,13 +63,13 @@ function ImageGenerationPage() {
         details: `模型 ${model}，分辨率 ${resolution}，比例 ${aspectRatio}`,
       });
     },
-    onSuccess: (urls) => {
+    onSuccess: (result) => {
       setProgress(100);
       void appendSystemLog({
         level: "success",
         source: "图片生成",
         message: "图片生成任务已完成",
-        details: `生成 ${urls.length} 张图片`,
+        details: `taskId ${result.taskId}，生成 ${result.urls.length} 张图片`,
       });
     },
     onError: (error) => {
@@ -81,7 +81,7 @@ function ImageGenerationPage() {
       });
     },
   });
-  const imageUrls = mutation.data ?? [];
+  const imageUrls = mutation.data?.urls ?? [];
 
   useEffect(() => {
     if (!mutation.isPending) return;

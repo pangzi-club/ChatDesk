@@ -186,13 +186,14 @@ export async function writeChatAttachment(
   attachmentId: string,
   bytes: Uint8Array,
   fileName: string,
-): Promise<void> {
+): Promise<string | null> {
   if (isTauri()) {
-    await invoke("write_chat_attachment", {
+    return invoke<string>("write_chat_attachment", {
       sessionId,
       attachmentId,
       fileName,
       bytes: Array.from(bytes),
     });
   }
+  return null;
 }
