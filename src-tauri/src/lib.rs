@@ -58,6 +58,8 @@ pub fn run() {
             commands::system_log::write_system_logs,
             commands::vite::list_vite_processes,
             commands::vite::kill_vite_process,
+            commands::sandbox::get_sandbox_info,
+            commands::sandbox::run_shell_command,
             set_tray_enabled,
             commands::automation::sync_automation_tasks,
             commands::chat::read_chat_index,

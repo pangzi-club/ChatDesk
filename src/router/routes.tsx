@@ -13,6 +13,7 @@ import { HistoryAnalysisPage } from "@/pages/history-analysis";
 import { ImageGenerationPage } from "@/pages/image-generation";
 import { InputsPage } from "@/pages/inputs";
 import { LookerDetailPage, LookerPage } from "@/pages/looker";
+import { SandboxPage } from "@/pages/sandbox";
 import {
   ApiKeysSettingsPage,
   MemorySettingsPage,
@@ -91,6 +92,7 @@ const router = createHashRouter([
               { path: "inputs", element: <InputsPage /> },
               { path: "workspaces", element: <WorkspacesPage /> },
               { path: "workspaces/:projectId", element: <WorkspaceDetailPage /> },
+              { path: "sandbox", element: <SandboxPage /> },
             ],
           },
         ],
@@ -113,6 +115,7 @@ const router = createHashRouter([
       { path: "vite-ports", element: <Navigate replace to="/dev-tools/vite-ports" /> },
       { path: "inputs", element: <Navigate replace to="/dev-tools/inputs" /> },
       { path: "workspaces", element: <Navigate replace to="/dev-tools/workspaces" /> },
+      { path: "sandbox", element: <Navigate replace to="/dev-tools/sandbox" /> },
       {
         path: "workspaces/:projectId",
         element: <WorkspaceProjectRedirect />,

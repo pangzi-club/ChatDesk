@@ -1,4 +1,12 @@
-import { ArrowLeft, FolderGit2, Lock, SquareTerminal, TextCursorInput, Wrench } from "lucide-react";
+import {
+  ArrowLeft,
+  FolderGit2,
+  Lock,
+  Shield,
+  SquareTerminal,
+  TextCursorInput,
+  Wrench,
+} from "lucide-react";
 import type { ComponentType } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 
@@ -29,6 +37,12 @@ const tools = [
     label: "Workspaces",
     description: "管理本地项目目录，查看 Git 状态与最近提交。",
     icon: FolderGit2,
+  },
+  {
+    to: "/dev-tools/sandbox",
+    label: "Sandbox",
+    description: "对比完全访问与 Seatbelt 沙箱，演示权限同意流程。",
+    icon: Shield,
   },
 ] satisfies Array<{
   to: string;
