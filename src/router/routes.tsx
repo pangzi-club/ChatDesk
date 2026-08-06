@@ -12,6 +12,7 @@ import { InputsPage } from "@/pages/inputs";
 import { LookerDetailPage, LookerPage } from "@/pages/looker";
 import {
   ApiKeysSettingsPage,
+  MemorySettingsPage,
   ModelsSettingsPage,
   SettingsLayout,
   SystemLogsSettingsPage,
@@ -78,6 +79,7 @@ const router = createHashRouter([
           { path: "theme", element: <ThemeSettingsPage /> },
           { path: "keys", element: <ApiKeysSettingsPage /> },
           { path: "models", element: <ModelsSettingsPage /> },
+          { path: "memory", element: <MemorySettingsPage /> },
           { path: "tray", element: <TraySettingsPage /> },
           { path: "logs", element: <SystemLogsSettingsPage /> },
         ],

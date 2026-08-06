@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  Brain,
   Check,
   ExternalLink,
   Eye,
@@ -20,6 +21,7 @@ import {
 import { type FormEvent, useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 
+import { ChatMemorySettings } from "@/components/chat-memory-settings";
 import { type Theme, useTheme } from "@/components/theme-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,6 +35,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import {
+  type ChatMemoryStore,
+  DEFAULT_CHAT_MEMORY,
+  loadChatMemory,
+  saveChatMemory,
+} from "@/lib/chat-memory";
 import { clearCommitApiKey, loadCommitApiKey, saveCommitApiKey } from "@/lib/commit";
 import { clearDataerApiKey, loadDataerApiKey, saveDataerApiKey } from "@/lib/dataer";
 import { clearKieApiKey, loadKieApiKey, saveKieApiKey } from "@/lib/image-generation";
@@ -79,6 +87,7 @@ function SettingsLayout() {
           <SettingsNavItem to="/settings/theme" icon={Palette} label="主题" />
           <SettingsNavItem to="/settings/keys" icon={KeyRound} label="API Keys" />
           <SettingsNavItem to="/settings/models" icon={Package} label="模型" />
+          <SettingsNavItem to="/settings/memory" icon={Brain} label="长期记忆" />
           <SettingsNavItem to="/settings/tray" icon={PanelTop} label="托盘" />
           <SettingsNavItem to="/settings/logs" icon={ScrollText} label="系统日志" />
         </nav>
@@ -309,6 +318,52 @@ function ThemeSettingsPage() {
             </div>
           ))}
         </RadioGroup>
+      </section>
+    </>
+  );
+}
+
+function MemorySettingsPage() {
+  const queryClient = useQueryClient();
+  const memoryQuery = useQuery({
+    queryKey: ["chat-memory"],
+    queryFn: loadChatMemory,
+  });
+  const store = memoryQuery.data ?? DEFAULT_CHAT_MEMORY;
+
+  function handleStoreChange(next: ChatMemoryStore) {
+    queryClient.setQueryData(["chat-memory"], next);
+    void saveChatMemory(next).catch((error) => console.error("Failed to save chat memory", error));
+  }
+
+  return (
+    <>
+      <SettingsHeading
+        eyebrow="Chat"
+        title="长期记忆"
+        description="全局共享的用户记忆，开启后会自动抽取并在后续对话中使用。"
+      />
+      <section className="rounded-lg border border-border bg-card px-5 py-5">
+        {memoryQuery.isPending ? (
+          <div className="space-y-4" aria-busy="true" role="status">
+            <div className="h-14 animate-pulse rounded-md bg-accent" />
+            <div className="h-20 animate-pulse rounded-md bg-accent" />
+            <div className="h-28 animate-pulse rounded-md bg-accent" />
+          </div>
+        ) : memoryQuery.isError ? (
+          <div className="py-10 text-center">
+            <p className="font-medium text-sm">读取记忆设置失败</p>
+            <p className="mt-1 text-muted-foreground text-xs">请刷新页面后重试。</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <ChatMemorySettings
+              idPrefix="settings-memory"
+              store={store}
+              onStoreChange={handleStoreChange}
+            />
+          </div>
+        )}
       </section>
     </>
   );
@@ -1154,6 +1209,7 @@ function NumberField({
 
 export {
   ApiKeysSettingsPage,
+  MemorySettingsPage,
   ModelsSettingsPage,
   SettingsLayout,
   SystemLogsSettingsPage,

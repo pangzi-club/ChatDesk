@@ -3,6 +3,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   ArrowDown,
   ArrowUp,
+  Brain,
   ChartColumn,
   Clock3,
   CornerDownLeft,
@@ -74,8 +75,15 @@ const commandItems = [
   { to: "/settings/theme", label: "主题", icon: Palette, keywords: ["theme", "外观"] },
   { to: "/settings/keys", label: "API Keys", icon: KeyRound, keywords: ["设置", "密钥", "api"] },
   { to: "/settings/models", label: "模型", icon: Package, keywords: ["设置", "models", "model"] },
+  {
+    to: "/settings/memory",
+    label: "长期记忆",
+    icon: Brain,
+    keywords: ["设置", "memory", "记忆", "长期记忆"],
+  },
   { to: "/settings/tray", label: "托盘", icon: PanelTop, keywords: ["设置", "tray"] },
   { to: "/settings/logs", label: "系统日志", icon: ScrollText, keywords: ["设置", "日志", "logs"] },
+
   {
     to: "/workspaces",
     label: "Workspaces",
