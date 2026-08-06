@@ -40,6 +40,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { TitlebarDragRegion } from "@/components/titlebar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { rememberReturnPath } from "@/lib/app-return-path";
 import { appendSystemLog } from "@/lib/system-log";
 import { applyTrayEnabled, loadTrayEnabled } from "@/lib/tray";
 
@@ -132,7 +133,11 @@ function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
   const hideMainSidebar =
-    location.pathname.startsWith("/settings") || location.pathname.startsWith("/dev-tools");
+    location.pathname.startsWith("/settings") || location.pathname.startsWith("/dev-tools/");
+
+  useEffect(() => {
+    rememberReturnPath(location.pathname, location.search);
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     void appendSystemLog({ level: "info", source: "应用", message: "应用窗口已启动" }).catch(() => {

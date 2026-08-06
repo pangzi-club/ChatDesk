@@ -1,19 +1,79 @@
 import { ArrowLeft, FolderGit2, Lock, SquareTerminal, TextCursorInput, Wrench } from "lucide-react";
 import type { ComponentType } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
+import { getReturnPath } from "@/lib/app-return-path";
 
 const tools = [
-  { to: "/dev-tools/encrypt", label: "Encrypt", icon: Lock },
-  { to: "/dev-tools/vite-ports", label: "VitePorts", icon: SquareTerminal },
-  { to: "/dev-tools/inputs", label: "Inputs", icon: TextCursorInput },
-  { to: "/dev-tools/workspaces", label: "Workspaces", icon: FolderGit2 },
+  {
+    to: "/dev-tools/encrypt",
+    label: "Encrypt",
+    description: "使用 AES-GCM-256 在本地加密与解密文本。",
+    icon: Lock,
+  },
+  {
+    to: "/dev-tools/vite-ports",
+    label: "VitePorts",
+    description: "查看本机 Vite 开发服务并快速释放占用端口。",
+    icon: SquareTerminal,
+  },
+  {
+    to: "/dev-tools/inputs",
+    label: "Inputs",
+    description: "多 Tab 文本输入区，方便临时编辑与对照。",
+    icon: TextCursorInput,
+  },
+  {
+    to: "/dev-tools/workspaces",
+    label: "Workspaces",
+    description: "管理本地项目目录，查看 Git 状态与最近提交。",
+    icon: FolderGit2,
+  },
 ] satisfies Array<{
   to: string;
   label: string;
+  description: string;
   icon: ComponentType<{ className?: string }>;
 }>;
+
+function DevToolsPage() {
+  return (
+    <div className="flex w-full flex-1 flex-col gap-6 px-4 pt-12 pb-8 sm:px-6 lg:px-8">
+      <header>
+        <p className="font-medium text-muted-foreground text-xs uppercase tracking-[0.16em]">
+          Development
+        </p>
+        <h1 className="mt-2 font-semibold text-3xl tracking-tight">Dev Tools</h1>
+        <p className="mt-2 max-w-2xl text-muted-foreground text-sm">
+          本地开发工具集合，选择一个工具开始使用。
+        </p>
+      </header>
+
+      <section aria-label="开发工具列表" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {tools.map((tool) => {
+          const Icon = tool.icon;
+
+          return (
+            <Link
+              className="group rounded-lg border border-border bg-card p-5 transition-colors hover:bg-accent/40"
+              key={tool.to}
+              to={tool.to}
+            >
+              <div className="flex items-center gap-3">
+                <span className="flex size-9 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors group-hover:text-foreground">
+                  <Icon className="size-4" />
+                </span>
+                <h2 className="font-medium text-foreground">{tool.label}</h2>
+              </div>
+              <p className="mt-3 text-muted-foreground text-sm leading-6">{tool.description}</p>
+            </Link>
+          );
+        })}
+      </section>
+    </div>
+  );
+}
 
 function DevToolsLayout() {
   const navigate = useNavigate();
@@ -24,7 +84,7 @@ function DevToolsLayout() {
         <Button
           aria-label="返回应用"
           className="mb-5 justify-start gap-2 px-2 text-muted-foreground hover:text-foreground max-sm:justify-center max-sm:px-0"
-          onClick={() => navigate("/dashboard")}
+          onClick={() => navigate(getReturnPath())}
           type="button"
           variant="ghost"
         >
@@ -40,7 +100,7 @@ function DevToolsLayout() {
         </p>
         <nav className="space-y-1" aria-label="开发工具导航">
           {tools.map((tool) => (
-            <DevToolsNavItem key={tool.to} {...tool} />
+            <DevToolsNavItem key={tool.to} icon={tool.icon} label={tool.label} to={tool.to} />
           ))}
         </nav>
         <div className="mt-auto border-border border-t py-5 text-muted-foreground text-xs max-sm:hidden">
@@ -77,4 +137,4 @@ function DevToolsNavItem({
   );
 }
 
-export { DevToolsLayout };
+export { DevToolsLayout, DevToolsPage };

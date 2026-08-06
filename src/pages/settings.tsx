@@ -37,6 +37,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { getReturnPath } from "@/lib/app-return-path";
 import {
   type ChatMemoryStore,
   DEFAULT_CHAT_MEMORY,
@@ -77,7 +78,7 @@ function SettingsLayout() {
         <Button
           aria-label="返回应用"
           className="mb-5 justify-start gap-2 px-2 text-muted-foreground hover:text-foreground max-sm:justify-center max-sm:px-0"
-          onClick={() => navigate("/dashboard")}
+          onClick={() => navigate(getReturnPath())}
           type="button"
           variant="ghost"
         >

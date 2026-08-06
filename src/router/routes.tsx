@@ -6,7 +6,7 @@ import { AutomationsPage } from "@/pages/automations";
 import { ChatPage } from "@/pages/chat";
 import { CommitPage } from "@/pages/commit";
 import { DashboardPage } from "@/pages/dashboard";
-import { DevToolsLayout } from "@/pages/dev-tools";
+import { DevToolsLayout, DevToolsPage } from "@/pages/dev-tools";
 import { EncryptPage } from "@/pages/encrypt";
 import { ImageGenerationPage } from "@/pages/image-generation";
 import { InputsPage } from "@/pages/inputs";
@@ -67,14 +67,18 @@ const router = createHashRouter([
       },
       {
         path: "dev-tools",
-        element: <DevToolsLayout />,
         children: [
-          { index: true, element: <Navigate replace to="encrypt" /> },
-          { path: "encrypt", element: <EncryptPage /> },
-          { path: "vite-ports", element: <VitePortsPage /> },
-          { path: "inputs", element: <InputsPage /> },
-          { path: "workspaces", element: <WorkspacesPage /> },
-          { path: "workspaces/:projectId", element: <WorkspaceDetailPage /> },
+          { index: true, element: <DevToolsPage /> },
+          {
+            element: <DevToolsLayout />,
+            children: [
+              { path: "encrypt", element: <EncryptPage /> },
+              { path: "vite-ports", element: <VitePortsPage /> },
+              { path: "inputs", element: <InputsPage /> },
+              { path: "workspaces", element: <WorkspacesPage /> },
+              { path: "workspaces/:projectId", element: <WorkspaceDetailPage /> },
+            ],
+          },
         ],
       },
       {
