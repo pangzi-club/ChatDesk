@@ -33,3 +33,32 @@ pub struct SandboxInfo {
     pub available: bool,
     pub default_cwd: String,
 }
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceDirEntry {
+    pub name: String,
+    pub path: String,
+    pub kind: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceListDirResult {
+    pub path: String,
+    pub entries: Vec<WorkspaceDirEntry>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceReadFileResult {
+    pub path: String,
+    pub content: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceWriteFileResult {
+    pub path: String,
+    pub bytes_written: usize,
+}

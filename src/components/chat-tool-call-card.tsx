@@ -8,6 +8,7 @@ import {
   readImageGenerationOutput,
 } from "@/lib/chat-image-generation";
 import { CHAT_TOOL_DISPLAY_NAMES } from "@/lib/chat-tool-defs";
+import { SANDBOX_TOOL_DISPLAY_NAMES } from "@/lib/sandbox-agent-tools";
 
 type ChatToolCallCardProps = {
   toolName: string;
@@ -129,6 +130,9 @@ function statusLabel(options: {
     return state;
   }
   if (state === "output-available") return preliminary ? "更新中" : "成功";
+  if (state === "output-denied") return "已拒绝";
+  if (state === "approval-requested") return "待批准";
+  if (state === "approval-responded") return "已响应";
   if (state === "input-streaming" || state === "input-available") return "调用中";
   return state;
 }
@@ -142,7 +146,8 @@ export function ChatToolCallCard({
   preliminary = false,
 }: ChatToolCallCardProps) {
   const [open, setOpen] = useState(false);
-  const title = CHAT_TOOL_DISPLAY_NAMES[toolName] ?? toolName;
+  const title =
+    CHAT_TOOL_DISPLAY_NAMES[toolName] ?? SANDBOX_TOOL_DISPLAY_NAMES[toolName] ?? toolName;
   const outputError = extractToolOutputError(output);
   const resolvedError = errorText || outputError;
   const failed = state === "output-error" || Boolean(resolvedError);
@@ -177,7 +182,12 @@ export function ChatToolCallCard({
     return null;
   }, [failed, isImageGeneration, output]);
   const pending =
-    !failed && (preliminary || state === "input-streaming" || state === "input-available");
+    !failed &&
+    (preliminary ||
+      state === "input-streaming" ||
+      state === "input-available" ||
+      state === "approval-requested");
+  const denied = state === "output-denied";
   const status = statusLabel({
     toolName,
     state,
@@ -189,7 +199,9 @@ export function ChatToolCallCard({
   const summaryQuery = webSearch?.queries[0];
 
   return (
-    <div className={`chat-tool-call ${failed ? "is-error" : ""} ${pending ? "is-pending" : ""}`}>
+    <div
+      className={`chat-tool-call ${failed || denied ? "is-error" : ""} ${pending ? "is-pending" : ""}`}
+    >
       <button
         aria-expanded={open}
         className="chat-tool-call-summary"

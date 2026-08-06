@@ -41,7 +41,7 @@ const tools = [
   {
     to: "/dev-tools/sandbox",
     label: "Sandbox",
-    description: "对比完全访问与 Seatbelt 沙箱，演示权限同意流程。",
+    description: "在工作区目录用自然语言指挥 AI 读写文件；沙箱模式写入需确认。",
     icon: Shield,
   },
 ] satisfies Array<{
@@ -93,8 +93,8 @@ function DevToolsLayout() {
   const navigate = useNavigate();
 
   return (
-    <div className="flex min-h-full w-full bg-background">
-      <aside className="sticky top-0 flex h-screen w-[272px] shrink-0 flex-col border-border border-r bg-card/80 px-4 pt-10 max-md:w-[220px] max-sm:w-[76px] max-sm:px-2">
+    <div className="flex h-full min-h-0 w-full overflow-hidden bg-background">
+      <aside className="flex h-full w-[272px] shrink-0 flex-col overflow-y-auto border-border border-r bg-card/80 px-4 pt-10 max-md:w-[220px] max-sm:w-[76px] max-sm:px-2">
         <Button
           aria-label="返回应用"
           className="mb-5 justify-start gap-2 px-2 text-muted-foreground hover:text-foreground max-sm:justify-center max-sm:px-0"
@@ -122,7 +122,7 @@ function DevToolsLayout() {
           <span className="mt-1 block opacity-60">本地开发工具</span>
         </div>
       </aside>
-      <main className="flex min-h-full min-w-0 flex-1 flex-col">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
         <Outlet />
       </main>
     </div>

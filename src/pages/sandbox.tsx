@@ -1,420 +1,483 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
-import { CheckCircle2, Shield, ShieldOff, Terminal, XCircle } from "lucide-react";
-import { useState } from "react";
+import { useChat } from "@ai-sdk/react";
+import { code } from "@streamdown/code";
+import { useQuery } from "@tanstack/react-query";
+import { getToolName, isToolUIPart, type UIMessage } from "ai";
+import { ArrowUp, Bot, CircleStop, Plus, Sparkles, User } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import { Streamdown } from "streamdown";
+import "streamdown/styles.css";
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { ChatToolCallCard } from "@/components/chat-tool-call-card";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { loadModels } from "@/lib/models";
+import { createSandboxAgentTransport, type SandboxAgentMode } from "@/lib/sandbox-agent-tools";
+import { createSandboxWriteGate, type SandboxWriteRequest } from "@/lib/sandbox-write-gate";
+import { loadWorkspaceProjects, type WorkspaceProject } from "@/lib/workspaces";
 
-type SandboxMode = "full" | "sandbox";
-type DemoId = "write-inside" | "write-outside" | "network";
-
-interface SandboxInfo {
-  available: boolean;
-  defaultCwd: string;
-}
-
-interface ShellCommandResult {
-  code: number;
-  out: string;
-}
-
-interface DemoCase {
-  id: DemoId;
-  label: string;
-  command: string;
-  expectExitZero: (mode: SandboxMode, networkGranted: boolean) => boolean;
-  expectedHint: (mode: SandboxMode, networkGranted: boolean) => string;
-  interpret: (mode: SandboxMode, networkGranted: boolean, exitOk: boolean) => string;
-}
-
-const DEMO_CASES: DemoCase[] = [
-  {
-    id: "write-inside",
-    label: "① 工作区内写入",
-    command: 'echo "ok from sandbox demo" > ./ok.txt && cat ./ok.txt',
-    expectExitZero: () => true,
-    expectedHint: () => "预期：成功（退出码 0，能读到 ok from sandbox demo）",
-    interpret: (_mode, _network, exitOk) =>
-      exitOk
-        ? "工作区内写入未被拦截，符合预期。"
-        : "工作区内写入失败了，不符合预期（沙箱本应允许写当前工作目录）。",
-  },
-  {
-    id: "write-outside",
-    label: "② 工作区外写入",
-    command: 'echo "blocked" > "$HOME/m-dashboard-sandbox-blocked.txt"',
-    expectExitZero: (mode) => mode === "full",
-    expectedHint: (mode) =>
-      mode === "sandbox"
-        ? "预期：失败（退出码非 0，沙箱拦住写家目录）—— 失败才算演示成功"
-        : "预期：成功（完全访问不限制写路径）",
-    interpret: (mode, _network, exitOk) => {
-      if (mode === "sandbox") {
-        return exitOk
-          ? "沙箱没有拦住工作区外写入，不符合预期。"
-          : "沙箱正确拦住了工作区外写入，这就是沙箱在起作用。";
-      }
-      return exitOk ? "完全访问下可以写家目录，符合预期。" : "完全访问下写入失败了，不符合预期。";
-    },
-  },
-  {
-    id: "network",
-    label: "③ 网络请求",
-    command: "curl -sS -m 5 -o /dev/null -w 'HTTP %{http_code}\\n' https://example.com",
-    expectExitZero: (mode, networkGranted) => mode === "full" || networkGranted,
-    expectedHint: (mode, networkGranted) => {
-      if (mode === "full") {
-        return "预期：成功（完全访问允许网络）";
-      }
-      if (networkGranted) {
-        return "预期：成功（你已同意网络权限）";
-      }
-      return "预期：失败（沙箱默认禁网）—— 失败才算演示成功；打开上方「网络权限」后再跑应成功";
-    },
-    interpret: (mode, networkGranted, exitOk) => {
-      if (mode === "full") {
-        return exitOk ? "完全访问下网络可用，符合预期。" : "完全访问下网络失败，不符合预期。";
-      }
-      if (networkGranted) {
-        return exitOk
-          ? "授权后网络可用，符合预期。"
-          : "已授权但仍失败，不符合预期（也可能是本机网络问题）。";
-      }
-      return exitOk
-        ? "未授权网络却成功了，不符合预期（沙箱应禁网）。"
-        : "未授权时网络被拦住，符合预期。可打开「网络权限」后再跑一次对比。";
-    },
-  },
+const EXAMPLE_PROMPTS = [
+  "列出当前目录下有哪些文件",
+  "在 sandbox-note.txt 写入一句问候",
+  "读取 README.md 并总结前几段",
 ];
 
-interface RunRecord {
-  demoId: DemoId;
-  mode: SandboxMode;
-  networkGranted: boolean;
-  result: ShellCommandResult;
-  matched: boolean;
-  summary: string;
-  detail: string;
-}
-
 function SandboxPage() {
-  const infoQuery = useQuery({
-    queryKey: ["sandbox-info"],
-    queryFn: () => invoke<SandboxInfo>("get_sandbox_info"),
+  const { data: projects = [], isLoading: isProjectsLoading } = useQuery({
+    queryKey: ["workspace-projects"],
+    queryFn: loadWorkspaceProjects,
+  });
+  const { data: configuredModels, isLoading: isModelsLoading } = useQuery({
+    queryKey: ["models"],
+    queryFn: loadModels,
   });
 
-  const [mode, setMode] = useState<SandboxMode>("sandbox");
-  const [selectedDemoId, setSelectedDemoId] = useState<DemoId>("write-inside");
-  const [networkGranted, setNetworkGranted] = useState(false);
-  const [networkDialogOpen, setNetworkDialogOpen] = useState(false);
-  const [lastRun, setLastRun] = useState<RunRecord | null>(null);
+  const models = useMemo(
+    () => (configuredModels ?? []).filter((model) => !model.baseUrl.startsWith("local://")),
+    [configuredModels],
+  );
 
-  const runMutation = useMutation({
-    mutationFn: (payload: {
-      demo: DemoCase;
-      mode: SandboxMode;
-      networkGranted: boolean;
-      cwd: string;
-    }) =>
-      invoke<ShellCommandResult>("run_shell_command", {
-        command: payload.demo.command,
-        cwd: payload.cwd || null,
-        mode: payload.mode,
-        permissions: {
-          network: payload.mode === "sandbox" ? payload.networkGranted : true,
-        },
-      }).then((result) => ({ ...payload, result })),
-    onSuccess: ({ demo, mode: runMode, networkGranted: runNetwork, result }) => {
-      const exitOk = result.code === 0;
-      const expectZero = demo.expectExitZero(runMode, runNetwork);
-      const matched = exitOk === expectZero;
-      setLastRun({
-        demoId: demo.id,
-        mode: runMode,
-        networkGranted: runNetwork,
-        result,
-        matched,
-        summary: matched ? "符合预期" : "不符合预期",
-        detail: demo.interpret(runMode, runNetwork, exitOk),
-      });
+  const [selectedModelId, setSelectedModelId] = useState("");
+  const [workspaceKey, setWorkspaceKey] = useState("");
+  const [mode, setMode] = useState<SandboxAgentMode>("sandbox");
+  const [sessionId, setSessionId] = useState(() => crypto.randomUUID());
+  const [input, setInput] = useState("");
+  const [pendingWrite, setPendingWrite] = useState<SandboxWriteRequest | null>(null);
+  const isComposingRef = useRef(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const cwdRef = useRef("");
+  const modeRef = useRef<SandboxAgentMode>("sandbox");
+  const writeGateRef = useRef(createSandboxWriteGate());
+
+  const selectedModel = models.find((model) => model.id === selectedModelId) ?? models[0];
+  const selectedCwd = resolveSelectedCwd(workspaceKey, projects);
+  const modelRef = useRef(selectedModel);
+  cwdRef.current = selectedCwd;
+  modeRef.current = mode;
+  modelRef.current = selectedModel;
+
+  const transport = useMemo(
+    () =>
+      createSandboxAgentTransport({
+        getModel: () => modelRef.current,
+        getCwd: () => cwdRef.current,
+        getMode: () => modeRef.current,
+        writeGate: writeGateRef.current,
+      }),
+    [],
+  );
+
+  const { messages, setMessages, sendMessage, stop, status, error } = useChat({
+    id: sessionId,
+    transport,
+    onError: (chatError) => {
+      console.error("Sandbox agent request failed", chatError);
     },
   });
 
-  const available = infoQuery.data?.available ?? false;
-  const isInitialLoading = infoQuery.isPending && !infoQuery.data;
-  const cwd = infoQuery.data?.defaultCwd ?? "";
+  const isGenerating = status === "submitted" || status === "streaming";
+  const lastMessage = messages[messages.length - 1];
+  const hasAssistantMessage =
+    lastMessage?.role === "assistant" &&
+    (messageText(lastMessage).trim().length > 0 || messageHasToolParts(lastMessage));
+  const canSend = Boolean(selectedCwd) && Boolean(selectedModel?.supportsTools) && !isGenerating;
 
-  function handleModeChange(next: SandboxMode) {
-    setMode(next);
-    if (next === "full") {
-      setNetworkGranted(false);
+  useEffect(() => {
+    return writeGateRef.current.subscribe(setPendingWrite);
+  }, []);
+
+  useEffect(() => {
+    if (models.length > 0 && !models.some((model) => model.id === selectedModelId)) {
+      setSelectedModelId(models.find((model) => model.isDefault)?.id ?? models[0].id);
     }
-    setLastRun(null);
+  }, [models, selectedModelId]);
+
+  useEffect(() => {
+    if (workspaceKey) return;
+    if (projects.length > 0) {
+      setWorkspaceKey(projects[0].id);
+    }
+  }, [projects, workspaceKey]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: these values intentionally trigger the scroll effect.
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (!node) return;
+    node.scrollTop = node.scrollHeight;
+  }, [messages, status, pendingWrite]);
+
+  function resetSession() {
+    if (pendingWrite) {
+      writeGateRef.current.respond(pendingWrite.id, false);
+    }
+    void stop();
+    setSessionId(crypto.randomUUID());
+    setMessages([]);
+    setInput("");
   }
 
-  function revokeNetworkAccess() {
-    setNetworkGranted(false);
-    setLastRun(null);
+  function handleWorkspaceChange(nextKey: string) {
+    if (nextKey === workspaceKey) return;
+    resetSession();
+    setWorkspaceKey(nextKey);
   }
 
-  function confirmNetworkAccess() {
-    setNetworkGranted(true);
-    setNetworkDialogOpen(false);
-    setLastRun(null);
+  function handleModeChange(next: SandboxAgentMode) {
+    if (next === mode) return;
+    setMode(next);
   }
 
-  function runDemo(demo: DemoCase) {
-    if (!available || runMutation.isPending) return;
-    setSelectedDemoId(demo.id);
-    setLastRun(null);
-    runMutation.mutate({
-      demo,
-      mode,
-      networkGranted,
-      cwd,
-    });
+  function submitMessage() {
+    const text = input.trim();
+    if (!text || !canSend || pendingWrite) return;
+    setInput("");
+    void sendMessage({ text });
   }
+
+  function respondToWrite(approved: boolean) {
+    if (!pendingWrite) return;
+    writeGateRef.current.respond(pendingWrite.id, approved);
+  }
+
+  const workspaceOptions = useMemo(
+    () =>
+      projects.map((project) => ({
+        key: project.id,
+        label: pathBasename(project.path),
+        path: project.path,
+      })),
+    [projects],
+  );
 
   return (
-    <div className="flex w-full flex-1 flex-col gap-6 px-6 pt-14 pb-10 sm:px-10">
-      <header>
-        <p className="font-medium text-sm text-muted-foreground">Sandbox</p>
-        <h1 className="mt-2 font-semibold text-3xl text-foreground tracking-normal">
-          Seatbelt 沙箱示例
-        </h1>
-        <p className="mt-2 max-w-2xl text-muted-foreground text-sm leading-6">
-          用三条固定演示对比「完全访问」和「沙箱」。看结果时不要只看退出码：有些场景
-          <span className="text-foreground">失败才算演示成功</span>
-          （说明沙箱拦住了危险操作）。
-        </p>
+    <div className="chat-page h-full min-h-0">
+      <header className="chat-header">
+        <div className="chat-brand">
+          <div className="chat-brand-mark">
+            <Sparkles className="size-4" />
+          </div>
+          <div>
+            <p className="chat-kicker">Sandbox Agent</p>
+            <h1>工作区助手</h1>
+          </div>
+        </div>
+        <div className="chat-header-actions">
+          <Button
+            aria-label="新建会话"
+            className="chat-icon-button"
+            size="icon"
+            type="button"
+            variant="ghost"
+            onClick={resetSession}
+          >
+            <Plus className="size-4" />
+          </Button>
+        </div>
       </header>
 
-      {infoQuery.isError ? (
-        <section className="rounded-lg border border-destructive/40 bg-destructive/10 p-5">
-          <p className="text-destructive text-sm">加载失败：{describeError(infoQuery.error)}</p>
-        </section>
-      ) : null}
+      <div className="chat-stage" ref={scrollRef}>
+        <div className="chat-content">
+          <div className="chat-context-row">
+            <span className="chat-status-dot" />
+            <span>{mode === "sandbox" ? "沙箱模式" : "完全访问"}</span>
+            <span className="chat-context-rule" />
+            <span className="truncate" title={selectedCwd || undefined}>
+              {selectedCwd ? pathBasename(selectedCwd) : "未选择工作目录"}
+            </span>
+          </div>
 
-      {isInitialLoading ? <SandboxSkeleton /> : null}
-
-      {!isInitialLoading && !infoQuery.isError ? (
-        <>
-          {!available ? (
-            <section className="rounded-lg border border-border bg-muted/60 p-5">
-              <p className="text-sm text-muted-foreground">
-                Seatbelt 沙箱仅在 macOS 上可用（依赖 <code>/usr/bin/sandbox-exec</code>
-                ）。当前平台无法运行沙箱演示。
-              </p>
-            </section>
+          {messages.length === 0 ? (
+            <div className="chat-tools-hint">
+              {!selectedCwd ? (
+                <p>
+                  请先在底部选择 Workspaces 中的目录。若列表为空，请先到{" "}
+                  <Link to="/dev-tools/workspaces">Workspaces</Link> 添加项目。
+                </p>
+              ) : selectedModel && !selectedModel.supportsTools ? (
+                <p>
+                  当前模型未开启「支持 Tools」。可在 <Link to="/settings/models">模型设置</Link>{" "}
+                  中开启，或更换模型。
+                </p>
+              ) : models.length === 0 && !isModelsLoading ? (
+                <p>
+                  尚未配置模型。请先到 <Link to="/settings/models">模型设置</Link> 添加 API。
+                </p>
+              ) : (
+                <>
+                  <p>已绑定工作目录。沙箱模式下写入文件会先征求你的同意；完全访问则直接修改。</p>
+                  <div className="chat-tools-hint-chips">
+                    {EXAMPLE_PROMPTS.map((example) => (
+                      <button key={example} type="button" onClick={() => setInput(example)}>
+                        {example}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           ) : null}
 
-          <section className="rounded-lg border border-border bg-muted/60 p-5">
-            <h2 className="font-semibold text-foreground">1. 选择运行模式</h2>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <ModeButton
-                active={mode === "sandbox"}
-                disabled={!available}
-                icon={Shield}
-                label="沙箱（推荐先试）"
-                onClick={() => handleModeChange("sandbox")}
-              />
-              <ModeButton
-                active={mode === "full"}
-                disabled={!available}
-                icon={ShieldOff}
-                label="完全访问"
-                onClick={() => handleModeChange("full")}
-              />
-            </div>
+          {messages.map((message) => (
+            <MessageBubble
+              key={message.id}
+              isStreaming={status === "streaming" && message.id === lastMessage?.id}
+              message={message}
+            />
+          ))}
 
-            {mode === "sandbox" ? (
-              <div className="mt-5 flex items-start justify-between gap-4 rounded-md border border-border bg-background px-4 py-3">
-                <div>
-                  <p className="font-medium text-sm">网络权限</p>
-                  <p className="mt-1 text-muted-foreground text-xs leading-5">
-                    {networkGranted
-                      ? "已授权。再跑演示 ③ 应变为成功；可随时撤销。"
-                      : "默认拒绝。点右侧按钮 → 在弹窗里点「允许」后才会生效。"}
-                  </p>
-                </div>
-                {networkGranted ? (
-                  <Button
-                    disabled={!available}
-                    onClick={revokeNetworkAccess}
-                    type="button"
-                    variant="outline"
-                  >
-                    撤销
-                  </Button>
-                ) : (
-                  <Button
-                    disabled={!available}
-                    onClick={() => setNetworkDialogOpen(true)}
-                    type="button"
-                  >
-                    请求网络权限
-                  </Button>
-                )}
+          {isGenerating && !hasAssistantMessage ? (
+            <div className="chat-message assistant-message">
+              <div className="chat-avatar assistant-avatar">
+                <Bot className="size-4" />
               </div>
-            ) : (
-              <p className="mt-4 text-muted-foreground text-xs leading-5">
-                完全访问：三条演示通常都会成功（无 Seatbelt 限制）。
-              </p>
-            )}
-          </section>
-
-          <section className="rounded-lg border border-border bg-muted/60 p-5">
-            <h2 className="flex items-center gap-2 font-semibold text-foreground">
-              <Terminal className="size-4" />
-              2. 一键跑演示
-            </h2>
-            <p className="mt-2 text-muted-foreground text-sm leading-6">
-              当前是
-              <span className="text-foreground">{mode === "sandbox" ? "沙箱" : "完全访问"}</span>
-              {mode === "sandbox" ? `，网络${networkGranted ? "已授权" : "未授权"}` : null}
-              。点按钮会立刻执行，并告诉你是否符合预期。
-            </p>
-
-            <div className="mt-4 grid gap-3">
-              {DEMO_CASES.map((demo) => {
-                const active = selectedDemoId === demo.id;
-                return (
-                  <div
-                    className={`rounded-md border bg-background p-4 ${
-                      active ? "border-foreground/30" : "border-border"
-                    }`}
-                    key={demo.id}
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-sm">{demo.label}</p>
-                        <p className="mt-1 text-muted-foreground text-xs leading-5">
-                          {demo.expectedHint(mode, networkGranted)}
-                        </p>
-                      </div>
-                      <Button
-                        disabled={!available || runMutation.isPending}
-                        onClick={() => runDemo(demo)}
-                        type="button"
-                      >
-                        {runMutation.isPending && selectedDemoId === demo.id
-                          ? "运行中…"
-                          : "运行这条"}
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
+              <div className="chat-message-body">
+                <div className="chat-message-meta">
+                  <strong>Sandbox Agent</strong>
+                  <span>思考中</span>
+                </div>
+                <p className="chat-message-text text-muted-foreground">正在处理…</p>
+              </div>
             </div>
+          ) : null}
 
-            {runMutation.isError ? (
-              <p className="mt-4 text-destructive text-sm">
-                运行失败：{describeError(runMutation.error)}
-              </p>
-            ) : null}
-          </section>
-
-          {lastRun ? <ResultCard record={lastRun} /> : null}
-        </>
-      ) : null}
-
-      <AlertDialog open={networkDialogOpen} onOpenChange={setNetworkDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>允许网络访问？</AlertDialogTitle>
-            <AlertDialogDescription>
-              沙箱默认禁止网络。点「允许」后，本会话再跑「③ 网络请求」应变为成功。你可以随时撤销。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>拒绝</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmNetworkAccess}>允许</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
-  );
-}
-
-function ResultCard({ record }: { record: RunRecord }) {
-  const Icon = record.matched ? CheckCircle2 : XCircle;
-  const tone = record.matched
-    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-    : "border-destructive/40 bg-destructive/10 text-destructive";
-  const demoLabel = DEMO_CASES.find((demo) => demo.id === record.demoId)?.label ?? record.demoId;
-
-  return (
-    <section className={`rounded-lg border p-5 ${tone}`}>
-      <div className="flex items-start gap-3">
-        <Icon className="mt-0.5 size-5 shrink-0" />
-        <div className="min-w-0 flex-1">
-          <h2 className="font-semibold text-base">{record.summary}</h2>
-          <p className="mt-1 text-sm leading-6 opacity-90">{record.detail}</p>
-          <p className="mt-3 text-xs opacity-80">
-            退出码 {record.result.code}
-            {` · ${demoLabel}`}
-            {" · "}
-            {record.mode === "sandbox" ? "沙箱" : "完全访问"}
-            {record.mode === "sandbox"
-              ? ` · 网络${record.networkGranted ? "已授权" : "未授权"}`
-              : null}
-          </p>
-          <pre className="mt-3 max-h-64 overflow-auto rounded-md border border-border/60 bg-background/80 p-3 font-mono text-foreground text-sm whitespace-pre-wrap">
-            {record.result.out || "(无输出)"}
-          </pre>
+          {error ? (
+            <p className="mt-4 text-destructive text-sm">
+              {error.message || "请求失败，请稍后重试。"}
+            </p>
+          ) : null}
         </div>
       </div>
-    </section>
-  );
-}
 
-function ModeButton({
-  active,
-  disabled,
-  icon: Icon,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  disabled?: boolean;
-  icon: typeof Shield;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <Button
-      disabled={disabled}
-      onClick={onClick}
-      type="button"
-      variant={active ? "default" : "outline"}
-    >
-      <Icon className="size-4" />
-      {label}
-    </Button>
-  );
-}
-
-function SandboxSkeleton() {
-  return (
-    <div className="animate-pulse space-y-4">
-      <div className="h-32 rounded-lg border border-border bg-muted/60" />
-      <div className="h-48 rounded-lg border border-border bg-muted/60" />
+      <div className="chat-composer-wrap">
+        {pendingWrite ? (
+          <div className="mb-2 rounded-lg border border-border/80 bg-muted/40 px-3 py-2.5">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-foreground text-sm">请求写入文件</p>
+                <p
+                  className="mt-0.5 truncate text-muted-foreground text-xs"
+                  title={pendingWrite.path}
+                >
+                  {pendingWrite.path || "未知路径"}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <Button
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                  onClick={() => respondToWrite(false)}
+                >
+                  拒绝
+                </Button>
+                <Button size="sm" type="button" onClick={() => respondToWrite(true)}>
+                  允许
+                </Button>
+              </div>
+            </div>
+            <pre className="mt-2 max-h-28 overflow-auto rounded-md border border-border/60 bg-background/70 p-2 text-[11px] leading-relaxed whitespace-pre-wrap text-muted-foreground">
+              {truncatePreview(pendingWrite.content) || "—"}
+            </pre>
+          </div>
+        ) : null}
+        <div className="chat-composer">
+          <textarea
+            disabled={!selectedCwd || pendingWrite !== null}
+            placeholder={
+              pendingWrite
+                ? "请先处理上方的写入确认…"
+                : selectedCwd
+                  ? "描述你想在工作区里做的事…"
+                  : "请先选择工作目录后再输入…"
+            }
+            rows={3}
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            onCompositionEnd={() => {
+              isComposingRef.current = false;
+            }}
+            onCompositionStart={() => {
+              isComposingRef.current = true;
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" || event.shiftKey || isComposingRef.current) return;
+              event.preventDefault();
+              submitMessage();
+            }}
+          />
+          <div className="chat-composer-footer">
+            <div className="chat-composer-tools">
+              <Select
+                disabled={isModelsLoading || models.length === 0}
+                value={selectedModel?.id}
+                onValueChange={setSelectedModelId}
+              >
+                <SelectTrigger className="h-8 w-[140px] text-xs">
+                  <SelectValue placeholder="选择模型" />
+                </SelectTrigger>
+                <SelectContent>
+                  {models.map((model) => (
+                    <SelectItem key={model.id} value={model.id}>
+                      {model.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span aria-hidden className="mx-0.5 h-4 w-px shrink-0 bg-border" />
+              <Select
+                disabled={isProjectsLoading}
+                value={workspaceKey || undefined}
+                onValueChange={handleWorkspaceChange}
+              >
+                <SelectTrigger aria-label="选择工作目录" className="h-8 w-[120px] text-xs">
+                  <SelectValue placeholder={isProjectsLoading ? "加载中…" : "工作区"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {workspaceOptions.length === 0 ? (
+                    <SelectItem disabled value="__empty">
+                      暂无工作区
+                    </SelectItem>
+                  ) : (
+                    workspaceOptions.map((option) => (
+                      <SelectItem key={option.key} title={option.path} value={option.key}>
+                        {option.label}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              <span aria-hidden className="mx-0.5 h-4 w-px shrink-0 bg-border" />
+              <Select
+                value={mode}
+                onValueChange={(value) => handleModeChange(value as SandboxAgentMode)}
+              >
+                <SelectTrigger aria-label="访问模式" className="h-8 w-[110px] text-xs">
+                  <SelectValue placeholder="沙箱" />
+                </SelectTrigger>
+                <SelectContent className="w-[220px]">
+                  <SelectItem description="写入前需要确认" value="sandbox">
+                    沙箱
+                  </SelectItem>
+                  <SelectItem
+                    description={
+                      <span className="text-amber-700 dark:text-amber-400">
+                        写入将直接执行，请谨慎
+                      </span>
+                    }
+                    value="full"
+                  >
+                    完全访问
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              {selectedModel && !selectedModel.supportsTools ? (
+                <Link className="chat-settings-link text-xs" to="/settings/models">
+                  模型未开 Tools
+                </Link>
+              ) : null}
+            </div>
+            <div className="chat-composer-actions">
+              <Button
+                aria-label={isGenerating ? "停止生成" : "发送消息"}
+                className="chat-send-button"
+                disabled={isGenerating ? false : !input.trim() || !canSend || pendingWrite !== null}
+                size="icon"
+                type="button"
+                onClick={() => {
+                  if (isGenerating) {
+                    if (pendingWrite) {
+                      writeGateRef.current.respond(pendingWrite.id, false);
+                    }
+                    void stop();
+                    return;
+                  }
+                  submitMessage();
+                }}
+              >
+                {isGenerating ? <CircleStop className="size-4" /> : <ArrowUp className="size-4" />}
+              </Button>
+            </div>
+          </div>
+        </div>
+        <p className="chat-disclaimer">写入仅限所选工作目录；请核实 AI 生成的内容后再批准。</p>
+      </div>
     </div>
   );
 }
 
-function describeError(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+function MessageBubble({ message, isStreaming }: { message: UIMessage; isStreaming: boolean }) {
+  const text = messageText(message);
+  const isUser = message.role === "user";
+  const toolParts = message.parts.filter(isToolUIPart);
+  if (!isUser && !text.trim() && toolParts.length === 0) return null;
+
+  return (
+    <div className={`chat-message ${isUser ? "user-message" : "assistant-message"}`}>
+      <div className={`chat-avatar ${isUser ? "user-avatar" : "assistant-avatar"}`}>
+        {isUser ? <User className="size-4" /> : <Bot className="size-4" />}
+      </div>
+      <div className="chat-message-body">
+        <div className="chat-message-meta">
+          <strong>{isUser ? "你" : "Sandbox Agent"}</strong>
+          <span>{isUser ? "刚刚" : isStreaming ? "生成中" : "已完成"}</span>
+        </div>
+        {!isUser && toolParts.length > 0 ? (
+          <div className="chat-tool-calls">
+            {toolParts.map((part) => (
+              <ChatToolCallCard
+                key={part.toolCallId}
+                errorText={"errorText" in part ? part.errorText : undefined}
+                input={part.input}
+                output={"output" in part ? part.output : undefined}
+                preliminary={"preliminary" in part ? Boolean(part.preliminary) : false}
+                state={part.state}
+                toolName={getToolName(part)}
+              />
+            ))}
+          </div>
+        ) : null}
+        {text.trim() ? (
+          <div className="chat-message-text">
+            <Streamdown isAnimating={!isUser && isStreaming} plugins={{ code }}>
+              {text}
+            </Streamdown>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function resolveSelectedCwd(workspaceKey: string, projects: WorkspaceProject[]) {
+  if (!workspaceKey) return "";
+  return projects.find((project) => project.id === workspaceKey)?.path ?? "";
+}
+
+function pathBasename(path: string) {
+  const parts = path.split(/[/\\]/).filter(Boolean);
+  return parts[parts.length - 1] ?? path;
+}
+
+function messageText(message: UIMessage) {
+  return message.parts
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("");
+}
+
+function messageHasToolParts(message: UIMessage) {
+  return message.parts.some(isToolUIPart);
+}
+
+function truncatePreview(content: string, max = 1200) {
+  if (content.length <= max) return content;
+  return `${content.slice(0, max)}\n…（已截断，共 ${content.length} 字符）`;
 }
 
 export { SandboxPage };

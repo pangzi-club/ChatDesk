@@ -115,7 +115,7 @@ const commandItems = [
     to: "/dev-tools/sandbox",
     label: "Sandbox",
     icon: Shield,
-    keywords: ["沙箱", "seatbelt", "sandbox", "权限", "devtools"],
+    keywords: ["沙箱", "sandbox", "agent", "工作区", "权限", "devtools"],
   },
   { to: "/settings", label: "Settings", icon: Settings, keywords: ["设置"] },
   { to: "/settings/theme", label: "主题", icon: Palette, keywords: ["theme", "外观"] },
@@ -149,6 +149,7 @@ function AppShell() {
   const navigate = useNavigate();
   const hideMainSidebar =
     location.pathname.startsWith("/settings") || location.pathname.startsWith("/dev-tools/");
+  const lockOutletScroll = location.pathname.startsWith("/dev-tools/sandbox");
 
   useEffect(() => {
     rememberReturnPath(location.pathname, location.search);
@@ -195,7 +196,9 @@ function AppShell() {
       <div className="flex min-h-0 w-full flex-1 overflow-hidden bg-background">
         {hideMainSidebar ? (
           <div className="relative flex min-w-0 flex-1 flex-col bg-background">
-            <section className="min-h-0 flex-1 overflow-y-auto">
+            <section
+              className={`min-h-0 flex-1 ${lockOutletScroll ? "overflow-hidden" : "overflow-y-auto"}`}
+            >
               <Outlet />
             </section>
             <div className="absolute inset-x-0 top-0 z-10 flex h-8 items-center">
