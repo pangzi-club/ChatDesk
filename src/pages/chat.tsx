@@ -16,6 +16,7 @@ import "streamdown/styles.css";
 import {
   ArrowUp,
   Bot,
+  Brain,
   ChevronDown,
   CircleStop,
   Copy,
@@ -35,6 +36,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
+import { ChatMemoryDialog } from "@/components/chat-memory-dialog";
 import { ChatSettingsDialog } from "@/components/chat-settings-dialog";
 import {
   AlertDialog,
@@ -55,6 +57,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  type ChatMemoryStore,
+  DEFAULT_CHAT_MEMORY,
+  formatMemoryForInject,
+  loadChatMemory,
+  saveChatMemory,
+} from "@/lib/chat-memory";
+import { scheduleMemoryUpdateFromTurn } from "@/lib/chat-memory-ops";
 import {
   type ChatDisplaySettings,
   DEFAULT_CHAT_DISPLAY,
@@ -112,6 +122,12 @@ function ChatPage() {
     queryKey: ["models"],
     queryFn: loadModels,
   });
+  const { data: chatMemory = DEFAULT_CHAT_MEMORY } = useQuery({
+    queryKey: ["chat-memory"],
+    queryFn: loadChatMemory,
+  });
+  const memoryRef = useRef(chatMemory);
+  memoryRef.current = chatMemory;
   const models = useMemo(
     () => (configuredModels && configuredModels.length > 0 ? configuredModels : demoModels),
     [configuredModels],
@@ -125,16 +141,24 @@ function ChatPage() {
   const pendingSessionRef = useRef<ChatSession | null>(null);
   const initializedHistoryRef = useRef(false);
   const savedFingerprintRef = useRef("");
+  const extractedFingerprintRef = useRef("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
   const [sessionToDelete, setSessionToDelete] = useState<ChatIndexItem | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [memoryOpen, setMemoryOpen] = useState(false);
   const [chatDisplay, setChatDisplay] = useState<ChatDisplaySettings>(DEFAULT_CHAT_DISPLAY);
   const selectedModel = models.find((model) => model.id === selectedModelId) ?? models[0];
-  const transport = useMemo(() => createModelTransport(selectedModel), [selectedModel]);
+  const transport = useMemo(
+    () => createModelTransport(selectedModel, () => memoryRef.current),
+    [selectedModel],
+  );
   const { messages, setMessages, sendMessage, stop, status, error } = useChat({
     id: sessionId,
     transport,
+    onError: (chatError) => {
+      console.error("Chat request failed", chatError);
+    },
   });
   useEffect(() => {
     void loadChatDisplaySettings().then(setChatDisplay);
@@ -143,6 +167,11 @@ function ChatPage() {
   const updateChatDisplay = (next: ChatDisplaySettings) => {
     setChatDisplay(next);
     void saveChatDisplaySettings(next);
+  };
+
+  const updateChatMemory = (next: ChatMemoryStore) => {
+    queryClient.setQueryData(["chat-memory"], next);
+    void saveChatMemory(next).catch((error) => console.error("Failed to save chat memory", error));
   };
 
   const isGenerating = status === "submitted" || status === "streaming";
@@ -207,9 +236,23 @@ function ChatPage() {
       messages,
       attachments: [],
     })
-      .then(() => queryClient.invalidateQueries({ queryKey: ["chat-index"] }))
+      .then(() => {
+        void queryClient.invalidateQueries({ queryKey: ["chat-index"] });
+        if (extractedFingerprintRef.current === fingerprint) return;
+        extractedFingerprintRef.current = fingerprint;
+        const lastUser = [...messages].reverse().find((message) => message.role === "user");
+        scheduleMemoryUpdateFromTurn({
+          model: selectedModel,
+          sessionId,
+          userText: lastUser ? messageText(lastUser) : "",
+          assistantText: messageText(lastMessage),
+          onStoreChange: (store) => {
+            queryClient.setQueryData(["chat-memory"], store);
+          },
+        });
+      })
       .catch((saveError) => console.error("Failed to save chat session", saveError));
-  }, [messages, queryClient, selectedModel?.id, sessionId, status]);
+  }, [messages, queryClient, selectedModel, sessionId, status]);
 
   // Scroll when a message arrives or the local response indicator changes.
   // biome-ignore lint/correctness/useExhaustiveDependencies: these values intentionally trigger the scroll effect.
@@ -230,6 +273,7 @@ function ChatPage() {
     sessionCreatedAtRef.current = new Date().toISOString();
     setSessionTitle("新对话");
     savedFingerprintRef.current = "";
+    extractedFingerprintRef.current = "";
     suppressSaveRef.current = false;
     setMessages([]);
     setInput("");
@@ -241,6 +285,7 @@ function ChatPage() {
       if (!session) return;
       stop();
       savedFingerprintRef.current = "";
+      extractedFingerprintRef.current = "";
       pendingSessionRef.current = session;
       setSessionId(session.id);
     });
@@ -349,6 +394,16 @@ function ChatPage() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+          <Button
+            aria-label="长期记忆"
+            className="chat-icon-button"
+            size="icon"
+            variant="ghost"
+            type="button"
+            onClick={() => setMemoryOpen(true)}
+          >
+            <Brain className="size-4" />
+          </Button>
           <Button
             aria-label="显示设置"
             className="chat-icon-button"
@@ -485,6 +540,12 @@ function ChatPage() {
         open={settingsOpen}
         settings={chatDisplay}
       />
+      <ChatMemoryDialog
+        onOpenChange={setMemoryOpen}
+        onStoreChange={updateChatMemory}
+        open={memoryOpen}
+        store={chatMemory}
+      />
       <AlertDialog
         open={sessionToDelete !== null}
         onOpenChange={(open) => {
@@ -606,15 +667,31 @@ function formatModelLabel(model: ModelConfig) {
   return model.responsive ? `${model.name} · Responses` : model.name;
 }
 
-function createModelTransport(model: ModelConfig | undefined): ChatTransport<UIMessage> {
+function createModelTransport(
+  model: ModelConfig | undefined,
+  getMemory: () => ChatMemoryStore,
+): ChatTransport<UIMessage> {
   return {
     async sendMessages({ messages, abortSignal }) {
       if (!model || model.baseUrl.startsWith("local://")) {
         throw new Error("请先在设置中配置一个真实的模型 API。");
       }
+      const memory = getMemory();
+      const memorySystem =
+        memory.enabled && memory.items.length > 0 ? formatMemoryForInject(memory.items) : "";
       if (model.responsive) {
-        return sendResponsiveMessages(model, messages, abortSignal);
+        return sendResponsiveMessages(model, messages, abortSignal, memorySystem);
       }
+      const mappedMessages = messages.map((message) => ({
+        role: message.role,
+        content: message.parts
+          .filter((part) => part.type === "text")
+          .map((part) => part.text)
+          .join(""),
+      }));
+      const requestMessages = memorySystem
+        ? [{ role: "system" as const, content: memorySystem }, ...mappedMessages]
+        : mappedMessages;
       const response = await resolveFetch()(model.baseUrl, {
         method: "POST",
         headers: {
@@ -625,13 +702,7 @@ function createModelTransport(model: ModelConfig | undefined): ChatTransport<UIM
           model: resolveModelId(model),
           stream: true,
           stream_options: { include_usage: true },
-          messages: messages.map((message) => ({
-            role: message.role,
-            content: message.parts
-              .filter((part) => part.type === "text")
-              .map((part) => part.text)
-              .join(""),
-          })),
+          messages: requestMessages,
         }),
         signal: abortSignal,
       });
@@ -650,19 +721,29 @@ async function sendResponsiveMessages(
   model: ModelConfig,
   messages: UIMessage[],
   abortSignal: AbortSignal | undefined,
+  memorySystem: string,
 ): Promise<ReadableStream<UIMessageChunk>> {
   const provider = createOpenAI({
     apiKey: model.apiKey,
     baseURL: resolveOpenAICompatibleBaseURL(model.baseUrl),
     fetch: resolveFetch(),
   });
+  const modelMessages = await convertToModelMessages(messages);
   const result = streamText({
     model: provider.responses(resolveModelId(model)),
-    messages: await convertToModelMessages(messages),
+    messages: modelMessages,
+    ...(memorySystem ? { instructions: memorySystem } : {}),
     abortSignal,
   });
   return toUIMessageStream({
     stream: result.stream,
+    onError: (streamError) => {
+      console.error("Chat Responses stream failed", streamError);
+      if (streamError instanceof Error && streamError.message.trim()) {
+        return streamError.message;
+      }
+      return String(streamError);
+    },
     messageMetadata: ({ part }) => {
       if (part.type !== "finish") return undefined;
       const usage = normalizeTokenUsage({

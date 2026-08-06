@@ -66,6 +66,8 @@ pub fn run() {
             commands::chat::write_chat_session,
             commands::chat::write_chat_attachment,
             commands::chat::delete_chat_session,
+            commands::chat::read_chat_memory,
+            commands::chat::write_chat_memory,
             commands::workspaces::select_workspace_directory,
             commands::workspaces::inspect_workspace,
         ])

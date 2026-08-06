@@ -6,6 +6,7 @@ use tauri::{AppHandle, Manager};
 
 const CHAT_DIRECTORY: &str = "chat";
 const INDEX_FILE: &str = "index.json";
+const MEMORY_FILE: &str = "memory.json";
 
 fn chat_path(app: &AppHandle) -> Result<PathBuf, String> {
     let directory = app
@@ -105,4 +106,22 @@ pub fn delete_chat_session(app: AppHandle, session_id: String) -> Result<(), Str
         Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error.to_string()),
     }
+}
+
+#[tauri::command]
+pub fn read_chat_memory(app: AppHandle) -> Result<String, String> {
+    let path = chat_path(&app)?.join(MEMORY_FILE);
+    match fs::read_to_string(path) {
+        Ok(contents) => Ok(contents),
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            Ok(r#"{"schemaVersion":1,"enabled":true,"items":[]}"#.to_string())
+        }
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+#[tauri::command]
+pub fn write_chat_memory(app: AppHandle, contents: String) -> Result<(), String> {
+    let path = chat_path(&app)?.join(MEMORY_FILE);
+    atomic_write(&path, contents.as_bytes())
 }
