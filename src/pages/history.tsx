@@ -1,9 +1,10 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { code } from "@streamdown/code";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import type { UIMessage } from "ai";
 import {
   ArrowLeft,
+  ChartColumn,
   ChevronDown,
   ChevronUp,
   FileIcon,
@@ -194,9 +195,21 @@ function HistoryPage() {
               浏览本机对话，并导入 Codex / Claude Code 归档。
             </p>
           </div>
-          <Button onClick={() => setImportOpen(true)} type="button">
-            <Import className="size-4" /> 导入
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              onClick={() => {
+                persistListScroll();
+                void navigate("/history/analysis");
+              }}
+              type="button"
+              variant="outline"
+            >
+              <ChartColumn className="size-4" /> 分析
+            </Button>
+            <Button onClick={() => setImportOpen(true)} type="button">
+              <Import className="size-4" /> 导入
+            </Button>
+          </div>
         </div>
 
         <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -291,6 +304,7 @@ function HistoryPage() {
         archiveIndex={archiveQuery.data ?? []}
         onImported={() => {
           void queryClient.invalidateQueries({ queryKey: ["chat-archive-index"] });
+          void queryClient.invalidateQueries({ queryKey: ["history-analysis"] });
         }}
         onOpenChange={setImportOpen}
         open={importOpen}

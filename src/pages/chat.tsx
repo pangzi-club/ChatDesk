@@ -100,6 +100,12 @@ import {
   loadChatToolsSettings,
   saveChatToolsSettings,
 } from "@/lib/chat-tools";
+import {
+  formatTokenUsage,
+  getMessageUsage,
+  normalizeTokenUsage,
+  type TokenUsage,
+} from "@/lib/chat-usage";
 import { loadModels, type ModelConfig } from "@/lib/models";
 
 const demoModels: ModelConfig[] = [
@@ -720,16 +726,6 @@ function ChatPage() {
   );
 }
 
-type ChatTokenUsage = {
-  inputTokens?: number;
-  outputTokens?: number;
-  totalTokens?: number;
-};
-
-type ChatMessageMetadata = {
-  usage?: ChatTokenUsage;
-};
-
 function MessageBubble({
   message,
   isStreaming,
@@ -791,31 +787,6 @@ function MessageBubble({
       </div>
     </div>
   );
-}
-
-function getMessageUsage(message: UIMessage): ChatTokenUsage | undefined {
-  const metadata = message.metadata as ChatMessageMetadata | undefined;
-  const usage = metadata?.usage;
-  if (!usage || typeof usage !== "object") return undefined;
-  const hasAny =
-    typeof usage.inputTokens === "number" ||
-    typeof usage.outputTokens === "number" ||
-    typeof usage.totalTokens === "number";
-  return hasAny ? usage : undefined;
-}
-
-function formatTokenUsage(usage: ChatTokenUsage) {
-  const parts: string[] = [];
-  if (typeof usage.inputTokens === "number") {
-    parts.push(`输入 ${usage.inputTokens.toLocaleString("zh-CN")}`);
-  }
-  if (typeof usage.outputTokens === "number") {
-    parts.push(`输出 ${usage.outputTokens.toLocaleString("zh-CN")}`);
-  }
-  if (typeof usage.totalTokens === "number") {
-    parts.push(`合计 ${usage.totalTokens.toLocaleString("zh-CN")}`);
-  }
-  return parts.join(" · ");
 }
 
 function messageText(message: UIMessage) {
@@ -1021,39 +992,7 @@ function resolveFetch(): typeof fetch {
   return ("__TAURI_INTERNALS__" in window ? tauriFetch : window.fetch.bind(window)) as typeof fetch;
 }
 
-function normalizeTokenUsage(value: {
-  inputTokens?: number | null;
-  outputTokens?: number | null;
-  totalTokens?: number | null;
-  prompt_tokens?: number | null;
-  completion_tokens?: number | null;
-  total_tokens?: number | null;
-}): ChatTokenUsage | undefined {
-  const inputTokens =
-    typeof value.inputTokens === "number"
-      ? value.inputTokens
-      : typeof value.prompt_tokens === "number"
-        ? value.prompt_tokens
-        : undefined;
-  const outputTokens =
-    typeof value.outputTokens === "number"
-      ? value.outputTokens
-      : typeof value.completion_tokens === "number"
-        ? value.completion_tokens
-        : undefined;
-  const totalTokens =
-    typeof value.totalTokens === "number"
-      ? value.totalTokens
-      : typeof value.total_tokens === "number"
-        ? value.total_tokens
-        : undefined;
-  if (inputTokens == null && outputTokens == null && totalTokens == null) {
-    return undefined;
-  }
-  return { inputTokens, outputTokens, totalTokens };
-}
-
-function parseUsageFromSsePayload(payload: unknown): ChatTokenUsage | undefined {
+function parseUsageFromSsePayload(payload: unknown): TokenUsage | undefined {
   if (!payload || typeof payload !== "object") return undefined;
   const usage = (payload as { usage?: unknown }).usage;
   if (!usage || typeof usage !== "object") return undefined;
@@ -1063,7 +1002,7 @@ function parseUsageFromSsePayload(payload: unknown): ChatTokenUsage | undefined 
 function createOpenAIStreamTransform() {
   const textId = makeId("text");
   let buffer = "";
-  let usage: ChatTokenUsage | undefined;
+  let usage: TokenUsage | undefined;
 
   const consumeLine = (
     line: string,

@@ -6,9 +6,10 @@ import { AutomationsPage } from "@/pages/automations";
 import { ChatPage } from "@/pages/chat";
 import { CommitPage } from "@/pages/commit";
 import { DashboardPage } from "@/pages/dashboard";
-import { HistoryDetailPage, HistoryPage } from "@/pages/history";
 import { DevToolsLayout, DevToolsPage } from "@/pages/dev-tools";
 import { EncryptPage } from "@/pages/encrypt";
+import { HistoryDetailPage, HistoryPage } from "@/pages/history";
+import { HistoryAnalysisPage } from "@/pages/history-analysis";
 import { ImageGenerationPage } from "@/pages/image-generation";
 import { InputsPage } from "@/pages/inputs";
 import { LookerDetailPage, LookerPage } from "@/pages/looker";
@@ -45,6 +46,10 @@ const router = createHashRouter([
       {
         path: "history",
         element: <HistoryPage />,
+      },
+      {
+        path: "history/analysis",
+        element: <HistoryAnalysisPage />,
       },
       {
         path: "history/:source/:id",

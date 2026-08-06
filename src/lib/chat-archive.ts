@@ -14,12 +14,22 @@ export type ArchiveAsset = {
   url?: string;
 };
 
+export type ArchiveTokenUsage = {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  reasoningOutputTokens?: number;
+};
+
 export type ArchiveMessage = {
   id: string;
   role: "user" | "assistant";
   text: string;
   createdAt?: string;
   assets?: ArchiveAsset[];
+  usage?: ArchiveTokenUsage;
 };
 
 export type ArchiveSession = {
@@ -36,6 +46,7 @@ export type ArchiveSession = {
   importedAt: string;
   messages: ArchiveMessage[];
   assetCount: number;
+  usageTotal?: ArchiveTokenUsage;
 };
 
 export type ArchiveIndexItem = Pick<
@@ -50,8 +61,14 @@ export type ArchiveIndexItem = Pick<
   | "updatedAt"
   | "importedAt"
   | "assetCount"
+  | "usageTotal"
 > & {
   messageCount: number;
+};
+
+export type SaveArchiveResult = {
+  overwritten: boolean;
+  id: string;
 };
 
 export type ScannedSession = {
@@ -111,6 +128,20 @@ function isArchiveAsset(value: unknown): value is ArchiveAsset {
   );
 }
 
+function isArchiveTokenUsage(value: unknown): value is ArchiveTokenUsage {
+  if (!value || typeof value !== "object") return false;
+  const usage = value as Record<string, unknown>;
+  const keys = [
+    "inputTokens",
+    "outputTokens",
+    "totalTokens",
+    "cacheReadTokens",
+    "cacheWriteTokens",
+    "reasoningOutputTokens",
+  ] as const;
+  return keys.every((key) => usage[key] === undefined || typeof usage[key] === "number");
+}
+
 function isArchiveMessage(value: unknown): value is ArchiveMessage {
   if (!value || typeof value !== "object") return false;
   const message = value as Partial<ArchiveMessage>;
@@ -119,7 +150,8 @@ function isArchiveMessage(value: unknown): value is ArchiveMessage {
     (message.role === "user" || message.role === "assistant") &&
     typeof message.text === "string" &&
     (message.assets === undefined ||
-      (Array.isArray(message.assets) && message.assets.every(isArchiveAsset)))
+      (Array.isArray(message.assets) && message.assets.every(isArchiveAsset))) &&
+    (message.usage === undefined || isArchiveTokenUsage(message.usage))
   );
 }
 
@@ -155,7 +187,8 @@ function isArchiveSession(value: unknown): value is ArchiveSession {
     typeof session.importedAt === "string" &&
     typeof session.assetCount === "number" &&
     Array.isArray(session.messages) &&
-    session.messages.every(isArchiveMessage)
+    session.messages.every(isArchiveMessage) &&
+    (session.usageTotal === undefined || isArchiveTokenUsage(session.usageTotal))
   );
 }
 
@@ -209,35 +242,59 @@ export async function loadArchiveSession(id: string): Promise<ArchiveSession | n
   }
 }
 
-export async function saveArchiveSession(session: ArchiveSession): Promise<void> {
-  const contents = JSON.stringify(session);
+async function removeArchiveSessionFile(id: string): Promise<void> {
   if (isTauri()) {
-    await invoke("write_chat_archive_session", { sessionId: session.id, contents });
+    await invoke("delete_chat_archive_session", { sessionId: id });
   } else {
-    window.localStorage.setItem(`${SESSION_KEY_PREFIX}${session.id}`, contents);
+    window.localStorage.removeItem(`${SESSION_KEY_PREFIX}${id}`);
+  }
+}
+
+export async function saveArchiveSession(session: ArchiveSession): Promise<SaveArchiveResult> {
+  const index = await loadArchiveIndex();
+  const key = archiveKey(session.source, session.externalId);
+  const sameKeyEntries = index.filter(
+    (entry) => archiveKey(entry.source, entry.externalId) === key,
+  );
+  const reusedId = sameKeyEntries[0]?.id ?? session.id;
+  const overwritten = sameKeyEntries.length > 0;
+
+  for (const entry of sameKeyEntries) {
+    if (entry.id !== reusedId) {
+      try {
+        await removeArchiveSessionFile(entry.id);
+      } catch (error) {
+        console.error("Failed to remove orphan archive session", error);
+      }
+    }
   }
 
-  const index = await loadArchiveIndex();
+  const toSave: ArchiveSession = { ...session, id: reusedId };
+  const contents = JSON.stringify(toSave);
+  if (isTauri()) {
+    await invoke("write_chat_archive_session", { sessionId: toSave.id, contents });
+  } else {
+    window.localStorage.setItem(`${SESSION_KEY_PREFIX}${toSave.id}`, contents);
+  }
+
   const item: ArchiveIndexItem = {
-    id: session.id,
-    source: session.source,
-    externalId: session.externalId,
-    title: session.title,
-    cwd: session.cwd,
-    sourcePath: session.sourcePath,
-    createdAt: session.createdAt,
-    updatedAt: session.updatedAt,
-    importedAt: session.importedAt,
-    messageCount: session.messages.length,
-    assetCount: session.assetCount,
+    id: toSave.id,
+    source: toSave.source,
+    externalId: toSave.externalId,
+    title: toSave.title,
+    cwd: toSave.cwd,
+    sourcePath: toSave.sourcePath,
+    createdAt: toSave.createdAt,
+    updatedAt: toSave.updatedAt,
+    importedAt: toSave.importedAt,
+    messageCount: toSave.messages.length,
+    assetCount: toSave.assetCount,
+    usageTotal: toSave.usageTotal,
   };
   const nextIndex = sortByUpdatedAt([
     item,
     ...index.filter(
-      (entry) =>
-        entry.id !== session.id &&
-        archiveKey(entry.source, entry.externalId) !==
-          archiveKey(session.source, session.externalId),
+      (entry) => entry.id !== toSave.id && archiveKey(entry.source, entry.externalId) !== key,
     ),
   ]);
   const indexContents = JSON.stringify(nextIndex);
@@ -246,6 +303,8 @@ export async function saveArchiveSession(session: ArchiveSession): Promise<void>
   } else {
     window.localStorage.setItem(INDEX_KEY, indexContents);
   }
+
+  return { overwritten, id: toSave.id };
 }
 
 export async function deleteArchiveSession(id: string): Promise<void> {

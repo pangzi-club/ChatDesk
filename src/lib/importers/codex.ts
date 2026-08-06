@@ -2,9 +2,11 @@ import {
   type ArchiveAsset,
   type ArchiveMessage,
   type ArchiveSession,
+  type ArchiveTokenUsage,
   createArchiveSessionId,
   truncateTitle,
 } from "@/lib/chat-archive";
+import { hasTokenUsage, normalizeTokenUsage, sumTokenUsages } from "@/lib/chat-usage";
 
 function fileNameFromPath(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
@@ -59,6 +61,60 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
 }
 
+function usageSignature(usage: ArchiveTokenUsage) {
+  return [
+    usage.inputTokens ?? "",
+    usage.outputTokens ?? "",
+    usage.totalTokens ?? "",
+    usage.cacheReadTokens ?? "",
+    usage.cacheWriteTokens ?? "",
+    usage.reasoningOutputTokens ?? "",
+  ].join("|");
+}
+
+function diffTokenUsage(
+  current: ArchiveTokenUsage,
+  previous?: ArchiveTokenUsage,
+): ArchiveTokenUsage | undefined {
+  if (!previous) return current;
+  const keys = [
+    "inputTokens",
+    "outputTokens",
+    "totalTokens",
+    "cacheReadTokens",
+    "cacheWriteTokens",
+    "reasoningOutputTokens",
+  ] as const;
+  const delta: ArchiveTokenUsage = {};
+  for (const key of keys) {
+    const curr = current[key];
+    const prev = previous[key] ?? 0;
+    if (typeof curr === "number") {
+      const value = curr - prev;
+      if (value > 0) delta[key] = value;
+    }
+  }
+  return hasTokenUsage(delta) ? delta : undefined;
+}
+
+function extractTurnUsage(
+  info: Record<string, unknown> | null,
+  previousTotal?: ArchiveTokenUsage,
+): { turn?: ArchiveTokenUsage; total?: ArchiveTokenUsage } {
+  if (!info) return {};
+  const last = normalizeTokenUsage(
+    (asRecord(info.last_token_usage) ?? {}) as Parameters<typeof normalizeTokenUsage>[0],
+  );
+  const total = normalizeTokenUsage(
+    (asRecord(info.total_token_usage) ?? {}) as Parameters<typeof normalizeTokenUsage>[0],
+  );
+  if (last && hasTokenUsage(last)) return { turn: last, total: total ?? last };
+  if (total && hasTokenUsage(total)) {
+    return { turn: diffTokenUsage(total, previousTotal), total };
+  }
+  return {};
+}
+
 export function parseCodexRollout(
   contents: string,
   options: {
@@ -68,6 +124,10 @@ export function parseCodexRollout(
   },
 ): ArchiveSession {
   const messages: ArchiveMessage[] = [];
+  const turnUsages: ArchiveTokenUsage[] = [];
+  let lastAssistantIndex = -1;
+  let lastTotalSignature = "";
+  let previousTotal: ArchiveTokenUsage | undefined;
   let cwd: string | undefined;
   let model: string | undefined;
   let createdAt: string | undefined;
@@ -102,6 +162,27 @@ export function parseCodexRollout(
     const payload = asRecord(row.payload);
     if (!payload) continue;
     const payloadType = payload.type;
+
+    if (payloadType === "token_count") {
+      const info = asRecord(payload.info);
+      const { turn: turnUsage, total: totalUsage } = extractTurnUsage(info, previousTotal);
+      if (!turnUsage) continue;
+
+      const signature = totalUsage ? usageSignature(totalUsage) : usageSignature(turnUsage);
+      if (signature && signature === lastTotalSignature) continue;
+      if (signature) lastTotalSignature = signature;
+      if (totalUsage) previousTotal = totalUsage;
+
+      turnUsages.push(turnUsage);
+      if (lastAssistantIndex >= 0) {
+        messages[lastAssistantIndex] = {
+          ...messages[lastAssistantIndex],
+          usage: turnUsage,
+        };
+      }
+      continue;
+    }
+
     if (payloadType !== "user_message" && payloadType !== "agent_message") continue;
 
     const text = typeof payload.message === "string" ? payload.message.trim() : "";
@@ -118,8 +199,12 @@ export function parseCodexRollout(
       createdAt: timestamp,
       assets: assets && assets.length > 0 ? assets : undefined,
     });
+    if (payloadType === "agent_message") {
+      lastAssistantIndex = messages.length - 1;
+    }
   }
 
+  const usageTotal = sumTokenUsages(turnUsages);
   const firstUser = messages.find((message) => message.role === "user" && message.text.trim());
   const title = options.titleHint?.trim() || truncateTitle(firstUser?.text ?? "");
   const now = new Date().toISOString();
@@ -139,5 +224,6 @@ export function parseCodexRollout(
     importedAt: now,
     messages,
     assetCount,
+    usageTotal: Object.keys(usageTotal).length > 0 ? usageTotal : undefined,
   };
 }

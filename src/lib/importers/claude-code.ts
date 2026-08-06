@@ -2,9 +2,11 @@ import {
   type ArchiveAsset,
   type ArchiveMessage,
   type ArchiveSession,
+  type ArchiveTokenUsage,
   createArchiveSessionId,
   truncateTitle,
 } from "@/lib/chat-archive";
+import { normalizeTokenUsage, sumTokenUsages } from "@/lib/chat-usage";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
@@ -99,6 +101,8 @@ export function parseClaudeCodeSession(
   },
 ): ArchiveSession {
   const messages: ArchiveMessage[] = [];
+  const usageByApiMessageId = new Map<string, ArchiveTokenUsage>();
+  const messageIndexByApiId = new Map<string, number>();
   let cwd = options.cwdHint?.trim() || undefined;
   let model: string | undefined;
   let createdAt: string | undefined;
@@ -132,6 +136,14 @@ export function parseClaudeCodeSession(
     if (!message) continue;
     if (!model && typeof message.model === "string") model = message.model;
 
+    const apiMessageId = typeof message.id === "string" ? message.id : undefined;
+    const usage = normalizeTokenUsage(
+      (message.usage ?? {}) as Parameters<typeof normalizeTokenUsage>[0],
+    );
+    if (apiMessageId && usage) {
+      usageByApiMessageId.set(apiMessageId, usage);
+    }
+
     const { text, assets } = extractTextAndAssets(message.content);
     // Skip pure tool-result user turns.
     if (!text && assets.length === 0) continue;
@@ -143,15 +155,27 @@ export function parseClaudeCodeSession(
       continue;
     }
 
-    messages.push({
+    const archiveMessage: ArchiveMessage = {
       id: typeof row.uuid === "string" ? row.uuid : crypto.randomUUID(),
       role: type === "user" ? "user" : "assistant",
       text,
       createdAt: timestamp,
       assets: assets.length > 0 ? assets : undefined,
-    });
+      usage: !apiMessageId ? usage : undefined,
+    };
+    messages.push(archiveMessage);
+    if (apiMessageId) {
+      messageIndexByApiId.set(apiMessageId, messages.length - 1);
+    }
   }
 
+  for (const [apiMessageId, usage] of usageByApiMessageId) {
+    const index = messageIndexByApiId.get(apiMessageId);
+    if (index == null) continue;
+    messages[index] = { ...messages[index], usage };
+  }
+
+  const usageTotal = sumTokenUsages([...usageByApiMessageId.values()]);
   const firstUser = messages.find((message) => message.role === "user" && message.text.trim());
   const title = options.titleHint?.trim() || truncateTitle(firstUser?.text ?? "");
   const now = new Date().toISOString();
@@ -171,5 +195,6 @@ export function parseClaudeCodeSession(
     importedAt: now,
     messages,
     assetCount,
+    usageTotal: Object.keys(usageTotal).length > 0 ? usageTotal : undefined,
   };
 }

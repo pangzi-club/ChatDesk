@@ -14,12 +14,12 @@ import {
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import {
-  archiveKey,
   type ArchiveIndexItem,
+  archiveKey,
   type ImportedArchiveSource,
   readImportTextFile,
-  saveArchiveSession,
   type ScannedSession,
+  saveArchiveSession,
   scanClaudeSessions,
   scanCodexSessions,
   sourceLabel,
@@ -35,8 +35,8 @@ type HistoryImportDialogProps = {
 };
 
 type ImportSummary = {
-  success: number;
-  skipped: number;
+  created: number;
+  overwritten: number;
   failed: Array<{ title: string; error: string }>;
   cancelled: boolean;
 };
@@ -107,7 +107,6 @@ function HistoryImportDialog({
 
   function toggle(item: ScannedSession, checked: boolean) {
     const key = selectionKey(item);
-    if (importedKeys.has(key)) return;
     setSelected((prev) => {
       const next = new Set(prev);
       if (checked) next.add(key);
@@ -116,13 +115,12 @@ function HistoryImportDialog({
     });
   }
 
-  function selectAllImportable(source?: ImportedArchiveSource) {
+  function selectAll(source?: ImportedArchiveSource) {
     const items = source ? grouped[source] : scanned;
     setSelected((prev) => {
       const next = new Set(prev);
       for (const item of items) {
-        const key = selectionKey(item);
-        if (!importedKeys.has(key)) next.add(key);
+        next.add(selectionKey(item));
       }
       return next;
     });
@@ -137,10 +135,9 @@ function HistoryImportDialog({
     setSummary(null);
     setProgress({ done: 0, total: targets.length, current: targets[0]?.title || "准备导入…" });
 
-    let success = 0;
-    let skipped = 0;
+    let created = 0;
+    let overwritten = 0;
     const failed: ImportSummary["failed"] = [];
-    const seenKeys = new Set(importedKeys);
 
     for (let index = 0; index < targets.length; index += 1) {
       if (cancelRef.current) break;
@@ -149,11 +146,6 @@ function HistoryImportDialog({
       setProgress({ done: index, total: targets.length, current: title });
 
       try {
-        const key = selectionKey(item);
-        if (seenKeys.has(key)) {
-          skipped += 1;
-          continue;
-        }
         const contents = await readImportTextFile(item.sourcePath);
         const session =
           item.source === "codex"
@@ -168,9 +160,9 @@ function HistoryImportDialog({
                 titleHint: item.title,
                 cwdHint: item.cwd,
               });
-        await saveArchiveSession(session);
-        seenKeys.add(key);
-        success += 1;
+        const result = await saveArchiveSession(session);
+        if (result.overwritten) overwritten += 1;
+        else created += 1;
       } catch (error) {
         failed.push({
           title,
@@ -181,18 +173,18 @@ function HistoryImportDialog({
 
     setProgress((prev) => ({ ...prev, done: targets.length, current: "完成" }));
     setSummary({
-      success,
-      skipped,
+      created,
+      overwritten,
       failed,
       cancelled: cancelRef.current,
     });
     setImporting(false);
-    if (success > 0) onImported();
+    if (created + overwritten > 0) onImported();
   }
 
-  const selectableCount = scanned.filter((item) => !importedKeys.has(selectionKey(item))).length;
   const progressValue =
     progress.total === 0 ? 0 : Math.round((progress.done / progress.total) * 100);
+  const overwriteSelectedCount = [...selected].filter((key) => importedKeys.has(key)).length;
 
   return (
     <Dialog
@@ -206,7 +198,7 @@ function HistoryImportDialog({
         <DialogHeader className="border-border border-b px-6 py-5">
           <DialogTitle>导入对话历史</DialogTitle>
           <DialogDescription>
-            自动扫描 ~/.codex 与 ~/.claude，勾选后导入为只读归档。
+            自动扫描 ~/.codex 与 ~/.claude。已导入项可再次勾选，将覆盖本地归档并刷新 token 用量。
           </DialogDescription>
         </DialogHeader>
 
@@ -242,12 +234,12 @@ function HistoryImportDialog({
                   </h3>
                   <Button
                     disabled={importing}
-                    onClick={() => selectAllImportable(source)}
+                    onClick={() => selectAll(source)}
                     size="sm"
                     type="button"
                     variant="ghost"
                   >
-                    全选可导入
+                    全选
                   </Button>
                 </div>
                 <div className="overflow-hidden rounded-lg border border-border">
@@ -255,7 +247,7 @@ function HistoryImportDialog({
                     {items.map((item) => {
                       const key = selectionKey(item);
                       const already = importedKeys.has(key);
-                      const checked = already || selected.has(key);
+                      const checked = selected.has(key);
                       return (
                         <label
                           key={key}
@@ -264,7 +256,7 @@ function HistoryImportDialog({
                           <Checkbox
                             checked={checked}
                             className="mt-0.5"
-                            disabled={already || importing}
+                            disabled={importing}
                             onCheckedChange={(value) => toggle(item, value === true)}
                           />
                           <div className="min-w-0 flex-1">
@@ -274,7 +266,7 @@ function HistoryImportDialog({
                               </p>
                               {already ? (
                                 <span className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground text-xs">
-                                  已导入
+                                  已导入 · 将覆盖
                                 </span>
                               ) : null}
                             </div>
@@ -308,7 +300,8 @@ function HistoryImportDialog({
               {summary ? (
                 <div className="space-y-2 text-sm">
                   <p>
-                    成功 {summary.success} · 跳过 {summary.skipped} · 失败 {summary.failed.length}
+                    新建 {summary.created} · 覆盖 {summary.overwritten} · 失败{" "}
+                    {summary.failed.length}
                     {summary.cancelled ? " · 已取消" : ""}
                   </p>
                   {summary.failed.length > 0 ? (
@@ -346,12 +339,14 @@ function HistoryImportDialog({
             </Button>
           )}
           <Button
-            disabled={importing || selected.size === 0 || selectableCount === 0}
+            disabled={importing || selected.size === 0}
             onClick={() => void runImport()}
             type="button"
           >
             <Import className="size-4" />
-            导入选中（{selected.size}）
+            {overwriteSelectedCount > 0
+              ? `导入选中（${selected.size}，含覆盖 ${overwriteSelectedCount}）`
+              : `导入选中（${selected.size}）`}
           </Button>
         </DialogFooter>
       </DialogContent>
