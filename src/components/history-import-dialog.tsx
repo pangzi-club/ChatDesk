@@ -287,40 +287,39 @@ function HistoryImportDialog({
               </section>
             );
           })}
-
-          {importing || summary ? (
-            <section className="space-y-3 rounded-lg border border-border bg-muted/30 px-4 py-3">
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="truncate text-muted-foreground">{progress.current}</span>
-                <span className="shrink-0 tabular-nums">
-                  {progress.done}/{progress.total}
-                </span>
-              </div>
-              <Progress value={progressValue} />
-              {summary ? (
-                <div className="space-y-2 text-sm">
-                  <p>
-                    新建 {summary.created} · 覆盖 {summary.overwritten} · 失败{" "}
-                    {summary.failed.length}
-                    {summary.cancelled ? " · 已取消" : ""}
-                  </p>
-                  {summary.failed.length > 0 ? (
-                    <details>
-                      <summary className="cursor-pointer text-destructive">查看失败详情</summary>
-                      <ul className="mt-2 space-y-1 text-muted-foreground text-xs">
-                        {summary.failed.map((item) => (
-                          <li key={`${item.title}-${item.error}`}>
-                            {item.title}: {item.error}
-                          </li>
-                        ))}
-                      </ul>
-                    </details>
-                  ) : null}
-                </div>
-              ) : null}
-            </section>
-          ) : null}
         </div>
+
+        {importing || summary ? (
+          <section className="shrink-0 space-y-3 border-border border-t bg-muted/30 px-6 py-3">
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <span className="truncate text-muted-foreground">{progress.current}</span>
+              <span className="shrink-0 tabular-nums">
+                {progress.done}/{progress.total}
+              </span>
+            </div>
+            <Progress value={progressValue} />
+            {summary ? (
+              <div className="max-h-28 space-y-2 overflow-y-auto text-sm">
+                <p>
+                  新建 {summary.created} · 覆盖 {summary.overwritten} · 失败 {summary.failed.length}
+                  {summary.cancelled ? " · 已取消" : ""}
+                </p>
+                {summary.failed.length > 0 ? (
+                  <details>
+                    <summary className="cursor-pointer text-destructive">查看失败详情</summary>
+                    <ul className="mt-2 space-y-1 text-muted-foreground text-xs">
+                      {summary.failed.map((item) => (
+                        <li key={`${item.title}-${item.error}`}>
+                          {item.title}: {item.error}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
 
         <DialogFooter className="border-border border-t px-6 py-4">
           {importing ? (

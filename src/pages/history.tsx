@@ -1,5 +1,6 @@
 import { code } from "@streamdown/code";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getToolName, isToolUIPart, type UIMessage } from "ai";
 import {
@@ -15,7 +16,7 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
@@ -57,23 +58,27 @@ import {
 
 const MESSAGE_COLLAPSE_CHARS = 700;
 const MESSAGE_COLLAPSE_LINES = 12;
+const HISTORY_ROW_ESTIMATE = 88;
 
 type SourceFilter = "all" | ArchiveSource;
 
 type HistoryListViewState = {
   scrollTop: number;
+  measurements: VirtualItem[];
   search: string;
   sourceFilter: SourceFilter;
 };
 
 const historyListViewState: HistoryListViewState = {
   scrollTop: 0,
+  measurements: [],
   search: "",
   sourceFilter: "all",
 };
 
-function saveHistoryListScroll(scrollTop: number) {
+function saveHistoryListScroll(scrollTop: number, measurements?: VirtualItem[]) {
   historyListViewState.scrollTop = scrollTop;
+  if (measurements) historyListViewState.measurements = measurements;
 }
 
 function saveHistoryListFilters(search: string, sourceFilter: SourceFilter) {
@@ -93,11 +98,19 @@ type UnifiedItem = {
   externalId?: string;
 };
 
+function historyItemKey(item: UnifiedItem) {
+  return `${item.source}:${item.id}`;
+}
+
 function HistoryPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const listScrollRef = useRef<HTMLDivElement>(null);
-  const restoreScrollPendingRef = useRef(true);
+  const restoreScrollPendingRef = useRef(historyListViewState.scrollTop > 0);
+  const restoredScrollRef = useRef({
+    offset: historyListViewState.scrollTop,
+    measurements: historyListViewState.measurements,
+  });
   const [search, setSearch] = useState(historyListViewState.search);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>(historyListViewState.sourceFilter);
   const [importOpen, setImportOpen] = useState(false);
@@ -162,22 +175,72 @@ function HistoryPage() {
     });
   }, [items, search, sourceFilter]);
 
+  const archiveById = useMemo(() => {
+    const map = new Map<string, ArchiveIndexItem>();
+    for (const item of archiveQuery.data ?? []) {
+      map.set(item.id, item);
+    }
+    return map;
+  }, [archiveQuery.data]);
+
+  const showVirtualList = !isPending && filtered.length > 0;
+
+  const rowVirtualizer = useVirtualizer({
+    count: showVirtualList ? filtered.length : 0,
+    getScrollElement: () => listScrollRef.current,
+    estimateSize: () => HISTORY_ROW_ESTIMATE,
+    overscan: 12,
+    initialOffset: restoredScrollRef.current.offset,
+    initialMeasurementsCache: restoredScrollRef.current.measurements,
+    getItemKey: (index) => {
+      const item = filtered[index];
+      return item ? historyItemKey(item) : index;
+    },
+  });
+
   useEffect(() => {
     saveHistoryListFilters(search, sourceFilter);
   }, [search, sourceFilter]);
 
   useLayoutEffect(() => {
-    if (isPending || !restoreScrollPendingRef.current) return;
-    const node = listScrollRef.current;
-    if (!node) return;
-    node.scrollTop = historyListViewState.scrollTop;
-    restoreScrollPendingRef.current = false;
-  }, [isPending, filtered.length]);
+    if (!showVirtualList || !restoreScrollPendingRef.current) return;
+    const offset = restoredScrollRef.current.offset;
+    if (offset > 0) {
+      rowVirtualizer.scrollToOffset(offset);
+      const node = listScrollRef.current;
+      if (node) node.scrollTop = offset;
+    }
+    // 等一帧后再放开 onScroll 写入，避免挂载阶段的 scrollTop=0 覆盖已保存位置
+    const frame = requestAnimationFrame(() => {
+      restoreScrollPendingRef.current = false;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [showVirtualList, filtered.length, rowVirtualizer]);
+
+  useEffect(() => {
+    return () => {
+      saveHistoryListScroll(
+        rowVirtualizer.scrollOffset ??
+          listScrollRef.current?.scrollTop ??
+          historyListViewState.scrollTop,
+        rowVirtualizer.takeSnapshot(),
+      );
+    };
+  }, [rowVirtualizer]);
 
   function persistListScroll() {
-    const node = listScrollRef.current;
-    if (!node) return;
-    saveHistoryListScroll(node.scrollTop);
+    saveHistoryListScroll(
+      listScrollRef.current?.scrollTop ?? rowVirtualizer.scrollOffset ?? 0,
+      rowVirtualizer.takeSnapshot(),
+    );
+  }
+
+  function resetListScroll() {
+    saveHistoryListScroll(0, []);
+    restoredScrollRef.current = { offset: 0, measurements: [] };
+    restoreScrollPendingRef.current = false;
+    if (listScrollRef.current) listScrollRef.current.scrollTop = 0;
+    rowVirtualizer.scrollToOffset(0);
   }
 
   function openHistoryItem(item: UnifiedItem) {
@@ -222,8 +285,7 @@ function HistoryPage() {
               className="pl-9"
               onChange={(event) => {
                 setSearch(event.target.value);
-                saveHistoryListScroll(0);
-                if (listScrollRef.current) listScrollRef.current.scrollTop = 0;
+                resetListScroll();
               }}
               placeholder="搜索标题、路径…"
               value={search}
@@ -242,8 +304,7 @@ function HistoryPage() {
                 key={value}
                 onClick={() => {
                   setSourceFilter(value);
-                  saveHistoryListScroll(0);
-                  if (listScrollRef.current) listScrollRef.current.scrollTop = 0;
+                  resetListScroll();
                 }}
                 size="sm"
                 type="button"
@@ -256,48 +317,69 @@ function HistoryPage() {
         </div>
       </header>
 
-      <div
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8"
-        onScroll={(event) => {
-          saveHistoryListScroll(event.currentTarget.scrollTop);
-        }}
-        ref={listScrollRef}
-      >
+      <div className="flex min-h-0 flex-1 flex-col px-4 py-6 sm:px-6 lg:px-8">
         {error ? (
-          <p className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-destructive text-sm">
+          <p className="mb-4 shrink-0 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-destructive text-sm">
             {error instanceof Error ? error.message : String(error)}
           </p>
         ) : null}
 
         {isPending ? (
-          <HistoryListSkeleton />
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <HistoryListSkeleton />
+          </div>
         ) : filtered.length === 0 ? (
-          <EmptyHistory hasAny={items.length > 0} onImport={() => setImportOpen(true)} />
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <EmptyHistory hasAny={items.length > 0} onImport={() => setImportOpen(true)} />
+          </div>
         ) : (
-          <section className="overflow-hidden rounded-lg border border-border bg-card">
-            <div className="border-border border-b px-5 py-4">
+          <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
+            <div className="shrink-0 border-border border-b px-5 py-4">
               <h2 className="font-medium text-sm">
                 对话列表 <span className="ml-1 text-muted-foreground">{filtered.length}</span>
               </h2>
             </div>
-            <div className="divide-y divide-border">
-              {filtered.map((item) => (
-                <HistoryRow
-                  key={`${item.source}:${item.id}`}
-                  item={item}
-                  onDelete={
-                    item.source === "native"
-                      ? undefined
-                      : () => {
-                          const archiveItem = (archiveQuery.data ?? []).find(
-                            (entry) => entry.id === item.id,
-                          );
-                          if (archiveItem) setItemToDelete(archiveItem);
+            <div
+              className="min-h-0 flex-1 overflow-y-auto"
+              onScroll={(event) => {
+                if (restoreScrollPendingRef.current) return;
+                saveHistoryListScroll(event.currentTarget.scrollTop);
+              }}
+              ref={listScrollRef}
+            >
+              <div
+                className="relative w-full"
+                style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
+              >
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const item = filtered[virtualRow.index];
+                  if (!item) return null;
+                  return (
+                    <div
+                      key={virtualRow.key}
+                      className="absolute top-0 left-0 w-full border-border border-b"
+                      data-index={virtualRow.index}
+                      ref={rowVirtualizer.measureElement}
+                      style={{
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
+                    >
+                      <HistoryRow
+                        item={item}
+                        onDelete={
+                          item.source === "native"
+                            ? undefined
+                            : () => {
+                                const archiveItem = archiveById.get(item.id);
+                                if (archiveItem) setItemToDelete(archiveItem);
+                              }
                         }
-                  }
-                  onOpen={() => openHistoryItem(item)}
-                />
-              ))}
+                        onOpen={() => openHistoryItem(item)}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </section>
         )}
@@ -344,7 +426,7 @@ function HistoryPage() {
   );
 }
 
-function HistoryRow({
+const HistoryRow = memo(function HistoryRow({
   item,
   onOpen,
   onDelete,
@@ -387,7 +469,7 @@ function HistoryRow({
       </div>
     </article>
   );
-}
+});
 
 type HistoryDetailView = {
   source: ArchiveSource;
