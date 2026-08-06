@@ -18,6 +18,7 @@ import {
   Paperclip,
   Plus,
   RefreshCw,
+  Settings,
   Settings2,
   Sparkles,
   Trash2,
@@ -26,6 +27,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
+import { ChatSettingsDialog } from "@/components/chat-settings-dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,6 +47,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  type ChatDisplaySettings,
+  DEFAULT_CHAT_DISPLAY,
+  loadChatDisplaySettings,
+  saveChatDisplaySettings,
+} from "@/lib/chat-settings";
 import {
   type ChatIndexItem,
   type ChatSession,
@@ -110,12 +118,23 @@ function ChatPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
   const [sessionToDelete, setSessionToDelete] = useState<ChatIndexItem | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [chatDisplay, setChatDisplay] = useState<ChatDisplaySettings>(DEFAULT_CHAT_DISPLAY);
   const selectedModel = models.find((model) => model.id === selectedModelId) ?? models[0];
   const transport = useMemo(() => createModelTransport(selectedModel), [selectedModel]);
   const { messages, setMessages, sendMessage, stop, status, error } = useChat({
     id: sessionId,
     transport,
   });
+  useEffect(() => {
+    void loadChatDisplaySettings().then(setChatDisplay);
+  }, []);
+
+  const updateChatDisplay = (next: ChatDisplaySettings) => {
+    setChatDisplay(next);
+    void saveChatDisplaySettings(next);
+  };
+
   const isGenerating = status === "submitted" || status === "streaming";
   const lastMessage = messages[messages.length - 1];
   const hasAssistantMessage =
@@ -241,7 +260,11 @@ function ChatPage() {
   }
 
   return (
-    <div className="chat-page">
+    <div
+      className="chat-page"
+      data-chat-font-size={chatDisplay.fontSize}
+      data-chat-spacing={chatDisplay.spacing}
+    >
       <header className="chat-header">
         <div className="chat-brand">
           <div className="chat-brand-mark">
@@ -312,6 +335,16 @@ function ChatPage() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+          <Button
+            aria-label="显示设置"
+            className="chat-icon-button"
+            size="icon"
+            variant="ghost"
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+          >
+            <Settings className="size-4" />
+          </Button>
         </div>
       </header>
 
@@ -431,6 +464,12 @@ function ChatPage() {
         </div>
         <p className="chat-disclaimer">AI 生成的内容可能存在偏差，请核实重要信息。</p>
       </div>
+      <ChatSettingsDialog
+        onOpenChange={setSettingsOpen}
+        onSettingsChange={updateChatDisplay}
+        open={settingsOpen}
+        settings={chatDisplay}
+      />
       <AlertDialog
         open={sessionToDelete !== null}
         onOpenChange={(open) => {
