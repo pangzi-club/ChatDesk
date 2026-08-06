@@ -16,12 +16,14 @@ import {
   ScrollText,
   Search,
   Trash2,
+  Wrench,
   X,
 } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 
 import { ChatMemorySettings } from "@/components/chat-memory-settings";
+import { ChatToolsSettings } from "@/components/chat-tools-settings";
 import { type Theme, useTheme } from "@/components/theme-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -41,6 +43,12 @@ import {
   loadChatMemory,
   saveChatMemory,
 } from "@/lib/chat-memory";
+import {
+  type ChatToolsSettings as ChatToolsSettingsValue,
+  DEFAULT_CHAT_TOOLS,
+  loadChatToolsSettings,
+  saveChatToolsSettings,
+} from "@/lib/chat-tools";
 import { clearCommitApiKey, loadCommitApiKey, saveCommitApiKey } from "@/lib/commit";
 import { clearDataerApiKey, loadDataerApiKey, saveDataerApiKey } from "@/lib/dataer";
 import { clearKieApiKey, loadKieApiKey, saveKieApiKey } from "@/lib/image-generation";
@@ -87,6 +95,7 @@ function SettingsLayout() {
           <SettingsNavItem to="/settings/theme" icon={Palette} label="主题" />
           <SettingsNavItem to="/settings/keys" icon={KeyRound} label="API Keys" />
           <SettingsNavItem to="/settings/models" icon={Package} label="模型" />
+          <SettingsNavItem to="/settings/tools" icon={Wrench} label="Tools" />
           <SettingsNavItem to="/settings/memory" icon={Brain} label="长期记忆" />
           <SettingsNavItem to="/settings/tray" icon={PanelTop} label="托盘" />
           <SettingsNavItem to="/settings/logs" icon={ScrollText} label="系统日志" />
@@ -363,6 +372,52 @@ function MemorySettingsPage() {
               onStoreChange={handleStoreChange}
             />
           </div>
+        )}
+      </section>
+    </>
+  );
+}
+
+function ToolsSettingsPage() {
+  const queryClient = useQueryClient();
+  const toolsQuery = useQuery({
+    queryKey: ["chat-tools"],
+    queryFn: loadChatToolsSettings,
+  });
+  const settings = toolsQuery.data ?? DEFAULT_CHAT_TOOLS;
+
+  function handleSettingsChange(next: ChatToolsSettingsValue) {
+    queryClient.setQueryData(["chat-tools"], next);
+    void saveChatToolsSettings(next).catch((error) =>
+      console.error("Failed to save chat tools settings", error),
+    );
+  }
+
+  return (
+    <>
+      <SettingsHeading
+        eyebrow="Chat"
+        title="Tools"
+        description="启用 Analytics、Commit、Looker 等工具包后，在 Chat 中用自然语言提问即可自动调用。"
+      />
+      <section className="rounded-lg border border-border bg-card px-5 py-5">
+        {toolsQuery.isPending ? (
+          <div className="space-y-4" aria-busy="true" role="status">
+            <div className="h-14 animate-pulse rounded-md bg-accent" />
+            <div className="h-28 animate-pulse rounded-md bg-accent" />
+            <div className="h-28 animate-pulse rounded-md bg-accent" />
+          </div>
+        ) : toolsQuery.isError ? (
+          <div className="py-10 text-center">
+            <p className="font-medium text-sm">读取 Tools 设置失败</p>
+            <p className="mt-1 text-muted-foreground text-xs">请刷新页面后重试。</p>
+          </div>
+        ) : (
+          <ChatToolsSettings
+            idPrefix="settings-tools"
+            settings={settings}
+            onSettingsChange={handleSettingsChange}
+          />
         )}
       </section>
     </>
@@ -1214,5 +1269,6 @@ export {
   SettingsLayout,
   SystemLogsSettingsPage,
   ThemeSettingsPage,
+  ToolsSettingsPage,
   TraySettingsPage,
 };

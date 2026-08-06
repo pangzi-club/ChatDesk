@@ -17,6 +17,7 @@ import {
   SettingsLayout,
   SystemLogsSettingsPage,
   ThemeSettingsPage,
+  ToolsSettingsPage,
   TraySettingsPage,
 } from "@/pages/settings";
 import { VitePortsPage } from "@/pages/vite-ports";
@@ -79,6 +80,7 @@ const router = createHashRouter([
           { path: "theme", element: <ThemeSettingsPage /> },
           { path: "keys", element: <ApiKeysSettingsPage /> },
           { path: "models", element: <ModelsSettingsPage /> },
+          { path: "tools", element: <ToolsSettingsPage /> },
           { path: "memory", element: <MemorySettingsPage /> },
           { path: "tray", element: <TraySettingsPage /> },
           { path: "logs", element: <SystemLogsSettingsPage /> },

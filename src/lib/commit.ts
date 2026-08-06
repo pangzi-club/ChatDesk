@@ -134,9 +134,10 @@ export function fetchCommitOverview(apiKey: string) {
   return request<CommitOverview>(apiKey, "/api/v1/overview");
 }
 
-export function fetchRecentCommits(apiKey: string) {
+export function fetchRecentCommits(apiKey: string, pageSize = 20) {
+  const size = Math.min(50, Math.max(1, Math.floor(pageSize)));
   return request<{ data: CommitItem[]; total: number }>(
     apiKey,
-    "/api/v1/commits?page=1&pageSize=20",
+    `/api/v1/commits?page=1&pageSize=${size}`,
   );
 }

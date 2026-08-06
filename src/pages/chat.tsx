@@ -6,7 +6,11 @@ import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import {
   type ChatTransport,
   convertToModelMessages,
+  getToolName,
+  isToolUIPart,
+  stepCountIs,
   streamText,
+  type ToolSet,
   toUIMessageStream,
   type UIMessage,
   type UIMessageChunk,
@@ -38,6 +42,8 @@ import { Link } from "react-router-dom";
 
 import { ChatMemoryDialog } from "@/components/chat-memory-dialog";
 import { ChatSettingsDialog } from "@/components/chat-settings-dialog";
+import { ChatToolCallCard } from "@/components/chat-tool-call-card";
+import { ChatToolsPicker } from "@/components/chat-tools-picker";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -81,6 +87,19 @@ import {
   loadChatSession,
   saveChatSession,
 } from "@/lib/chat-store";
+import {
+  formatToolsSystemHint,
+  resolveActiveTools,
+  resolveAvailablePacks,
+} from "@/lib/chat-tool-defs";
+import {
+  type ChatToolPackId,
+  type ChatToolsSettings,
+  DEFAULT_CHAT_TOOLS,
+  getPackMeta,
+  loadChatToolsSettings,
+  saveChatToolsSettings,
+} from "@/lib/chat-tools";
 import { loadModels, type ModelConfig } from "@/lib/models";
 
 const demoModels: ModelConfig[] = [
@@ -126,8 +145,14 @@ function ChatPage() {
     queryKey: ["chat-memory"],
     queryFn: loadChatMemory,
   });
+  const { data: chatTools = DEFAULT_CHAT_TOOLS } = useQuery({
+    queryKey: ["chat-tools"],
+    queryFn: loadChatToolsSettings,
+  });
   const memoryRef = useRef(chatMemory);
   memoryRef.current = chatMemory;
+  const toolsRef = useRef(chatTools);
+  toolsRef.current = chatTools;
   const models = useMemo(
     () => (configuredModels && configuredModels.length > 0 ? configuredModels : demoModels),
     [configuredModels],
@@ -147,10 +172,17 @@ function ChatPage() {
   const [sessionToDelete, setSessionToDelete] = useState<ChatIndexItem | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [chatDisplay, setChatDisplay] = useState<ChatDisplaySettings>(DEFAULT_CHAT_DISPLAY);
+  const [availablePacks, setAvailablePacks] = useState<ChatToolPackId[]>([]);
   const selectedModel = models.find((model) => model.id === selectedModelId) ?? models[0];
   const transport = useMemo(
-    () => createModelTransport(selectedModel, () => memoryRef.current),
+    () =>
+      createModelTransport(
+        selectedModel,
+        () => memoryRef.current,
+        () => toolsRef.current,
+      ),
     [selectedModel],
   );
   const { messages, setMessages, sendMessage, stop, status, error } = useChat({
@@ -174,10 +206,37 @@ function ChatPage() {
     void saveChatMemory(next).catch((error) => console.error("Failed to save chat memory", error));
   };
 
+  const updateChatTools = (next: ChatToolsSettings) => {
+    queryClient.setQueryData(["chat-tools"], next);
+    void saveChatToolsSettings(next).catch((error) =>
+      console.error("Failed to save chat tools settings", error),
+    );
+  };
+
   const isGenerating = status === "submitted" || status === "streaming";
   const lastMessage = messages[messages.length - 1];
   const hasAssistantMessage =
-    lastMessage?.role === "assistant" && messageText(lastMessage).trim().length > 0;
+    lastMessage?.role === "assistant" &&
+    (messageText(lastMessage).trim().length > 0 || messageHasToolParts(lastMessage));
+  const exampleHints = useMemo(() => {
+    const examples: string[] = [];
+    for (const packId of availablePacks) {
+      const example = getPackMeta(packId).examples[0];
+      if (example) examples.push(example);
+      if (examples.length >= 2) break;
+    }
+    return examples;
+  }, [availablePacks]);
+
+  useEffect(() => {
+    let active = true;
+    void resolveAvailablePacks(chatTools, selectedModel?.supportsTools === true).then((packs) => {
+      if (active) setAvailablePacks(packs);
+    });
+    return () => {
+      active = false;
+    };
+  }, [chatTools, selectedModel?.supportsTools]);
 
   useEffect(() => {
     if (models.length > 0 && !models.some((model) => model.id === selectedModelId)) {
@@ -215,7 +274,12 @@ function ChatPage() {
       return;
     }
     const lastMessage = messages[messages.length - 1];
-    if (lastMessage?.role !== "assistant" || !messageText(lastMessage).trim()) return;
+    if (
+      lastMessage?.role !== "assistant" ||
+      (!messageText(lastMessage).trim() && !messageHasToolParts(lastMessage))
+    ) {
+      return;
+    }
     const usage = getMessageUsage(lastMessage);
     const usageKey = usage
       ? `${usage.inputTokens ?? ""}:${usage.outputTokens ?? ""}:${usage.totalTokens ?? ""}`
@@ -425,6 +489,40 @@ function ChatPage() {
             <span className="chat-context-rule" />
             <span>本地会话</span>
           </div>
+          {messages.length === 0 ? (
+            <div className="chat-tools-hint">
+              {selectedModel && !selectedModel.supportsTools ? (
+                <p>
+                  当前模型未开启「支持 Tools」。可在 <Link to="/settings/models">模型设置</Link>{" "}
+                  中开启，或更换模型。
+                </p>
+              ) : availablePacks.length > 0 ? (
+                <>
+                  <p>
+                    已启用：
+                    {availablePacks.map((id) => getPackMeta(id).label).join(" · ")}
+                    。用自然语言提问即可自动调用工具。
+                  </p>
+                  <div className="chat-tools-hint-chips">
+                    {exampleHints.map((example) => (
+                      <button key={example} type="button" onClick={() => setInput(example)}>
+                        {example}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p>
+                  尚未启用可用 Tools。
+                  <button type="button" onClick={() => setToolsOpen(true)}>
+                    选择 Tools
+                  </button>
+                  {" · "}
+                  <Link to="/settings/tools">设置页</Link>
+                </p>
+              )}
+            </div>
+          ) : null}
           {messages.map((message) => (
             <MessageBubble
               key={message.id}
@@ -452,6 +550,16 @@ function ChatPage() {
 
       <div className="chat-composer-wrap">
         {error && <p className="chat-error">{error.message}</p>}
+        {messages.length > 0 && availablePacks.length > 0 ? (
+          <div className="chat-tools-composer-hint">
+            <span>Tools：{availablePacks.map((id) => getPackMeta(id).label).join(" · ")}</span>
+            {exampleHints[0] ? (
+              <button type="button" onClick={() => setInput(exampleHints[0])}>
+                试试：{exampleHints[0]}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <div className="chat-composer">
           <textarea
             aria-label="输入消息"
@@ -503,6 +611,12 @@ function ChatPage() {
                 </select>
                 <ChevronDown className="size-3.5" />
               </div>
+              <ChatToolsPicker
+                open={toolsOpen}
+                settings={chatTools}
+                onOpenChange={setToolsOpen}
+                onSettingsChange={updateChatTools}
+              />
               {configuredModels?.length === 0 && (
                 <Link className="chat-settings-link" to="/settings/models">
                   配置模型
@@ -592,7 +706,8 @@ function MessageBubble({
 }) {
   const text = messageText(message);
   const isUser = message.role === "user";
-  if (!isUser && !text.trim()) return null;
+  const toolParts = message.parts.filter(isToolUIPart);
+  if (!isUser && !text.trim() && toolParts.length === 0) return null;
   const usage = showTokenUsage && !isUser ? getMessageUsage(message) : undefined;
   const usageLabel = usage ? formatTokenUsage(usage) : null;
 
@@ -604,13 +719,29 @@ function MessageBubble({
       <div className="chat-message-body">
         <div className="chat-message-meta">
           <strong>{isUser ? "你" : "m-dashboard"}</strong>
-          <span>{isUser ? "刚刚" : "已完成"}</span>
+          <span>{isUser ? "刚刚" : isStreaming ? "生成中" : "已完成"}</span>
         </div>
-        <div className="chat-message-text">
-          <Streamdown isAnimating={!isUser && isStreaming} plugins={{ code }}>
-            {text}
-          </Streamdown>
-        </div>
+        {!isUser && toolParts.length > 0 ? (
+          <div className="chat-tool-calls">
+            {toolParts.map((part) => (
+              <ChatToolCallCard
+                key={part.toolCallId}
+                toolName={getToolName(part)}
+                state={part.state}
+                input={part.input}
+                output={"output" in part ? part.output : undefined}
+                errorText={"errorText" in part ? part.errorText : undefined}
+              />
+            ))}
+          </div>
+        ) : null}
+        {text.trim() ? (
+          <div className="chat-message-text">
+            <Streamdown isAnimating={!isUser && isStreaming} plugins={{ code }}>
+              {text}
+            </Streamdown>
+          </div>
+        ) : null}
         {!isUser && (
           <div className="chat-message-actions">
             <Button aria-label="复制回复" size="icon" variant="ghost">
@@ -659,6 +790,10 @@ function messageText(message: UIMessage) {
     .join("\n");
 }
 
+function messageHasToolParts(message: UIMessage) {
+  return message.parts.some(isToolUIPart);
+}
+
 function makeId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
@@ -670,6 +805,7 @@ function formatModelLabel(model: ModelConfig) {
 function createModelTransport(
   model: ModelConfig | undefined,
   getMemory: () => ChatMemoryStore,
+  getToolsSettings: () => ChatToolsSettings,
 ): ChatTransport<UIMessage> {
   return {
     async sendMessages({ messages, abortSignal }) {
@@ -679,6 +815,14 @@ function createModelTransport(
       const memory = getMemory();
       const memorySystem =
         memory.enabled && memory.items.length > 0 ? formatMemoryForInject(memory.items) : "";
+      const { tools, activePacks, toolNames } = await resolveActiveTools(getToolsSettings(), model);
+      const toolsHint = formatToolsSystemHint(activePacks);
+      const systemPrompt = [memorySystem, toolsHint].filter(Boolean).join("\n\n");
+
+      if (toolNames.length > 0) {
+        return sendToolEnabledMessages(model, messages, abortSignal, systemPrompt, tools);
+      }
+
       if (model.responsive) {
         return sendResponsiveMessages(model, messages, abortSignal, memorySystem);
       }
@@ -715,6 +859,55 @@ function createModelTransport(
       return null;
     },
   };
+}
+
+async function sendToolEnabledMessages(
+  model: ModelConfig,
+  messages: UIMessage[],
+  abortSignal: AbortSignal | undefined,
+  systemPrompt: string,
+  tools: ToolSet,
+): Promise<ReadableStream<UIMessageChunk>> {
+  const provider = createOpenAI({
+    apiKey: model.apiKey,
+    baseURL: resolveOpenAICompatibleBaseURL(model.baseUrl),
+    fetch: resolveFetch(),
+  });
+  const modelMessages = await convertToModelMessages(messages);
+  const languageModel = model.responsive
+    ? provider.responses(resolveModelId(model))
+    : provider.chat(resolveModelId(model));
+  const result = streamText({
+    model: languageModel,
+    messages: modelMessages,
+    tools,
+    stopWhen: stepCountIs(5),
+    ...(systemPrompt
+      ? model.responsive
+        ? { instructions: systemPrompt }
+        : { system: systemPrompt }
+      : {}),
+    abortSignal,
+  });
+  return toUIMessageStream({
+    stream: result.stream,
+    onError: (streamError) => {
+      console.error("Chat tool stream failed", streamError);
+      if (streamError instanceof Error && streamError.message.trim()) {
+        return streamError.message;
+      }
+      return String(streamError);
+    },
+    messageMetadata: ({ part }) => {
+      if (part.type !== "finish") return undefined;
+      const usage = normalizeTokenUsage({
+        inputTokens: part.totalUsage.inputTokens,
+        outputTokens: part.totalUsage.outputTokens,
+        totalTokens: part.totalUsage.totalTokens,
+      });
+      return usage ? { usage } : undefined;
+    },
+  });
 }
 
 async function sendResponsiveMessages(
