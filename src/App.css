@@ -568,6 +568,15 @@
   height: 28px;
   color: var(--chat-muted);
 }
+.chat-message-usage {
+  margin-left: 6px;
+  color: var(--chat-muted);
+  font-size: 11px;
+  line-height: 28px;
+  letter-spacing: 0.01em;
+  opacity: 0.95;
+  white-space: nowrap;
+}
 .chat-thinking {
   display: flex;
   gap: 4px;

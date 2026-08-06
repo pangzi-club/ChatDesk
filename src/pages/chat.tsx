@@ -187,7 +187,11 @@ function ChatPage() {
     }
     const lastMessage = messages[messages.length - 1];
     if (lastMessage?.role !== "assistant" || !messageText(lastMessage).trim()) return;
-    const fingerprint = `${sessionId}:${messages.length}:${lastMessage.id}:${messageText(lastMessage)}`;
+    const usage = getMessageUsage(lastMessage);
+    const usageKey = usage
+      ? `${usage.inputTokens ?? ""}:${usage.outputTokens ?? ""}:${usage.totalTokens ?? ""}`
+      : "";
+    const fingerprint = `${sessionId}:${messages.length}:${lastMessage.id}:${messageText(lastMessage)}:${usageKey}`;
     if (savedFingerprintRef.current === fingerprint) return;
     savedFingerprintRef.current = fingerprint;
     const now = new Date().toISOString();
@@ -371,6 +375,7 @@ function ChatPage() {
               key={message.id}
               message={message}
               isStreaming={status === "streaming" && message.id === lastMessage?.id}
+              showTokenUsage={chatDisplay.showTokenUsage}
             />
           ))}
           {isGenerating && !hasAssistantMessage && (
@@ -505,10 +510,30 @@ function ChatPage() {
   );
 }
 
-function MessageBubble({ message, isStreaming }: { message: UIMessage; isStreaming: boolean }) {
+type ChatTokenUsage = {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+};
+
+type ChatMessageMetadata = {
+  usage?: ChatTokenUsage;
+};
+
+function MessageBubble({
+  message,
+  isStreaming,
+  showTokenUsage,
+}: {
+  message: UIMessage;
+  isStreaming: boolean;
+  showTokenUsage: boolean;
+}) {
   const text = messageText(message);
   const isUser = message.role === "user";
   if (!isUser && !text.trim()) return null;
+  const usage = showTokenUsage && !isUser ? getMessageUsage(message) : undefined;
+  const usageLabel = usage ? formatTokenUsage(usage) : null;
 
   return (
     <div className={`chat-message ${isUser ? "user-message" : "assistant-message"}`}>
@@ -533,11 +558,37 @@ function MessageBubble({ message, isStreaming }: { message: UIMessage; isStreami
             <Button aria-label="重新生成" size="icon" variant="ghost">
               <RefreshCw className="size-3.5" />
             </Button>
+            {usageLabel && <span className="chat-message-usage">{usageLabel}</span>}
           </div>
         )}
       </div>
     </div>
   );
+}
+
+function getMessageUsage(message: UIMessage): ChatTokenUsage | undefined {
+  const metadata = message.metadata as ChatMessageMetadata | undefined;
+  const usage = metadata?.usage;
+  if (!usage || typeof usage !== "object") return undefined;
+  const hasAny =
+    typeof usage.inputTokens === "number" ||
+    typeof usage.outputTokens === "number" ||
+    typeof usage.totalTokens === "number";
+  return hasAny ? usage : undefined;
+}
+
+function formatTokenUsage(usage: ChatTokenUsage) {
+  const parts: string[] = [];
+  if (typeof usage.inputTokens === "number") {
+    parts.push(`输入 ${usage.inputTokens.toLocaleString("zh-CN")}`);
+  }
+  if (typeof usage.outputTokens === "number") {
+    parts.push(`输出 ${usage.outputTokens.toLocaleString("zh-CN")}`);
+  }
+  if (typeof usage.totalTokens === "number") {
+    parts.push(`合计 ${usage.totalTokens.toLocaleString("zh-CN")}`);
+  }
+  return parts.join(" · ");
 }
 
 function messageText(message: UIMessage) {
@@ -573,6 +624,7 @@ function createModelTransport(model: ModelConfig | undefined): ChatTransport<UIM
         body: JSON.stringify({
           model: resolveModelId(model),
           stream: true,
+          stream_options: { include_usage: true },
           messages: messages.map((message) => ({
             role: message.role,
             content: message.parts
@@ -609,7 +661,18 @@ async function sendResponsiveMessages(
     messages: await convertToModelMessages(messages),
     abortSignal,
   });
-  return toUIMessageStream({ stream: result.stream });
+  return toUIMessageStream({
+    stream: result.stream,
+    messageMetadata: ({ part }) => {
+      if (part.type !== "finish") return undefined;
+      const usage = normalizeTokenUsage({
+        inputTokens: part.totalUsage.inputTokens,
+        outputTokens: part.totalUsage.outputTokens,
+        totalTokens: part.totalUsage.totalTokens,
+      });
+      return usage ? { usage } : undefined;
+    },
+  });
 }
 
 /** Strip Chat Completions / Responses path suffixes so AI SDK can append `/responses`. */
@@ -649,9 +712,71 @@ function resolveFetch(): typeof fetch {
   return ("__TAURI_INTERNALS__" in window ? tauriFetch : window.fetch.bind(window)) as typeof fetch;
 }
 
+function normalizeTokenUsage(value: {
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  totalTokens?: number | null;
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
+  total_tokens?: number | null;
+}): ChatTokenUsage | undefined {
+  const inputTokens =
+    typeof value.inputTokens === "number"
+      ? value.inputTokens
+      : typeof value.prompt_tokens === "number"
+        ? value.prompt_tokens
+        : undefined;
+  const outputTokens =
+    typeof value.outputTokens === "number"
+      ? value.outputTokens
+      : typeof value.completion_tokens === "number"
+        ? value.completion_tokens
+        : undefined;
+  const totalTokens =
+    typeof value.totalTokens === "number"
+      ? value.totalTokens
+      : typeof value.total_tokens === "number"
+        ? value.total_tokens
+        : undefined;
+  if (inputTokens == null && outputTokens == null && totalTokens == null) {
+    return undefined;
+  }
+  return { inputTokens, outputTokens, totalTokens };
+}
+
+function parseUsageFromSsePayload(payload: unknown): ChatTokenUsage | undefined {
+  if (!payload || typeof payload !== "object") return undefined;
+  const usage = (payload as { usage?: unknown }).usage;
+  if (!usage || typeof usage !== "object") return undefined;
+  return normalizeTokenUsage(usage as Parameters<typeof normalizeTokenUsage>[0]);
+}
+
 function createOpenAIStreamTransform() {
   const textId = makeId("text");
   let buffer = "";
+  let usage: ChatTokenUsage | undefined;
+
+  const consumeLine = (
+    line: string,
+    controller: TransformStreamDefaultController<UIMessageChunk>,
+  ) => {
+    if (!line.startsWith("data:")) return;
+    const value = line.slice(5).trim();
+    if (!value || value === "[DONE]") return;
+    try {
+      const payload = JSON.parse(value) as unknown;
+      const delta = (payload as { choices?: Array<{ delta?: { content?: string } }> }).choices?.[0]
+        ?.delta?.content;
+      if (typeof delta === "string" && delta.length > 0) {
+        controller.enqueue({ type: "text-delta", id: textId, delta });
+      }
+      const parsedUsage = parseUsageFromSsePayload(payload);
+      if (parsedUsage) usage = parsedUsage;
+    } catch {
+      // Provider chunks can be split across SSE lines.
+    }
+  };
+
   return new TransformStream<Uint8Array, UIMessageChunk>({
     start(controller) {
       controller.enqueue({ type: "text-start", id: textId });
@@ -661,21 +786,21 @@ function createOpenAIStreamTransform() {
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
       for (const line of lines) {
-        if (!line.startsWith("data:")) continue;
-        const value = line.slice(5).trim();
-        if (value === "[DONE]") continue;
-        try {
-          const delta = JSON.parse(value).choices?.[0]?.delta?.content;
-          if (typeof delta === "string" && delta.length > 0) {
-            controller.enqueue({ type: "text-delta", id: textId, delta });
-          }
-        } catch {
-          // Provider chunks can be split across SSE lines.
-        }
+        consumeLine(line, controller);
       }
     },
     flush(controller) {
+      if (buffer.trim()) {
+        consumeLine(buffer, controller);
+        buffer = "";
+      }
       controller.enqueue({ type: "text-end", id: textId });
+      if (usage) {
+        controller.enqueue({
+          type: "message-metadata",
+          messageMetadata: { usage },
+        });
+      }
     },
   });
 }

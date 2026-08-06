@@ -21,6 +21,11 @@ const spacingOptions: Array<{ value: ChatSpacing; label: string }> = [
   { value: "compact", label: "紧密" },
 ];
 
+const tokenUsageOptions: Array<{ value: "on" | "off"; label: string }> = [
+  { value: "on", label: "显示" },
+  { value: "off", label: "隐藏" },
+];
+
 type ChatSettingsDialogProps = {
   open: boolean;
   settings: ChatDisplaySettings;
@@ -39,7 +44,9 @@ export function ChatSettingsDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Chat 显示设置</DialogTitle>
-          <DialogDescription>调整消息字体大小与页面间距，设置会自动保存。</DialogDescription>
+          <DialogDescription>
+            调整消息字体大小、页面间距与 token 显示，设置会自动保存。
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-6">
           <section className="space-y-3">
@@ -87,6 +94,32 @@ export function ChatSettingsDialog({
                   <Label
                     className="flex cursor-pointer items-center justify-center rounded-md border border-border px-3 py-2 text-sm transition-colors peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/10 peer-data-[state=checked]:text-primary"
                     htmlFor={`chat-spacing-${option.value}`}
+                  >
+                    {option.label}
+                  </Label>
+                </div>
+              ))}
+            </RadioGroup>
+          </section>
+          <section className="space-y-3">
+            <Label className="font-medium text-sm">Token 消耗</Label>
+            <RadioGroup
+              className="grid grid-cols-2 gap-2"
+              onValueChange={(value) =>
+                onSettingsChange({ ...settings, showTokenUsage: value === "on" })
+              }
+              value={settings.showTokenUsage ? "on" : "off"}
+            >
+              {tokenUsageOptions.map((option) => (
+                <div key={option.value}>
+                  <RadioGroupItem
+                    className="peer sr-only"
+                    id={`chat-token-usage-${option.value}`}
+                    value={option.value}
+                  />
+                  <Label
+                    className="flex cursor-pointer items-center justify-center rounded-md border border-border px-3 py-2 text-sm transition-colors peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/10 peer-data-[state=checked]:text-primary"
+                    htmlFor={`chat-token-usage-${option.value}`}
                   >
                     {option.label}
                   </Label>

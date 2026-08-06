@@ -6,11 +6,13 @@ export type ChatSpacing = "loose" | "default" | "compact";
 export type ChatDisplaySettings = {
   fontSize: ChatFontSize;
   spacing: ChatSpacing;
+  showTokenUsage: boolean;
 };
 
 export const DEFAULT_CHAT_DISPLAY: ChatDisplaySettings = {
   fontSize: "default",
   spacing: "default",
+  showTokenUsage: true,
 };
 
 const CHAT_DISPLAY_STORE_KEY = "chatDisplay";
@@ -33,6 +35,10 @@ function normalizeChatDisplay(value: unknown): ChatDisplaySettings {
   return {
     fontSize: isChatFontSize(record.fontSize) ? record.fontSize : DEFAULT_CHAT_DISPLAY.fontSize,
     spacing: isChatSpacing(record.spacing) ? record.spacing : DEFAULT_CHAT_DISPLAY.spacing,
+    showTokenUsage:
+      typeof record.showTokenUsage === "boolean"
+        ? record.showTokenUsage
+        : DEFAULT_CHAT_DISPLAY.showTokenUsage,
   };
 }
 
