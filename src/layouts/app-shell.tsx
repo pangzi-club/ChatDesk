@@ -106,6 +106,12 @@ const commandItems = [
   { to: "/settings/keys", label: "API Keys", icon: KeyRound, keywords: ["设置", "密钥", "api"] },
   { to: "/settings/models", label: "模型", icon: Package, keywords: ["设置", "models", "model"] },
   {
+    to: "/settings/tools",
+    label: "Tools",
+    icon: Wrench,
+    keywords: ["设置", "tools", "工具", "工具包", "chat tools"],
+  },
+  {
     to: "/settings/memory",
     label: "长期记忆",
     icon: Brain,
