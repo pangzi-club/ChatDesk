@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { UIMessage } from "ai";
 
-export const CHAT_SCHEMA_VERSION = 1;
+export const CHAT_SCHEMA_VERSION = 2;
 
 export type ChatAttachmentKind = "image" | "video" | "audio" | "file";
 export type ChatAttachmentSource = "upload" | "generated" | "remote";
@@ -27,6 +27,8 @@ export type ChatSession = {
   createdAt: string;
   updatedAt: string;
   modelId?: string;
+  workspaceId?: string;
+  cwd?: string;
   messages: UIMessage[];
   attachments: ChatAttachment[];
 };
@@ -34,6 +36,8 @@ export type ChatSession = {
 export type ChatIndexItem = Pick<ChatSession, "id" | "title" | "createdAt" | "updatedAt"> & {
   messageCount: number;
   attachmentCount: number;
+  workspaceId?: string;
+  cwd?: string;
 };
 
 const INDEX_KEY = "m-dashboard-chat-index-v1";
@@ -65,7 +69,9 @@ function isChatIndexItem(value: unknown): value is ChatIndexItem {
     typeof item.createdAt === "string" &&
     typeof item.updatedAt === "string" &&
     typeof item.messageCount === "number" &&
-    typeof item.attachmentCount === "number"
+    typeof item.attachmentCount === "number" &&
+    (item.workspaceId === undefined || typeof item.workspaceId === "string") &&
+    (item.cwd === undefined || typeof item.cwd === "string")
   );
 }
 
@@ -86,7 +92,7 @@ function isChatSession(value: unknown): value is ChatSession {
   if (!value || typeof value !== "object") return false;
   const session = value as Partial<ChatSession>;
   return (
-    session.schemaVersion === CHAT_SCHEMA_VERSION &&
+    (session.schemaVersion === CHAT_SCHEMA_VERSION || session.schemaVersion === 1) &&
     typeof session.id === "string" &&
     typeof session.title === "string" &&
     typeof session.createdAt === "string" &&
@@ -95,6 +101,16 @@ function isChatSession(value: unknown): value is ChatSession {
     Array.isArray(session.attachments) &&
     session.attachments.every(isChatAttachment)
   );
+}
+
+function normalizeChatSession(value: unknown): ChatSession | null {
+  if (!isChatSession(value)) return null;
+  return {
+    ...value,
+    schemaVersion: CHAT_SCHEMA_VERSION,
+    workspaceId: typeof value.workspaceId === "string" ? value.workspaceId : undefined,
+    cwd: typeof value.cwd === "string" ? value.cwd : undefined,
+  };
 }
 
 export function createSessionId() {
@@ -131,7 +147,7 @@ export async function loadChatSession(id: string): Promise<ChatSession | null> {
       ? await invoke<string | null>("read_chat_session", { sessionId: id })
       : window.localStorage.getItem(`${SESSION_KEY_PREFIX}${id}`);
     const parsed = parseJson<unknown>(contents, null);
-    return isChatSession(parsed) ? parsed : null;
+    return normalizeChatSession(parsed);
   } catch (error) {
     console.error("Failed to load chat session", error);
     return null;
@@ -152,6 +168,8 @@ export async function saveChatSession(session: ChatSession): Promise<void> {
     title: session.title,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
+    workspaceId: session.workspaceId,
+    cwd: session.cwd,
     messageCount: session.messages.length,
     attachmentCount: session.attachments.length,
   };

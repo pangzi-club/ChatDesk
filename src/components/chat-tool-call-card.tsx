@@ -8,6 +8,7 @@ import {
   readImageGenerationOutput,
 } from "@/lib/chat-image-generation";
 import { CHAT_TOOL_DISPLAY_NAMES } from "@/lib/chat-tool-defs";
+import { CHAT_WORKSPACE_TOOL_DISPLAY_NAMES } from "@/lib/chat-workspace-tools";
 import { SANDBOX_TOOL_DISPLAY_NAMES } from "@/lib/sandbox-agent-tools";
 
 type ChatToolCallCardProps = {
@@ -33,6 +34,26 @@ function isEmptyInput(value: unknown) {
   if (value === undefined || value === null) return true;
   if (typeof value !== "object") return false;
   return Object.keys(value as Record<string, unknown>).length === 0;
+}
+
+function extractWorkspaceToolSummary(toolName: string, input: unknown, output: unknown) {
+  const inputRecord = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const outputRecord =
+    output && typeof output === "object" ? (output as Record<string, unknown>) : {};
+  const subject =
+    typeof inputRecord.path === "string"
+      ? inputRecord.path
+      : toolName === "bash" && typeof inputRecord.command === "string"
+        ? inputRecord.command
+        : "";
+  const compact = subject.replace(/\s+/g, " ").trim();
+  const details = compact ? ` · ${Array.from(compact).slice(0, 54).join("")}` : "";
+  const code =
+    toolName === "bash" && typeof outputRecord.code === "number"
+      ? ` · exit ${outputRecord.code}`
+      : "";
+  const truncated = outputRecord.truncated === true ? " · 已截断" : "";
+  return `${details}${code}${truncated}`;
 }
 
 /** 业务 tool 经 withToolError 失败时返回 { error }，SDK 仍标为 output-available。 */
@@ -147,7 +168,10 @@ export function ChatToolCallCard({
 }: ChatToolCallCardProps) {
   const [open, setOpen] = useState(false);
   const title =
-    CHAT_TOOL_DISPLAY_NAMES[toolName] ?? SANDBOX_TOOL_DISPLAY_NAMES[toolName] ?? toolName;
+    CHAT_TOOL_DISPLAY_NAMES[toolName] ??
+    CHAT_WORKSPACE_TOOL_DISPLAY_NAMES[toolName] ??
+    SANDBOX_TOOL_DISPLAY_NAMES[toolName] ??
+    toolName;
   const outputError = extractToolOutputError(output);
   const resolvedError = errorText || outputError;
   const failed = state === "output-error" || Boolean(resolvedError);
@@ -197,6 +221,9 @@ export function ChatToolCallCard({
   });
   const showInput = (!webSearch && !isImageGeneration) || !isEmptyInput(input);
   const summaryQuery = webSearch?.queries[0];
+  const workspaceSummary = CHAT_WORKSPACE_TOOL_DISPLAY_NAMES[toolName]
+    ? extractWorkspaceToolSummary(toolName, input, output)
+    : "";
 
   return (
     <div
@@ -219,6 +246,7 @@ export function ChatToolCallCard({
           {title}
           {summaryQuery ? ` · ${summaryQuery}` : ""}
           {isImageGeneration && imageMeta?.fileName ? ` · ${imageMeta.fileName}` : ""}
+          {workspaceSummary}
         </span>
         <span className="chat-tool-call-status">{status}</span>
         <ChevronDown className={`chat-tool-call-chevron ${open ? "is-open" : ""}`} />

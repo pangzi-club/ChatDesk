@@ -1,6 +1,7 @@
 use crate::models::sandbox::{
-    SandboxInfo, SandboxMode, SandboxPermissions, ShellCommandResult, WorkspaceListDirResult,
-    WorkspaceReadFileResult, WorkspaceWriteFileResult,
+    SandboxInfo, SandboxMode, SandboxPermissions, ShellCommandResult, WorkspaceEditFileResult,
+    WorkspaceListDirResult, WorkspaceReadFileResult, WorkspaceSearchFilesResult,
+    WorkspaceWriteFileResult,
 };
 use crate::services::{seatbelt, workspace_fs};
 
@@ -15,8 +16,15 @@ pub fn run_shell_command(
     cwd: Option<String>,
     mode: SandboxMode,
     permissions: Option<SandboxPermissions>,
+    timeout_seconds: Option<u64>,
 ) -> Result<ShellCommandResult, String> {
-    seatbelt::run_command(command, cwd, mode, permissions.unwrap_or_default())
+    seatbelt::run_command(
+        command,
+        cwd,
+        mode,
+        permissions.unwrap_or_default(),
+        timeout_seconds,
+    )
 }
 
 #[tauri::command]
@@ -39,4 +47,25 @@ pub fn workspace_write_file(
     content: String,
 ) -> Result<WorkspaceWriteFileResult, String> {
     workspace_fs::write_file(cwd, path, content)
+}
+
+#[tauri::command]
+pub fn workspace_edit_file(
+    cwd: String,
+    path: String,
+    old_text: String,
+    new_text: String,
+) -> Result<WorkspaceEditFileResult, String> {
+    workspace_fs::edit_file(cwd, path, old_text, new_text)
+}
+
+#[tauri::command]
+pub fn workspace_search_files(
+    cwd: String,
+    path: Option<String>,
+    pattern: Option<String>,
+    query: Option<String>,
+    max_results: Option<usize>,
+) -> Result<WorkspaceSearchFilesResult, String> {
+    workspace_fs::search_files(cwd, path, pattern, query, max_results)
 }

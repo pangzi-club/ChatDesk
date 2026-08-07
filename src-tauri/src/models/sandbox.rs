@@ -62,3 +62,20 @@ pub struct WorkspaceWriteFileResult {
     pub path: String,
     pub bytes_written: usize,
 }
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceSearchFilesResult {
+    pub query: Option<String>,
+    pub pattern: Option<String>,
+    pub matches: Vec<String>,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceEditFileResult {
+    pub path: String,
+    pub replacements: usize,
+    pub bytes_written: usize,
+}

@@ -25,6 +25,7 @@ import {
   CircleStop,
   Copy,
   FilePlus2,
+  FolderGit2,
   History,
   Mic,
   MoreHorizontal,
@@ -109,6 +110,7 @@ import {
   type TokenUsage,
 } from "@/lib/chat-usage";
 import { loadModels, type ModelConfig } from "@/lib/models";
+import { loadWorkspaceProjects } from "@/lib/workspaces";
 
 function ChatPage() {
   const queryClient = useQueryClient();
@@ -130,6 +132,10 @@ function ChatPage() {
     queryKey: ["chat-tools"],
     queryFn: loadChatToolsSettings,
   });
+  const { data: workspaceProjects = [], isLoading: isWorkspacesLoading } = useQuery({
+    queryKey: ["workspace-projects"],
+    queryFn: loadWorkspaceProjects,
+  });
   const memoryRef = useRef(chatMemory);
   memoryRef.current = chatMemory;
   const toolsRef = useRef(chatTools);
@@ -139,11 +145,14 @@ function ChatPage() {
   const [input, setInput] = useState("");
   const [sessionId, setSessionId] = useState(createSessionId);
   const [sessionTitle, setSessionTitle] = useState("新对话");
+  const [workspaceKey, setWorkspaceKey] = useState("");
+  const [sessionCwd, setSessionCwd] = useState("");
   const sessionCreatedAtRef = useRef(new Date().toISOString());
   const sessionAttachmentsRef = useRef<ChatAttachment[]>([]);
   const suppressSaveRef = useRef(false);
   const pendingSessionRef = useRef<ChatSession | null>(null);
   const initializedHistoryRef = useRef(false);
+  const workspaceSelectionInitializedRef = useRef(false);
   const savedFingerprintRef = useRef("");
   const extractedFingerprintRef = useRef("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -154,6 +163,10 @@ function ChatPage() {
   const [toolsOpen, setToolsOpen] = useState(false);
   const [chatDisplay, setChatDisplay] = useState<ChatDisplaySettings>(DEFAULT_CHAT_DISPLAY);
   const [availablePacks, setAvailablePacks] = useState<ChatToolPackId[]>([]);
+  const workspaceRef = useRef("");
+  const selectedCwd =
+    workspaceProjects.find((project) => project.id === workspaceKey)?.path ?? sessionCwd;
+  workspaceRef.current = selectedCwd;
   const selectedModel = models.find((model) => model.id === selectedModelId) ?? models[0];
   const transport = useMemo(
     () =>
@@ -161,6 +174,7 @@ function ChatPage() {
         selectedModel,
         () => memoryRef.current,
         () => toolsRef.current,
+        () => workspaceRef.current,
       ),
     [selectedModel],
   );
@@ -214,13 +228,22 @@ function ChatPage() {
       selectedModel
         ? { supportsTools: selectedModel.supportsTools, responsive: selectedModel.responsive }
         : undefined,
+      () => selectedCwd,
     ).then((packs) => {
       if (active) setAvailablePacks(packs);
     });
     return () => {
       active = false;
     };
-  }, [chatTools, selectedModel?.supportsTools, selectedModel?.responsive]);
+  }, [chatTools, selectedCwd, selectedModel]);
+
+  useEffect(() => {
+    if (!workspaceSelectionInitializedRef.current && workspaceProjects.length > 0) {
+      workspaceSelectionInitializedRef.current = true;
+      setWorkspaceKey(workspaceProjects[0].id);
+      setSessionCwd(workspaceProjects[0].path);
+    }
+  }, [workspaceProjects]);
 
   useEffect(() => {
     if (models.length > 0 && !models.some((model) => model.id === selectedModelId)) {
@@ -277,8 +300,11 @@ function ChatPage() {
     const session = pendingSessionRef.current;
     if (!session || session.id !== sessionId) return;
     pendingSessionRef.current = null;
+    workspaceSelectionInitializedRef.current = true;
     suppressSaveRef.current = true;
     setSessionTitle(session.title);
+    setWorkspaceKey(session.workspaceId ?? "");
+    setSessionCwd(session.cwd ?? "");
     sessionCreatedAtRef.current = session.createdAt;
     sessionAttachmentsRef.current = session.attachments;
     setMessages(session.messages);
@@ -317,12 +343,14 @@ function ChatPage() {
         );
         sessionAttachmentsRef.current = materialized.attachments;
         await saveChatSession({
-          schemaVersion: 1,
+          schemaVersion: 2,
           id: sessionId,
           title,
           createdAt: sessionCreatedAtRef.current,
           updatedAt: now,
           modelId: selectedModel?.id,
+          workspaceId: workspaceKey || undefined,
+          cwd: selectedCwd || undefined,
           messages: materialized.messages,
           attachments: materialized.attachments,
         });
@@ -347,7 +375,16 @@ function ChatPage() {
         console.error("Failed to save chat session", saveError);
       }
     })();
-  }, [messages, queryClient, selectedModel, sessionId, status, setMessages]);
+  }, [
+    messages,
+    queryClient,
+    selectedCwd,
+    selectedModel,
+    sessionId,
+    status,
+    setMessages,
+    workspaceKey,
+  ]);
 
   // Scroll when a message arrives or the local response indicator changes.
   // biome-ignore lint/correctness/useExhaustiveDependencies: these values intentionally trigger the scroll effect.
@@ -365,6 +402,9 @@ function ChatPage() {
   function startNewSession() {
     stop();
     setSessionId(createSessionId());
+    workspaceSelectionInitializedRef.current = true;
+    setWorkspaceKey("");
+    setSessionCwd("");
     sessionCreatedAtRef.current = new Date().toISOString();
     sessionAttachmentsRef.current = [];
     setSessionTitle("新对话");
@@ -472,7 +512,14 @@ function ChatPage() {
                     type="button"
                     onClick={() => openSession(item)}
                   >
-                    <span className="chat-history-menu-title">{item.title}</span>
+                    <span className="min-w-0">
+                      <span className="chat-history-menu-title block">{item.title}</span>
+                      {item.cwd ? (
+                        <span className="block truncate text-[10px] text-muted-foreground">
+                          {pathBasename(item.cwd)}
+                        </span>
+                      ) : null}
+                    </span>
                     <span className="chat-history-menu-count">{item.messageCount}</span>
                   </button>
                   <span className="chat-history-menu-actions">
@@ -519,7 +566,10 @@ function ChatPage() {
             <span className="chat-status-dot" />
             <span>{selectedModel?.provider ?? "未配置模型"}</span>
             <span className="chat-context-rule" />
-            <span>本地会话</span>
+            <span className="truncate" title={selectedCwd || undefined}>
+              {selectedCwd ? pathBasename(selectedCwd) : "未选择 Workspace"}
+            </span>
+            {selectedCwd ? <span className="chat-access-badge">完全访问</span> : null}
           </div>
           {messages.length === 0 ? (
             <div className="chat-tools-hint">
@@ -631,6 +681,32 @@ function ChatPage() {
               >
                 <FilePlus2 className="size-4" />
               </Button>
+              <div className="chat-workspace-picker" title={selectedCwd || "未选择 Workspace"}>
+                <FolderGit2 className="size-3.5" />
+                <select
+                  aria-label="选择 Workspace"
+                  disabled={isWorkspacesLoading || Boolean(selectedCwd) || messages.length > 0}
+                  value={workspaceKey}
+                  onChange={(event) => {
+                    const nextKey = event.target.value;
+                    const project = workspaceProjects.find((item) => item.id === nextKey);
+                    setWorkspaceKey(nextKey);
+                    setSessionCwd(project?.path ?? "");
+                  }}
+                >
+                  <option value="">无 Workspace</option>
+                  {workspaceKey &&
+                  !workspaceProjects.some((project) => project.id === workspaceKey) ? (
+                    <option value={workspaceKey}>{pathBasename(sessionCwd)}（已移除）</option>
+                  ) : null}
+                  {workspaceProjects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {pathBasename(project.path)}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="size-3.5" />
+              </div>
               <div className="chat-model-picker">
                 <Settings2 className="size-3.5" />
                 <select
@@ -722,6 +798,10 @@ function ChatPage() {
   );
 }
 
+function pathBasename(path: string) {
+  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+
 function MessageBubble({
   message,
   isStreaming,
@@ -809,6 +889,7 @@ function createModelTransport(
   model: ModelConfig | undefined,
   getMemory: () => ChatMemoryStore,
   getToolsSettings: () => ChatToolsSettings,
+  getCwd: () => string,
 ): ChatTransport<UIMessage> {
   return {
     async sendMessages({ messages, abortSignal }) {
@@ -818,16 +899,24 @@ function createModelTransport(
       const memory = getMemory();
       const memorySystem =
         memory.enabled && memory.items.length > 0 ? formatMemoryForInject(memory.items) : "";
-      const { tools, activePacks, toolNames } = await resolveActiveTools(getToolsSettings(), model);
+      const cwd = getCwd().trim();
+      const { tools, activePacks, toolNames } = await resolveActiveTools(
+        getToolsSettings(),
+        model,
+        getCwd,
+      );
       const toolsHint = formatToolsSystemHint(activePacks);
-      const systemPrompt = [memorySystem, toolsHint].filter(Boolean).join("\n\n");
+      const workspaceHint = cwd
+        ? `当前 workspace：${cwd}\n本地文件工具以此目录为根；当前为完全访问模式。`
+        : "当前未选择 workspace。文件工具必须使用绝对路径；Bash 使用默认执行目录。";
+      const systemPrompt = [memorySystem, workspaceHint, toolsHint].filter(Boolean).join("\n\n");
 
       if (toolNames.length > 0) {
         return sendToolEnabledMessages(model, messages, abortSignal, systemPrompt, tools);
       }
 
       if (model.responsive) {
-        return sendResponsiveMessages(model, messages, abortSignal, memorySystem);
+        return sendResponsiveMessages(model, messages, abortSignal, systemPrompt);
       }
       const mappedMessages = messages.map((message) => ({
         role: message.role,
@@ -836,8 +925,8 @@ function createModelTransport(
           .map((part) => part.text)
           .join(""),
       }));
-      const requestMessages = memorySystem
-        ? [{ role: "system" as const, content: memorySystem }, ...mappedMessages]
+      const requestMessages = systemPrompt
+        ? [{ role: "system" as const, content: systemPrompt }, ...mappedMessages]
         : mappedMessages;
       const response = await resolveFetch()(model.baseUrl, {
         method: "POST",

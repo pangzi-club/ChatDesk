@@ -1,10 +1,39 @@
 import { settingsStore } from "@/lib/settings-store";
 
-export type ChatToolPackId = "analytics" | "commit" | "looker" | "web_search" | "image_generation";
+export type ChatToolPackId =
+  | "list_dir"
+  | "search_files"
+  | "read_file"
+  | "write_file"
+  | "edit_file"
+  | "terminal"
+  | "analytics"
+  | "commit"
+  | "looker"
+  | "web_search"
+  | "image_generation";
 
 export type ChatToolsSettings = Record<ChatToolPackId, boolean>;
 
+export const WORKSPACE_FILE_TOOL_META: Array<{
+  id: "list_dir" | "search_files" | "read_file" | "write_file" | "edit_file";
+  label: string;
+  description: string;
+}> = [
+  { id: "list_dir", label: "列出目录", description: "浏览文件和子目录" },
+  { id: "search_files", label: "搜索文件", description: "按名称或内容查找" },
+  { id: "read_file", label: "读取文件", description: "查看文本文件内容" },
+  { id: "write_file", label: "写入文件", description: "创建或覆盖文件" },
+  { id: "edit_file", label: "编辑文件", description: "精确替换文件内容" },
+];
+
 export const DEFAULT_CHAT_TOOLS: ChatToolsSettings = {
+  list_dir: false,
+  search_files: false,
+  read_file: false,
+  write_file: false,
+  edit_file: false,
+  terminal: false,
   analytics: false,
   commit: false,
   looker: false,
@@ -22,9 +51,38 @@ export type ChatToolPackMeta = {
   keysPath?: "/settings/keys";
   /** 需要模型开启 Responses API（如 OpenAI web_search）。 */
   requiresResponsive?: boolean;
+  category: "development" | "web" | "business";
+  toolNames: string[];
+  requiresWorkspace?: boolean;
+  risk?: string;
 };
 
+export const CHAT_TOOL_CATEGORIES = [
+  { id: "development", label: "本地开发" },
+  { id: "web", label: "联网与创作" },
+  { id: "business", label: "业务数据" },
+] as const;
+
 export const CHAT_TOOL_PACKS: ChatToolPackMeta[] = [
+  ...WORKSPACE_FILE_TOOL_META.map((item) => ({
+    id: item.id,
+    label: item.label,
+    category: "development" as const,
+    toolNames: [item.id],
+    requiresWorkspace: false,
+    description: item.description,
+    examples: [item.description],
+  })),
+  {
+    id: "terminal",
+    label: "终端",
+    category: "development",
+    toolNames: ["bash"],
+    requiresWorkspace: false,
+    risk: "完全访问：命令可能修改 workspace 外部环境。",
+    description: "在 workspace 中执行 Shell 命令；未选择时使用默认执行目录。",
+    examples: ["运行测试并告诉我失败原因", "查看当前 Git 状态", "启动一次构建"],
+  },
   {
     id: "analytics",
     label: "Analytics",
@@ -32,6 +90,8 @@ export const CHAT_TOOL_PACKS: ChatToolPackMeta[] = [
     examples: ["最近 7 天各站流量怎么样？", "列出我有哪些分析站点", "今天哪个站访客最多？"],
     keyLabel: "Tan Dataer API Key",
     keysPath: "/settings/keys",
+    category: "business",
+    toolNames: ["list_analytics_sites", "get_site_analytics", "get_all_sites_analytics"],
   },
   {
     id: "commit",
@@ -40,6 +100,8 @@ export const CHAT_TOOL_PACKS: ChatToolPackMeta[] = [
     examples: ["我这周都提交了什么？", "最近的提交活跃度怎么样？", "列出最近 10 条提交"],
     keyLabel: "Commit API Key",
     keysPath: "/settings/keys",
+    category: "business",
+    toolNames: ["get_commit_overview", "list_recent_commits"],
   },
   {
     id: "looker",
@@ -48,6 +110,8 @@ export const CHAT_TOOL_PACKS: ChatToolPackMeta[] = [
     examples: ["看看有哪些监控", "读取某个监控的最新内容", "监控列表里最近更新了什么？"],
     keyLabel: "Looker API Key",
     keysPath: "/settings/keys",
+    category: "business",
+    toolNames: ["list_monitors", "read_monitor"],
   },
   {
     id: "web_search",
@@ -59,6 +123,8 @@ export const CHAT_TOOL_PACKS: ChatToolPackMeta[] = [
       "查一下这个库的最新 release",
     ],
     requiresResponsive: true,
+    category: "web",
+    toolNames: ["web_search"],
   },
   {
     id: "image_generation",
@@ -71,6 +137,8 @@ export const CHAT_TOOL_PACKS: ChatToolPackMeta[] = [
     ],
     keyLabel: "KIE API Key",
     keysPath: "/settings/keys",
+    category: "web",
+    toolNames: ["image_generation"],
   },
 ];
 
@@ -79,6 +147,12 @@ const CHAT_TOOLS_STORAGE_KEY = "m-dashboard-chat-tools-v1";
 
 function isChatToolPackId(value: unknown): value is ChatToolPackId {
   return (
+    value === "list_dir" ||
+    value === "search_files" ||
+    value === "read_file" ||
+    value === "write_file" ||
+    value === "edit_file" ||
+    value === "terminal" ||
     value === "analytics" ||
     value === "commit" ||
     value === "looker" ||
@@ -92,8 +166,23 @@ function normalizeChatTools(value: unknown): ChatToolsSettings {
     return { ...DEFAULT_CHAT_TOOLS };
   }
   const record = value as Record<string, unknown>;
+  const legacyWorkspaceFiles = record.workspace_files === true;
+  const legacyChildren =
+    record.workspaceFileTools && typeof record.workspaceFileTools === "object"
+      ? (record.workspaceFileTools as Record<string, unknown>)
+      : {};
   return {
+    list_dir: record.list_dir === true || legacyWorkspaceFiles || legacyChildren.list_dir === true,
+    search_files:
+      record.search_files === true || legacyWorkspaceFiles || legacyChildren.search_files === true,
+    read_file:
+      record.read_file === true || legacyWorkspaceFiles || legacyChildren.read_file === true,
+    write_file:
+      record.write_file === true || legacyWorkspaceFiles || legacyChildren.write_file === true,
+    edit_file:
+      record.edit_file === true || legacyWorkspaceFiles || legacyChildren.edit_file === true,
     analytics: record.analytics === true,
+    terminal: record.terminal === true,
     commit: record.commit === true,
     looker: record.looker === true,
     web_search: record.web_search === true,

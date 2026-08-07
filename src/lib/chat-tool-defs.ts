@@ -8,6 +8,10 @@ import {
   type ChatToolsSettings,
   getPackMeta,
 } from "@/lib/chat-tools";
+import {
+  CHAT_WORKSPACE_TOOL_DISPLAY_NAMES,
+  createChatWorkspaceTools,
+} from "@/lib/chat-workspace-tools";
 import { fetchCommitOverview, fetchRecentCommits, loadCommitApiKey } from "@/lib/commit";
 import {
   type DataerInterval,
@@ -16,9 +20,9 @@ import {
   loadDataerApiKey,
 } from "@/lib/dataer";
 import {
+  generateImage,
   type ImageAspectRatio,
   type ImageResolution,
-  generateImage,
   loadKieApiKey,
 } from "@/lib/image-generation";
 import { fetchMonitor, fetchMonitors, loadLookerApiKey } from "@/lib/looker";
@@ -53,6 +57,7 @@ const BUSINESS_PACKS = new Set<ChatToolPackId>([
 ]);
 
 export const CHAT_TOOL_DISPLAY_NAMES: Record<string, string> = {
+  ...CHAT_WORKSPACE_TOOL_DISPLAY_NAMES,
   list_analytics_sites: "Analytics · 站点列表",
   get_site_analytics: "Analytics · 单站报表",
   get_all_sites_analytics: "Analytics · 全站汇总",
@@ -339,6 +344,7 @@ function canActivatePack(
 export async function resolveActiveTools(
   enabled: ChatToolsSettings,
   model: ModelConfig | undefined,
+  getCwd?: () => string,
 ): Promise<ResolveActiveToolsResult> {
   if (!model?.supportsTools) {
     return { tools: {}, activePacks: [], toolNames: [] };
@@ -349,9 +355,20 @@ export async function resolveActiveTools(
 
   for (const pack of CHAT_TOOL_PACKS) {
     if (!enabled[pack.id]) continue;
+    if (pack.requiresWorkspace && !getCwd?.().trim()) continue;
     const apiKey = BUSINESS_PACKS.has(pack.id) ? await loadPackApiKey(pack.id) : "";
     if (!canActivatePack(pack, model, apiKey)) continue;
-    if (pack.id === "web_search") {
+    if (
+      pack.id === "list_dir" ||
+      pack.id === "search_files" ||
+      pack.id === "read_file" ||
+      pack.id === "write_file" ||
+      pack.id === "edit_file" ||
+      pack.id === "terminal"
+    ) {
+      if (!getCwd) continue;
+      Object.assign(tools, createChatWorkspaceTools({ getCwd }, pack.id));
+    } else if (pack.id === "web_search") {
       Object.assign(tools, createWebSearchTools());
     } else {
       Object.assign(tools, createPackTools(pack.id, apiKey));
@@ -370,11 +387,13 @@ export async function resolveActiveTools(
 export async function resolveAvailablePacks(
   enabled: ChatToolsSettings,
   model: Pick<ModelConfig, "supportsTools" | "responsive"> | undefined,
+  getCwd?: () => string,
 ): Promise<ChatToolPackId[]> {
   if (!model?.supportsTools) return [];
   const available: ChatToolPackId[] = [];
   for (const pack of CHAT_TOOL_PACKS) {
     if (!enabled[pack.id]) continue;
+    if (pack.requiresWorkspace && !getCwd?.().trim()) continue;
     const apiKey = BUSINESS_PACKS.has(pack.id) ? await loadPackApiKey(pack.id) : "";
     if (canActivatePack(pack, model, apiKey)) available.push(pack.id);
   }

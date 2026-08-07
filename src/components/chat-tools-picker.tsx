@@ -10,7 +10,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
-import { CHAT_TOOL_PACKS, type ChatToolPackId, type ChatToolsSettings } from "@/lib/chat-tools";
+import {
+  CHAT_TOOL_CATEGORIES,
+  CHAT_TOOL_PACKS,
+  type ChatToolPackId,
+  type ChatToolsSettings,
+} from "@/lib/chat-tools";
 
 type ChatToolsPickerProps = {
   settings: ChatToolsSettings;
@@ -41,24 +46,31 @@ export function ChatToolsPicker({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="chat-tools-menu" sideOffset={8}>
-        <DropdownMenuLabel>启用工具</DropdownMenuLabel>
+        <DropdownMenuLabel>启用工具包</DropdownMenuLabel>
         <DropdownMenuSeparator />
         <div className="chat-tools-menu-list">
-          {CHAT_TOOL_PACKS.map((pack) => {
-            const switchId = `chat-tools-picker-${pack.id}`;
-            return (
-              <label className="chat-tools-menu-row" htmlFor={switchId} key={pack.id}>
-                <span>{pack.label}</span>
-                <Switch
-                  aria-label={`启用 ${pack.label}`}
-                  checked={settings[pack.id]}
-                  id={switchId}
-                  size="sm"
-                  onCheckedChange={(checked) => handleToggle(pack.id, checked === true)}
-                />
-              </label>
-            );
-          })}
+          {CHAT_TOOL_CATEGORIES.map((category) => (
+            <section className="chat-tools-menu-group" key={category.id}>
+              <p>{category.label}</p>
+              {CHAT_TOOL_PACKS.filter((pack) => pack.category === category.id).map((pack) => {
+                const switchId = `chat-tools-picker-${pack.id}`;
+                return (
+                  <label className="chat-tools-menu-row" htmlFor={switchId} key={pack.id}>
+                    <span className="min-w-0">
+                      <span className="block">{pack.label}</span>
+                    </span>
+                    <Switch
+                      aria-label={`启用 ${pack.label}`}
+                      checked={settings[pack.id]}
+                      id={switchId}
+                      size="sm"
+                      onCheckedChange={(checked) => handleToggle(pack.id, checked === true)}
+                    />
+                  </label>
+                );
+              })}
+            </section>
+          ))}
         </div>
         <DropdownMenuSeparator />
         <div className="chat-tools-menu-footer">

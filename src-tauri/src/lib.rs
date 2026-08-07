@@ -63,6 +63,8 @@ pub fn run() {
             commands::sandbox::workspace_list_dir,
             commands::sandbox::workspace_read_file,
             commands::sandbox::workspace_write_file,
+            commands::sandbox::workspace_edit_file,
+            commands::sandbox::workspace_search_files,
             set_tray_enabled,
             commands::automation::sync_automation_tasks,
             commands::chat::read_chat_index,
