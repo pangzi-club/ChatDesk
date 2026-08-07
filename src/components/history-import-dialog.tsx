@@ -246,17 +246,21 @@ function HistoryImportDialog({
                   <div className="divide-y divide-border">
                     {items.map((item) => {
                       const key = selectionKey(item);
+                      const checkboxId = `history-import-${encodeURIComponent(key)}`;
                       const already = importedKeys.has(key);
                       const checked = selected.has(key);
                       return (
                         <label
                           key={key}
                           className="flex cursor-pointer items-start gap-3 px-4 py-3 hover:bg-accent/30 has-disabled:cursor-not-allowed has-disabled:opacity-60"
+                          htmlFor={checkboxId}
                         >
                           <Checkbox
+                            aria-label={`选择对话 ${item.title?.trim() || item.externalId}`}
                             checked={checked}
                             className="mt-0.5"
                             disabled={importing}
+                            id={checkboxId}
                             onCheckedChange={(value) => toggle(item, value === true)}
                           />
                           <div className="min-w-0 flex-1">

@@ -215,7 +215,7 @@ function HistoryPage() {
       restoreScrollPendingRef.current = false;
     });
     return () => cancelAnimationFrame(frame);
-  }, [showVirtualList, filtered.length, rowVirtualizer]);
+  }, [showVirtualList, rowVirtualizer]);
 
   useEffect(() => {
     return () => {
@@ -937,8 +937,8 @@ function HistoryListSkeleton() {
         <div className="h-4 w-28 animate-pulse rounded bg-muted" />
       </div>
       <div className="divide-y divide-border">
-        {Array.from({ length: 6 }).map((_, index) => (
-          <div key={index} className="flex items-center gap-3 px-5 py-4">
+        {["one", "two", "three", "four", "five", "six"].map((key) => (
+          <div key={key} className="flex items-center gap-3 px-5 py-4">
             <div className="size-9 animate-pulse rounded-md bg-muted" />
             <div className="min-w-0 flex-1 space-y-2">
               <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
@@ -955,8 +955,13 @@ function HistoryListSkeleton() {
 function HistoryDetailSkeleton() {
   return (
     <div className="w-full space-y-4">
-      {Array.from({ length: 4 }).map((_, index) => (
-        <div key={index} className={`flex ${index % 2 === 0 ? "justify-end" : "justify-start"}`}>
+      {[
+        { key: "first", alignment: "justify-end" },
+        { key: "second", alignment: "justify-start" },
+        { key: "third", alignment: "justify-end" },
+        { key: "fourth", alignment: "justify-start" },
+      ].map((item) => (
+        <div key={item.key} className={`flex ${item.alignment}`}>
           <div className="h-24 w-full max-w-[min(100%,52rem)] animate-pulse rounded-2xl bg-muted" />
         </div>
       ))}
