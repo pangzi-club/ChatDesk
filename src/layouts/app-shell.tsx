@@ -51,12 +51,9 @@ import { applyTrayEnabled, loadTrayEnabled } from "@/lib/tray";
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/chat", label: "Chat", icon: MessageCircle },
-  { to: "/history", label: "History", icon: History },
-  { to: "/automations", label: "Automations", icon: Clock3 },
-  { to: "/analytics", label: "Analytics", icon: ChartColumn },
-  { to: "/commit", label: "Commit", icon: GitCommitHorizontal },
-  { to: "/looker", label: "Looker", icon: Eye },
   { to: "/image-generation", label: "Image", icon: Image },
+  { to: "/automations", label: "Automations", icon: Clock3 },
+  { to: "/workspaces", label: "Workspaces", icon: FolderGit2 },
   { to: "/dev-tools", label: "Dev Tools", icon: Wrench },
 ] satisfies Array<{
   to: string;
@@ -67,16 +64,13 @@ const navItems = [
 const commandItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, keywords: ["仪表盘", "首页"] },
   { to: "/chat", label: "Chat", icon: MessageCircle, keywords: ["对话", "聊天"] },
-  {
-    to: "/history",
-    label: "History",
-    icon: History,
-    keywords: ["历史", "对话历史", "归档", "导入", "codex", "claude"],
-  },
   { to: "/automations", label: "Automations", icon: Clock3, keywords: ["自动化", "任务"] },
-  { to: "/analytics", label: "Analytics", icon: ChartColumn, keywords: ["流量分析", "数据"] },
-  { to: "/commit", label: "Commit", icon: GitCommitHorizontal, keywords: ["提交", "代码提交"] },
-  { to: "/looker", label: "Looker", icon: Eye, keywords: ["监控"] },
+  {
+    to: "/workspaces",
+    label: "Workspaces",
+    icon: FolderGit2,
+    keywords: ["项目", "工作区", "workspace", "git"],
+  },
   {
     to: "/image-generation",
     label: "Image",
@@ -108,10 +102,22 @@ const commandItems = [
     keywords: ["输入", "表单", "devtools"],
   },
   {
-    to: "/dev-tools/workspaces",
-    label: "Workspaces",
-    icon: FolderGit2,
-    keywords: ["项目", "工作区", "workspace", "git", "devtools"],
+    to: "/dev-tools/analytics",
+    label: "Analytics",
+    icon: ChartColumn,
+    keywords: ["流量分析", "数据", "devtools"],
+  },
+  {
+    to: "/dev-tools/commit",
+    label: "Commit",
+    icon: GitCommitHorizontal,
+    keywords: ["提交", "代码提交", "devtools"],
+  },
+  {
+    to: "/dev-tools/looker",
+    label: "Looker",
+    icon: Eye,
+    keywords: ["监控", "devtools"],
   },
   {
     to: "/dev-tools/sandbox",
@@ -147,6 +153,12 @@ const commandItems = [
     icon: Brain,
     keywords: ["设置", "memory", "记忆", "长期记忆"],
   },
+  {
+    to: "/settings/history",
+    label: "History",
+    icon: History,
+    keywords: ["设置", "历史", "对话历史", "归档", "导入", "codex", "claude"],
+  },
   { to: "/settings/tray", label: "托盘", icon: PanelTop, keywords: ["设置", "tray"] },
   { to: "/settings/logs", label: "系统日志", icon: ScrollText, keywords: ["设置", "日志", "logs"] },
 ] satisfies Array<{
@@ -163,7 +175,9 @@ function AppShell() {
   const navigate = useNavigate();
   const hideMainSidebar =
     location.pathname.startsWith("/settings") || location.pathname.startsWith("/dev-tools/");
-  const lockOutletScroll = location.pathname.startsWith("/dev-tools/sandbox");
+  const lockOutletScroll =
+    location.pathname.startsWith("/dev-tools/sandbox") ||
+    location.pathname.startsWith("/settings/history");
 
   useEffect(() => {
     rememberReturnPath(location.pathname, location.search);

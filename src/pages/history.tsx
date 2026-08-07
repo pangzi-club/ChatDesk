@@ -245,7 +245,7 @@ function HistoryPage() {
 
   function openHistoryItem(item: UnifiedItem) {
     persistListScroll();
-    void navigate(`/history/${item.source}/${item.id}`);
+    void navigate(`/settings/history/${item.source}/${item.id}`);
   }
 
   return (
@@ -265,7 +265,7 @@ function HistoryPage() {
             <Button
               onClick={() => {
                 persistListScroll();
-                void navigate("/history/analysis");
+                void navigate("/settings/history/analysis");
               }}
               type="button"
               variant="outline"
@@ -557,11 +557,11 @@ function HistoryDetailPage() {
         queryClient.invalidateQueries({ queryKey: ["chat-index"] }),
         queryClient.invalidateQueries({ queryKey: ["chat-archive-index"] }),
       ]);
-      void navigate("/history");
+      void navigate("/settings/history");
     },
   });
 
-  if (!id || !isHistorySource(source)) return <Navigate replace to="/history" />;
+  if (!id || !isHistorySource(source)) return <Navigate replace to="/settings/history" />;
 
   if (sessionQuery.isPending) {
     return (
@@ -583,7 +583,7 @@ function HistoryDetailPage() {
       <div className="flex h-full min-h-0 flex-col overflow-hidden">
         <div className="shrink-0 border-border border-b bg-background px-4 pt-12 pb-4 sm:px-6 lg:px-8">
           <Button asChild className="w-fit" size="sm" variant="ghost">
-            <Link to="/history">
+            <Link to="/settings/history">
               <ArrowLeft className="size-4" /> 返回
             </Link>
           </Button>
@@ -601,7 +601,7 @@ function HistoryDetailPage() {
 
   const session = sessionQuery.data;
   if (!session) {
-    return <Navigate replace to="/history" />;
+    return <Navigate replace to="/settings/history" />;
   }
 
   return (
@@ -610,7 +610,7 @@ function HistoryDetailPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 flex-1 space-y-3">
             <Button asChild className="w-fit" size="sm" variant="ghost">
-              <Link to="/history">
+              <Link to="/settings/history">
                 <ArrowLeft className="size-4" /> 返回列表
               </Link>
             </Button>

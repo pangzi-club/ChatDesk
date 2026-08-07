@@ -197,7 +197,7 @@ function SandboxPage() {
               {!selectedCwd ? (
                 <p>
                   请先在底部选择 Workspaces 中的目录。若列表为空，请先到{" "}
-                  <Link to="/dev-tools/workspaces">Workspaces</Link> 添加项目。
+                  <Link to="/workspaces">Workspaces</Link> 添加项目。
                 </p>
               ) : selectedModel && !selectedModel.supportsTools ? (
                 <p>

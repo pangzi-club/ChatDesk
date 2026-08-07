@@ -75,7 +75,7 @@ function HistoryAnalysisPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <Button asChild className="mb-3 -ml-2" size="sm" variant="ghost">
-              <Link to="/history">
+              <Link to="/settings/history">
                 <ArrowLeft className="size-4" /> 返回 History
               </Link>
             </Button>
@@ -285,7 +285,7 @@ function EmptyAnalysis() {
         先在 Chat 产生对话，或从 History 导入 Codex / Claude 归档。
       </p>
       <Button asChild className="mt-5" type="button" variant="outline">
-        <Link to="/history">回到 History</Link>
+        <Link to="/settings/history">回到 History</Link>
       </Button>
     </div>
   );

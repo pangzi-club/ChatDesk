@@ -7,6 +7,7 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  History,
   KeyRound,
   Package,
   Palette,
@@ -23,7 +24,7 @@ import {
   X,
 } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { ChatMemorySettings } from "@/components/chat-memory-settings";
 import { ChatToolsSettings } from "@/components/chat-tools-settings";
@@ -164,9 +165,17 @@ const primaryColors: Array<{ value: PrimaryColor; label: string; color: string }
 
 function SettingsLayout() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const isHistoryRoute = location.pathname.startsWith("/settings/history");
 
   return (
-    <div className="flex min-h-full w-full bg-background">
+    <div
+      className={
+        isHistoryRoute
+          ? "flex h-full min-h-0 w-full overflow-hidden bg-background"
+          : "flex min-h-full w-full bg-background"
+      }
+    >
       <aside className="sticky top-0 flex h-screen w-[272px] shrink-0 flex-col border-border border-r bg-card/80 px-4 pt-10 max-md:w-[220px] max-sm:w-[76px] max-sm:px-2">
         <Button
           aria-label="返回应用"
@@ -192,6 +201,7 @@ function SettingsLayout() {
           <SettingsNavItem to="/settings/skills" icon={Sparkles} label="Skills" />
           <SettingsNavItem to="/settings/tools" icon={Wrench} label="Tools" />
           <SettingsNavItem to="/settings/memory" icon={Brain} label="长期记忆" />
+          <SettingsNavItem to="/settings/history" icon={History} label="History" />
           <SettingsNavItem to="/settings/keys" icon={KeyRound} label="API Keys" />
           <SettingsNavItem to="/settings/tray" icon={PanelTop} label="托盘" />
           <SettingsNavItem to="/settings/statistics" icon={ChartColumn} label="使用量" />
@@ -202,11 +212,17 @@ function SettingsLayout() {
           <span className="mt-1 block opacity-60">本地工作区设置</span>
         </div>
       </aside>
-      <main className="min-w-0 flex-1 px-8 pt-16 pb-14 sm:px-12 lg:px-20">
-        <div className="mx-auto w-full max-w-3xl">
+      {isHistoryRoute ? (
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <Outlet />
-        </div>
-      </main>
+        </main>
+      ) : (
+        <main className="min-w-0 flex-1 px-8 pt-16 pb-14 sm:px-12 lg:px-20">
+          <div className="mx-auto w-full max-w-3xl">
+            <Outlet />
+          </div>
+        </main>
+      )}
     </div>
   );
 }

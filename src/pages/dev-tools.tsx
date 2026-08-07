@@ -1,6 +1,8 @@
 import {
   ArrowLeft,
-  FolderGit2,
+  ChartColumn,
+  Eye,
+  GitCommitHorizontal,
   Lock,
   Shield,
   SquareTerminal,
@@ -33,10 +35,22 @@ const tools = [
     icon: TextCursorInput,
   },
   {
-    to: "/dev-tools/workspaces",
-    label: "Workspaces",
-    description: "管理本地项目目录，查看 Git 状态与最近提交。",
-    icon: FolderGit2,
+    to: "/dev-tools/analytics",
+    label: "Analytics",
+    description: "查看 tandataer.com 的全部网站浏览数据。",
+    icon: ChartColumn,
+  },
+  {
+    to: "/dev-tools/commit",
+    label: "Commit",
+    description: "查看提交活跃度与最近代码提交记录。",
+    icon: GitCommitHorizontal,
+  },
+  {
+    to: "/dev-tools/looker",
+    label: "Looker",
+    description: "读取 Looker 监控与告警数据。",
+    icon: Eye,
   },
   {
     to: "/dev-tools/sandbox",

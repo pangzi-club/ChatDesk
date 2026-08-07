@@ -98,7 +98,7 @@ function LookerPage() {
                 >
                   <Link
                     className="min-w-0 flex-1"
-                    to={`/looker/${encodeURIComponent(monitor.ref)}`}
+                    to={`/dev-tools/looker/${encodeURIComponent(monitor.ref)}`}
                   >
                     <h3 className="truncate font-medium text-foreground">
                       {monitor.name || monitor.publicId || "未命名监控"}
@@ -150,11 +150,11 @@ function LookerDetailPage() {
   return (
     <div className="flex w-full flex-1 flex-col gap-6 px-6 pt-14 pb-10 sm:px-10">
       <nav className="flex items-center gap-2 text-sm text-muted-foreground" aria-label="面包屑">
-        <Link className="hover:text-foreground" to="/looker">
+        <Link className="hover:text-foreground" to="/dev-tools/looker">
           Looker
         </Link>
         <span>/</span>
-        <Link className="hover:text-foreground" to="/looker">
+        <Link className="hover:text-foreground" to="/dev-tools/looker">
           监控
         </Link>
         <span>/</span>
@@ -164,7 +164,7 @@ function LookerDetailPage() {
         <div>
           <Link
             className="mb-3 inline-flex items-center gap-1 text-muted-foreground text-sm hover:text-foreground"
-            to="/looker"
+            to="/dev-tools/looker"
           >
             <ArrowLeft className="size-4" /> 返回监控列表
           </Link>

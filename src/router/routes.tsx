@@ -48,53 +48,40 @@ const router = createHashRouter([
         element: <ChatPage />,
       },
       {
-        path: "history",
-        element: <HistoryPage />,
-      },
-      {
-        path: "history/analysis",
-        element: <HistoryAnalysisPage />,
-      },
-      {
-        path: "history/:source/:id",
-        element: <HistoryDetailPage />,
-      },
-      {
         path: "image-generation",
         element: <ImageGenerationPage />,
-      },
-      {
-        path: "analytics",
-        element: <AnalyticsPage />,
       },
       {
         path: "automations",
         element: <AutomationsPage />,
       },
       {
-        path: "commit",
-        element: <CommitPage />,
+        path: "workspaces",
+        element: <WorkspacesPage />,
       },
       {
-        path: "looker",
-        element: <LookerPage />,
-      },
-      {
-        path: "looker/:ref",
-        element: <LookerDetailPage />,
+        path: "workspaces/:projectId",
+        element: <WorkspaceDetailPage />,
       },
       {
         path: "dev-tools",
         children: [
           { index: true, element: <DevToolsPage /> },
+          { path: "workspaces", element: <Navigate replace to="/workspaces" /> },
+          {
+            path: "workspaces/:projectId",
+            element: <WorkspaceProjectRedirect />,
+          },
           {
             element: <DevToolsLayout />,
             children: [
               { path: "encrypt", element: <EncryptPage /> },
               { path: "vite-ports", element: <VitePortsPage /> },
               { path: "inputs", element: <InputsPage /> },
-              { path: "workspaces", element: <WorkspacesPage /> },
-              { path: "workspaces/:projectId", element: <WorkspaceDetailPage /> },
+              { path: "analytics", element: <AnalyticsPage /> },
+              { path: "commit", element: <CommitPage /> },
+              { path: "looker", element: <LookerPage /> },
+              { path: "looker/:ref", element: <LookerDetailPage /> },
               { path: "sandbox", element: <SandboxPage /> },
             ],
           },
@@ -112,6 +99,9 @@ const router = createHashRouter([
           { path: "skills", element: <SkillsSettingsPage /> },
           { path: "tools", element: <ToolsSettingsPage /> },
           { path: "memory", element: <MemorySettingsPage /> },
+          { path: "history", element: <HistoryPage /> },
+          { path: "history/analysis", element: <HistoryAnalysisPage /> },
+          { path: "history/:source/:id", element: <HistoryDetailPage /> },
           { path: "statistics", element: <StatisticsSettingsPage /> },
           { path: "tray", element: <TraySettingsPage /> },
           { path: "logs", element: <SystemLogsSettingsPage /> },
@@ -120,11 +110,22 @@ const router = createHashRouter([
       { path: "encrypt", element: <Navigate replace to="/dev-tools/encrypt" /> },
       { path: "vite-ports", element: <Navigate replace to="/dev-tools/vite-ports" /> },
       { path: "inputs", element: <Navigate replace to="/dev-tools/inputs" /> },
-      { path: "workspaces", element: <Navigate replace to="/dev-tools/workspaces" /> },
-      { path: "sandbox", element: <Navigate replace to="/dev-tools/sandbox" /> },
+      { path: "analytics", element: <Navigate replace to="/dev-tools/analytics" /> },
+      { path: "commit", element: <Navigate replace to="/dev-tools/commit" /> },
+      { path: "looker", element: <Navigate replace to="/dev-tools/looker" /> },
       {
-        path: "workspaces/:projectId",
-        element: <WorkspaceProjectRedirect />,
+        path: "looker/:ref",
+        element: <LookerRedirect />,
+      },
+      { path: "sandbox", element: <Navigate replace to="/dev-tools/sandbox" /> },
+      { path: "history", element: <Navigate replace to="/settings/history" /> },
+      {
+        path: "history/analysis",
+        element: <Navigate replace to="/settings/history/analysis" />,
+      },
+      {
+        path: "history/:source/:id",
+        element: <HistoryLegacyRedirect />,
       },
     ],
   },
@@ -134,9 +135,19 @@ const router = createHashRouter([
   },
 ]);
 
+function LookerRedirect() {
+  const { ref } = useParams();
+  return <Navigate replace to={`/dev-tools/looker/${ref ?? ""}`} />;
+}
+
 function WorkspaceProjectRedirect() {
   const { projectId } = useParams();
-  return <Navigate replace to={`/dev-tools/workspaces/${projectId ?? ""}`} />;
+  return <Navigate replace to={`/workspaces/${projectId ?? ""}`} />;
+}
+
+function HistoryLegacyRedirect() {
+  const { source, id } = useParams();
+  return <Navigate replace to={`/settings/history/${source ?? ""}/${id ?? ""}`} />;
 }
 
 function AppRouter() {

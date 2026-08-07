@@ -117,7 +117,7 @@ function ProjectRow({
         <p className="mt-1 break-all font-mono text-muted-foreground text-xs">{project.path}</p>
       </div>
       <Button asChild size="sm" variant="outline">
-        <Link to={`/dev-tools/workspaces/${project.id}`}>查看详情</Link>
+        <Link to={`/workspaces/${project.id}`}>查看详情</Link>
       </Button>
       <Button
         aria-label={`移除 ${name}`}
@@ -185,7 +185,7 @@ function WorkspaceDetailPage() {
     return (
       <div className="flex flex-col gap-4 px-4 pt-16 sm:px-8">
         <p className="text-muted-foreground text-sm">找不到这个项目。</p>
-        <Button onClick={() => navigate("/dev-tools/workspaces")} type="button" variant="outline">
+        <Button onClick={() => navigate("/workspaces")} type="button" variant="outline">
           <ArrowLeft className="size-4" /> 返回项目列表
         </Button>
       </div>
@@ -195,7 +195,7 @@ function WorkspaceDetailPage() {
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <Button asChild className="mb-4 -ml-2" size="sm" variant="ghost">
-            <Link to="/dev-tools/workspaces">
+            <Link to="/workspaces">
               <ArrowLeft className="size-4" /> 返回列表
             </Link>
           </Button>
