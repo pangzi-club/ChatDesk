@@ -6,6 +6,7 @@ pub mod greet;
 pub mod image;
 pub mod mcp;
 pub mod sandbox;
+pub mod skills;
 pub mod system_log;
 pub mod vite;
 pub mod workspaces;

@@ -42,6 +42,7 @@ import { Link, useSearchParams } from "react-router-dom";
 
 import { ChatMemoryDialog } from "@/components/chat-memory-dialog";
 import { ChatSettingsDialog } from "@/components/chat-settings-dialog";
+import { ChatSkillsPicker } from "@/components/chat-skills-picker";
 import { ChatToolCallCard } from "@/components/chat-tool-call-card";
 import { ChatToolsPicker } from "@/components/chat-tools-picker";
 import {
@@ -111,6 +112,14 @@ import {
 import { loadMcpServers, type McpServerConfig, saveMcpServers } from "@/lib/mcp";
 import { closeMcpServers, loadMcpToolsForServers } from "@/lib/mcp-client";
 import { loadModels, type ModelConfig } from "@/lib/models";
+import {
+  formatSkillsSystemHint,
+  loadAvailableSkills,
+  loadChatSkillSelection,
+  loadInstalledSkillIds,
+  type SkillDefinition,
+  saveChatSkillSelection,
+} from "@/lib/skills";
 import { loadWorkspaceProjects } from "@/lib/workspaces";
 
 function ChatPage() {
@@ -137,6 +146,20 @@ function ChatPage() {
     queryKey: ["mcp-servers"],
     queryFn: loadMcpServers,
   });
+  const { data: availableSkills = [] } = useQuery({
+    queryKey: ["skills-available"],
+    queryFn: loadAvailableSkills,
+  });
+  const installedSkillsQuery = useQuery({
+    queryKey: ["skills-installed"],
+    queryFn: loadInstalledSkillIds,
+  });
+  const chatSkillSelectionQuery = useQuery({
+    queryKey: ["chat-skills-selected"],
+    queryFn: loadChatSkillSelection,
+  });
+  const installedSkillIds = installedSkillsQuery.data ?? [];
+  const savedChatSkillIds = chatSkillSelectionQuery.data ?? [];
   const { data: workspaceProjects = [], isLoading: isWorkspacesLoading } = useQuery({
     queryKey: ["workspace-projects"],
     queryFn: loadWorkspaceProjects,
@@ -147,6 +170,8 @@ function ChatPage() {
   toolsRef.current = chatTools;
   const mcpRef = useRef<McpServerConfig[]>(mcpServers);
   mcpRef.current = mcpServers;
+  const skillsRef = useRef<SkillDefinition[]>(availableSkills);
+  skillsRef.current = availableSkills;
   const models = configuredModels ?? [];
   const [selectedModelId, setSelectedModelId] = useState("");
   const [input, setInput] = useState("");
@@ -155,6 +180,7 @@ function ChatPage() {
   const [workspaceKey, setWorkspaceKey] = useState("");
   const [sessionCwd, setSessionCwd] = useState("");
   const previousMcpIdsRef = useRef<string[]>([]);
+  const skillsSelectionInitializedRef = useRef(false);
   const sessionCreatedAtRef = useRef(new Date().toISOString());
   const sessionAttachmentsRef = useRef<ChatAttachment[]>([]);
   const suppressSaveRef = useRef(false);
@@ -168,8 +194,12 @@ function ChatPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [skillsOpen, setSkillsOpen] = useState(false);
+  const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [chatDisplay, setChatDisplay] = useState<ChatDisplaySettings>(DEFAULT_CHAT_DISPLAY);
   const [availablePacks, setAvailablePacks] = useState<ChatToolPackId[]>([]);
+  const generationStartedAtRef = useRef<number | null>(null);
+  const [generationElapsedSeconds, setGenerationElapsedSeconds] = useState(0);
   const workspaceRef = useRef("");
   const selectedCwd =
     workspaceProjects.find((project) => project.id === workspaceKey)?.path ?? sessionCwd;
@@ -187,8 +217,9 @@ function ChatPage() {
         () => toolsRef.current,
         () => workspaceRef.current,
         () => mcpRef.current.filter((server) => selectedMcpIds.includes(server.id)),
+        () => skillsRef.current.filter((skill) => selectedSkillIds.includes(skill.id)),
       ),
-    [selectedModel, selectedMcpIds],
+    [selectedModel, selectedMcpIds, selectedSkillIds],
   );
   const { messages, setMessages, sendMessage, stop, status, error } = useChat({
     id: sessionId,
@@ -228,7 +259,57 @@ function ChatPage() {
     void saveMcpServers(next).catch((error) => console.error("Failed to save MCP settings", error));
   };
 
+  const updateSkillSelection = (ids: string[]) => {
+    const installed = new Set(installedSkillIds);
+    const next = [...new Set(ids)].filter((id) => installed.has(id));
+    setSelectedSkillIds(next);
+    queryClient.setQueryData(["chat-skills-selected"], next);
+    void saveChatSkillSelection(next).catch((error) =>
+      console.error("Failed to save chat skill selection", error),
+    );
+  };
+
+  useEffect(() => {
+    if (
+      skillsSelectionInitializedRef.current ||
+      installedSkillsQuery.isPending ||
+      chatSkillSelectionQuery.isPending
+    )
+      return;
+    const installed = new Set(installedSkillIds);
+    setSelectedSkillIds(savedChatSkillIds.filter((id) => installed.has(id)));
+    skillsSelectionInitializedRef.current = true;
+  }, [
+    chatSkillSelectionQuery.isPending,
+    installedSkillIds,
+    installedSkillsQuery.isPending,
+    savedChatSkillIds,
+  ]);
+
   const isGenerating = status === "submitted" || status === "streaming";
+  useEffect(() => {
+    if (!isGenerating) {
+      generationStartedAtRef.current = null;
+      setGenerationElapsedSeconds(0);
+      return;
+    }
+
+    generationStartedAtRef.current ??= Date.now();
+    const updateElapsed = () => {
+      const startedAt = generationStartedAtRef.current;
+      if (startedAt !== null) {
+        setGenerationElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+      }
+    };
+    updateElapsed();
+    const intervalId = window.setInterval(updateElapsed, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [isGenerating]);
+
+  const generationPhase = status === "submitted" ? "正在等待模型响应" : "正在生成回答";
+  const generationElapsedLabel = formatGenerationElapsed(generationElapsedSeconds);
+  const generationDetail =
+    generationElapsedSeconds >= 10 ? "响应较慢，仍在等待中" : "可点击右侧按钮停止";
   const lastMessage = messages[messages.length - 1];
   const hasAssistantMessage =
     lastMessage?.role === "assistant" &&
@@ -312,7 +393,13 @@ function ChatPage() {
 
   useEffect(() => {
     const session = pendingSessionRef.current;
-    if (!session || session.id !== sessionId) return;
+    if (
+      !session ||
+      session.id !== sessionId ||
+      installedSkillsQuery.isPending ||
+      chatSkillSelectionQuery.isPending
+    )
+      return;
     pendingSessionRef.current = null;
     workspaceSelectionInitializedRef.current = true;
     suppressSaveRef.current = true;
@@ -323,7 +410,16 @@ function ChatPage() {
     sessionAttachmentsRef.current = session.attachments;
     setMessages(session.messages);
     if (session.modelId) setSelectedModelId(session.modelId);
-  }, [sessionId, setMessages]);
+    const sessionSkillIds = session.skillIds ?? savedChatSkillIds;
+    setSelectedSkillIds(sessionSkillIds.filter((id) => installedSkillIds.includes(id)));
+  }, [
+    chatSkillSelectionQuery.isPending,
+    installedSkillIds,
+    installedSkillsQuery.isPending,
+    savedChatSkillIds,
+    sessionId,
+    setMessages,
+  ]);
 
   useEffect(() => {
     if (status !== "ready" || messages.length === 0) return;
@@ -366,6 +462,7 @@ function ChatPage() {
           workspaceId: workspaceKey || undefined,
           cwd: selectedCwd || undefined,
           mcpServerIds: selectedMcpIds,
+          skillIds: selectedSkillIds,
           messages: materialized.messages,
           attachments: materialized.attachments,
         });
@@ -401,6 +498,7 @@ function ChatPage() {
     selectedCwd,
     selectedModel,
     selectedMcpIds,
+    selectedSkillIds,
     sessionId,
     status,
     setMessages,
@@ -426,6 +524,8 @@ function ChatPage() {
     workspaceSelectionInitializedRef.current = true;
     setWorkspaceKey("");
     setSessionCwd("");
+    const installed = new Set(installedSkillIds);
+    setSelectedSkillIds(savedChatSkillIds.filter((id) => installed.has(id)));
     sessionCreatedAtRef.current = new Date().toISOString();
     sessionAttachmentsRef.current = [];
     setSessionTitle("新对话");
@@ -657,6 +757,14 @@ function ChatPage() {
 
       <div className="chat-composer-wrap">
         {error && <p className="chat-error">{error.message}</p>}
+        {isGenerating ? (
+          <div aria-live="polite" className="chat-generation-status" role="status">
+            <span aria-hidden="true" className="chat-generation-status-dot" />
+            <span className="chat-generation-status-label">{generationPhase}</span>
+            <span className="chat-generation-status-elapsed">已等待 {generationElapsedLabel}</span>
+            <span className="chat-generation-status-detail">{generationDetail}</span>
+          </div>
+        ) : null}
         {messages.length > 0 && availablePacks.length > 0 ? (
           <div className="chat-tools-composer-hint">
             <span>Tools：{availablePacks.map((id) => getPackMeta(id).label).join(" · ")}</span>
@@ -753,6 +861,13 @@ function ChatPage() {
                 mcpServers={mcpServers}
                 selectedMcpIds={selectedMcpIds}
                 onMcpSelectionChange={updateMcpSelection}
+              />
+              <ChatSkillsPicker
+                open={skillsOpen}
+                onOpenChange={setSkillsOpen}
+                onSelectionChange={updateSkillSelection}
+                selectedSkillIds={selectedSkillIds}
+                skills={availableSkills.filter((skill) => installedSkillIds.includes(skill.id))}
               />
               {configuredModels?.length === 0 && (
                 <Link className="chat-settings-link" to="/settings/models">
@@ -905,6 +1020,13 @@ function messageText(message: UIMessage) {
     .join("\n");
 }
 
+function formatGenerationElapsed(seconds: number) {
+  if (seconds < 60) return `${seconds} 秒`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return remainingSeconds > 0 ? `${minutes} 分 ${remainingSeconds} 秒` : `${minutes} 分`;
+}
+
 function messageHasToolParts(message: UIMessage) {
   return message.parts.some(isToolUIPart);
 }
@@ -923,6 +1045,7 @@ function createModelTransport(
   getToolsSettings: () => ChatToolsSettings,
   getCwd: () => string,
   getMcpServers: () => McpServerConfig[],
+  getSkills: () => SkillDefinition[],
 ): ChatTransport<UIMessage> {
   return {
     async sendMessages({ messages, abortSignal }) {
@@ -938,10 +1061,13 @@ function createModelTransport(
       const combinedTools = Object.assign({}, tools, mcpTools);
       const combinedToolNames = Object.keys(combinedTools);
       const toolsHint = formatToolsSystemHint(activePacks);
+      const skillsHint = formatSkillsSystemHint(getSkills());
       const workspaceHint = cwd
         ? `当前 workspace：${cwd}\n本地文件工具以此目录为根；当前为完全访问模式。`
         : "当前未选择 workspace。文件工具必须使用绝对路径；Bash 使用默认执行目录。";
-      const systemPrompt = [memorySystem, workspaceHint, toolsHint].filter(Boolean).join("\n\n");
+      const systemPrompt = [memorySystem, workspaceHint, toolsHint, skillsHint]
+        .filter(Boolean)
+        .join("\n\n");
 
       if (combinedToolNames.length > 0) {
         return sendToolEnabledMessages(model, messages, abortSignal, systemPrompt, combinedTools);

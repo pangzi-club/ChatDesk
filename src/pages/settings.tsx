@@ -17,6 +17,7 @@ import {
   RefreshCw,
   ScrollText,
   Search,
+  Sparkles,
   Trash2,
   Wrench,
   X,
@@ -88,6 +89,12 @@ import {
   testMcpConnection,
 } from "@/lib/mcp";
 import { loadModels, type ModelConfig, saveModels } from "@/lib/models";
+import {
+  loadAvailableSkills,
+  loadInstalledSkillIds,
+  type SkillDefinition,
+  saveInstalledSkillIds,
+} from "@/lib/skills";
 import {
   clearSystemLogs,
   loadSystemLogs,
@@ -182,6 +189,7 @@ function SettingsLayout() {
           <SettingsNavItem to="/settings/theme" icon={Palette} label="主题" />
           <SettingsNavItem to="/settings/models" icon={Package} label="模型" />
           <SettingsNavItem to="/settings/mcp" icon={PlugZap} label="MCP" />
+          <SettingsNavItem to="/settings/skills" icon={Sparkles} label="Skills" />
           <SettingsNavItem to="/settings/tools" icon={Wrench} label="Tools" />
           <SettingsNavItem to="/settings/memory" icon={Brain} label="长期记忆" />
           <SettingsNavItem to="/settings/keys" icon={KeyRound} label="API Keys" />
@@ -881,6 +889,124 @@ function McpSettingsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </>
+  );
+}
+
+function SkillsSettingsPage() {
+  const queryClient = useQueryClient();
+  const [tab, setTab] = useState<"available" | "installed">("available");
+  const [search, setSearch] = useState("");
+  const skillsQuery = useQuery({ queryKey: ["skills-available"], queryFn: loadAvailableSkills });
+  const installedQuery = useQuery({
+    queryKey: ["skills-installed"],
+    queryFn: loadInstalledSkillIds,
+  });
+  const skills = skillsQuery.data ?? [];
+  const installedIds = installedQuery.data ?? [];
+  const installedSet = new Set(installedIds);
+  const visibleSkills = skills.filter((skill) => {
+    const query = search.trim().toLowerCase();
+    return (
+      !query ||
+      skill.name.toLowerCase().includes(query) ||
+      skill.description.toLowerCase().includes(query) ||
+      skill.source.toLowerCase().includes(query)
+    );
+  });
+  const listedSkills =
+    tab === "installed"
+      ? visibleSkills.filter((skill) => installedSet.has(skill.id))
+      : visibleSkills;
+
+  async function toggle(skill: SkillDefinition, enabled: boolean) {
+    const next = enabled
+      ? [...installedIds, skill.id]
+      : installedIds.filter((id) => id !== skill.id);
+    await saveInstalledSkillIds(next);
+    queryClient.setQueryData(["skills-installed"], [...new Set(next)]);
+  }
+
+  return (
+    <>
+      <SettingsHeading
+        eyebrow="Chat"
+        title="Skills"
+        description="从本机 .agents、.codex 和 .claude 目录发现 SKILL.md，并选择哪些 skill 可在 Chat 中使用。"
+      />
+      <div className="mb-4 flex gap-2 border-border border-b">
+        <Button
+          onClick={() => setTab("available")}
+          size="sm"
+          type="button"
+          variant={tab === "available" ? "default" : "ghost"}
+        >
+          可安装 ({skills.length})
+        </Button>
+        <Button
+          onClick={() => setTab("installed")}
+          size="sm"
+          type="button"
+          variant={tab === "installed" ? "default" : "ghost"}
+        >
+          已安装 ({installedIds.length})
+        </Button>
+      </div>
+      <section className="rounded-lg border border-border bg-card">
+        <div className="flex gap-2 border-border border-b p-4">
+          <Input
+            aria-label="搜索 skill"
+            className="h-9"
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="搜索 skill"
+            value={search}
+          />
+          <Button
+            onClick={() => void skillsQuery.refetch()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            刷新
+          </Button>
+        </div>
+        {skillsQuery.isPending || installedQuery.isPending ? (
+          <div aria-busy="true" className="space-y-3 p-5" role="status">
+            <div className="h-16 animate-pulse rounded-md bg-accent" />
+            <div className="h-16 animate-pulse rounded-md bg-accent" />
+          </div>
+        ) : skillsQuery.isError ? (
+          <p className="p-8 text-center text-destructive text-sm">
+            扫描本机 skill 失败，请稍后重试。
+          </p>
+        ) : listedSkills.length ? (
+          <div className="divide-y divide-border">
+            {listedSkills.map((skill) => (
+              <div className="flex items-center gap-3 p-4" key={skill.id}>
+                <Sparkles className="size-5 shrink-0 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-sm">{skill.name}</p>
+                  <p className="mt-1 truncate text-muted-foreground text-xs">
+                    {skill.description || "暂无描述"}
+                  </p>
+                  <p className="mt-1 truncate text-muted-foreground text-[11px]">
+                    {skill.source} · {skill.path}
+                  </p>
+                </div>
+                <Switch
+                  aria-label={`${installedSet.has(skill.id) ? "卸载" : "安装"} ${skill.name}`}
+                  checked={installedSet.has(skill.id)}
+                  onCheckedChange={(checked) => void toggle(skill, checked === true)}
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="p-8 text-center text-muted-foreground text-sm">
+            {tab === "installed" ? "还没有安装 skill。" : "未发现本机 skill。"}
+          </p>
+        )}
+      </section>
     </>
   );
 }
@@ -1805,6 +1931,7 @@ export {
   MemorySettingsPage,
   ModelsSettingsPage,
   SettingsLayout,
+  SkillsSettingsPage,
   SystemLogsSettingsPage,
   ThemeSettingsPage,
   ToolsSettingsPage,

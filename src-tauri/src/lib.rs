@@ -89,6 +89,7 @@ pub fn run() {
             commands::mcp::mcp_call_tool,
             commands::mcp::mcp_stop,
             commands::mcp::mcp_test_connection,
+            commands::skills::scan_skills,
             commands::chat_archive::read_chat_archive_index,
             commands::chat_archive::write_chat_archive_index,
             commands::chat_archive::read_chat_archive_session,

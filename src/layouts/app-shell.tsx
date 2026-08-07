@@ -27,6 +27,7 @@ import {
   Search,
   Settings,
   Shield,
+  Sparkles,
   SquareTerminal,
   TextCursorInput,
   Wrench,
@@ -127,6 +128,12 @@ const commandItems = [
     label: "MCP",
     icon: PlugZap,
     keywords: ["设置", "mcp", "模型上下文协议", "插件", "服务器", "工具"],
+  },
+  {
+    to: "/settings/skills",
+    label: "Skills",
+    icon: Sparkles,
+    keywords: ["设置", "skills", "skill", "技能", "提示词", "工作流"],
   },
   {
     to: "/settings/tools",
