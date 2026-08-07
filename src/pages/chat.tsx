@@ -8,7 +8,6 @@ import {
   convertToModelMessages,
   getToolName,
   isToolUIPart,
-  stepCountIs,
   streamText,
   type ToolSet,
   toUIMessageStream,
@@ -109,6 +108,8 @@ import {
   normalizeTokenUsage,
   type TokenUsage,
 } from "@/lib/chat-usage";
+import { loadMcpServers, type McpServerConfig } from "@/lib/mcp";
+import { closeMcpClients, loadMcpTools } from "@/lib/mcp-client";
 import { loadModels, type ModelConfig } from "@/lib/models";
 import { loadWorkspaceProjects } from "@/lib/workspaces";
 
@@ -132,6 +133,10 @@ function ChatPage() {
     queryKey: ["chat-tools"],
     queryFn: loadChatToolsSettings,
   });
+  const { data: mcpServers = [] } = useQuery({
+    queryKey: ["mcp-servers"],
+    queryFn: loadMcpServers,
+  });
   const { data: workspaceProjects = [], isLoading: isWorkspacesLoading } = useQuery({
     queryKey: ["workspace-projects"],
     queryFn: loadWorkspaceProjects,
@@ -140,6 +145,8 @@ function ChatPage() {
   memoryRef.current = chatMemory;
   const toolsRef = useRef(chatTools);
   toolsRef.current = chatTools;
+  const mcpRef = useRef<McpServerConfig[]>(mcpServers);
+  mcpRef.current = mcpServers;
   const models = configuredModels ?? [];
   const [selectedModelId, setSelectedModelId] = useState("");
   const [input, setInput] = useState("");
@@ -147,6 +154,7 @@ function ChatPage() {
   const [sessionTitle, setSessionTitle] = useState("新对话");
   const [workspaceKey, setWorkspaceKey] = useState("");
   const [sessionCwd, setSessionCwd] = useState("");
+  const [selectedMcpIds, setSelectedMcpIds] = useState<string[]>([]);
   const sessionCreatedAtRef = useRef(new Date().toISOString());
   const sessionAttachmentsRef = useRef<ChatAttachment[]>([]);
   const suppressSaveRef = useRef(false);
@@ -174,8 +182,9 @@ function ChatPage() {
         () => memoryRef.current,
         () => toolsRef.current,
         () => workspaceRef.current,
+        () => mcpRef.current.filter((server) => selectedMcpIds.includes(server.id)),
       ),
-    [selectedModel],
+    [selectedModel, selectedMcpIds],
   );
   const { messages, setMessages, sendMessage, stop, status, error } = useChat({
     id: sessionId,
@@ -251,6 +260,14 @@ function ChatPage() {
   }, [models, selectedModelId]);
 
   useEffect(() => {
+    if (!pendingSessionRef.current && selectedMcpIds.length === 0) {
+      setSelectedMcpIds(
+        mcpServers.filter((server) => server.enabledByDefault).map((server) => server.id),
+      );
+    }
+  }, [mcpServers, selectedMcpIds.length]);
+
+  useEffect(() => {
     if (isChatHistoryLoading) return;
 
     if (requestedSessionId) {
@@ -297,7 +314,11 @@ function ChatPage() {
     sessionAttachmentsRef.current = session.attachments;
     setMessages(session.messages);
     if (session.modelId) setSelectedModelId(session.modelId);
-  }, [sessionId, setMessages]);
+    setSelectedMcpIds(
+      session.mcpServerIds ??
+        mcpServers.filter((server) => server.enabledByDefault).map((server) => server.id),
+    );
+  }, [mcpServers, sessionId, setMessages]);
 
   useEffect(() => {
     if (status !== "ready" || messages.length === 0) return;
@@ -339,6 +360,7 @@ function ChatPage() {
           modelId: selectedModel?.id,
           workspaceId: workspaceKey || undefined,
           cwd: selectedCwd || undefined,
+          mcpServerIds: selectedMcpIds,
           messages: materialized.messages,
           attachments: materialized.attachments,
         });
@@ -372,6 +394,7 @@ function ChatPage() {
     queryClient,
     selectedCwd,
     selectedModel,
+    selectedMcpIds,
     sessionId,
     status,
     setMessages,
@@ -721,6 +744,9 @@ function ChatPage() {
                 settings={chatTools}
                 onOpenChange={setToolsOpen}
                 onSettingsChange={updateChatTools}
+                mcpServers={mcpServers}
+                selectedMcpIds={selectedMcpIds}
+                onMcpSelectionChange={setSelectedMcpIds}
               />
               {configuredModels?.length === 0 && (
                 <Link className="chat-settings-link" to="/settings/models">
@@ -809,6 +835,9 @@ function MessageBubble({
   if (!isUser && !text.trim() && toolParts.length === 0) return null;
   const usage = showTokenUsage && !isUser ? getMessageUsage(message) : undefined;
   const usageLabel = usage ? formatTokenUsage(usage) : null;
+  const toolLimitReached = Boolean(
+    !isUser && (message.metadata as { toolLimitReached?: boolean } | undefined)?.toolLimitReached,
+  );
 
   return (
     <div className={`chat-message ${isUser ? "user-message" : "assistant-message"}`}>
@@ -841,6 +870,11 @@ function MessageBubble({
               {text}
             </Streamdown>
           </div>
+        ) : null}
+        {toolLimitReached ? (
+          <p className="mt-2 text-amber-600 text-xs dark:text-amber-300">
+            已达到工具调用上限（20 轮），如需继续请发送一条新消息。
+          </p>
         ) : null}
         {!isUser && (
           <div className="chat-message-actions">
@@ -882,6 +916,7 @@ function createModelTransport(
   getMemory: () => ChatMemoryStore,
   getToolsSettings: () => ChatToolsSettings,
   getCwd: () => string,
+  getMcpServers: () => McpServerConfig[],
 ): ChatTransport<UIMessage> {
   return {
     async sendMessages({ messages, abortSignal }) {
@@ -892,19 +927,27 @@ function createModelTransport(
       const memorySystem =
         memory.enabled && memory.items.length > 0 ? formatMemoryForInject(memory.items) : "";
       const cwd = getCwd().trim();
-      const { tools, activePacks, toolNames } = await resolveActiveTools(
-        getToolsSettings(),
-        model,
-        getCwd,
+      const { tools, activePacks } = await resolveActiveTools(getToolsSettings(), model, getCwd);
+      const mcpTools = await Promise.all(
+        getMcpServers().map(async (server) => {
+          try {
+            return await loadMcpTools(server);
+          } catch (error) {
+            console.error(`MCP ${server.name} failed`, error);
+            return {};
+          }
+        }),
       );
+      const combinedTools = Object.assign({}, tools, ...mcpTools);
+      const combinedToolNames = Object.keys(combinedTools);
       const toolsHint = formatToolsSystemHint(activePacks);
       const workspaceHint = cwd
         ? `当前 workspace：${cwd}\n本地文件工具以此目录为根；当前为完全访问模式。`
         : "当前未选择 workspace。文件工具必须使用绝对路径；Bash 使用默认执行目录。";
       const systemPrompt = [memorySystem, workspaceHint, toolsHint].filter(Boolean).join("\n\n");
 
-      if (toolNames.length > 0) {
-        return sendToolEnabledMessages(model, messages, abortSignal, systemPrompt, tools);
+      if (combinedToolNames.length > 0) {
+        return sendToolEnabledMessages(model, messages, abortSignal, systemPrompt, combinedTools);
       }
 
       if (model.responsive) {
@@ -952,6 +995,7 @@ async function sendToolEnabledMessages(
   systemPrompt: string,
   tools: ToolSet,
 ): Promise<ReadableStream<UIMessageChunk>> {
+  let toolLimitReached = false;
   const provider = createOpenAI({
     apiKey: model.apiKey,
     baseURL: resolveOpenAICompatibleBaseURL(model.baseUrl),
@@ -965,7 +1009,11 @@ async function sendToolEnabledMessages(
     model: languageModel,
     messages: modelMessages,
     tools,
-    stopWhen: stepCountIs(5),
+    stopWhen: ({ steps }) => {
+      const lastStep = steps[steps.length - 1];
+      toolLimitReached = steps.length >= 20 && (lastStep?.toolCalls?.length ?? 0) > 0;
+      return toolLimitReached;
+    },
     ...(systemPrompt
       ? model.responsive
         ? { instructions: systemPrompt }
@@ -975,6 +1023,9 @@ async function sendToolEnabledMessages(
   });
   return toUIMessageStream({
     stream: result.stream,
+    onFinish: async () => {
+      await closeMcpClients();
+    },
     onError: (streamError) => {
       console.error("Chat tool stream failed", streamError);
       if (streamError instanceof Error && streamError.message.trim()) {
@@ -989,7 +1040,9 @@ async function sendToolEnabledMessages(
         outputTokens: part.totalUsage.outputTokens,
         totalTokens: part.totalUsage.totalTokens,
       });
-      return usage ? { usage } : undefined;
+      return usage || toolLimitReached
+        ? { usage, toolLimitReached: toolLimitReached || undefined }
+        : undefined;
     },
   });
 }

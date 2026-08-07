@@ -2,6 +2,7 @@ mod commands;
 mod models;
 mod services;
 
+use commands::mcp::McpManager;
 use services::automation::AutomationScheduler;
 use services::browser::BrowserManager;
 use tauri::{
@@ -29,6 +30,7 @@ pub fn run() {
             let scheduler = AutomationScheduler::start(app.handle())?;
             app.manage(scheduler);
             app.manage(BrowserManager::new());
+            app.manage(McpManager::default());
             let dashboard_item =
                 MenuItem::with_id(app, "dashboard", "Dashboard", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&dashboard_item])?;
@@ -82,6 +84,11 @@ pub fn run() {
             commands::chat::delete_chat_session,
             commands::chat::read_chat_memory,
             commands::chat::write_chat_memory,
+            commands::mcp::mcp_start,
+            commands::mcp::mcp_list_tools,
+            commands::mcp::mcp_call_tool,
+            commands::mcp::mcp_stop,
+            commands::mcp::mcp_test_connection,
             commands::chat_archive::read_chat_archive_index,
             commands::chat_archive::write_chat_archive_index,
             commands::chat_archive::read_chat_archive_session,

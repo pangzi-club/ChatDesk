@@ -16,6 +16,7 @@ import { LookerDetailPage, LookerPage } from "@/pages/looker";
 import { SandboxPage } from "@/pages/sandbox";
 import {
   ApiKeysSettingsPage,
+  McpSettingsPage,
   MemorySettingsPage,
   ModelsSettingsPage,
   SettingsLayout,
@@ -106,6 +107,7 @@ const router = createHashRouter([
           { path: "theme", element: <ThemeSettingsPage /> },
           { path: "keys", element: <ApiKeysSettingsPage /> },
           { path: "models", element: <ModelsSettingsPage /> },
+          { path: "mcp", element: <McpSettingsPage /> },
           { path: "tools", element: <ToolsSettingsPage /> },
           { path: "memory", element: <MemorySettingsPage /> },
           { path: "statistics", element: <StatisticsSettingsPage /> },

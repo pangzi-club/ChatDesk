@@ -1,4 +1,4 @@
-import { ChevronDown, Wrench } from "lucide-react";
+import { ChevronDown, PlugZap, Wrench } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
@@ -16,12 +16,16 @@ import {
   type ChatToolPackId,
   type ChatToolsSettings,
 } from "@/lib/chat-tools";
+import type { McpServerConfig } from "@/lib/mcp";
 
 type ChatToolsPickerProps = {
   settings: ChatToolsSettings;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSettingsChange: (settings: ChatToolsSettings) => void;
+  mcpServers?: McpServerConfig[];
+  selectedMcpIds?: string[];
+  onMcpSelectionChange?: (ids: string[]) => void;
 };
 
 export function ChatToolsPicker({
@@ -29,8 +33,12 @@ export function ChatToolsPicker({
   open,
   onOpenChange,
   onSettingsChange,
+  mcpServers = [],
+  selectedMcpIds = [],
+  onMcpSelectionChange,
 }: ChatToolsPickerProps) {
-  const enabledCount = CHAT_TOOL_PACKS.filter((pack) => settings[pack.id]).length;
+  const enabledCount =
+    CHAT_TOOL_PACKS.filter((pack) => settings[pack.id]).length + selectedMcpIds.length;
 
   function handleToggle(id: ChatToolPackId, enabled: boolean) {
     onSettingsChange({ ...settings, [id]: enabled });
@@ -71,12 +79,51 @@ export function ChatToolsPicker({
               })}
             </section>
           ))}
+          {mcpServers.length > 0 ? (
+            <section className="chat-tools-menu-group">
+              <p>
+                <PlugZap className="mr-1 inline size-3" />
+                MCP
+              </p>
+              {mcpServers.map((server) => {
+                const switchId = `chat-mcp-picker-${server.id}`;
+                return (
+                  <label className="chat-tools-menu-row" htmlFor={switchId} key={server.id}>
+                    <span className="min-w-0">
+                      <span className="block">{server.name}</span>
+                      <span className="block text-muted-foreground text-[11px]">
+                        {server.status === "error" ? "连接失败" : server.transport}
+                      </span>
+                    </span>
+                    <Switch
+                      aria-label={`启用 ${server.name}`}
+                      checked={selectedMcpIds.includes(server.id)}
+                      id={switchId}
+                      size="sm"
+                      onCheckedChange={(checked) =>
+                        onMcpSelectionChange?.(
+                          checked
+                            ? [...selectedMcpIds, server.id]
+                            : selectedMcpIds.filter((id) => id !== server.id),
+                        )
+                      }
+                    />
+                  </label>
+                );
+              })}
+            </section>
+          ) : null}
         </div>
         <DropdownMenuSeparator />
         <div className="chat-tools-menu-footer">
           <Button asChild className="h-auto px-2 py-1.5 text-xs" size="sm" variant="ghost">
             <Link to="/settings/tools" onClick={() => onOpenChange(false)}>
               打开 Tools 设置页
+            </Link>
+          </Button>
+          <Button asChild className="h-auto px-2 py-1.5 text-xs" size="sm" variant="ghost">
+            <Link to="/settings/mcp" onClick={() => onOpenChange(false)}>
+              管理 MCP
             </Link>
           </Button>
         </div>

@@ -14,6 +14,7 @@ export type TokenUsage = ArchiveTokenUsage;
 
 export type ChatMessageMetadata = {
   usage?: TokenUsage;
+  toolLimitReached?: boolean;
 };
 
 export type UsageCategoryKey =

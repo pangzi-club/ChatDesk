@@ -22,6 +22,7 @@ import {
   Palette,
   PanelLeft,
   PanelTop,
+  PlugZap,
   ScrollText,
   Search,
   Settings,
@@ -121,6 +122,12 @@ const commandItems = [
   { to: "/settings/theme", label: "主题", icon: Palette, keywords: ["theme", "外观"] },
   { to: "/settings/keys", label: "API Keys", icon: KeyRound, keywords: ["设置", "密钥", "api"] },
   { to: "/settings/models", label: "模型", icon: Package, keywords: ["设置", "models", "model"] },
+  {
+    to: "/settings/mcp",
+    label: "MCP",
+    icon: PlugZap,
+    keywords: ["设置", "mcp", "模型上下文协议", "插件", "服务器", "工具"],
+  },
   {
     to: "/settings/tools",
     label: "Tools",

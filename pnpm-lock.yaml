@@ -11,6 +11,9 @@ importers:
       '@ai-sdk/openai':
         specifier: ^4.0.31
         version: 4.0.31(zod@4.4.3)
+      '@ai-sdk/mcp':
+        specifier: ^2.0.24
+        version: 2.0.24(zod@4.4.3)
       '@ai-sdk/react':
         specifier: ^4.0.54
         version: 4.0.54(react@19.2.8)(zod@4.4.3)

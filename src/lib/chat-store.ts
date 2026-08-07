@@ -29,6 +29,7 @@ export type ChatSession = {
   modelId?: string;
   workspaceId?: string;
   cwd?: string;
+  mcpServerIds?: string[];
   messages: UIMessage[];
   attachments: ChatAttachment[];
 };
@@ -110,6 +111,9 @@ function normalizeChatSession(value: unknown): ChatSession | null {
     schemaVersion: CHAT_SCHEMA_VERSION,
     workspaceId: typeof value.workspaceId === "string" ? value.workspaceId : undefined,
     cwd: typeof value.cwd === "string" ? value.cwd : undefined,
+    mcpServerIds: Array.isArray(value.mcpServerIds)
+      ? value.mcpServerIds.filter((item): item is string => typeof item === "string")
+      : undefined,
   };
 }
 

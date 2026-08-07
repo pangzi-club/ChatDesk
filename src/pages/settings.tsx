@@ -12,6 +12,7 @@ import {
   Palette,
   PanelTop,
   Pencil,
+  PlugZap,
   Plus,
   RefreshCw,
   ScrollText,
@@ -43,6 +44,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
@@ -71,6 +79,14 @@ import { clearCommitApiKey, loadCommitApiKey, saveCommitApiKey } from "@/lib/com
 import { clearDataerApiKey, loadDataerApiKey, saveDataerApiKey } from "@/lib/dataer";
 import { clearKieApiKey, loadKieApiKey, saveKieApiKey } from "@/lib/image-generation";
 import { clearLookerApiKey, loadLookerApiKey, saveLookerApiKey } from "@/lib/looker";
+import {
+  fetchMcpRegistry,
+  loadMcpServers,
+  type McpRegistryEntry,
+  type McpServerConfig,
+  saveMcpServers,
+  testMcpConnection,
+} from "@/lib/mcp";
 import { loadModels, type ModelConfig, saveModels } from "@/lib/models";
 import {
   clearSystemLogs,
@@ -165,6 +181,7 @@ function SettingsLayout() {
         <nav className="space-y-1" aria-label="设置导航">
           <SettingsNavItem to="/settings/theme" icon={Palette} label="主题" />
           <SettingsNavItem to="/settings/models" icon={Package} label="模型" />
+          <SettingsNavItem to="/settings/mcp" icon={PlugZap} label="MCP" />
           <SettingsNavItem to="/settings/tools" icon={Wrench} label="Tools" />
           <SettingsNavItem to="/settings/memory" icon={Brain} label="长期记忆" />
           <SettingsNavItem to="/settings/keys" icon={KeyRound} label="API Keys" />
@@ -567,6 +584,303 @@ function ToolsSettingsPage() {
           />
         )}
       </section>
+    </>
+  );
+}
+
+function McpSettingsPage() {
+  const queryClient = useQueryClient();
+  const [tab, setTab] = useState<"store" | "installed">("store");
+  const [search, setSearch] = useState("");
+  const [notice, setNotice] = useState("");
+  const [testing, setTesting] = useState<string | null>(null);
+  const [confirmServer, setConfirmServer] = useState<McpServerConfig | null>(null);
+  const [selectedEntry, setSelectedEntry] = useState<McpRegistryEntry | null>(null);
+  const serversQuery = useQuery({ queryKey: ["mcp-servers"], queryFn: loadMcpServers });
+  const registryQuery = useQuery({
+    queryKey: ["mcp-registry", search],
+    queryFn: () => fetchMcpRegistry(search),
+    enabled: tab === "store",
+  });
+  const servers = serversQuery.data ?? [];
+
+  async function install(entry: McpRegistryEntry) {
+    const next: McpServerConfig = { ...entry };
+    delete (next as Partial<McpRegistryEntry>).installed;
+    const normalized = servers.some((server) => server.id === next.id)
+      ? servers.map((server) => (server.id === next.id ? next : server))
+      : [...servers, next];
+    await saveMcpServers(normalized);
+    queryClient.setQueryData(["mcp-servers"], normalized);
+    setNotice(`已添加 ${entry.name}，首次启用时才会连接。`);
+    setTab("installed");
+  }
+
+  async function remove(server: McpServerConfig) {
+    const next = servers.filter((item) => item.id !== server.id);
+    await saveMcpServers(next);
+    queryClient.setQueryData(["mcp-servers"], next);
+  }
+
+  async function toggleDefault(server: McpServerConfig, enabled: boolean) {
+    const next = servers.map((item) =>
+      item.id === server.id ? { ...item, enabledByDefault: enabled } : item,
+    );
+    await saveMcpServers(next);
+    queryClient.setQueryData(["mcp-servers"], next);
+  }
+
+  async function test(server: McpServerConfig) {
+    setTesting(server.id);
+    setNotice("");
+    try {
+      const tools = await testMcpConnection(server);
+      const next = servers.map((item) =>
+        item.id === server.id
+          ? {
+              ...item,
+              status: "ready" as const,
+              lastError: undefined,
+              lastCheckedAt: new Date().toISOString(),
+            }
+          : item,
+      );
+      await saveMcpServers(next);
+      queryClient.setQueryData(["mcp-servers"], next);
+      setNotice(`${server.name} 连接成功，发现 ${tools.length} 个工具。`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const next = servers.map((item) =>
+        item.id === server.id
+          ? {
+              ...item,
+              status: "error" as const,
+              lastError: message,
+              lastCheckedAt: new Date().toISOString(),
+            }
+          : item,
+      );
+      await saveMcpServers(next);
+      queryClient.setQueryData(["mcp-servers"], next);
+      setNotice(`${server.name} 连接失败：${message}`);
+    } finally {
+      setTesting(null);
+    }
+  }
+
+  return (
+    <>
+      <SettingsHeading
+        eyebrow="Chat"
+        title="MCP"
+        description="从官方 Registry 添加 MCP 服务，并在 Chat 中选择要启用的服务器。"
+      />
+      <div className="mb-4 flex gap-2 border-border border-b">
+        <Button
+          onClick={() => setTab("store")}
+          size="sm"
+          type="button"
+          variant={tab === "store" ? "default" : "ghost"}
+        >
+          MCP 商店
+        </Button>
+        <Button
+          onClick={() => setTab("installed")}
+          size="sm"
+          type="button"
+          variant={tab === "installed" ? "default" : "ghost"}
+        >
+          已安装 ({servers.length})
+        </Button>
+      </div>
+      {notice ? <p className="mb-4 text-muted-foreground text-xs">{notice}</p> : null}
+      {tab === "store" ? (
+        <section className="rounded-lg border border-border bg-card">
+          <div className="flex gap-2 border-border border-b p-4">
+            <Input
+              aria-label="搜索 MCP 服务器"
+              className="h-9"
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="搜索 MCP 服务器"
+              value={search}
+            />
+            <Button
+              onClick={() => void registryQuery.refetch()}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              刷新
+            </Button>
+          </div>
+          {registryQuery.isPending ? (
+            <div className="space-y-3 p-5">
+              <div className="h-16 animate-pulse rounded-md bg-accent" />
+              <div className="h-16 animate-pulse rounded-md bg-accent" />
+            </div>
+          ) : registryQuery.isError ? (
+            <p className="p-8 text-center text-destructive text-sm">
+              读取 MCP Registry 失败，请稍后重试。
+            </p>
+          ) : registryQuery.data?.length ? (
+            <div className="divide-y divide-border">
+              {registryQuery.data.map((entry) => (
+                <div className="flex items-center gap-3 p-4" key={entry.id}>
+                  <PlugZap className="size-5 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-sm">{entry.name}</p>
+                    <p className="mt-1 truncate text-muted-foreground text-xs">
+                      {entry.description || entry.packageName || entry.url}
+                    </p>
+                    <p className="mt-1 text-muted-foreground text-xs">
+                      流行度 {entry.popularity > 0 ? entry.popularity.toLocaleString() : "暂无数据"}
+                    </p>
+                  </div>
+                  <Button
+                    onClick={() => setSelectedEntry(entry)}
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                  >
+                    详情
+                  </Button>
+                  <Button
+                    disabled={entry.installed}
+                    onClick={() => void install(entry)}
+                    size="sm"
+                    type="button"
+                  >
+                    {entry.installed ? "已安装" : entry.transport === "npx" ? "安装" : "添加"}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="p-8 text-center text-muted-foreground text-sm">没有匹配的 MCP 服务器。</p>
+          )}
+        </section>
+      ) : (
+        <section className="rounded-lg border border-border bg-card">
+          {serversQuery.isPending ? (
+            <div className="space-y-3 p-5">
+              <div className="h-16 animate-pulse rounded-md bg-accent" />
+              <div className="h-16 animate-pulse rounded-md bg-accent" />
+            </div>
+          ) : servers.length ? (
+            <div className="divide-y divide-border">
+              {servers.map((server) => (
+                <div className="flex flex-wrap items-center gap-3 p-4" key={server.id}>
+                  <PlugZap className="size-5 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-sm">{server.name}</p>
+                    <p className="mt-1 truncate text-muted-foreground text-xs">
+                      {server.transport === "npx"
+                        ? `${server.command ?? "npx"} ${(server.args ?? []).join(" ")}`
+                        : server.url}
+                    </p>
+                    {server.lastError ? (
+                      <p className="mt-1 text-destructive text-xs">{server.lastError}</p>
+                    ) : null}
+                  </div>
+                  <div className="flex items-center gap-2 text-muted-foreground text-xs">
+                    <Switch
+                      checked={server.enabledByDefault}
+                      onCheckedChange={(checked) => void toggleDefault(server, checked === true)}
+                      size="sm"
+                    />
+                    默认启用
+                  </div>
+                  <Button
+                    disabled={testing === server.id}
+                    onClick={() =>
+                      server.transport === "npx" ? setConfirmServer(server) : void test(server)
+                    }
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    {testing === server.id ? "测试中..." : "测试"}
+                  </Button>
+                  <Button
+                    className="text-destructive"
+                    onClick={() => void remove(server)}
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                  >
+                    删除
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="p-8 text-center text-muted-foreground text-sm">还没有安装 MCP 服务器。</p>
+          )}
+        </section>
+      )}
+      <Dialog
+        open={selectedEntry !== null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedEntry(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{selectedEntry?.name}</DialogTitle>
+            <DialogDescription>{selectedEntry?.description || "暂无描述"}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 text-muted-foreground text-sm">
+            <p>
+              连接方式：{selectedEntry?.transport === "npx" ? "npx / stdio" : "Streamable HTTP"}
+            </p>
+            <p>
+              流行度：
+              {selectedEntry?.popularity ? selectedEntry.popularity.toLocaleString() : "暂无数据"}
+            </p>
+            <p className="break-all">{selectedEntry?.packageName || selectedEntry?.url}</p>
+          </div>
+          <Button
+            disabled={selectedEntry?.installed}
+            onClick={() => {
+              if (selectedEntry) void install(selectedEntry);
+              setSelectedEntry(null);
+            }}
+            type="button"
+          >
+            {selectedEntry?.installed ? "已安装" : "安装并加入已安装"}
+          </Button>
+        </DialogContent>
+      </Dialog>
+      <AlertDialog
+        open={confirmServer !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmServer(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>启动本地 MCP？</AlertDialogTitle>
+            <AlertDialogDescription>
+              将执行{" "}
+              <code>
+                {confirmServer?.command ?? "npx"} {(confirmServer?.args ?? []).join(" ")}
+              </code>
+              。该进程可访问本机环境，请确认来源可信后继续。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (confirmServer) void test(confirmServer);
+                setConfirmServer(null);
+              }}
+            >
+              启动并测试
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
@@ -1487,6 +1801,7 @@ function PriceField({
 
 export {
   ApiKeysSettingsPage,
+  McpSettingsPage,
   MemorySettingsPage,
   ModelsSettingsPage,
   SettingsLayout,
