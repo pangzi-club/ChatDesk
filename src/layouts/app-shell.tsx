@@ -226,8 +226,8 @@ function AppShell() {
                       className={({ isActive }) =>
                         `flex h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium transition-colors ${
                           isActive
-                            ? "bg-background text-foreground shadow-xs ring-1 ring-border"
-                            : "text-muted-foreground hover:bg-background/70 hover:text-foreground"
+                            ? "bg-primary/12 text-primary shadow-xs ring-1 ring-primary/25"
+                            : "text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground"
                         } max-md:justify-center max-md:px-0 max-sm:h-8`
                       }
                       key={item.to}
@@ -246,8 +246,8 @@ function AppShell() {
                 <details className="group">
                   <summary className="flex h-12 cursor-pointer list-none items-center justify-between rounded-md px-3 text-left text-sm font-semibold text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground max-md:justify-center max-md:px-0 max-sm:h-10 [&::-webkit-details-marker]:hidden">
                     <span className="flex min-w-0 items-center gap-2">
-                      <Avatar className="size-6 bg-foreground text-[10px] font-bold text-background">
-                        <AvatarFallback className="bg-foreground text-[10px] font-bold text-background">
+                      <Avatar className="size-6 bg-primary text-[10px] font-bold text-primary-foreground">
+                        <AvatarFallback className="bg-primary text-[10px] font-bold text-primary-foreground">
                           O
                         </AvatarFallback>
                       </Avatar>
@@ -294,7 +294,7 @@ function AppShell() {
 function SidebarHeader() {
   return (
     <header className="flex items-center px-3 pt-4 pb-3 max-md:justify-center max-md:px-2 max-sm:px-1.5">
-      <h1 className="truncate pl-2 font-semibold text-base text-muted-foreground max-md:hidden">
+      <h1 className="truncate pl-2 font-semibold text-base text-primary max-md:hidden">
         m-dashboard
       </h1>
     </header>

@@ -24,7 +24,12 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 
 import { ChatMemorySettings } from "@/components/chat-memory-settings";
 import { ChatToolsSettings } from "@/components/chat-tools-settings";
-import { type Theme, useTheme } from "@/components/theme-provider";
+import {
+  type PrimaryColor,
+  type Theme,
+  type ThemeColor,
+  useTheme,
+} from "@/components/theme-provider";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -77,6 +82,59 @@ const themes: Array<{ value: Theme; label: string; description: string }> = [
   { value: "system", label: "跟随系统", description: "根据操作系统自动切换" },
   { value: "light", label: "浅色", description: "明亮、清晰的工作界面" },
   { value: "dark", label: "深色", description: "适合夜间和低光环境" },
+];
+
+const themeColors: Array<{
+  value: ThemeColor;
+  label: string;
+  description: string;
+  swatches: [string, string, string];
+}> = [
+  {
+    value: "ocean",
+    label: "海洋",
+    description: "蓝色与青色",
+    swatches: ["#3f9eb2", "#4678d5", "#f29d78"],
+  },
+  {
+    value: "violet",
+    label: "紫罗兰",
+    description: "靛蓝与紫色",
+    swatches: ["#635bdb", "#a855f7", "#ec4899"],
+  },
+  {
+    value: "sunset",
+    label: "日落",
+    description: "橙色与珊瑚色",
+    swatches: ["#f97316", "#ef4444", "#eab308"],
+  },
+  {
+    value: "forest",
+    label: "森林",
+    description: "绿色与薄荷色",
+    swatches: ["#16836b", "#65a30d", "#14b8a6"],
+  },
+  {
+    value: "solarized",
+    label: "Solarized",
+    description: "经典低对比度配色",
+    swatches: ["#268bd2", "#2aa198", "#b58900"],
+  },
+  {
+    value: "github",
+    label: "GitHub",
+    description: "清爽的蓝色工作台",
+    swatches: ["#0969da", "#1f883d", "#bf8700"],
+  },
+];
+
+const primaryColors: Array<{ value: PrimaryColor; label: string; color: string }> = [
+  { value: "blue", label: "蓝色", color: "#4678d5" },
+  { value: "indigo", label: "靛蓝", color: "#635bdb" },
+  { value: "cyan", label: "青色", color: "#159bb5" },
+  { value: "emerald", label: "翠绿", color: "#16836b" },
+  { value: "orange", label: "橙色", color: "#e27b25" },
+  { value: "rose", label: "玫红", color: "#d64d67" },
 ];
 
 function SettingsLayout() {
@@ -305,7 +363,7 @@ function SettingsHeading({
 }
 
 function ThemeSettingsPage() {
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, themeColor, setThemeColor, primaryColor, setPrimaryColor } = useTheme();
   return (
     <>
       <SettingsHeading
@@ -336,6 +394,70 @@ function ThemeSettingsPage() {
               </label>
               <RadioGroupItem id={`theme-${item.value}`} value={item.value} />
             </div>
+          ))}
+        </RadioGroup>
+      </section>
+      <section className="mt-5 overflow-hidden rounded-lg border border-border bg-card">
+        <div className="border-border border-b px-5 py-4">
+          <h2 className="font-medium text-sm">主题颜色</h2>
+          <p className="mt-1 text-muted-foreground text-xs">选择一组颜色作为界面的主色和强调色。</p>
+        </div>
+        <RadioGroup
+          className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2"
+          onValueChange={(value) => setThemeColor(value as ThemeColor)}
+          value={themeColor}
+        >
+          {themeColors.map((item) => (
+            <label
+              className="flex cursor-pointer items-center gap-3 rounded-md border border-border px-3 py-3 transition-colors hover:border-primary/50 hover:bg-accent/35 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/8"
+              htmlFor={`theme-color-${item.value}`}
+              key={item.value}
+            >
+              <RadioGroupItem id={`theme-color-${item.value}`} value={item.value} />
+              <span className="flex min-w-0 flex-1 items-center gap-3">
+                <span className="flex shrink-0 gap-1" aria-hidden="true">
+                  {item.swatches.map((color) => (
+                    <span
+                      className="size-4 rounded-full ring-1 ring-black/10"
+                      key={color}
+                      style={{ backgroundColor: color }}
+                    />
+                  ))}
+                </span>
+                <span className="min-w-0">
+                  <span className="block font-medium text-sm">{item.label}</span>
+                  <span className="mt-0.5 block truncate text-muted-foreground text-xs">
+                    {item.description}
+                  </span>
+                </span>
+              </span>
+            </label>
+          ))}
+        </RadioGroup>
+      </section>
+      <section className="mt-5 overflow-hidden rounded-lg border border-border bg-card">
+        <div className="border-border border-b px-5 py-4">
+          <h2 className="font-medium text-sm">Primary 主色</h2>
+          <p className="mt-1 text-muted-foreground text-xs">设置按钮、链接和选中状态使用的主色。</p>
+        </div>
+        <RadioGroup
+          className="flex flex-wrap gap-2 p-4"
+          onValueChange={(value) => setPrimaryColor(value as PrimaryColor)}
+          value={primaryColor}
+        >
+          {primaryColors.map((item) => (
+            <label
+              className="flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 transition-colors hover:border-primary/50 hover:bg-accent/35 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/8"
+              htmlFor={`primary-color-${item.value}`}
+              key={item.value}
+            >
+              <RadioGroupItem id={`primary-color-${item.value}`} value={item.value} />
+              <span
+                className="size-4 rounded-full ring-1 ring-black/10"
+                style={{ backgroundColor: item.color }}
+              />
+              <span className="font-medium text-sm">{item.label}</span>
+            </label>
           ))}
         </RadioGroup>
       </section>

@@ -23,7 +23,7 @@ const DEFAULT_BOOKMARKS: Bookmark[] = [
     id: "twitter",
     title: "X",
     url: "https://x.com",
-    color: "from-zinc-950 to-zinc-800",
+    color: "from-slate-700 to-cyan-700",
   },
 ];
 
