@@ -25,12 +25,13 @@
       "csp": null,
       "assetProtocol": {
         "enable": true,
-        "scope": ["$HOME/**", "$DESKTOP/**", "$DOCUMENT/**", "$DOWNLOAD/**"]
+        "scope": ["$HOME/**", "$DESKTOP/**", "$DOCUMENT/**", "$DOWNLOAD/**", "$TEMP/**"]
       }
     }
   },
   "bundle": {
     "active": true,
+    "resources": ["src/sidecar/browser-worker.mjs"],
     "targets": "all",
     "icon": [
       "icons/32x32.png",

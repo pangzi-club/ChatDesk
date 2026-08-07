@@ -1,7 +1,7 @@
 import { openai } from "@ai-sdk/openai";
 import { type ToolSet, tool } from "ai";
 import { z } from "zod";
-
+import { CHAT_BROWSER_TOOL_DISPLAY_NAMES, createChatBrowserTools } from "@/lib/browser-tools";
 import {
   CHAT_TOOL_PACKS,
   type ChatToolPackId,
@@ -58,6 +58,7 @@ const BUSINESS_PACKS = new Set<ChatToolPackId>([
 
 export const CHAT_TOOL_DISPLAY_NAMES: Record<string, string> = {
   ...CHAT_WORKSPACE_TOOL_DISPLAY_NAMES,
+  ...CHAT_BROWSER_TOOL_DISPLAY_NAMES,
   list_analytics_sites: "Analytics · 站点列表",
   get_site_analytics: "Analytics · 单站报表",
   get_all_sites_analytics: "Analytics · 全站汇总",
@@ -287,6 +288,7 @@ function createPackTools(pack: ChatToolPackId, apiKey: string): ToolSet {
   if (pack === "commit") return createCommitTools(apiKey);
   if (pack === "looker") return createLookerTools(apiKey);
   if (pack === "image_generation") return createImageGenerationTools();
+  if (pack === "browser") return createChatBrowserTools();
   return {};
 }
 

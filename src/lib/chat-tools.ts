@@ -11,7 +11,8 @@ export type ChatToolPackId =
   | "commit"
   | "looker"
   | "web_search"
-  | "image_generation";
+  | "image_generation"
+  | "browser";
 
 export type ChatToolsSettings = Record<ChatToolPackId, boolean>;
 
@@ -39,6 +40,7 @@ export const DEFAULT_CHAT_TOOLS: ChatToolsSettings = {
   looker: false,
   web_search: false,
   image_generation: false,
+  browser: false,
 };
 
 export type ChatToolPackMeta = {
@@ -140,6 +142,21 @@ export const CHAT_TOOL_PACKS: ChatToolPackMeta[] = [
     category: "web",
     toolNames: ["image_generation"],
   },
+  {
+    id: "browser",
+    label: "Browser",
+    description: "控制隔离的 Headless Chromium 页面；不继承用户现有登录态。",
+    examples: ["打开这个网页并截图", "点击页面上的登录按钮", "读取当前页面标题"],
+    category: "web",
+    toolNames: [
+      "browser_open",
+      "browser_screenshot",
+      "browser_click",
+      "browser_eval",
+      "browser_close",
+    ],
+    risk: "高风险：可导航、点击并执行当前页面 JavaScript。",
+  },
 ];
 
 const CHAT_TOOLS_STORE_KEY = "chatTools";
@@ -157,7 +174,8 @@ function isChatToolPackId(value: unknown): value is ChatToolPackId {
     value === "commit" ||
     value === "looker" ||
     value === "web_search" ||
-    value === "image_generation"
+    value === "image_generation" ||
+    value === "browser"
   );
 }
 
@@ -187,6 +205,7 @@ function normalizeChatTools(value: unknown): ChatToolsSettings {
     looker: record.looker === true,
     web_search: record.web_search === true,
     image_generation: record.image_generation === true,
+    browser: record.browser === true,
   };
 }
 

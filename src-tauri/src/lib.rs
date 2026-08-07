@@ -3,6 +3,7 @@ mod models;
 mod services;
 
 use services::automation::AutomationScheduler;
+use services::browser::BrowserManager;
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
@@ -27,6 +28,7 @@ pub fn run() {
         .setup(|app| {
             let scheduler = AutomationScheduler::start(app.handle())?;
             app.manage(scheduler);
+            app.manage(BrowserManager::new());
             let dashboard_item =
                 MenuItem::with_id(app, "dashboard", "Dashboard", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&dashboard_item])?;
@@ -67,6 +69,11 @@ pub fn run() {
             commands::sandbox::workspace_search_files,
             set_tray_enabled,
             commands::automation::sync_automation_tasks,
+            commands::browser::browser_open,
+            commands::browser::browser_screenshot,
+            commands::browser::browser_click,
+            commands::browser::browser_eval,
+            commands::browser::browser_close,
             commands::chat::read_chat_index,
             commands::chat::write_chat_index,
             commands::chat::read_chat_session,

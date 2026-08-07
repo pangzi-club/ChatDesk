@@ -2,6 +2,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { ChevronDown, LoaderCircle, Wrench } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   IMAGE_GENERATION_MEDIA_TYPE,
   IMAGE_GENERATION_TOOL_NAME,
@@ -134,6 +135,20 @@ function resolveImagePreviewSrc(output: unknown): string | null {
   return null;
 }
 
+function resolveBrowserScreenshotSrc(output: unknown): string | null {
+  if (!output || typeof output !== "object") return null;
+  const result = output as {
+    ok?: boolean;
+    data?: { path?: unknown; mimeType?: unknown };
+  };
+  if (result.ok !== true || typeof result.data?.path !== "string") return null;
+  try {
+    return convertFileSrc(result.data.path);
+  } catch {
+    return null;
+  }
+}
+
 function statusLabel(options: {
   toolName: string;
   state: string;
@@ -167,6 +182,7 @@ export function ChatToolCallCard({
   preliminary = false,
 }: ChatToolCallCardProps) {
   const [open, setOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const title =
     CHAT_TOOL_DISPLAY_NAMES[toolName] ??
     CHAT_WORKSPACE_TOOL_DISPLAY_NAMES[toolName] ??
@@ -180,9 +196,17 @@ export function ChatToolCallCard({
       ? extractWebSearchSummary(output)
       : null;
   const isImageGeneration = toolName === IMAGE_GENERATION_TOOL_NAME;
+  const isBrowserScreenshot = toolName === "browser_screenshot";
   const imagePreviewSrc = useMemo(
-    () => (isImageGeneration && !failed ? resolveImagePreviewSrc(output) : null),
-    [failed, isImageGeneration, output],
+    () =>
+      !failed
+        ? isImageGeneration
+          ? resolveImagePreviewSrc(output)
+          : isBrowserScreenshot
+            ? resolveBrowserScreenshotSrc(output)
+            : null
+        : null,
+    [failed, isBrowserScreenshot, isImageGeneration, output],
   );
   const imageMeta = useMemo(() => {
     if (!isImageGeneration || failed) return null;
@@ -256,13 +280,38 @@ export function ChatToolCallCard({
           {preliminary ? (
             <p className="mb-1.5 text-[11px] text-muted-foreground">中间预览，仍在生成…</p>
           ) : null}
-          <img
-            alt={imageMeta?.fileName ?? "generated image"}
-            className={`max-h-64 max-w-full rounded-md object-contain ${
-              preliminary ? "opacity-90" : ""
-            }`}
-            src={imagePreviewSrc}
-          />
+          <button
+            aria-label="查看大图"
+            className="block max-w-full cursor-zoom-in rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            type="button"
+            onClick={() => setPreviewOpen(true)}
+          >
+            <img
+              alt={
+                isBrowserScreenshot
+                  ? "browser screenshot"
+                  : (imageMeta?.fileName ?? "generated image")
+              }
+              className={`max-h-64 max-w-full rounded-md object-contain ${
+                preliminary ? "opacity-90" : ""
+              }`}
+              src={imagePreviewSrc}
+            />
+          </button>
+          <Dialog onOpenChange={setPreviewOpen} open={previewOpen}>
+            <DialogContent className="max-h-[95vh] max-w-[min(96vw,1400px)] overflow-hidden border-0 bg-black/95 p-2">
+              <DialogTitle className="sr-only">查看大图</DialogTitle>
+              <img
+                alt={
+                  isBrowserScreenshot
+                    ? "browser screenshot"
+                    : (imageMeta?.fileName ?? "generated image")
+                }
+                className="max-h-[90vh] w-full object-contain"
+                src={imagePreviewSrc}
+              />
+            </DialogContent>
+          </Dialog>
         </div>
       ) : null}
       {open ? (
