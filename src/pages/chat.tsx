@@ -151,7 +151,6 @@ function ChatPage() {
   const sessionAttachmentsRef = useRef<ChatAttachment[]>([]);
   const suppressSaveRef = useRef(false);
   const pendingSessionRef = useRef<ChatSession | null>(null);
-  const initializedHistoryRef = useRef(false);
   const workspaceSelectionInitializedRef = useRef(false);
   const savedFingerprintRef = useRef("");
   const extractedFingerprintRef = useRef("");
@@ -255,7 +254,6 @@ function ChatPage() {
     if (isChatHistoryLoading) return;
 
     if (requestedSessionId) {
-      initializedHistoryRef.current = true;
       const clearRequestedSession = () => {
         setSearchParams(
           (prev) => {
@@ -284,17 +282,7 @@ function ChatPage() {
       });
       return;
     }
-
-    if (initializedHistoryRef.current) return;
-    initializedHistoryRef.current = true;
-    const latest = chatIndex[0];
-    if (!latest) return;
-    void loadChatSession(latest.id).then((session) => {
-      if (!session) return;
-      pendingSessionRef.current = session;
-      setSessionId(session.id);
-    });
-  }, [chatIndex, isChatHistoryLoading, requestedSessionId, sessionId, setSearchParams, stop]);
+  }, [isChatHistoryLoading, requestedSessionId, sessionId, setSearchParams, stop]);
 
   useEffect(() => {
     const session = pendingSessionRef.current;
