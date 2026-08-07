@@ -150,15 +150,36 @@ const COMPACT_SYSTEM = `你是用户长期记忆整理器。将给定记忆条�
 3. 目标约 ${MEMORY_COMPACT_TARGET_ITEMS} 条以内
 4. 只输出 JSON 字符串数组，不要 markdown，不要解释`;
 
+const WORKSPACE_MEMORY_EXCLUDED_TOOLS = new Set([
+  "list_dir",
+  "search_files",
+  "read_file",
+  "write_file",
+  "edit_file",
+  "bash",
+]);
+
+export function isWorkspaceMemoryExcludedTool(toolName: string) {
+  return WORKSPACE_MEMORY_EXCLUDED_TOOLS.has(toolName);
+}
+
+const EXPLICIT_MEMORY_INTENT_PATTERN =
+  /(?:请?记住|记一下|记得|别忘了|不要忘记|以后(?:请|都|要)|今后(?:请|都|要)|始终)/i;
+
+export function hasExplicitMemoryIntent(userText: string) {
+  return EXPLICIT_MEMORY_INTENT_PATTERN.test(userText);
+}
+
 async function extractFactsFromTurn(
   model: ModelConfig,
   userText: string,
   assistantText: string,
+  existingItems: ChatMemoryItem[],
 ): Promise<string[]> {
   const text = await generateModelText(
     model,
     EXTRACT_SYSTEM,
-    `用户：\n${userText}\n\n助手：\n${assistantText}`,
+    `已有记忆：\n${formatMemoryForInject(existingItems) || "(空)"}\n\n用户：\n${userText}\n\n助手：\n${assistantText}\n\n只返回尚未存在于已有记忆中的新事实；如果已有记忆需要更新，请返回更新后的完整事实，不要同时保留旧表述。`,
   );
   return extractJsonArray(text);
 }
@@ -180,13 +201,26 @@ export type MemoryTurnPayload = {
   sessionId: string;
   userText: string;
   assistantText: string;
+  toolNames?: string[];
   onStoreChange?: (store: ChatMemoryStore) => void;
 };
 
+export async function compactChatMemory(model: ModelConfig | undefined): Promise<ChatMemoryStore> {
+  if (isDemoModel(model) || !model) {
+    throw new Error("请先在设置中配置一个真实的模型 API，再整理长期记忆。");
+  }
+  const store = await loadChatMemory();
+  if (store.items.length === 0) return store;
+  const facts = await compactFactsWithModel(model, store.items);
+  if (facts.length === 0) return store;
+  return saveChatMemory({ ...store, items: replaceMemoryItemsFromFacts(facts) });
+}
+
 export function scheduleMemoryUpdateFromTurn(payload: MemoryTurnPayload) {
-  const { model, sessionId, userText, assistantText, onStoreChange } = payload;
+  const { model, sessionId, userText, assistantText, toolNames = [], onStoreChange } = payload;
   if (isDemoModel(model) || !model) return;
   if (!userText.trim() || !assistantText.trim()) return;
+  if (toolNames.some(isWorkspaceMemoryExcludedTool) && !hasExplicitMemoryIntent(userText)) return;
 
   const activeModel = model;
   void enqueueMemoryJob(async () => {
@@ -195,7 +229,7 @@ export function scheduleMemoryUpdateFromTurn(payload: MemoryTurnPayload) {
 
     let facts: string[] = [];
     try {
-      facts = await extractFactsFromTurn(activeModel, userText, assistantText);
+      facts = await extractFactsFromTurn(activeModel, userText, assistantText, store.items);
     } catch (error) {
       console.error("Failed to extract chat memory", error);
       return;

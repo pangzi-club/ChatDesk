@@ -1,4 +1,4 @@
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { ListRestart, Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import {
@@ -20,18 +20,24 @@ import type { ChatMemoryItem, ChatMemoryStore } from "@/lib/chat-memory";
 type ChatMemorySettingsProps = {
   store: ChatMemoryStore;
   onStoreChange: (store: ChatMemoryStore) => void;
+  onCompact?: () => Promise<void>;
+  compactDisabled?: boolean;
   idPrefix?: string;
 };
 
 export function ChatMemorySettings({
   store,
   onStoreChange,
+  onCompact,
+  compactDisabled = false,
   idPrefix = "chat-memory",
 }: ChatMemorySettingsProps) {
   const [draft, setDraft] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState("");
   const [itemToDelete, setItemToDelete] = useState<ChatMemoryItem | null>(null);
+  const [isCompacting, setIsCompacting] = useState(false);
+  const [compactError, setCompactError] = useState("");
 
   function handleEnabledChange(enabled: boolean) {
     onStoreChange({ ...store, enabled });
@@ -89,6 +95,19 @@ export function ChatMemorySettings({
     setItemToDelete(null);
   }
 
+  async function handleCompact() {
+    if (!onCompact || isCompacting) return;
+    setCompactError("");
+    setIsCompacting(true);
+    try {
+      await onCompact();
+    } catch (error) {
+      setCompactError(error instanceof Error ? error.message : "整理记忆失败，请稍后重试。");
+    } finally {
+      setIsCompacting(false);
+    }
+  }
+
   const enabledId = `${idPrefix}-enabled`;
   const draftId = `${idPrefix}-draft`;
 
@@ -132,10 +151,25 @@ export function ChatMemorySettings({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-2">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <Label className="font-medium text-sm">当前记忆</Label>
-          <span className="text-muted-foreground text-xs">{store.items.length} 条</span>
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground text-xs">{store.items.length} 条</span>
+            {onCompact ? (
+              <Button
+                disabled={compactDisabled || isCompacting || store.items.length === 0}
+                size="sm"
+                type="button"
+                variant="outline"
+                onClick={() => void handleCompact()}
+              >
+                <ListRestart className="size-3.5" />
+                {isCompacting ? "整理中…" : "整理当前记忆"}
+              </Button>
+            ) : null}
+          </div>
         </div>
+        {compactError ? <p className="text-destructive text-xs">{compactError}</p> : null}
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
           {store.items.length === 0 && (
             <p className="rounded-md border border-border border-dashed px-3 py-8 text-center text-muted-foreground text-sm">

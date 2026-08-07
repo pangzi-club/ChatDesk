@@ -111,7 +111,19 @@ export function shouldCompactMemory(items: ChatMemoryItem[]): boolean {
 }
 
 function normalizeFact(content: string) {
-  return content.replace(/\s+/g, " ").trim().toLowerCase();
+  return content
+    .replace(/[\s，。！？、；：,.!?;:]+/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function findDuplicateIndex(items: ChatMemoryItem[], key: string) {
+  return items.findIndex((item) => {
+    const existingKey = normalizeFact(item.content);
+    if (existingKey === key) return true;
+    if (key.length < 8 || existingKey.length < 8) return false;
+    return existingKey.includes(key) || key.includes(existingKey);
+  });
 }
 
 export function mergeMemoryItems(
@@ -121,25 +133,36 @@ export function mergeMemoryItems(
 ): ChatMemoryItem[] {
   const now = new Date().toISOString();
   const merged = [...existing];
-  const seen = new Set(merged.map((item) => normalizeFact(item.content)));
 
   for (const entry of incoming) {
     const content = (typeof entry === "string" ? entry : entry.content).trim();
     if (!content) continue;
     const key = normalizeFact(content);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
+    if (!key) continue;
+    const duplicateIndex = findDuplicateIndex(merged, key);
     if (typeof entry === "string") {
-      merged.push(createMemoryItem(content, { sourceSessionId: options?.sourceSessionId, now }));
+      if (duplicateIndex >= 0) {
+        const previous = merged[duplicateIndex];
+        merged[duplicateIndex] = {
+          ...previous,
+          content,
+          updatedAt: now,
+          ...(options?.sourceSessionId ? { sourceSessionId: options.sourceSessionId } : {}),
+        };
+      } else {
+        merged.push(createMemoryItem(content, { sourceSessionId: options?.sourceSessionId, now }));
+      }
     } else {
-      merged.push({
+      const nextItem = {
         ...entry,
         content,
         updatedAt: now,
         ...(options?.sourceSessionId && !entry.sourceSessionId
           ? { sourceSessionId: options.sourceSessionId }
           : {}),
-      });
+      };
+      if (duplicateIndex >= 0) merged[duplicateIndex] = nextItem;
+      else merged.push(nextItem);
     }
   }
 

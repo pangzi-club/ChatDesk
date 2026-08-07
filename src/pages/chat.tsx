@@ -72,7 +72,7 @@ import {
   loadChatMemory,
   saveChatMemory,
 } from "@/lib/chat-memory";
-import { scheduleMemoryUpdateFromTurn } from "@/lib/chat-memory-ops";
+import { isWorkspaceMemoryExcludedTool, scheduleMemoryUpdateFromTurn } from "@/lib/chat-memory-ops";
 import {
   type ChatDisplaySettings,
   DEFAULT_CHAT_DISPLAY,
@@ -367,6 +367,10 @@ function ChatPage() {
           sessionId,
           userText: lastUser ? messageText(lastUser) : "",
           assistantText: messageText(lastMessage),
+          toolNames: lastMessage.parts
+            .filter(isToolUIPart)
+            .map((part) => getToolName(part))
+            .filter(isWorkspaceMemoryExcludedTool),
           onStoreChange: (store) => {
             queryClient.setQueryData(["chat-memory"], store);
           },

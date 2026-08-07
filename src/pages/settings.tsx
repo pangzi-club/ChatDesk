@@ -59,6 +59,7 @@ import {
   loadChatMemory,
   saveChatMemory,
 } from "@/lib/chat-memory";
+import { compactChatMemory } from "@/lib/chat-memory-ops";
 import {
   type ChatToolsSettings as ChatToolsSettingsValue,
   DEFAULT_CHAT_TOOLS,
@@ -467,6 +468,10 @@ function ThemeSettingsPage() {
 
 function MemorySettingsPage() {
   const queryClient = useQueryClient();
+  const modelsQuery = useQuery({
+    queryKey: ["models"],
+    queryFn: loadModels,
+  });
   const memoryQuery = useQuery({
     queryKey: ["chat-memory"],
     queryFn: loadChatMemory,
@@ -476,6 +481,11 @@ function MemorySettingsPage() {
   function handleStoreChange(next: ChatMemoryStore) {
     queryClient.setQueryData(["chat-memory"], next);
     void saveChatMemory(next).catch((error) => console.error("Failed to save chat memory", error));
+  }
+
+  async function handleCompact() {
+    const next = await compactChatMemory(modelsQuery.data?.[0]);
+    queryClient.setQueryData(["chat-memory"], next);
   }
 
   return (
@@ -500,7 +510,9 @@ function MemorySettingsPage() {
         ) : (
           <div className="flex flex-col gap-4">
             <ChatMemorySettings
+              compactDisabled={modelsQuery.isPending}
               idPrefix="settings-memory"
+              onCompact={handleCompact}
               store={store}
               onStoreChange={handleStoreChange}
             />
