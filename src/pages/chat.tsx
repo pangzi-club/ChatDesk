@@ -108,8 +108,8 @@ import {
   normalizeTokenUsage,
   type TokenUsage,
 } from "@/lib/chat-usage";
-import { loadMcpServers, type McpServerConfig } from "@/lib/mcp";
-import { closeMcpClients, loadMcpTools } from "@/lib/mcp-client";
+import { loadMcpServers, type McpServerConfig, saveMcpServers } from "@/lib/mcp";
+import { closeMcpServers, loadMcpToolsForServers } from "@/lib/mcp-client";
 import { loadModels, type ModelConfig } from "@/lib/models";
 import { loadWorkspaceProjects } from "@/lib/workspaces";
 
@@ -154,7 +154,7 @@ function ChatPage() {
   const [sessionTitle, setSessionTitle] = useState("新对话");
   const [workspaceKey, setWorkspaceKey] = useState("");
   const [sessionCwd, setSessionCwd] = useState("");
-  const [selectedMcpIds, setSelectedMcpIds] = useState<string[]>([]);
+  const previousMcpIdsRef = useRef<string[]>([]);
   const sessionCreatedAtRef = useRef(new Date().toISOString());
   const sessionAttachmentsRef = useRef<ChatAttachment[]>([]);
   const suppressSaveRef = useRef(false);
@@ -175,6 +175,10 @@ function ChatPage() {
     workspaceProjects.find((project) => project.id === workspaceKey)?.path ?? sessionCwd;
   workspaceRef.current = selectedCwd;
   const selectedModel = models.find((model) => model.id === selectedModelId) ?? models[0];
+  const selectedMcpIds = useMemo(
+    () => mcpServers.filter((server) => server.enabledByDefault).map((server) => server.id),
+    [mcpServers],
+  );
   const transport = useMemo(
     () =>
       createModelTransport(
@@ -214,6 +218,16 @@ function ChatPage() {
     );
   };
 
+  const updateMcpSelection = (ids: string[]) => {
+    const selected = new Set(ids);
+    const next = mcpServers.map((server) => ({
+      ...server,
+      enabledByDefault: selected.has(server.id),
+    }));
+    queryClient.setQueryData(["mcp-servers"], next);
+    void saveMcpServers(next).catch((error) => console.error("Failed to save MCP settings", error));
+  };
+
   const isGenerating = status === "submitted" || status === "streaming";
   const lastMessage = messages[messages.length - 1];
   const hasAssistantMessage =
@@ -246,26 +260,21 @@ function ChatPage() {
   }, [chatTools, selectedCwd, selectedModel]);
 
   useEffect(() => {
-    if (!workspaceSelectionInitializedRef.current && workspaceProjects.length > 0) {
-      workspaceSelectionInitializedRef.current = true;
-      setWorkspaceKey(workspaceProjects[0].id);
-      setSessionCwd(workspaceProjects[0].path);
-    }
-  }, [workspaceProjects]);
-
-  useEffect(() => {
     if (models.length > 0 && !models.some((model) => model.id === selectedModelId)) {
       setSelectedModelId(models.find((model) => model.isDefault)?.id ?? models[0].id);
     }
   }, [models, selectedModelId]);
 
   useEffect(() => {
-    if (!pendingSessionRef.current && selectedMcpIds.length === 0) {
-      setSelectedMcpIds(
-        mcpServers.filter((server) => server.enabledByDefault).map((server) => server.id),
-      );
-    }
-  }, [mcpServers, selectedMcpIds.length]);
+    const removed = previousMcpIdsRef.current.filter((id) => !selectedMcpIds.includes(id));
+    previousMcpIdsRef.current = selectedMcpIds;
+    if (removed.length > 0) void closeMcpServers(removed);
+  }, [selectedMcpIds]);
+
+  useEffect(() => {
+    if (selectedMcpIds.length === 0) return;
+    void loadMcpToolsForServers(mcpServers.filter((server) => selectedMcpIds.includes(server.id)));
+  }, [mcpServers, selectedMcpIds]);
 
   useEffect(() => {
     if (isChatHistoryLoading) return;
@@ -314,11 +323,7 @@ function ChatPage() {
     sessionAttachmentsRef.current = session.attachments;
     setMessages(session.messages);
     if (session.modelId) setSelectedModelId(session.modelId);
-    setSelectedMcpIds(
-      session.mcpServerIds ??
-        mcpServers.filter((server) => server.enabledByDefault).map((server) => server.id),
-    );
-  }, [mcpServers, sessionId, setMessages]);
+  }, [sessionId, setMessages]);
 
   useEffect(() => {
     if (status !== "ready" || messages.length === 0) return;
@@ -377,6 +382,7 @@ function ChatPage() {
           sessionId,
           userText: lastUser ? messageText(lastUser) : "",
           assistantText: messageText(lastMessage),
+          workspacePath: selectedCwd,
           toolNames: lastMessage.parts
             .filter(isToolUIPart)
             .map((part) => getToolName(part))
@@ -746,7 +752,7 @@ function ChatPage() {
                 onSettingsChange={updateChatTools}
                 mcpServers={mcpServers}
                 selectedMcpIds={selectedMcpIds}
-                onMcpSelectionChange={setSelectedMcpIds}
+                onMcpSelectionChange={updateMcpSelection}
               />
               {configuredModels?.length === 0 && (
                 <Link className="chat-settings-link" to="/settings/models">
@@ -928,17 +934,8 @@ function createModelTransport(
         memory.enabled && memory.items.length > 0 ? formatMemoryForInject(memory.items) : "";
       const cwd = getCwd().trim();
       const { tools, activePacks } = await resolveActiveTools(getToolsSettings(), model, getCwd);
-      const mcpTools = await Promise.all(
-        getMcpServers().map(async (server) => {
-          try {
-            return await loadMcpTools(server);
-          } catch (error) {
-            console.error(`MCP ${server.name} failed`, error);
-            return {};
-          }
-        }),
-      );
-      const combinedTools = Object.assign({}, tools, ...mcpTools);
+      const mcpTools = await loadMcpToolsForServers(getMcpServers());
+      const combinedTools = Object.assign({}, tools, mcpTools);
       const combinedToolNames = Object.keys(combinedTools);
       const toolsHint = formatToolsSystemHint(activePacks);
       const workspaceHint = cwd
@@ -1023,9 +1020,6 @@ async function sendToolEnabledMessages(
   });
   return toUIMessageStream({
     stream: result.stream,
-    onFinish: async () => {
-      await closeMcpClients();
-    },
     onError: (streamError) => {
       console.error("Chat tool stream failed", streamError);
       if (streamError instanceof Error && streamError.message.trim()) {

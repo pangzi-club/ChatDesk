@@ -181,6 +181,8 @@ function StatisticsSettingsPage() {
   const query = useQuery({
     queryKey: ["ai-usage-statistics", period],
     queryFn: () => analyzeAiUsage(period),
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
   });
   const data = query.data;
   const maxDailyCost = Math.max(...(data?.daily.map((day) => day.cost ?? 0) ?? [0]), 0.001);

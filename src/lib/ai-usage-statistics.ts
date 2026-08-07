@@ -288,13 +288,14 @@ export async function analyzeAiUsage(
     heatmapMap.set(record.date, day);
   }
   const heatmap = [...heatmapMap.values()];
+  const heatmapDates = new Set(heatmap.map((item) => item.date));
   for (
     let cursor = heatmapStart;
     cursor <= startOfDay(now);
     cursor = new Date(cursor.getTime() + DAY_MS)
   ) {
     const key = formatDate(cursor);
-    if (!heatmap.some((item) => item.date === key))
+    if (!heatmapDates.has(key))
       heatmap.push({ date: key, usage: emptyTokenUsage(), messageCount: 0, cost: 0 });
   }
   const sortByTokens = (left: UsageAggregate, right: UsageAggregate) =>

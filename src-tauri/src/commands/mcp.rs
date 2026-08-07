@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -15,7 +15,6 @@ pub struct McpServerConfig {
     pub command: Option<String>,
     pub args: Option<Vec<String>>,
     pub env: Option<HashMap<String, String>>,
-    pub url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -35,14 +34,16 @@ struct ProcessHandle {
 
 #[derive(Default)]
 pub struct McpManager {
-    processes: Mutex<HashMap<String, ProcessHandle>>,
+    processes: Mutex<HashMap<String, Arc<Mutex<ProcessHandle>>>>,
 }
 
 impl Drop for McpManager {
     fn drop(&mut self) {
         if let Ok(mut processes) = self.processes.lock() {
-            for (_, mut process) in processes.drain() {
-                let _ = process.child.kill();
+            for (_, process) in processes.drain() {
+                if let Ok(mut process) = process.lock() {
+                    let _ = process.child.kill();
+                }
             }
         }
     }
@@ -150,15 +151,26 @@ fn start_process(server: &McpServerConfig) -> Result<ProcessHandle, String> {
 
 #[tauri::command]
 pub fn mcp_start(state: State<'_, McpManager>, server: McpServerConfig) -> Result<(), String> {
+    {
+        let processes = state
+            .processes
+            .lock()
+            .map_err(|_| "MCP manager 锁失败".to_string())?;
+        if processes.contains_key(&server.id) {
+            return Ok(());
+        }
+    }
+    let handle = start_process(&server)?;
     let mut processes = state
         .processes
         .lock()
         .map_err(|_| "MCP manager 锁失败".to_string())?;
     if processes.contains_key(&server.id) {
+        let mut handle = handle;
+        let _ = handle.child.kill();
         return Ok(());
     }
-    let handle = start_process(&server)?;
-    processes.insert(server.id, handle);
+    processes.insert(server.id, Arc::new(Mutex::new(handle)));
     Ok(())
 }
 
@@ -173,8 +185,13 @@ pub fn mcp_list_tools(
         .map_err(|_| "MCP manager 锁失败".to_string())?;
     let process = processes
         .get_mut(&server_id)
+        .cloned()
         .ok_or_else(|| "MCP 尚未启动".to_string())?;
-    let result = rpc(process, "tools/list", json!({}))?;
+    drop(processes);
+    let mut process = process
+        .lock()
+        .map_err(|_| "MCP 进程锁失败".to_string())?;
+    let result = rpc(&mut process, "tools/list", json!({}))?;
     let tools = result
         .get("tools")
         .and_then(Value::as_array)
@@ -208,9 +225,14 @@ pub fn mcp_call_tool(
         .map_err(|_| "MCP manager 锁失败".to_string())?;
     let process = processes
         .get_mut(&server_id)
+        .cloned()
         .ok_or_else(|| "MCP 尚未启动".to_string())?;
+    drop(processes);
+    let mut process = process
+        .lock()
+        .map_err(|_| "MCP 进程锁失败".to_string())?;
     rpc(
-        process,
+        &mut process,
         "tools/call",
         json!({"name":tool_name,"arguments":arguments}),
     )
@@ -222,8 +244,10 @@ pub fn mcp_stop(state: State<'_, McpManager>, server_id: String) -> Result<(), S
         .processes
         .lock()
         .map_err(|_| "MCP manager 锁失败".to_string())?;
-    if let Some(mut process) = processes.remove(&server_id) {
-        let _ = process.child.kill();
+    if let Some(process) = processes.remove(&server_id) {
+        if let Ok(mut process) = process.lock() {
+            let _ = process.child.kill();
+        }
     }
     Ok(())
 }

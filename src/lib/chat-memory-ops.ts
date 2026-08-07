@@ -175,13 +175,23 @@ async function extractFactsFromTurn(
   userText: string,
   assistantText: string,
   existingItems: ChatMemoryItem[],
+  workspacePath?: string,
 ): Promise<string[]> {
   const text = await generateModelText(
     model,
     EXTRACT_SYSTEM,
-    `已有记忆：\n${formatMemoryForInject(existingItems) || "(空)"}\n\n用户：\n${userText}\n\n助手：\n${assistantText}\n\n只返回尚未存在于已有记忆中的新事实；如果已有记忆需要更新，请返回更新后的完整事实，不要同时保留旧表述。`,
+    `已有记忆：\n${formatMemoryForInject(existingItems) || "(空)"}\n\n当前会话 workspace：${workspacePath || "未选择"}\n注意：workspace 路径、当前工作目录、文件工具根目录都只是本轮会话上下文，绝对不要抽取为长期记忆。\n\n用户：\n${userText}\n\n助手：\n${assistantText}\n\n只返回尚未存在于已有记忆中的新事实；如果已有记忆需要更新，请返回更新后的完整事实，不要同时保留旧表述。`,
   );
   return extractJsonArray(text);
+}
+
+function isWorkspaceContextFact(fact: string, workspacePath?: string) {
+  const normalized = fact.trim().toLowerCase();
+  if (!normalized) return true;
+  if (workspacePath && normalized.includes(workspacePath.trim().toLowerCase())) return true;
+  return /(当前|用户的)?\s*(workspace|工作目录|工作区|开发工作目录)\s*(是|为|路径)?\s*[/~]/i.test(
+    fact,
+  );
 }
 
 async function compactFactsWithModel(
@@ -201,6 +211,7 @@ export type MemoryTurnPayload = {
   sessionId: string;
   userText: string;
   assistantText: string;
+  workspacePath?: string;
   toolNames?: string[];
   onStoreChange?: (store: ChatMemoryStore) => void;
 };
@@ -217,7 +228,15 @@ export async function compactChatMemory(model: ModelConfig | undefined): Promise
 }
 
 export function scheduleMemoryUpdateFromTurn(payload: MemoryTurnPayload) {
-  const { model, sessionId, userText, assistantText, toolNames = [], onStoreChange } = payload;
+  const {
+    model,
+    sessionId,
+    userText,
+    assistantText,
+    workspacePath,
+    toolNames = [],
+    onStoreChange,
+  } = payload;
   if (isDemoModel(model) || !model) return;
   if (!userText.trim() || !assistantText.trim()) return;
   if (toolNames.some(isWorkspaceMemoryExcludedTool) && !hasExplicitMemoryIntent(userText)) return;
@@ -229,7 +248,14 @@ export function scheduleMemoryUpdateFromTurn(payload: MemoryTurnPayload) {
 
     let facts: string[] = [];
     try {
-      facts = await extractFactsFromTurn(activeModel, userText, assistantText, store.items);
+      facts = await extractFactsFromTurn(
+        activeModel,
+        userText,
+        assistantText,
+        store.items,
+        workspacePath,
+      );
+      facts = facts.filter((fact) => !isWorkspaceContextFact(fact, workspacePath));
     } catch (error) {
       console.error("Failed to extract chat memory", error);
       return;
