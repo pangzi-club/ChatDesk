@@ -29,3 +29,7 @@ These instructions apply to the entire repository.
 ## Destructive Confirmation
 
 - Use the shared shadcn `AlertDialog` for destructive actions that require confirmation. Do not use `window.confirm` or other native confirmation dialogs.
+
+## Settings Search
+
+- When adding, removing, or renaming a Settings page, update the Settings search items in the same change so every visible Settings route remains discoverable by its current label and keywords.

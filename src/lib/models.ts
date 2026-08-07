@@ -16,6 +16,11 @@ export type ModelConfig = {
   responsive: boolean;
   inputContext?: number;
   outputContext?: number;
+  /** Estimated USD price per 1M tokens. */
+  inputPricePerMillion?: number;
+  outputPricePerMillion?: number;
+  cacheReadPricePerMillion?: number;
+  cacheWritePricePerMillion?: number;
   isDefault: boolean;
 };
 
@@ -34,7 +39,15 @@ function normalizeModelConfig(model: ModelConfig): ModelConfig {
     customProtocol: model.customProtocol === true,
     responsive: model.responsive === true,
     isDefault: model.isDefault === true,
+    inputPricePerMillion: normalizePrice(model.inputPricePerMillion),
+    outputPricePerMillion: normalizePrice(model.outputPricePerMillion),
+    cacheReadPricePerMillion: normalizePrice(model.cacheReadPricePerMillion),
+    cacheWritePricePerMillion: normalizePrice(model.cacheWritePricePerMillion),
   };
+}
+
+function normalizePrice(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
 export async function saveModels(models: ModelConfig[]): Promise<void> {

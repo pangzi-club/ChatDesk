@@ -24,6 +24,7 @@ import {
   ToolsSettingsPage,
   TraySettingsPage,
 } from "@/pages/settings";
+import { StatisticsSettingsPage } from "@/pages/statistics";
 import { VitePortsPage } from "@/pages/vite-ports";
 import { WorkspaceDetailPage, WorkspacesPage } from "@/pages/workspaces";
 
@@ -107,6 +108,7 @@ const router = createHashRouter([
           { path: "models", element: <ModelsSettingsPage /> },
           { path: "tools", element: <ToolsSettingsPage /> },
           { path: "memory", element: <MemorySettingsPage /> },
+          { path: "statistics", element: <StatisticsSettingsPage /> },
           { path: "tray", element: <TraySettingsPage /> },
           { path: "logs", element: <SystemLogsSettingsPage /> },
         ],

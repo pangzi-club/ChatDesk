@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Brain,
+  ChartColumn,
   Check,
   ExternalLink,
   Eye,
@@ -163,11 +164,12 @@ function SettingsLayout() {
         </p>
         <nav className="space-y-1" aria-label="设置导航">
           <SettingsNavItem to="/settings/theme" icon={Palette} label="主题" />
-          <SettingsNavItem to="/settings/keys" icon={KeyRound} label="API Keys" />
           <SettingsNavItem to="/settings/models" icon={Package} label="模型" />
           <SettingsNavItem to="/settings/tools" icon={Wrench} label="Tools" />
           <SettingsNavItem to="/settings/memory" icon={Brain} label="长期记忆" />
+          <SettingsNavItem to="/settings/keys" icon={KeyRound} label="API Keys" />
           <SettingsNavItem to="/settings/tray" icon={PanelTop} label="托盘" />
+          <SettingsNavItem to="/settings/statistics" icon={ChartColumn} label="使用量" />
           <SettingsNavItem to="/settings/logs" icon={ScrollText} label="系统日志" />
         </nav>
         <div className="mt-auto border-border border-t py-5 text-muted-foreground text-xs max-sm:hidden">
@@ -815,6 +817,10 @@ const emptyModel: Omit<ModelConfig, "id"> = {
   responsive: false,
   inputContext: undefined,
   outputContext: undefined,
+  inputPricePerMillion: undefined,
+  outputPricePerMillion: undefined,
+  cacheReadPricePerMillion: undefined,
+  cacheWritePricePerMillion: undefined,
   isDefault: false,
 };
 
@@ -887,6 +893,7 @@ function ModelsSettingsPage() {
       : nextModels;
     await saveModels(normalized);
     queryClient.setQueryData(["models"], normalized);
+    await queryClient.invalidateQueries({ queryKey: ["ai-usage-statistics"] });
     setIsModalOpen(false);
     setEditing(null);
   }
@@ -1215,6 +1222,34 @@ function ModelDialog({
               />
             </div>
           ) : null}
+          <fieldset>
+            <legend className="font-medium text-sm">用量价格（USD / 1M tokens）</legend>
+            <p className="mt-1 text-muted-foreground text-xs">
+              用于 Statistics 页费用估算，可留空。
+            </p>
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              <PriceField
+                label="输入价格"
+                value={model.inputPricePerMillion}
+                onChange={(value) => update("inputPricePerMillion", value)}
+              />
+              <PriceField
+                label="输出价格"
+                value={model.outputPricePerMillion}
+                onChange={(value) => update("outputPricePerMillion", value)}
+              />
+              <PriceField
+                label="缓存读取价格"
+                value={model.cacheReadPricePerMillion}
+                onChange={(value) => update("cacheReadPricePerMillion", value)}
+              />
+              <PriceField
+                label="缓存写入价格"
+                value={model.cacheWritePricePerMillion}
+                onChange={(value) => update("cacheWritePricePerMillion", value)}
+              />
+            </div>
+          </fieldset>
           <div className="block text-sm">
             <label className="font-medium" htmlFor="model-api-key">
               API Key
@@ -1415,6 +1450,37 @@ function NumberField({
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+function PriceField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value?: number;
+  onChange: (value?: number) => void;
+}) {
+  return (
+    <div className="block text-sm">
+      <label className="font-medium" htmlFor={`model-price-${label}`}>
+        {label}
+      </label>
+      <Input
+        className="mt-2 h-10 bg-background"
+        id={`model-price-${label}`}
+        min="0"
+        onChange={(event) => {
+          const next = event.target.value ? Number(event.target.value) : undefined;
+          onChange(next !== undefined && Number.isFinite(next) && next >= 0 ? next : undefined);
+        }}
+        placeholder="例如 0.50"
+        step="any"
+        type="number"
+        value={value ?? ""}
+      />
     </div>
   );
 }
