@@ -34,7 +34,7 @@ if (process.env.M_DASHBOARD_SKIP_BROWSER_DOWNLOAD !== "1") {
 }
 
 await runTool("esbuild", [
-  "src-web/server.ts",
+  "src-web/src/server.ts",
   "--bundle",
   "--platform=node",
   "--format=cjs",
