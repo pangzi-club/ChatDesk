@@ -3,10 +3,13 @@ import { spawn } from "node:child_process";
 
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const token = process.env.CHAT_SERVER_TOKEN || randomUUID();
+const port = process.env.CHAT_SERVER_PORT || "14317";
 const sharedEnv = {
   ...process.env,
   CHAT_SERVER_TOKEN: token,
+  CHAT_SERVER_PORT: port,
   VITE_CHAT_SERVER_TOKEN: token,
+  VITE_CHAT_SERVER_PORT: port,
 };
 
 const children = [

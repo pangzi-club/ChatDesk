@@ -1,5 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
+import { chatServerRequest, loadChatServerMcp, saveChatServerMcp } from "@/lib/chat-server";
 import { settingsStore } from "@/lib/settings-store";
 
 export type McpTransport = "npx" | "remote";
@@ -105,6 +105,15 @@ function normalizeEntry(value: unknown): McpServerConfig | null {
 
 export async function loadMcpServers(): Promise<McpServerConfig[]> {
   try {
+    const serverValue = await loadChatServerMcp();
+    if (Array.isArray(serverValue))
+      return serverValue
+        .map(normalizeEntry)
+        .filter((item): item is McpServerConfig => Boolean(item));
+  } catch (error) {
+    console.error("Failed to load MCP settings from Chat Server", error);
+  }
+  try {
     const stored = await settingsStore.get<unknown>(STORE_KEY);
     if (Array.isArray(stored))
       return stored.map(normalizeEntry).filter((item): item is McpServerConfig => Boolean(item));
@@ -123,6 +132,7 @@ export async function loadMcpServers(): Promise<McpServerConfig[]> {
 }
 
 export async function saveMcpServers(servers: McpServerConfig[]) {
+  await saveChatServerMcp(servers);
   await settingsStore.set(STORE_KEY, servers);
   await settingsStore.save();
   window.localStorage.removeItem(LEGACY_KEY);
@@ -199,23 +209,39 @@ export async function fetchMcpRegistry(query = ""): Promise<McpRegistryEntry[]> 
 }
 
 export function startMcp(server: McpServerConfig) {
-  return invoke<void>("mcp_start", { server });
+  return chatServerRequest("/v1/mcp/start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(server),
+  }).then(() => undefined);
 }
 
 export function listMcpTools(serverId: string) {
-  return invoke<McpToolDefinition[]>("mcp_list_tools", { serverId });
+  return chatServerRequest(`/v1/mcp/${encodeURIComponent(serverId)}/tools`).then(
+    (response) => response.json() as Promise<McpToolDefinition[]>,
+  );
 }
 
 export function callMcpTool(serverId: string, toolName: string, arguments_: unknown) {
-  return invoke<unknown>("mcp_call_tool", { serverId, toolName, arguments: arguments_ });
+  return chatServerRequest(`/v1/mcp/${encodeURIComponent(serverId)}/call`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ toolName, arguments: arguments_ }),
+  }).then((response) => response.json());
 }
 
 export function stopMcp(serverId: string) {
-  return invoke<void>("mcp_stop", { serverId });
+  return chatServerRequest(`/v1/mcp/${encodeURIComponent(serverId)}/stop`, { method: "POST" }).then(
+    () => undefined,
+  );
 }
 
 export function testMcpConnection(server: McpServerConfig) {
-  return invoke<McpToolDefinition[]>("mcp_test_connection", { server });
+  return chatServerRequest("/v1/mcp/test", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(server),
+  }).then((response) => response.json() as Promise<McpToolDefinition[]>);
 }
 
 export type McpToolDefinition = {

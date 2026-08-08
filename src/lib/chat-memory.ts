@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { loadChatServerMemory, saveChatServerMemory } from "@/lib/chat-server";
 
 export const CHAT_MEMORY_SCHEMA_VERSION = 1;
 
@@ -26,21 +26,6 @@ export const DEFAULT_CHAT_MEMORY: ChatMemoryStore = {
   enabled: true,
   items: [],
 };
-
-const MEMORY_STORAGE_KEY = "m-dashboard-chat-memory-v1";
-
-function isTauri() {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
-
-function parseJson<T>(value: string | null, fallback: T): T {
-  if (!value) return fallback;
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return fallback;
-  }
-}
 
 function isChatMemoryItem(value: unknown): value is ChatMemoryItem {
   if (!value || typeof value !== "object") return false;
@@ -188,28 +173,16 @@ export function replaceMemoryItemsFromFacts(
 
 export async function loadChatMemory(): Promise<ChatMemoryStore> {
   try {
-    const contents = isTauri()
-      ? await invoke<string>("read_chat_memory")
-      : window.localStorage.getItem(MEMORY_STORAGE_KEY);
-    return normalizeChatMemory(parseJson(contents, DEFAULT_CHAT_MEMORY));
+    return normalizeChatMemory(await loadChatServerMemory());
   } catch (error) {
     console.error("Failed to load chat memory", error);
-    const fallback = parseJson(
-      window.localStorage.getItem(MEMORY_STORAGE_KEY),
-      DEFAULT_CHAT_MEMORY,
-    );
-    return normalizeChatMemory(fallback);
+    return { ...DEFAULT_CHAT_MEMORY };
   }
 }
 
 export async function saveChatMemory(store: ChatMemoryStore): Promise<ChatMemoryStore> {
   const next = normalizeChatMemory(store);
   const contents = JSON.stringify(next);
-  if (isTauri()) {
-    await invoke("write_chat_memory", { contents });
-    window.localStorage.removeItem(MEMORY_STORAGE_KEY);
-  } else {
-    window.localStorage.setItem(MEMORY_STORAGE_KEY, contents);
-  }
+  await saveChatServerMemory(JSON.parse(contents));
   return next;
 }

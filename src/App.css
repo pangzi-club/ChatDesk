@@ -750,11 +750,16 @@
 .chat-generation-status {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 7px;
   min-height: 28px;
   padding: 0 4px 7px;
   color: var(--chat-muted);
   font-size: 11px;
+}
+.chat-generation-status-in-message {
+  width: min(680px, calc(100% - 30px - var(--chat-message-gap)));
+  margin: 10px 0 0 calc(30px + var(--chat-message-gap));
 }
 .chat-generation-status-dot {
   width: 7px;

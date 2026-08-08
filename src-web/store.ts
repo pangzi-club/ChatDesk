@@ -97,6 +97,37 @@ export class SessionStore {
     await rm(path.join(this.sessionsRoot, id), { recursive: true, force: true });
   }
 
+  attachmentPath(sessionId: string, attachmentId: string, fileName: string) {
+    if (!validId(sessionId) || !validId(attachmentId)) throw new Error("invalid chat attachment id");
+    const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 180) || "attachment";
+    return path.join(this.sessionsRoot, sessionId, "attachments", `${attachmentId}-${safeName}`);
+  }
+
+  async saveAttachment(sessionId: string, attachmentId: string, fileName: string, bytes: Uint8Array) {
+    const target = this.attachmentPath(sessionId, attachmentId, fileName);
+    await mkdir(path.dirname(target), { recursive: true });
+    const temporary = `${target}.tmp`;
+    await writeFile(temporary, bytes);
+    await rename(temporary, target);
+    return target;
+  }
+
+  async readAttachment(sessionId: string, attachmentId: string) {
+    if (!validId(sessionId) || !validId(attachmentId)) return null;
+    const directory = path.join(this.sessionsRoot, sessionId, "attachments");
+    const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+    const entry = entries.find((item) => item.isFile() && item.name.startsWith(`${attachmentId}-`));
+    if (!entry) return null;
+    return { name: entry.name.slice(attachmentId.length + 1), bytes: await readFile(path.join(directory, entry.name)) };
+  }
+
+  async deleteAttachment(sessionId: string, attachmentId: string) {
+    const value = await this.readAttachment(sessionId, attachmentId);
+    if (!value) return false;
+    await rm(path.join(this.sessionsRoot, sessionId, "attachments", `${attachmentId}-${value.name}`), { force: true });
+    return true;
+  }
+
   async importDirectory(legacyRoot: string) {
     const legacyIndex = await readJson<unknown>(path.join(legacyRoot, INDEX_FILE), []);
     const ids = new Set<string>();

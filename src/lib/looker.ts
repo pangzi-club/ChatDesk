@@ -1,4 +1,5 @@
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
+import { loadChatServerConfig, saveChatServerConfig } from "@/lib/chat-server";
 import { settingsStore } from "@/lib/settings-store";
 
 const LOOKER_API_KEY_STORE_KEY = "lookerApiKey";
@@ -13,6 +14,12 @@ function resolveFetch(): typeof fetch {
 }
 
 export async function loadLookerApiKey(): Promise<string> {
+  try {
+    const value = (await loadChatServerConfig()).apiKeys.looker;
+    if (value) return value;
+  } catch {
+    // Fall back to the legacy store during bootstrap.
+  }
   if (isTauri()) {
     try {
       const stored = await settingsStore.get<string>(LOOKER_API_KEY_STORE_KEY);
@@ -28,6 +35,7 @@ export async function loadLookerApiKey(): Promise<string> {
 }
 
 export async function saveLookerApiKey(apiKey: string) {
+  await saveChatServerConfig({ apiKeys: { looker: apiKey } });
   if (isTauri()) {
     try {
       await settingsStore.set(LOOKER_API_KEY_STORE_KEY, apiKey);

@@ -1,3 +1,4 @@
+import { loadChatServerConfig, saveChatServerConfig } from "@/lib/chat-server";
 import { settingsStore } from "@/lib/settings-store";
 
 export type ChatToolPackId =
@@ -214,6 +215,12 @@ function isTauri() {
 }
 
 export async function loadChatToolsSettings(): Promise<ChatToolsSettings> {
+  try {
+    const config = await loadChatServerConfig();
+    if (Object.keys(config.chatTools).length > 0) return normalizeChatTools(config.chatTools);
+  } catch (error) {
+    console.error("Failed to load Chat Server tools settings", error);
+  }
   if (isTauri()) {
     try {
       const stored = await settingsStore.get<unknown>(CHAT_TOOLS_STORE_KEY);
@@ -239,6 +246,7 @@ export async function loadChatToolsSettings(): Promise<ChatToolsSettings> {
 
 export async function saveChatToolsSettings(settings: ChatToolsSettings) {
   const next = normalizeChatTools(settings);
+  await saveChatServerConfig({ chatTools: next });
   if (isTauri()) {
     try {
       await settingsStore.set(CHAT_TOOLS_STORE_KEY, next);

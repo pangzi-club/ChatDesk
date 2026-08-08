@@ -1,4 +1,5 @@
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
+import { loadChatServerConfig, saveChatServerConfig } from "@/lib/chat-server";
 import { settingsStore } from "@/lib/settings-store";
 
 export const KIE_API_BASE_URL = "https://api.kie.ai";
@@ -16,6 +17,12 @@ function resolveFetch(): typeof fetch {
 }
 
 export async function loadKieApiKey(): Promise<string> {
+  try {
+    const value = (await loadChatServerConfig()).apiKeys.kie;
+    if (value) return value;
+  } catch {
+    // Fall back to the legacy store during bootstrap.
+  }
   if (isTauri()) {
     try {
       const stored = await settingsStore.get<string>(KIE_API_KEY_STORE_KEY);
@@ -28,6 +35,7 @@ export async function loadKieApiKey(): Promise<string> {
 }
 
 export async function saveKieApiKey(apiKey: string) {
+  await saveChatServerConfig({ apiKeys: { kie: apiKey } });
   if (isTauri()) {
     try {
       await settingsStore.set(KIE_API_KEY_STORE_KEY, apiKey);

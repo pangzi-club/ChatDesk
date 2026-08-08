@@ -1,4 +1,10 @@
-import { invoke } from "@tauri-apps/api/core";
+import {
+  chatServerRequest,
+  deleteChatServerArchive,
+  loadChatServerArchive,
+  loadChatServerArchiveIndex,
+  saveChatServerArchive,
+} from "@/lib/chat-server";
 
 export const ARCHIVE_SCHEMA_VERSION = 1;
 
@@ -103,24 +109,8 @@ export type HistoryListItem = {
   externalId?: string;
 };
 
-const INDEX_KEY = "m-dashboard-chat-archive-index-v1";
-const SESSION_KEY_PREFIX = "m-dashboard-chat-archive-session-";
-
-function isTauri() {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
-
 function sortByUpdatedAt<T extends { updatedAt: string }>(items: T[]) {
   return [...items].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
-}
-
-function parseJson<T>(value: string | null | undefined, fallback: T): T {
-  if (!value) return fallback;
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return fallback;
-  }
 }
 
 function isImportedSource(value: unknown): value is ImportedArchiveSource {
@@ -242,22 +232,17 @@ export function truncateTitle(text: string, max = 40) {
 
 export async function loadArchiveIndex(): Promise<ArchiveIndexItem[]> {
   try {
-    const contents = isTauri() ? await invoke<string>("read_chat_archive_index") : null;
-    const parsed = parseJson<unknown>(contents ?? window.localStorage.getItem(INDEX_KEY), []);
+    const parsed = await loadChatServerArchiveIndex();
     return sortByUpdatedAt(Array.isArray(parsed) ? parsed.filter(isArchiveIndexItem) : []);
   } catch (error) {
     console.error("Failed to load chat archive index", error);
-    const fallback = parseJson<unknown>(window.localStorage.getItem(INDEX_KEY), []);
-    return sortByUpdatedAt(Array.isArray(fallback) ? fallback.filter(isArchiveIndexItem) : []);
+    return [];
   }
 }
 
 export async function loadArchiveSession(id: string): Promise<ArchiveSession | null> {
   try {
-    const contents = isTauri()
-      ? await invoke<string | null>("read_chat_archive_session", { sessionId: id })
-      : window.localStorage.getItem(`${SESSION_KEY_PREFIX}${id}`);
-    const parsed = parseJson<unknown>(contents, null);
+    const parsed = await loadChatServerArchive<ArchiveSession>(id);
     return isArchiveSession(parsed) ? parsed : null;
   } catch (error) {
     console.error("Failed to load chat archive session", error);
@@ -266,11 +251,7 @@ export async function loadArchiveSession(id: string): Promise<ArchiveSession | n
 }
 
 async function removeArchiveSessionFile(id: string): Promise<void> {
-  if (isTauri()) {
-    await invoke("delete_chat_archive_session", { sessionId: id });
-  } else {
-    window.localStorage.removeItem(`${SESSION_KEY_PREFIX}${id}`);
-  }
+  await deleteChatServerArchive(id);
 }
 
 export async function saveArchiveSession(session: ArchiveSession): Promise<SaveArchiveResult> {
@@ -293,58 +274,13 @@ export async function saveArchiveSession(session: ArchiveSession): Promise<SaveA
   }
 
   const toSave: ArchiveSession = { ...session, id: reusedId };
-  const contents = JSON.stringify(toSave);
-  if (isTauri()) {
-    await invoke("write_chat_archive_session", { sessionId: toSave.id, contents });
-  } else {
-    window.localStorage.setItem(`${SESSION_KEY_PREFIX}${toSave.id}`, contents);
-  }
-
-  const item: ArchiveIndexItem = {
-    id: toSave.id,
-    source: toSave.source,
-    externalId: toSave.externalId,
-    title: toSave.title,
-    cwd: toSave.cwd,
-    sourcePath: toSave.sourcePath,
-    createdAt: toSave.createdAt,
-    updatedAt: toSave.updatedAt,
-    importedAt: toSave.importedAt,
-    messageCount: toSave.messages.length,
-    assetCount: toSave.assetCount,
-    usageTotal: toSave.usageTotal,
-  };
-  const nextIndex = sortByUpdatedAt([
-    item,
-    ...index.filter(
-      (entry) => entry.id !== toSave.id && archiveKey(entry.source, entry.externalId) !== key,
-    ),
-  ]);
-  const indexContents = JSON.stringify(nextIndex);
-  if (isTauri()) {
-    await invoke("write_chat_archive_index", { contents: indexContents });
-  } else {
-    window.localStorage.setItem(INDEX_KEY, indexContents);
-  }
+  await saveChatServerArchive(toSave);
 
   return { overwritten, id: toSave.id };
 }
 
 export async function deleteArchiveSession(id: string): Promise<void> {
-  if (isTauri()) {
-    await invoke("delete_chat_archive_session", { sessionId: id });
-    const index = await loadArchiveIndex();
-    await invoke("write_chat_archive_index", {
-      contents: JSON.stringify(index.filter((entry) => entry.id !== id)),
-    });
-  } else {
-    window.localStorage.removeItem(`${SESSION_KEY_PREFIX}${id}`);
-    const index = await loadArchiveIndex();
-    window.localStorage.setItem(
-      INDEX_KEY,
-      JSON.stringify(index.filter((entry) => entry.id !== id)),
-    );
-  }
+  await deleteChatServerArchive(id);
 }
 
 export async function findArchiveByExternal(
@@ -356,31 +292,34 @@ export async function findArchiveByExternal(
 }
 
 export async function scanCodexSessions(): Promise<ScannedSession[]> {
-  if (!isTauri()) return [];
-  const items = await invoke<unknown>("scan_codex_sessions");
+  const response = await chatServerRequest("/v1/archive/scan/codex", { method: "POST" });
+  const items = (await response.json()) as unknown;
   return Array.isArray(items) ? items.filter(isScannedSession) : [];
 }
 
 export async function scanClaudeSessions(): Promise<ScannedSession[]> {
-  if (!isTauri()) return [];
-  const items = await invoke<unknown>("scan_claude_sessions");
+  const response = await chatServerRequest("/v1/archive/scan/claude-code", { method: "POST" });
+  const items = (await response.json()) as unknown;
   return Array.isArray(items) ? items.filter(isScannedSession) : [];
 }
 
 export async function readImportTextFile(path: string): Promise<string> {
-  if (!isTauri()) {
-    throw new Error("导入仅在桌面应用中可用");
-  }
-  return invoke<string>("read_text_file", { path });
+  const response = await chatServerRequest("/v1/archive/read-file", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
+  if (!response.ok) throw new Error((await response.text()) || "无法读取导入文件");
+  return response.text();
 }
 
 export async function pathExists(path: string): Promise<boolean> {
-  if (!isTauri()) return false;
-  try {
-    return await invoke<boolean>("path_exists", { path });
-  } catch {
-    return false;
-  }
+  const response = await chatServerRequest("/v1/archive/path-exists", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
+  return response.ok && ((await response.json()) as { exists?: boolean }).exists === true;
 }
 
 export function sourceLabel(source: ArchiveSource) {

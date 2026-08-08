@@ -1,13 +1,8 @@
 pub mod automation;
-pub mod browser;
-pub mod chat;
-pub mod chat_archive;
 pub mod chat_server;
 pub mod greet;
 pub mod image;
-pub mod mcp;
 pub mod sandbox;
-pub mod skills;
 pub mod system_log;
 pub mod vite;
 pub mod workspaces;

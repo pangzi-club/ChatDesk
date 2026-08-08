@@ -6,9 +6,10 @@ export const CHAT_SERVER_DEFAULT_PORT = 14317;
 const CHAT_SERVER_PORT_KEY = "chatServerPort";
 const CHAT_SERVER_PORT_STORAGE_KEY = "m-dashboard-chat-server-port-v1";
 const runtimeConfig: { port: number; token: string } = {
-  port: CHAT_SERVER_DEFAULT_PORT,
+  port: normalizePort(import.meta.env.VITE_CHAT_SERVER_PORT),
   token: import.meta.env.VITE_CHAT_SERVER_TOKEN ?? "",
 };
+let runtimePortKnown = Boolean(import.meta.env.VITE_CHAT_SERVER_PORT);
 let runtimeInitialization: Promise<void> | undefined;
 
 function isTauri() {
@@ -31,6 +32,7 @@ export function initializeChatServer() {
       );
       if (info.running === true) {
         runtimeConfig.port = normalizePort(info.port);
+        runtimePortKnown = true;
         if (typeof info.token === "string" && info.token) runtimeConfig.token = info.token;
       }
     } catch (error) {
@@ -79,6 +81,7 @@ export async function restartChatServer() {
     "chat_server_restart",
   );
   runtimeConfig.port = normalizePort(info.port);
+  runtimePortKnown = true;
   if (typeof info.token === "string" && info.token) runtimeConfig.token = info.token;
   runtimeInitialization = Promise.resolve();
   return info;
@@ -90,11 +93,7 @@ export function chatServerUrl(port = CHAT_SERVER_DEFAULT_PORT) {
       ? normalizePort(window.localStorage.getItem(CHAT_SERVER_PORT_STORAGE_KEY))
       : CHAT_SERVER_DEFAULT_PORT;
   const selectedPort =
-    port === CHAT_SERVER_DEFAULT_PORT
-      ? runtimeConfig.port !== CHAT_SERVER_DEFAULT_PORT
-        ? runtimeConfig.port
-        : stored
-      : port;
+    port === CHAT_SERVER_DEFAULT_PORT ? (runtimePortKnown ? runtimeConfig.port : stored) : port;
   return `http://127.0.0.1:${selectedPort}`;
 }
 
@@ -105,15 +104,59 @@ export function chatServerHeaders() {
   return headers;
 }
 
+async function refreshChatServerRuntime() {
+  if (!isTauri()) return;
+  try {
+    const info = await invoke<{ port?: unknown; token?: unknown; running?: boolean }>(
+      "chat_server_info",
+    );
+    if (info.running === true) {
+      runtimeConfig.port = normalizePort(info.port);
+      runtimePortKnown = true;
+      if (typeof info.token === "string" && info.token) runtimeConfig.token = info.token;
+    }
+  } catch (error) {
+    console.error("Failed to refresh Chat Server authentication", error);
+  }
+}
+
+async function requestChatServerResponse(
+  pathname: string,
+  init?: RequestInit,
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  await initializeChatServer();
+  const request = () => {
+    const headers = new Headers(init?.headers);
+    const auth = chatServerHeaders().Authorization;
+    if (auth) headers.set("Authorization", auth);
+    else headers.delete("Authorization");
+    const url = `${chatServerUrl(port)}${pathname}`;
+    return fetch(url, { ...init, headers });
+  };
+
+  let response = await request();
+  if (response.status === 401 && isTauri()) {
+    await refreshChatServerRuntime();
+    response = await request();
+  }
+  return response;
+}
+
 export async function updateChatServerPort(port: number) {
   await initializeChatServer();
   const currentUrl = chatServerUrl();
   const savedPort = await saveChatServerPort(port);
-  const response = await fetch(`${currentUrl}/v1/config`, {
-    method: "PATCH",
-    headers: { ...chatServerHeaders(), "Content-Type": "application/json" },
-    body: JSON.stringify({ port: savedPort }),
-  });
+  const currentPort = normalizePort(new URL(currentUrl).port);
+  const response = await requestChatServerResponse(
+    "/v1/config",
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ port: savedPort }),
+    },
+    currentPort,
+  );
   if (!response.ok) throw new Error((await response.text()) || "Chat Server 配置保存失败");
   return (await response.json()) as { port: number; restartRequired: boolean };
 }
@@ -140,12 +183,145 @@ export type ChatServerSession = {
 };
 
 export async function loadChatServerSessions(port = CHAT_SERVER_DEFAULT_PORT) {
-  await initializeChatServer();
-  const response = await fetch(`${chatServerUrl(port)}/v1/sessions`, {
-    headers: chatServerHeaders(),
-  });
+  const response = await requestChatServerResponse("/v1/sessions", undefined, port);
   if (!response.ok) throw new Error((await response.text()) || "Chat Server 会话加载失败");
   return (await response.json()) as ChatServerSession[];
+}
+
+export type ChatServerConfigData = {
+  models: unknown[];
+  chatTools: Record<string, boolean>;
+  mcpServers: unknown[];
+  installedSkillIds: string[];
+  selectedSkillIds: string[];
+  apiKeys: Record<string, string>;
+};
+
+export async function chatServerRequest(
+  pathname: string,
+  init?: RequestInit,
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  const response = await requestChatServerResponse(pathname, init, port);
+  if (!response.ok)
+    throw new Error((await response.text()) || `Chat Server 请求失败 (${response.status})`);
+  return response;
+}
+
+export async function loadChatServerConfig(port?: number) {
+  const response = await chatServerRequest("/v1/chat-config", undefined, port);
+  return (await response.json()) as ChatServerConfigData;
+}
+
+export async function saveChatServerConfig(value: unknown, port?: number) {
+  const response = await chatServerRequest(
+    "/v1/chat-config",
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(value),
+    },
+    port,
+  );
+  return (await response.json()) as ChatServerConfigData;
+}
+
+export async function loadChatServerMemory(port?: number) {
+  const response = await chatServerRequest("/v1/memory", undefined, port);
+  return response.json();
+}
+
+export async function saveChatServerMemory(value: unknown, port?: number) {
+  const response = await chatServerRequest(
+    "/v1/memory",
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value) },
+    port,
+  );
+  return response.json();
+}
+
+export async function loadChatServerSkills(port?: number) {
+  const response = await chatServerRequest("/v1/skills", undefined, port);
+  return response.json();
+}
+
+export async function loadChatServerSkillSelection(port?: number) {
+  const response = await chatServerRequest("/v1/skills/selection", undefined, port);
+  return (await response.json()) as string[];
+}
+
+export async function saveChatServerSkillSelection(ids: string[], port?: number) {
+  const response = await chatServerRequest(
+    "/v1/skills/selection",
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ids) },
+    port,
+  );
+  return response.json();
+}
+
+export async function loadChatServerMcp(port?: number) {
+  const response = await chatServerRequest("/v1/mcp", undefined, port);
+  return response.json();
+}
+
+export async function saveChatServerMcp(value: unknown, port?: number) {
+  const response = await chatServerRequest(
+    "/v1/mcp",
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value) },
+    port,
+  );
+  return response.json();
+}
+
+export async function loadChatServerArchiveIndex(port?: number) {
+  const response = await chatServerRequest("/v1/archive", undefined, port);
+  return response.json();
+}
+
+export async function loadChatServerArchive<T>(id: string, port?: number) {
+  const response = await chatServerRequest(
+    `/v1/archive/${encodeURIComponent(id)}`,
+    undefined,
+    port,
+  ).catch((error) => {
+    if (String(error).includes("归档不存在") || String(error).includes("(404)")) return null;
+    throw error;
+  });
+  return response ? ((await response.json()) as T) : null;
+}
+
+export async function saveChatServerArchive(value: { id: string }, port?: number) {
+  const response = await chatServerRequest(
+    `/v1/archive/${encodeURIComponent(value.id)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value) },
+    port,
+  );
+  return response.json();
+}
+
+export async function deleteChatServerArchive(id: string, port?: number) {
+  await chatServerRequest(`/v1/archive/${encodeURIComponent(id)}`, { method: "DELETE" }, port);
+}
+
+export async function uploadChatServerAttachment(
+  sessionId: string,
+  attachmentId: string,
+  fileName: string,
+  bytes: Uint8Array,
+  port?: number,
+) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  const response = await chatServerRequest(
+    `/v1/sessions/${encodeURIComponent(sessionId)}/attachments`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: attachmentId, fileName, base64: btoa(binary) }),
+    },
+    port,
+  );
+  return (await response.json()) as { path: string };
 }
 
 export async function ensureChatServerSession(
@@ -153,30 +329,32 @@ export async function ensureChatServerSession(
   options?: { title?: string; workspaceId?: string; cwd?: string },
   port = CHAT_SERVER_DEFAULT_PORT,
 ) {
-  await initializeChatServer();
-  const response = await fetch(
-    `${chatServerUrl(port)}/v1/sessions/${encodeURIComponent(sessionId)}`,
-    {
-      headers: chatServerHeaders(),
-    },
+  const response = await requestChatServerResponse(
+    `/v1/sessions/${encodeURIComponent(sessionId)}`,
+    undefined,
+    port,
   );
   if (response.ok) return;
   if (response.status !== 404) {
     throw new Error((await response.text()) || "Chat Server 会话检查失败");
   }
-  const created = await fetch(`${chatServerUrl(port)}/v1/sessions`, {
-    method: "POST",
-    headers: { ...chatServerHeaders(), "Content-Type": "application/json" },
-    body: JSON.stringify({ id: sessionId, ...options }),
-  });
+  const created = await requestChatServerResponse(
+    "/v1/sessions",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: sessionId, ...options }),
+    },
+    port,
+  );
   if (!created.ok) throw new Error((await created.text()) || "Chat Server 会话创建失败");
 }
 
 export async function loadChatServerSession<T>(sessionId: string, port?: number) {
-  await initializeChatServer();
-  const response = await fetch(
-    `${chatServerUrl(port ?? CHAT_SERVER_DEFAULT_PORT)}/v1/sessions/${encodeURIComponent(sessionId)}`,
-    { headers: chatServerHeaders() },
+  const response = await requestChatServerResponse(
+    `/v1/sessions/${encodeURIComponent(sessionId)}`,
+    undefined,
+    port,
   );
   if (response.status === 404) return null;
   if (!response.ok) throw new Error((await response.text()) || "Chat Server 会话读取失败");
@@ -184,25 +362,25 @@ export async function loadChatServerSession<T>(sessionId: string, port?: number)
 }
 
 export async function saveChatServerSession(session: unknown, port?: number) {
-  await initializeChatServer();
   const value = session as { id?: unknown };
   if (typeof value.id !== "string") throw new Error("invalid chat session id");
-  const response = await fetch(
-    `${chatServerUrl(port ?? CHAT_SERVER_DEFAULT_PORT)}/v1/sessions/${encodeURIComponent(value.id)}`,
+  const response = await requestChatServerResponse(
+    `/v1/sessions/${encodeURIComponent(value.id)}`,
     {
       method: "PATCH",
-      headers: { ...chatServerHeaders(), "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(session),
     },
+    port,
   );
   if (!response.ok) throw new Error((await response.text()) || "Chat Server 会话保存失败");
 }
 
 export async function deleteChatServerSession(sessionId: string, port?: number) {
-  await initializeChatServer();
-  const response = await fetch(
-    `${chatServerUrl(port ?? CHAT_SERVER_DEFAULT_PORT)}/v1/sessions/${encodeURIComponent(sessionId)}`,
-    { method: "DELETE", headers: chatServerHeaders() },
+  const response = await requestChatServerResponse(
+    `/v1/sessions/${encodeURIComponent(sessionId)}`,
+    { method: "DELETE" },
+    port,
   );
   if (!response.ok && response.status !== 404) {
     throw new Error((await response.text()) || "Chat Server 会话删除失败");
@@ -210,10 +388,10 @@ export async function deleteChatServerSession(sessionId: string, port?: number) 
 }
 
 export async function stopChatServerRun(sessionId: string, port?: number) {
-  await initializeChatServer();
-  const response = await fetch(
-    `${chatServerUrl(port ?? CHAT_SERVER_DEFAULT_PORT)}/v1/sessions/${encodeURIComponent(sessionId)}/runs/stop`,
-    { method: "POST", headers: chatServerHeaders() },
+  const response = await requestChatServerResponse(
+    `/v1/sessions/${encodeURIComponent(sessionId)}/runs/stop`,
+    { method: "POST" },
+    port,
   );
   if (!response.ok) throw new Error((await response.text()) || "Chat Server 停止任务失败");
   return (await response.json()) as { stopped: boolean };

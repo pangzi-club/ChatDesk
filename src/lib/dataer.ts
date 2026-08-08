@@ -1,4 +1,5 @@
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
+import { loadChatServerConfig, saveChatServerConfig } from "@/lib/chat-server";
 import { settingsStore } from "@/lib/settings-store";
 
 // —— 配置 ——
@@ -22,6 +23,12 @@ function resolveFetch(): typeof fetch {
 }
 
 export async function loadDataerApiKey(): Promise<string> {
+  try {
+    const value = (await loadChatServerConfig()).apiKeys.dataer;
+    if (value) return value;
+  } catch {
+    // Fall back to the legacy store during bootstrap.
+  }
   if (isTauri()) {
     try {
       const stored = await settingsStore.get<string>(DATAER_API_KEY_STORE_KEY);
@@ -37,6 +44,7 @@ export async function loadDataerApiKey(): Promise<string> {
 }
 
 export async function saveDataerApiKey(apiKey: string) {
+  await saveChatServerConfig({ apiKeys: { dataer: apiKey } });
   if (isTauri()) {
     try {
       await settingsStore.set(DATAER_API_KEY_STORE_KEY, apiKey);

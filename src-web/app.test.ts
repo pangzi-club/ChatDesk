@@ -30,15 +30,14 @@ function auth() {
 }
 
 describe("chat server", () => {
-  it("exposes health and API routes without authentication", async () => {
+  it("exposes health without authentication and protects API routes", async () => {
     const server = await createTestServer();
     const health = await server.app.request("http://localhost/health");
     assert.equal(health.status, 200);
     assert.deepEqual((await health.json()).ok, true);
 
     const sessions = await server.app.request("http://localhost/v1/sessions");
-    assert.equal(sessions.status, 200);
-    assert.deepEqual(await sessions.json(), []);
+    assert.equal(sessions.status, 401);
   });
 
   it("creates, lists, reads and deletes sessions", async () => {
@@ -109,5 +108,37 @@ describe("chat server", () => {
       if (previous === undefined) delete process.env.CHAT_SERVER_LEGACY_DIRS;
       else process.env.CHAT_SERVER_LEGACY_DIRS = previous;
     }
+  });
+
+  it("owns chat config, memory and attachments", async () => {
+    const server = await createTestServer();
+    const config = await server.app.request("http://localhost/v1/chat-config", {
+      method: "PATCH",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKeys: { dataer: "secret" }, selectedSkillIds: ["skill-a"] }),
+    });
+    assert.equal(config.status, 200);
+    assert.deepEqual((await config.json()).apiKeys, { dataer: "secret" });
+
+    const memory = await server.app.request("http://localhost/v1/memory", {
+      method: "PUT",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ schemaVersion: 1, enabled: true, items: [{ id: "m1", content: "事实" }] }),
+    });
+    assert.equal(memory.status, 200);
+
+    await server.app.request("http://localhost/v1/sessions", {
+      method: "POST",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "attachment-session" }),
+    });
+    const attachment = await server.app.request("http://localhost/v1/sessions/attachment-session/attachments", {
+      method: "POST",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "file-1", fileName: "note.txt", base64: Buffer.from("hello").toString("base64") }),
+    });
+    assert.equal(attachment.status, 201);
+    const downloaded = await server.app.request("http://localhost/v1/sessions/attachment-session/attachments/file-1", { headers: auth() });
+    assert.equal(await downloaded.text(), "hello");
   });
 });

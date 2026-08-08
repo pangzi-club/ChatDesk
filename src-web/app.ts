@@ -9,6 +9,11 @@ import { EventHub } from "./events.ts";
 import { RunRegistry } from "./run-registry.ts";
 import type { ChatSession, RunStartInput } from "./protocol.ts";
 import { SessionStore } from "./store.ts";
+import { ArchiveStore } from "./archive-store.ts";
+import { ChatConfigStore } from "./chat-config.ts";
+import { MemoryStore } from "./memory-store.ts";
+import { scanSkills } from "./skills-store.ts";
+import { McpRuntime } from "./mcp-runtime.ts";
 
 const runInputSchema = z.object({
   messages: z.array(z.unknown()).optional(),
@@ -18,10 +23,11 @@ const runInputSchema = z.object({
     name: z.string().min(1),
     provider: z.string().optional(),
     baseUrl: z.string().url(),
-    apiKey: z.string().min(1),
+    apiKey: z.string().min(1).optional(),
     responsive: z.boolean().optional(),
     supportsTools: z.boolean().optional(),
-  }),
+  }).optional(),
+  modelId: z.string().optional(),
   system: z.string().optional(),
   memory: z.string().optional(),
   cwd: z.string().optional(),
@@ -75,7 +81,14 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     await store.importDirectory(legacyDir);
   }
   const events = new EventHub();
-  const runs = new RunRegistry(store, events);
+  const chatConfig = new ChatConfigStore(config.dataDir);
+  await chatConfig.init(process.env.CHAT_SERVER_LEGACY_SETTINGS_FILE);
+  const runs = new RunRegistry(store, events, chatConfig);
+  const memory = new MemoryStore(config.dataDir);
+  await memory.init(process.env.CHAT_SERVER_LEGACY_MEMORY_FILE);
+  const archive = new ArchiveStore(config.dataDir);
+  await archive.init(process.env.CHAT_SERVER_LEGACY_ARCHIVE_DIR);
+  const mcp = new McpRuntime();
   const app = new Hono();
 
   app.use(
@@ -90,8 +103,16 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
       ],
     }),
   );
-  // Authentication is intentionally disabled for the local desktop server for now.
-  // Keep the runtime token plumbing in place so this boundary can be restored later.
+  app.use("*", async (c, next) => {
+    if (c.req.method === "OPTIONS" || c.req.path === "/health") return next();
+    if (!config.token) return next();
+    const authorization = c.req.header("Authorization");
+    const queryToken = c.req.query("token");
+    if (authorization !== `Bearer ${config.token}` && queryToken !== config.token) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+    return next();
+  });
 
   app.get("/health", (c) =>
     c.json({
@@ -113,6 +134,145 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
       return c.json({ host: config.host, port, restartRequired: port !== config.port });
     } catch (error) {
       return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+
+  app.get("/v1/chat-config", (c) => c.json(chatConfig.get()));
+  app.patch("/v1/chat-config", async (c) => {
+    try {
+      return c.json(await chatConfig.update(await c.req.json()));
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+
+  app.get("/v1/memory", (c) => c.json(memory.get()));
+  app.put("/v1/memory", async (c) => {
+    try {
+      return c.json(await memory.save(await c.req.json()));
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+
+  app.get("/v1/skills", async (c) => c.json(await scanSkills()));
+  app.get("/v1/skills/selection", (c) => c.json(chatConfig.get().selectedSkillIds));
+  app.put("/v1/skills/selection", async (c) => {
+    try {
+      const body = await c.req.json();
+      return c.json(await chatConfig.update({ selectedSkillIds: body }));
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+  app.get("/v1/mcp", (c) => c.json(chatConfig.get().mcpServers));
+  app.put("/v1/mcp", async (c) => {
+    try {
+      return c.json(await chatConfig.update({ mcpServers: await c.req.json() }));
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+  app.post("/v1/mcp/start", async (c) => {
+    try {
+      await mcp.start(await c.req.json());
+      return c.body(null, 204);
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+  app.post("/v1/mcp/test", async (c) => {
+    try {
+      return c.json(await mcp.test(await c.req.json()));
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+  app.get("/v1/mcp/:id/tools", async (c) => {
+    try {
+      return c.json(await mcp.listTools(c.req.param("id")));
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+  app.post("/v1/mcp/:id/call", async (c) => {
+    try {
+      const body = await c.req.json();
+      return c.json(await mcp.callTool(c.req.param("id"), body.toolName, body.arguments));
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+  app.post("/v1/mcp/:id/stop", async (c) => {
+    await mcp.stop(c.req.param("id"));
+    return c.body(null, 204);
+  });
+
+  app.get("/v1/archive", async (c) => c.json(await archive.list()));
+  app.get("/v1/archive/:id", async (c) => {
+    const value = await archive.get(c.req.param("id"));
+    return value ? c.json(value) : jsonError("归档不存在", 404);
+  });
+  app.put("/v1/archive/:id", async (c) => {
+    try {
+      const body = await c.req.json();
+      await archive.save({ ...body, id: c.req.param("id") });
+      return c.json({ id: c.req.param("id"), overwritten: Boolean(await archive.get(c.req.param("id"))) });
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+  app.delete("/v1/archive/:id", async (c) => {
+    await archive.delete(c.req.param("id"));
+    return c.body(null, 204);
+  });
+  app.post("/v1/archive/scan/:source", async (c) => {
+    const source = c.req.param("source");
+    const root = source === "codex" ? path.join(process.env.HOME || "", ".codex") : path.join(process.env.HOME || "", ".claude");
+    const results: Array<Record<string, unknown>> = [];
+    const walk = async (directory: string): Promise<void> => {
+      const entries = await (await import("node:fs/promises")).readdir(directory, { withFileTypes: true }).catch(() => []);
+      for (const entry of entries) {
+        const target = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+          await walk(target);
+        } else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
+          const metadata = await (await import("node:fs/promises")).stat(target).catch(() => null);
+          results.push({ source, externalId: entry.name.replace(/\.jsonl$/i, ""), sourcePath: target, updatedAt: metadata?.mtime.toISOString(), size: metadata?.size ?? 0 });
+        }
+      }
+    };
+    await walk(root);
+    return c.json(results);
+  });
+  app.post("/v1/archive/read-file", async (c) => {
+    try {
+      const body = await c.req.json();
+      const requested = typeof body.path === "string" ? body.path : "";
+      const roots = [path.join(process.env.HOME || "", ".codex"), path.join(process.env.HOME || "", ".claude")];
+      const resolved = path.resolve(requested);
+      if (!roots.some((root) => resolved === root || resolved.startsWith(`${root}${path.sep}`))) {
+        return jsonError("path is outside allowed import roots", 403);
+      }
+      const { readFile } = await import("node:fs/promises");
+      return c.text(await readFile(resolved, "utf8"));
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+  app.post("/v1/archive/path-exists", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const requested = typeof body.path === "string" ? body.path : "";
+    const roots = [path.join(process.env.HOME || "", ".codex"), path.join(process.env.HOME || "", ".claude")];
+    const resolved = path.resolve(requested);
+    const allowed = roots.some((root) => resolved === root || resolved.startsWith(`${root}${path.sep}`));
+    if (!allowed) return c.json({ exists: false });
+    const { access } = await import("node:fs/promises");
+    try {
+      await access(resolved);
+      return c.json({ exists: true });
+    } catch {
+      return c.json({ exists: false });
     }
   });
 
@@ -188,6 +348,31 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     const id = c.req.param("id");
     runs.stop(id);
     await store.delete(id);
+    return c.body(null, 204);
+  });
+
+  app.post("/v1/sessions/:id/attachments", async (c) => {
+    try {
+      const session = await store.get(c.req.param("id"));
+      if (!session) return jsonError("会话不存在", 404);
+      const body = await c.req.json();
+      const attachmentId = typeof body.id === "string" ? body.id : randomUUID();
+      const fileName = typeof body.fileName === "string" ? body.fileName : "attachment";
+      const base64 = typeof body.base64 === "string" ? body.base64 : "";
+      const bytes = Buffer.from(base64.includes(",") ? base64.split(",").pop() ?? "" : base64, "base64");
+      const savedPath = await store.saveAttachment(session.id, attachmentId, fileName, bytes);
+      return c.json({ id: attachmentId, fileName, path: savedPath, size: bytes.byteLength }, 201);
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+  app.get("/v1/sessions/:id/attachments/:attachmentId", async (c) => {
+    const value = await store.readAttachment(c.req.param("id"), c.req.param("attachmentId"));
+    if (!value) return jsonError("附件不存在", 404);
+    return new Response(value.bytes, { headers: { "Content-Type": "application/octet-stream" } });
+  });
+  app.delete("/v1/sessions/:id/attachments/:attachmentId", async (c) => {
+    await store.deleteAttachment(c.req.param("id"), c.req.param("attachmentId"));
     return c.body(null, 204);
   });
 

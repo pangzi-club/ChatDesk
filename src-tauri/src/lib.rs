@@ -2,9 +2,7 @@ mod commands;
 mod models;
 mod services;
 
-use commands::mcp::McpManager;
 use services::automation::AutomationScheduler;
-use services::browser::BrowserManager;
 use services::chat_server::ChatServerManager;
 use tauri::{
     image::Image,
@@ -43,17 +41,16 @@ pub fn run() {
         .setup(|app| {
             let scheduler = AutomationScheduler::start(app.handle())?;
             app.manage(scheduler);
-            let chat_server = match ChatServerManager::start(app.handle()) {
-                Ok(manager) => manager,
-                Err(error) if cfg!(debug_assertions) => {
-                    eprintln!("Chat Server sidecar unavailable in development: {error}");
-                    ChatServerManager::unavailable(app.handle())
+            let chat_server = if cfg!(debug_assertions) {
+                eprintln!("Chat Server is managed by pnpm dev:all in development");
+                ChatServerManager::unavailable(app.handle())
+            } else {
+                match ChatServerManager::start(app.handle()) {
+                    Ok(manager) => manager,
+                    Err(error) => return Err(error.into()),
                 }
-                Err(error) => return Err(error.into()),
             };
             app.manage(chat_server);
-            app.manage(BrowserManager::new(app.handle().clone()));
-            app.manage(McpManager::default());
             let dashboard_item =
                 MenuItem::with_id(app, "dashboard", "Dashboard", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
@@ -95,36 +92,8 @@ pub fn run() {
             commands::sandbox::workspace_search_files,
             set_tray_enabled,
             commands::automation::sync_automation_tasks,
-            commands::browser::browser_open,
-            commands::browser::browser_screenshot,
-            commands::browser::browser_click,
-            commands::browser::browser_eval,
-            commands::browser::browser_close,
             commands::chat_server::chat_server_info,
             commands::chat_server::chat_server_restart,
-            commands::chat::read_chat_index,
-            commands::chat::write_chat_index,
-            commands::chat::read_chat_session,
-            commands::chat::write_chat_session,
-            commands::chat::write_chat_attachment,
-            commands::chat::delete_chat_session,
-            commands::chat::read_chat_memory,
-            commands::chat::write_chat_memory,
-            commands::mcp::mcp_start,
-            commands::mcp::mcp_list_tools,
-            commands::mcp::mcp_call_tool,
-            commands::mcp::mcp_stop,
-            commands::mcp::mcp_test_connection,
-            commands::skills::scan_skills,
-            commands::chat_archive::read_chat_archive_index,
-            commands::chat_archive::write_chat_archive_index,
-            commands::chat_archive::read_chat_archive_session,
-            commands::chat_archive::write_chat_archive_session,
-            commands::chat_archive::delete_chat_archive_session,
-            commands::chat_archive::read_text_file,
-            commands::chat_archive::path_exists,
-            commands::chat_archive::scan_codex_sessions,
-            commands::chat_archive::scan_claude_sessions,
             commands::workspaces::select_workspace_directory,
             commands::workspaces::inspect_workspace,
         ])

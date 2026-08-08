@@ -1,4 +1,6 @@
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import path from "node:path";
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
@@ -6,6 +8,7 @@ import { z } from "zod";
 const MAX_FILE_BYTES = 512 * 1024;
 const MAX_SEARCH_RESULTS = 500;
 const SKIPPED_DIRECTORIES = new Set([".git", "node_modules", "target", "dist"]);
+const execFileAsync = promisify(execFile);
 
 function rootPath(cwd: string) {
   const value = cwd.trim();
@@ -89,7 +92,7 @@ async function searchFiles(
 }
 
 export function createWorkspaceTools(cwd: string): ToolSet {
-  return {
+  const tools: ToolSet = {
     list_dir: tool({
       description: "列出当前 workspace 内的文件与子目录。",
       inputSchema: z.object({ path: z.string().optional() }),
@@ -110,5 +113,42 @@ export function createWorkspaceTools(cwd: string): ToolSet {
       }),
       execute: (options) => searchFiles(cwd, options),
     }),
+    write_file: tool({
+      description: "创建或覆盖当前 workspace 内的文本文件。",
+      inputSchema: z.object({ path: z.string().min(1), content: z.string() }),
+      execute: async ({ path: relativePath, content }) => {
+        const root = rootPath(cwd);
+        const target = withinRoot(root, relativePath);
+        await writeFile(target, content, "utf8");
+        return { path: path.relative(root, target), bytes: Buffer.byteLength(content) };
+      },
+    }),
+    edit_file: tool({
+      description: "在当前 workspace 内将唯一匹配的文本替换为新内容。",
+      inputSchema: z.object({ path: z.string().min(1), oldText: z.string().min(1), newText: z.string() }),
+      execute: async ({ path: relativePath, oldText, newText }) => {
+        const root = rootPath(cwd);
+        const target = withinRoot(root, relativePath);
+        const content = await readFile(target, "utf8");
+        const count = content.split(oldText).length - 1;
+        if (count !== 1) throw new Error(count === 0 ? "未找到要替换的文本" : "oldText 必须只匹配一次");
+        await writeFile(target, content.replace(oldText, newText), "utf8");
+        return { path: path.relative(root, target), changed: true };
+      },
+    }),
+    bash: tool({
+      description: "在当前 workspace 中执行 Bash 命令。",
+      inputSchema: z.object({ command: z.string().min(1) }),
+      execute: async ({ command }) => {
+        const root = rootPath(cwd);
+        const result = await execFileAsync("bash", ["-lc", command], {
+          cwd: root,
+          timeout: 120_000,
+          maxBuffer: 2 * 1024 * 1024,
+        });
+        return { code: 0, out: `${result.stdout}${result.stderr}`.slice(0, 2 * 1024 * 1024) };
+      },
+    }),
   };
+  return tools;
 }

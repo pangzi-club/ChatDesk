@@ -1,7 +1,9 @@
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
+import { BrowserRuntime } from "./browser-runtime.ts";
 
 const timeoutSchema = z.number().int().min(100).max(60_000).optional();
+const browser = new BrowserRuntime();
 
 const clientTools: ToolSet = {
   list_dir: tool({
@@ -44,6 +46,7 @@ const clientTools: ToolSet = {
       sessionId: z.string().min(1).optional(),
       timeoutMs: timeoutSchema,
     }),
+    execute: ({ url, sessionId, timeoutMs }) => browser.request("open", { url, sessionId, timeoutMs }),
   }),
   browser_screenshot: tool({
     description: "截取当前浏览器页面。",
@@ -51,6 +54,7 @@ const clientTools: ToolSet = {
       sessionId: z.string().min(1),
       fullPage: z.boolean().optional(),
     }),
+    execute: ({ sessionId, fullPage }) => browser.request("screenshot", { sessionId, fullPage }),
   }),
   browser_click: tool({
     description: "按 CSS selector 点击当前浏览器页面元素。",
@@ -61,6 +65,7 @@ const clientTools: ToolSet = {
       clickCount: z.number().int().min(1).max(3).optional(),
       timeoutMs: timeoutSchema,
     }),
+    execute: ({ sessionId, selector, button, clickCount, timeoutMs }) => browser.request("click", { sessionId, selector, button, clickCount, timeoutMs }),
   }),
   browser_eval: tool({
     description: "在当前浏览器页面执行 JavaScript。",
@@ -69,10 +74,12 @@ const clientTools: ToolSet = {
       expression: z.string().min(1).max(20_000),
       timeoutMs: timeoutSchema,
     }),
+    execute: ({ sessionId, expression, timeoutMs }) => browser.request("eval", { sessionId, expression, timeoutMs }),
   }),
   browser_close: tool({
     description: "关闭一个浏览器 session。",
     inputSchema: z.object({ sessionId: z.string().min(1) }),
+    execute: ({ sessionId }) => browser.request("close", { sessionId }),
   }),
 };
 

@@ -5,22 +5,23 @@ import {
   createUIMessageStreamResponse,
   stepCountIs,
   streamText,
+  type ToolSet,
   type UIMessage,
 } from "ai";
 import { createClientTools } from "./client-tools.ts";
 import type { EventHub } from "./events.ts";
 import { deriveTitle, type ChatSession, type RunStartInput, type SessionStatus } from "./protocol.ts";
 import { SessionStore } from "./store.ts";
+import { createWorkspaceTools } from "./workspace-tools.ts";
+import type { ChatConfigStore } from "./chat-config.ts";
+import { createBusinessTools } from "./business-tools.ts";
+import { openai } from "@ai-sdk/openai";
 
 type ActiveRun = {
   id: string;
   sessionId: string;
   controller: AbortController;
 };
-
-function modelId(input: RunStartInput) {
-  return input.model.name.trim();
-}
 
 function baseUrl(value: string) {
   return value.trim().replace(/\/+$/, "").replace(/\/chat\/completions$/i, "").replace(/\/responses$/i, "");
@@ -30,16 +31,28 @@ function assistantMessage(id: string, text: string): UIMessage {
   return { id, role: "assistant", parts: text ? [{ type: "text", text }] : [] };
 }
 
+function errorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
 export class RunRegistry {
   private readonly active = new Map<string, ActiveRun>();
   private readonly statuses = new Map<string, SessionStatus>();
   private readonly drafts = new Map<string, UIMessage>();
   private readonly store: SessionStore;
   private readonly events: EventHub;
+  private readonly chatConfig: ChatConfigStore;
 
-  constructor(store: SessionStore, events: EventHub) {
+  constructor(store: SessionStore, events: EventHub, chatConfig: ChatConfigStore) {
     this.store = store;
     this.events = events;
+    this.chatConfig = chatConfig;
   }
 
   statusMap() {
@@ -61,7 +74,8 @@ export class RunRegistry {
 
   async start(sessionId: string, input: RunStartInput) {
     if (this.active.has(sessionId)) throw new Error("该会话已有正在运行的任务");
-    if (!input.model?.apiKey || !input.model.baseUrl || !input.model.name) {
+    const model = resolveConfiguredModel(this.chatConfig.get(), input);
+    if (!model?.apiKey || !model.baseUrl || !model.name) {
       throw new Error("模型配置不完整");
     }
 
@@ -77,7 +91,7 @@ export class RunRegistry {
       ...current,
       title: input.title?.trim() || deriveTitle(messages),
       updatedAt: now,
-      modelId: input.model.id || input.model.name,
+      modelId: model.id || model.name,
       workspaceId: input.workspaceId ?? current.workspaceId,
       cwd: input.cwd ?? current.cwd,
       messages,
@@ -90,10 +104,10 @@ export class RunRegistry {
     this.drafts.set(sessionId, assistantMessage(runId, ""));
     this.setStatus(sessionId, "submitted", runId);
 
-    const provider = createOpenAI({ apiKey: input.model.apiKey, baseURL: baseUrl(input.model.baseUrl) });
-    const languageModel = input.model.responsive
-      ? provider.responses(modelId(input))
-      : provider.chat(modelId(input));
+    const provider = createOpenAI({ apiKey: model.apiKey, baseURL: baseUrl(model.baseUrl) });
+    const languageModel = model.responsive
+      ? provider.responses(model.name.trim())
+      : provider.chat(model.name.trim());
     const modelMessages = await convertToModelMessages(messages);
     const system = [input.system, input.memory, input.cwd ? `当前 workspace：${input.cwd}` : ""]
       .filter(Boolean)
@@ -101,8 +115,17 @@ export class RunRegistry {
     const result = streamText({
       model: languageModel,
       messages: modelMessages,
-      ...(system ? (input.model.responsive ? { instructions: system } : { system }) : {}),
-      tools: input.model.supportsTools ? createClientTools(input.toolNames) : undefined,
+      ...(system ? (model.responsive ? { instructions: system } : { system }) : {}),
+      tools: model.supportsTools
+        ? {
+            ...(createClientTools(input.toolNames) ?? {}),
+            ...createWorkspaceToolsForInput({ ...input, model }),
+            ...selectTools(createBusinessTools(this.chatConfig.get().apiKeys), input.toolNames),
+            ...(input.toolNames?.includes("web_search") && model.responsive
+              ? { web_search: openai.tools.webSearch({}) as unknown as ToolSet[string] }
+              : {}),
+          }
+        : undefined,
       stopWhen: stepCountIs(20),
       abortSignal: controller.signal,
     });
@@ -112,6 +135,7 @@ export class RunRegistry {
       onFinish: ({ messages: finishedMessages }) => {
         completedMessages = finishedMessages;
       },
+      onError: errorMessage,
     });
     const [clientStream, observerStream] = uiStream.tee();
     void this.consume(session, runId, observerStream, () => completedMessages);
@@ -172,11 +196,39 @@ export class RunRegistry {
       this.setStatus(sessionId, "ready", runId);
       this.events.publish({ type: "run.done", sessionId, runId });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = errorMessage(error);
       this.setStatus(sessionId, "error", runId);
       this.events.publish({ type: "run.error", sessionId, runId, error: message });
     } finally {
       this.active.delete(sessionId);
     }
   }
+}
+
+function resolveConfiguredModel(
+  config: { models: unknown[]; apiKeys: Record<string, string> },
+  input: RunStartInput,
+) {
+  const candidate = input.model ?? config.models.find((item) => {
+    if (!item || typeof item !== "object") return false;
+    const value = item as { id?: unknown; name?: unknown };
+    return value.id === input.modelId || value.name === input.modelId;
+  });
+  if (!candidate || typeof candidate !== "object") return undefined;
+  const value = candidate as import("./protocol.ts").ServerModelConfig;
+  return { ...value, apiKey: value.apiKey || config.apiKeys[value.id ?? value.name] };
+}
+
+function createWorkspaceToolsForInput(input: RunStartInput) {
+  if (!input.cwd) return {};
+  const names = new Set(input.toolNames ?? []);
+  if (!["list_dir", "search_files", "read_file", "write_file", "edit_file", "terminal", "bash"].some((name) => names.has(name))) return {};
+  const tools = createWorkspaceTools(input.cwd);
+  const selected = names.has("terminal") ? ["bash"] : ["list_dir", "search_files", "read_file", "write_file", "edit_file", "bash"];
+  return Object.fromEntries(selected.filter((name) => names.has(name) || (name === "bash" && names.has("terminal"))).map((name) => [name, tools[name]]));
+}
+
+function selectTools(tools: Record<string, unknown>, names: string[] | undefined) {
+  const selected = new Set(names ?? []);
+  return Object.fromEntries(Object.entries(tools).filter(([name]) => selected.has(name)));
 }

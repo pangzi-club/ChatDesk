@@ -16,7 +16,7 @@ export type ServerModelConfig = {
   name: string;
   provider?: string;
   baseUrl: string;
-  apiKey: string;
+  apiKey?: string;
   responsive?: boolean;
   supportsTools?: boolean;
 };
@@ -53,7 +53,8 @@ export type SessionIndexItem = {
 export type RunStartInput = {
   messages?: UIMessage[];
   message?: UIMessage;
-  model: ServerModelConfig;
+  model?: ServerModelConfig;
+  modelId?: string;
   system?: string;
   memory?: string;
   cwd?: string;

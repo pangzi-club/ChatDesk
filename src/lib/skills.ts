@@ -1,6 +1,10 @@
-import { invoke } from "@tauri-apps/api/core";
-
-import { settingsStore } from "@/lib/settings-store";
+import {
+  loadChatServerConfig,
+  loadChatServerSkillSelection,
+  loadChatServerSkills,
+  saveChatServerConfig,
+  saveChatServerSkillSelection,
+} from "@/lib/chat-server";
 
 export type SkillSource = "agents" | "agent" | "codex" | "claude" | "workspace" | string;
 
@@ -12,15 +16,6 @@ export type SkillDefinition = {
   path: string;
   content: string;
 };
-
-const STORE_KEY = "skills";
-const LEGACY_KEY = "m-dashboard-skills-v1";
-const CHAT_SELECTION_STORE_KEY = "chatSkills";
-const CHAT_SELECTION_STORAGE_KEY = "m-dashboard-chat-skills-v1";
-
-function isTauri() {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
 
 function isSkill(value: unknown): value is SkillDefinition {
   if (!value || typeof value !== "object") return false;
@@ -42,9 +37,8 @@ function normalizeSkillIds(value: unknown): string[] {
 }
 
 export async function loadAvailableSkills(): Promise<SkillDefinition[]> {
-  if (!isTauri()) return [];
   try {
-    const items = await invoke<unknown>("scan_skills");
+    const items = await loadChatServerSkills();
     return Array.isArray(items) ? items.filter(isSkill) : [];
   } catch (error) {
     console.error("Failed to scan local skills", error);
@@ -53,73 +47,23 @@ export async function loadAvailableSkills(): Promise<SkillDefinition[]> {
 }
 
 export async function loadInstalledSkillIds(): Promise<string[]> {
-  if (isTauri()) {
-    try {
-      const stored = await settingsStore.get<unknown>(STORE_KEY);
-      if (Array.isArray(stored)) {
-        return stored.filter((item): item is string => typeof item === "string");
-      }
-    } catch (error) {
-      console.error("Failed to load skill settings", error);
-    }
-  }
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(LEGACY_KEY) ?? "[]") as unknown;
-    return Array.isArray(parsed)
-      ? parsed.filter((item): item is string => typeof item === "string")
-      : [];
-  } catch {
-    return [];
-  }
+  const config = await loadChatServerConfig();
+  return config.installedSkillIds;
 }
 
 export async function saveInstalledSkillIds(ids: string[]) {
   const next = [...new Set(ids)];
-  if (isTauri()) {
-    await settingsStore.set(STORE_KEY, next);
-    await settingsStore.save();
-    window.localStorage.removeItem(LEGACY_KEY);
-  } else {
-    window.localStorage.setItem(LEGACY_KEY, JSON.stringify(next));
-  }
+  await saveChatServerConfig({ installedSkillIds: next });
   return next;
 }
 
 export async function loadChatSkillSelection(): Promise<string[]> {
-  if (isTauri()) {
-    try {
-      const stored = await settingsStore.get<unknown>(CHAT_SELECTION_STORE_KEY);
-      if (stored !== undefined) {
-        return normalizeSkillIds(stored);
-      }
-    } catch (error) {
-      console.error("Failed to load chat skill selection from Tauri Store", error);
-    }
-  }
-
-  try {
-    return normalizeSkillIds(
-      JSON.parse(window.localStorage.getItem(CHAT_SELECTION_STORAGE_KEY) ?? "[]"),
-    );
-  } catch {
-    return [];
-  }
+  return normalizeSkillIds(await loadChatServerSkillSelection());
 }
 
 export async function saveChatSkillSelection(ids: string[]) {
   const next = normalizeSkillIds(ids);
-  if (isTauri()) {
-    try {
-      await settingsStore.set(CHAT_SELECTION_STORE_KEY, next);
-      await settingsStore.save();
-      window.localStorage.removeItem(CHAT_SELECTION_STORAGE_KEY);
-      return next;
-    } catch (error) {
-      console.error("Failed to save chat skill selection to Tauri Store", error);
-    }
-  }
-
-  window.localStorage.setItem(CHAT_SELECTION_STORAGE_KEY, JSON.stringify(next));
+  await saveChatServerSkillSelection(next);
   return next;
 }
 

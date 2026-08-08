@@ -6,7 +6,6 @@ import {
   DefaultChatTransport,
   getToolName,
   isToolUIPart,
-  lastAssistantMessageIsCompleteWithToolCalls,
   type UIMessage,
 } from "ai";
 import { Streamdown } from "streamdown";
@@ -73,7 +72,9 @@ import {
   chatServerUrl,
   ensureChatServerSession,
   initializeChatServer,
+  loadChatServerConfig,
   loadChatServerPort,
+  saveChatServerConfig,
   stopChatServerRun,
   subscribeChatServerEvents,
 } from "@/lib/chat-server";
@@ -236,50 +237,13 @@ function ChatPage() {
       ),
     [selectedModel, selectedSkillIds, sessionId, workspaceKey],
   );
-  const addToolOutputRef = useRef<
-    ((options: { tool: string; toolCallId: string; output: unknown }) => void) | null
-  >(null);
-  const { messages, setMessages, sendMessage, stop, status, error, addToolOutput } = useChat({
+  const { messages, setMessages, sendMessage, stop, status, error } = useChat({
     id: sessionId,
     transport,
-    onToolCall: ({ toolCall }) => {
-      void (async () => {
-        const active = await resolveActiveTools(
-          toolsRef.current,
-          selectedModelRef.current,
-          () => workspaceRef.current,
-        );
-        const configured = active.tools[toolCall.toolName] as
-          | {
-              execute?: (input: unknown, options: unknown) => unknown;
-            }
-          | undefined;
-        let output: unknown;
-        if (!configured?.execute) {
-          output = { error: `工具未启用：${toolCall.toolName}` };
-        } else {
-          try {
-            output = await configured.execute(toolCall.input, {
-              toolCallId: toolCall.toolCallId,
-            });
-          } catch (toolError) {
-            output = { error: toolError instanceof Error ? toolError.message : String(toolError) };
-          }
-        }
-        addToolOutputRef.current?.({
-          tool: toolCall.toolName,
-          toolCallId: toolCall.toolCallId,
-          output,
-        });
-      })();
-    },
-    sendAutomaticallyWhen: ({ messages: nextMessages }) =>
-      lastAssistantMessageIsCompleteWithToolCalls({ messages: nextMessages }),
     onError: (chatError) => {
       console.error("Chat request failed", chatError);
     },
   });
-  addToolOutputRef.current = addToolOutput;
   const activeSessionRef = useRef(sessionId);
   activeSessionRef.current = sessionId;
   const chatStatusRef = useRef(status);
@@ -929,19 +893,25 @@ function ChatPage() {
               </div>
             </div>
           )}
+          {isGenerating ? (
+            <div
+              aria-live="polite"
+              className="chat-generation-status chat-generation-status-in-message"
+              role="status"
+            >
+              <span aria-hidden="true" className="chat-generation-status-dot" />
+              <span className="chat-generation-status-label">{generationPhase}</span>
+              <span className="chat-generation-status-elapsed">
+                已等待 {generationElapsedLabel}
+              </span>
+              <span className="chat-generation-status-detail">{generationDetail}</span>
+            </div>
+          ) : null}
         </div>
       </div>
 
       <div className="chat-composer-wrap">
         {error && <p className="chat-error">{error.message}</p>}
-        {isGenerating ? (
-          <div aria-live="polite" className="chat-generation-status" role="status">
-            <span aria-hidden="true" className="chat-generation-status-dot" />
-            <span className="chat-generation-status-label">{generationPhase}</span>
-            <span className="chat-generation-status-elapsed">已等待 {generationElapsedLabel}</span>
-            <span className="chat-generation-status-detail">{generationDetail}</span>
-          </div>
-        ) : null}
         {messages.length > 0 && availablePacks.length > 0 ? (
           <div className="chat-tools-composer-hint">
             <span>Tools：{availablePacks.map((id) => getPackMeta(id).label).join(" · ")}</span>
@@ -1249,18 +1219,23 @@ function createModelTransport(
       const workspaceHint = cwd
         ? `当前 workspace：${cwd}\n本地文件工具以此目录为根。`
         : "当前未选择 workspace。";
+      const serverConfig = await loadChatServerConfig();
+      const models = [
+        ...serverConfig.models.filter(
+          (item) => !item || typeof item !== "object" || (item as { id?: unknown }).id !== model.id,
+        ),
+        { ...model, apiKey: undefined },
+      ];
+      await saveChatServerConfig({
+        models,
+        chatTools: getToolsSettings(),
+        apiKeys: { ...serverConfig.apiKeys, [model.id]: model.apiKey },
+        selectedSkillIds: getSkills().map((skill) => skill.id),
+      });
       return {
         body: {
           messages,
-          model: {
-            id: model.id,
-            name: model.name,
-            provider: model.provider,
-            baseUrl: model.baseUrl,
-            apiKey: model.apiKey,
-            responsive: model.responsive,
-            supportsTools: model.supportsTools,
-          },
+          modelId: model.id,
           system: [workspaceHint, toolsHint, skillsHint].filter(Boolean).join("\n\n"),
           memory: memorySystem,
           cwd: cwd || undefined,

@@ -124,6 +124,41 @@ fn spawn_server(app: &AppHandle) -> Result<(Child, ChatServerInfo), String> {
         .stdin(Stdio::null())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
+    if let Ok(app_data_dir) = app.path().app_data_dir() {
+        command
+            .env(
+                "CHAT_SERVER_LEGACY_MEMORY_FILE",
+                app_data_dir.join("chat/memory.json"),
+            )
+            .env(
+                "CHAT_SERVER_LEGACY_ARCHIVE_DIR",
+                app_data_dir.join("chat-archive"),
+            )
+            .env(
+                "CHAT_SERVER_LEGACY_SETTINGS_FILE",
+                app_data_dir.join("settings.json"),
+            );
+    }
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        for candidate in [
+            resource_dir.join("browser-worker"),
+            resource_dir.join("resources/browser-worker"),
+        ] {
+            if candidate.is_file() {
+                command.env("CHAT_SERVER_BROWSER_WORKER", candidate);
+                break;
+            }
+        }
+        for candidate in [
+            resource_dir.join("playwright-browsers"),
+            resource_dir.join("resources/playwright-browsers"),
+        ] {
+            if candidate.is_dir() {
+                command.env("CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH", candidate);
+                break;
+            }
+        }
+    }
     let legacy_dirs = find_legacy_dirs(app, &data_dir);
     if !legacy_dirs.is_empty() {
         let delimiter = if cfg!(windows) { ';' } else { ':' };

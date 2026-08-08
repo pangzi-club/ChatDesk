@@ -1,4 +1,5 @@
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
+import { loadChatServerConfig, saveChatServerConfig } from "@/lib/chat-server";
 import { settingsStore } from "@/lib/settings-store";
 
 export const COMMIT_API_BASE_URL =
@@ -14,6 +15,12 @@ function resolveFetch(): typeof fetch {
 }
 
 export async function loadCommitApiKey(): Promise<string> {
+  try {
+    const value = (await loadChatServerConfig()).apiKeys.commit;
+    if (value) return value;
+  } catch {
+    // Fall back to the legacy store during bootstrap.
+  }
   if (isTauri()) {
     try {
       const stored = await settingsStore.get<string>(COMMIT_API_KEY_STORE_KEY);
@@ -26,6 +33,7 @@ export async function loadCommitApiKey(): Promise<string> {
 }
 
 export async function saveCommitApiKey(apiKey: string) {
+  await saveChatServerConfig({ apiKeys: { commit: apiKey } });
   if (isTauri()) {
     try {
       await settingsStore.set(COMMIT_API_KEY_STORE_KEY, apiKey);
