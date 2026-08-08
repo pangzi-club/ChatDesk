@@ -477,7 +477,7 @@ function WorkspaceConversationGroups() {
   const location = useLocation();
   const queryClient = useQueryClient();
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set());
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
+  const [collapseOverride, setCollapseOverride] = useState<Record<string, boolean>>({});
   const [serverStatuses, setServerStatuses] = useState<Record<string, ChatServerSession["status"]>>(
     {},
   );
@@ -561,13 +561,14 @@ function WorkspaceConversationGroups() {
     return cleanup;
   }, [queryClient, serverPort]);
 
-  function toggleCollapsed(groupKey: string) {
-    setCollapsedGroups((current) => {
-      const next = new Set(current);
-      if (next.has(groupKey)) next.delete(groupKey);
-      else next.add(groupKey);
-      return next;
-    });
+  function isGroupCollapsed(group: WorkspaceChatGroup) {
+    if (group.key in collapseOverride) return collapseOverride[group.key];
+    return group.sessions.length === 0;
+  }
+
+  function toggleCollapsed(group: WorkspaceChatGroup) {
+    const nextCollapsed = !isGroupCollapsed(group);
+    setCollapseOverride((current) => ({ ...current, [group.key]: nextCollapsed }));
   }
 
   function toggleExpanded(groupKey: string) {
@@ -620,29 +621,27 @@ function WorkspaceConversationGroups() {
         <div className="space-y-1.5">
           {groups.map((group) => {
             const isExpanded = expandedGroups.has(group.key);
-            const isCollapsed = collapsedGroups.has(group.key);
+            const isCollapsed = isGroupCollapsed(group);
             const visibleSessions = isExpanded ? group.sessions : group.sessions.slice(0, 5);
             const hiddenCount = group.sessions.length - 5;
 
             return (
               <div key={group.key}>
-                <div className="flex h-7 items-center gap-1.5">
+                <div className="group flex h-7 min-w-0 items-center rounded-md transition-colors hover:bg-accent/60">
                   <button
                     aria-expanded={!isCollapsed}
-                    className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left font-medium text-[13px] text-foreground transition-colors hover:bg-accent/60"
-                    onClick={() => toggleCollapsed(group.key)}
+                    aria-label={isCollapsed ? `展开 ${group.label}` : `收起 ${group.label}`}
+                    className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left font-medium text-[13px] text-foreground"
+                    onClick={() => toggleCollapsed(group)}
                     title={group.label}
                     type="button"
                   >
-                    <ChevronDown
-                      className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
-                    />
                     <FolderGit2 className="size-4 shrink-0 text-muted-foreground" />
                     <span className="truncate">{group.label}</span>
                   </button>
                   <button
                     aria-label={`在 ${group.label} 中新建对话`}
-                    className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+                    className="mr-0.5 flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100"
                     onClick={() => startWorkspaceSession(group)}
                     title={`在 ${group.label} 中新建对话`}
                     type="button"
@@ -757,19 +756,11 @@ function WorkspaceConversationGroups() {
 
 function WorkspaceConversationSkeleton() {
   return (
-    <div className="space-y-2" role="status" aria-label="正在加载 Workspace 对话记录">
+    <div className="space-y-1.5" role="status" aria-label="正在加载 Workspace 对话记录">
       {[0, 1, 2].map((group) => (
-        <div className="space-y-1" key={group}>
-          <div className="flex h-7 items-center gap-2 px-2">
-            <div className="size-4 animate-pulse rounded bg-muted" />
-            <div className="h-3 w-24 animate-pulse rounded bg-muted" />
-          </div>
-          {[0, 1].map((item) => (
-            <div
-              className="ml-8 h-7 animate-pulse rounded-md bg-muted/70"
-              key={`${group}-${item}`}
-            />
-          ))}
+        <div className="flex h-7 items-center gap-2 px-2" key={group}>
+          <div className="size-4 animate-pulse rounded bg-muted" />
+          <div className="h-3 w-24 animate-pulse rounded bg-muted" />
         </div>
       ))}
     </div>
