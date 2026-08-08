@@ -72,7 +72,18 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   const runs = new RunRegistry(store, events);
   const app = new Hono();
 
-  app.use("*", cors({ origin: ["http://localhost:1420", "http://127.0.0.1:1420"] }));
+  app.use(
+    "*",
+    cors({
+      origin: [
+        "http://localhost:1420",
+        "http://127.0.0.1:1420",
+        "tauri://localhost",
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+      ],
+    }),
+  );
   app.use("*", async (c, next) => {
     if (c.req.method === "OPTIONS" || c.req.path === "/health") return next();
     const authorization = c.req.header("Authorization");

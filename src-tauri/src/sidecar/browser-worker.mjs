@@ -3,14 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
-
-let chromium;
-let runtimeError;
-try {
-  ({ chromium } = await import("playwright"));
-} catch (error) {
-  runtimeError = `Playwright 未安装或浏览器运行时不可用：${error instanceof Error ? error.message : String(error)}`;
-}
+import { chromium } from "playwright";
 
 const sessions = new Map();
 const MAX_OUTPUT = 50_000;
@@ -30,7 +23,6 @@ function cleanValue(value) {
 function timeout(value) { return Math.min(Math.max(Number(value) || DEFAULT_TIMEOUT, 100), 60_000); }
 
 async function handle(request) {
-  if (runtimeError) return fail(request, "runtime_unavailable", runtimeError);
   const params = request.params ?? {};
   if (request.method === "open") {
     let url;

@@ -32,7 +32,11 @@
   },
   "bundle": {
     "active": true,
-    "resources": ["src/sidecar/browser-worker.mjs"],
+    "externalBin": ["binaries/chat-server"],
+    "resources": [
+      "resources/browser-worker*",
+      "resources/playwright-browsers/**/*"
+    ],
     "targets": "all",
     "icon": [
       "icons/32x32.png",

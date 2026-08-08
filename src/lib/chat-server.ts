@@ -1,9 +1,15 @@
+import { invoke } from "@tauri-apps/api/core";
 import type { UIMessage } from "ai";
 import { settingsStore } from "@/lib/settings-store";
 
 export const CHAT_SERVER_DEFAULT_PORT = 14317;
 const CHAT_SERVER_PORT_KEY = "chatServerPort";
 const CHAT_SERVER_PORT_STORAGE_KEY = "m-dashboard-chat-server-port-v1";
+const runtimeConfig: { port: number; token: string } = {
+  port: CHAT_SERVER_DEFAULT_PORT,
+  token: import.meta.env.VITE_CHAT_SERVER_TOKEN ?? "",
+};
+let runtimeInitialization: Promise<void> | undefined;
 
 function isTauri() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -12,6 +18,25 @@ function isTauri() {
 function normalizePort(value: unknown) {
   const port = typeof value === "number" ? value : Number(value);
   return Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : CHAT_SERVER_DEFAULT_PORT;
+}
+
+export function initializeChatServer() {
+  if (runtimeInitialization) return runtimeInitialization;
+  runtimeInitialization = (async () => {
+    if (!isTauri()) return;
+    try {
+      const info = await invoke<{ port?: unknown; token?: unknown; running?: boolean }>(
+        "chat_server_info",
+      );
+      if (info.running === true) {
+        runtimeConfig.port = normalizePort(info.port);
+        if (typeof info.token === "string" && info.token) runtimeConfig.token = info.token;
+      }
+    } catch (error) {
+      console.error("Failed to initialize Chat Server", error);
+    }
+  })();
+  return runtimeInitialization;
 }
 
 export async function loadChatServerPort() {
@@ -36,7 +61,7 @@ export async function saveChatServerPort(port: number) {
 }
 
 export function getChatServerToken() {
-  return import.meta.env.VITE_CHAT_SERVER_TOKEN ?? "";
+  return runtimeConfig.token;
 }
 
 export function chatServerUrl(port = CHAT_SERVER_DEFAULT_PORT) {
@@ -44,7 +69,13 @@ export function chatServerUrl(port = CHAT_SERVER_DEFAULT_PORT) {
     typeof window !== "undefined"
       ? normalizePort(window.localStorage.getItem(CHAT_SERVER_PORT_STORAGE_KEY))
       : CHAT_SERVER_DEFAULT_PORT;
-  return `http://127.0.0.1:${port === CHAT_SERVER_DEFAULT_PORT ? stored : port}`;
+  const selectedPort =
+    port === CHAT_SERVER_DEFAULT_PORT
+      ? runtimeConfig.port !== CHAT_SERVER_DEFAULT_PORT
+        ? runtimeConfig.port
+        : stored
+      : port;
+  return `http://127.0.0.1:${selectedPort}`;
 }
 
 export function chatServerHeaders() {

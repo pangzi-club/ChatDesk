@@ -5,6 +5,7 @@ mod services;
 use commands::mcp::McpManager;
 use services::automation::AutomationScheduler;
 use services::browser::BrowserManager;
+use services::chat_server::ChatServerManager;
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
@@ -42,7 +43,16 @@ pub fn run() {
         .setup(|app| {
             let scheduler = AutomationScheduler::start(app.handle())?;
             app.manage(scheduler);
-            app.manage(BrowserManager::new());
+            let chat_server = match ChatServerManager::start(app.handle()) {
+                Ok(manager) => manager,
+                Err(error) if cfg!(debug_assertions) => {
+                    eprintln!("Chat Server sidecar unavailable in development: {error}");
+                    ChatServerManager::unavailable()
+                }
+                Err(error) => return Err(error.into()),
+            };
+            app.manage(chat_server);
+            app.manage(BrowserManager::new(app.handle().clone()));
             app.manage(McpManager::default());
             let dashboard_item =
                 MenuItem::with_id(app, "dashboard", "Dashboard", true, None::<&str>)?;
@@ -89,6 +99,7 @@ pub fn run() {
             commands::browser::browser_click,
             commands::browser::browser_eval,
             commands::browser::browser_close,
+            commands::chat_server::chat_server_info,
             commands::chat::read_chat_index,
             commands::chat::write_chat_index,
             commands::chat::read_chat_session,

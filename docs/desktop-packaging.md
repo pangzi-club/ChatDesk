@@ -1,0 +1,39 @@
+# Desktop Packaging
+
+The desktop release packages the Node chat server as a Tauri sidecar and the browser worker as a resource. End users do not need Node.js or pnpm.
+
+## Local build
+
+Use Node.js 22 or newer, Rust, pnpm 9.15.9, and the platform's Tauri prerequisites.
+
+```sh
+pnpm install
+pnpm tauri:build
+```
+
+`pnpm build:sidecars` first bundles the TypeScript Chat Server into a single CommonJS file, then uses `@yao-pkg/pkg` with source fallback to create the target-specific binaries. It also downloads the Chromium headless shell into `src-tauri/resources/playwright-browsers`. The generated files are ignored by Git and must be rebuilt for every target platform.
+
+The pkg base-runtime cache defaults to `.cache/pkg`; set `PKG_CACHE_PATH` to share it between CI jobs.
+
+Supported target triples currently map to these `pkg` targets:
+
+| Rust target | pkg target |
+| --- | --- |
+| `x86_64-apple-darwin` | `node22-macos-x64` |
+| `aarch64-apple-darwin` | `node22-macos-arm64` |
+| `x86_64-pc-windows-msvc` | `node22-win-x64` |
+| `aarch64-pc-windows-msvc` | `node22-win-arm64` |
+| `x86_64-unknown-linux-gnu` | `node22-linux-x64` |
+| `aarch64-unknown-linux-gnu` | `node22-linux-arm64` |
+
+Cross-platform artifacts should be built on native CI runners. Set `TAURI_TARGET_TRIPLE` only when the runner and the requested target are compatible.
+
+## Runtime behavior
+
+Tauri starts `chat-server` with a loopback host, a per-launch token, and a data directory under the platform app-data directory. The frontend obtains the token through the `chat_server_info` command. The browser worker prefers its packaged executable and falls back to the source Node worker only in development.
+
+The app bundles only Chromium's headless shell. Updating Playwright requires rebuilding the browser resource and retesting the packaged browser tools.
+
+## Signing
+
+Release artifacts must be signed using the platform's normal Tauri signing flow. macOS builds require an Apple Developer signing identity and notarization for distribution; Windows builds require the chosen Authenticode certificate; Linux packages should be produced and tested on the target distribution family.

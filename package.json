@@ -10,12 +10,20 @@
     "server:dev": "node --experimental-strip-types src-web/server.ts",
     "server:test": "node --experimental-strip-types --test src-web/*.test.ts",
     "build": "tsc && tsc -p tsconfig.server.json && vite build",
+    "build:sidecars": "node scripts/build-sidecars.mjs",
     "check": "biome check .",
     "check:write": "biome check --write .",
     "format": "biome format --write .",
     "lint": "biome lint .",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "tauri:build": "pnpm build:sidecars && pnpm tauri build"
+  },
+  "pkg": {
+    "assets": [
+      "node_modules/playwright/lib/**/*",
+      "node_modules/playwright-core/**/*"
+    ]
   },
   "dependencies": {
     "@ai-sdk/mcp": "^2.0.24",
@@ -48,6 +56,9 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",
+    "esbuild": "^0.28.1",
+    "@yao-pkg/pkg": "^6.21.0",
+    "playwright-core": "^1.62.1",
     "@tailwindcss/vite": "^4.3.3",
     "@tauri-apps/cli": "^2",
     "@types/node": "^26.1.2",
@@ -56,6 +67,7 @@
     "@vitejs/plugin-react": "^4.6.0",
     "tailwindcss": "^4.3.3",
     "typescript": "6.0.3",
+    "undici": "^7.29.0",
     "vite": "^7.0.4"
   }
 }

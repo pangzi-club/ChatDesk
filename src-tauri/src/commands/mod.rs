@@ -2,6 +2,7 @@ pub mod automation;
 pub mod browser;
 pub mod chat;
 pub mod chat_archive;
+pub mod chat_server;
 pub mod greet;
 pub mod image;
 pub mod mcp;
