@@ -896,6 +896,9 @@ function ChatPage() {
         <div className="chat-composer">
           <textarea
             aria-label="输入消息"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onCompositionStart={() => {

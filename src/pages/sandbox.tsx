@@ -288,6 +288,9 @@ function SandboxPage() {
         ) : null}
         <div className="chat-composer">
           <textarea
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             disabled={!selectedCwd || pendingWrite !== null}
             placeholder={
               pendingWrite

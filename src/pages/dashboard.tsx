@@ -162,6 +162,9 @@ function DashboardPage() {
             工作台搜索
           </label>
           <input
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             className="min-w-0 flex-1 bg-transparent font-medium text-[15px] text-foreground outline-none placeholder:text-muted-foreground sm:text-lg"
             id="dashboard-search"
             onChange={(event) => setQuery(event.target.value)}
@@ -325,6 +328,9 @@ function BookmarkEditor({
           名称
         </label>
         <input
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           className="mt-1.5 h-9 w-full rounded-md border border-border bg-muted px-3 text-sm outline-none transition focus:border-ring focus:bg-background focus:ring-3 focus:ring-ring/30"
           id="bookmark-title"
           onChange={(event) => onChange({ ...draft, title: event.target.value })}
@@ -340,6 +346,9 @@ function BookmarkEditor({
           网址
         </label>
         <input
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           className="mt-1.5 h-9 w-full rounded-md border border-border bg-muted px-3 text-sm outline-none transition focus:border-ring focus:bg-background focus:ring-3 focus:ring-ring/30"
           id="bookmark-url"
           onChange={(event) => onChange({ ...draft, url: event.target.value })}
