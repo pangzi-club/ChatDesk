@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -35,6 +35,7 @@ import {
   Sparkles,
   SquareTerminal,
   TextCursorInput,
+  Trash2,
   Wrench,
 } from "lucide-react";
 import {
@@ -47,6 +48,16 @@ import {
 } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { TitlebarDragRegion } from "@/components/titlebar";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { rememberReturnPath } from "@/lib/app-return-path";
@@ -55,7 +66,7 @@ import {
   loadChatServerPort,
   subscribeChatServerEvents,
 } from "@/lib/chat-server";
-import { type ChatIndexItem, loadChatIndex } from "@/lib/chat-store";
+import { type ChatIndexItem, deleteChatSession, loadChatIndex } from "@/lib/chat-store";
 import { appendSystemLog } from "@/lib/system-log";
 import { applyTrayEnabled, loadTrayEnabled } from "@/lib/tray";
 import { loadWorkspaceProjects } from "@/lib/workspaces";
@@ -402,6 +413,7 @@ function WorkspaceConversationGroups() {
   );
   const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(loadUnreadChatIds);
   const [serverPort, setServerPort] = useState(14317);
+  const [sessionToDelete, setSessionToDelete] = useState<ChatIndexItem | null>(null);
   const chatIndexQuery = useQuery({
     queryKey: ["chat-index"],
     queryFn: loadChatIndex,
@@ -420,6 +432,29 @@ function WorkspaceConversationGroups() {
   );
   const isPending = chatIndexQuery.isPending || workspaceProjectsQuery.isPending;
   const isError = chatIndexQuery.isError || workspaceProjectsQuery.isError;
+  const deleteSessionMutation = useMutation({
+    mutationFn: (item: ChatIndexItem) => deleteChatSession(item.id),
+    onSuccess: async (_, item) => {
+      setUnreadSessionIds((current) => {
+        if (!current.has(item.id)) return current;
+        const next = new Set(current);
+        next.delete(item.id);
+        saveUnreadChatIds(next);
+        return next;
+      });
+      await queryClient.invalidateQueries({ queryKey: ["chat-index"] });
+      if (item.id === activeSessionIdRef.current) {
+        const workspaceId = item.workspaceId ?? (item.cwd ? `cwd:${item.cwd}` : "default");
+        const params = new URLSearchParams({ workspaceId });
+        if (item.cwd) params.set("workspaceCwd", item.cwd);
+        navigate(`/chat?${params.toString()}`, { replace: true });
+      }
+      setSessionToDelete(null);
+    },
+    onError: (error) => {
+      console.error("Failed to delete chat session", error);
+    },
+  });
 
   useEffect(() => {
     let active = true;
@@ -491,6 +526,11 @@ function WorkspaceConversationGroups() {
     navigate(`/chat?sessionId=${encodeURIComponent(sessionId)}`);
   }
 
+  function confirmRemoveSession() {
+    if (!sessionToDelete || deleteSessionMutation.isPending) return;
+    deleteSessionMutation.mutate(sessionToDelete);
+  }
+
   return (
     <section
       aria-labelledby="workspace-conversations-heading"
@@ -552,31 +592,45 @@ function WorkspaceConversationGroups() {
                         const isUnread = unreadSessionIds.has(session.id);
 
                         return (
-                          <button
-                            aria-current={isActive ? "page" : undefined}
-                            className={`flex h-7 w-full items-center rounded-md pr-2 pl-8 text-left text-[13px] transition-colors ${
+                          <div
+                            className={`group flex h-7 w-full items-center rounded-md transition-colors ${
                               isActive
                                 ? "bg-accent text-accent-foreground font-medium"
                                 : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
                             }`}
                             key={session.id}
-                            onClick={() => openSession(session.id)}
-                            title={session.title}
-                            type="button"
                           >
-                            <span className="truncate">{session.title}</span>
-                            {isRunning ? (
-                              <LoaderCircle
-                                aria-hidden="true"
-                                className="ml-auto size-3.5 shrink-0 animate-spin text-primary"
-                              />
-                            ) : isUnread ? (
-                              <span
-                                className="ml-auto size-1.5 shrink-0 rounded-full bg-primary"
-                                title="未读消息"
-                              />
-                            ) : null}
-                          </button>
+                            <button
+                              aria-current={isActive ? "page" : undefined}
+                              className="flex min-w-0 flex-1 items-center rounded-md py-0 pr-1 pl-8 text-left text-[13px]"
+                              onClick={() => openSession(session.id)}
+                              title={session.title}
+                              type="button"
+                            >
+                              <span className="truncate">{session.title}</span>
+                              {isRunning ? (
+                                <LoaderCircle
+                                  aria-hidden="true"
+                                  className="ml-auto size-3.5 shrink-0 animate-spin text-primary"
+                                />
+                              ) : isUnread ? (
+                                <span
+                                  className="ml-auto size-1.5 shrink-0 rounded-full bg-primary"
+                                  title="未读消息"
+                                />
+                              ) : null}
+                            </button>
+                            <button
+                              aria-label={`删除${session.title}`}
+                              className="mr-1 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+                              disabled={deleteSessionMutation.isPending}
+                              onClick={() => setSessionToDelete(session)}
+                              title="删除对话"
+                              type="button"
+                            >
+                              <Trash2 className="size-3" />
+                            </button>
+                          </div>
                         );
                       })}
                       {hiddenCount > 0 ? (
@@ -602,6 +656,31 @@ function WorkspaceConversationGroups() {
           })}
         </div>
       )}
+      <AlertDialog
+        open={sessionToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleteSessionMutation.isPending) setSessionToDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除对话？</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除“{sessionToDelete?.title ?? "这条对话"}”吗？删除后无法恢复。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteSessionMutation.isPending}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleteSessionMutation.isPending}
+              onClick={confirmRemoveSession}
+              variant="destructive"
+            >
+              {deleteSessionMutation.isPending ? "删除中..." : "删除"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }
