@@ -430,16 +430,6 @@ function ChatPage() {
   const hasAssistantMessage =
     lastMessage?.role === "assistant" &&
     (messageText(lastMessage).trim().length > 0 || messageHasToolParts(lastMessage));
-  const exampleHints = useMemo(() => {
-    const examples: string[] = [];
-    for (const packId of availablePacks) {
-      const example = getPackMeta(packId).examples[0];
-      if (example) examples.push(example);
-      if (examples.length >= 2) break;
-    }
-    return examples;
-  }, [availablePacks]);
-
   useEffect(() => {
     let active = true;
     void resolveAvailablePacks(
@@ -845,20 +835,11 @@ function ChatPage() {
                   中开启，或更换模型。
                 </p>
               ) : availablePacks.length > 0 ? (
-                <>
-                  <p>
-                    已启用：
-                    {availablePacks.map((id) => getPackMeta(id).label).join(" · ")}
-                    。用自然语言提问即可自动调用工具。
-                  </p>
-                  <div className="chat-tools-hint-chips">
-                    {exampleHints.map((example) => (
-                      <button key={example} type="button" onClick={() => setInput(example)}>
-                        {example}
-                      </button>
-                    ))}
-                  </div>
-                </>
+                <p>
+                  已启用：
+                  {availablePacks.map((id) => getPackMeta(id).label).join(" · ")}
+                  。用自然语言提问即可自动调用工具。
+                </p>
               ) : (
                 <p>
                   尚未启用可用 Tools。
@@ -912,16 +893,6 @@ function ChatPage() {
 
       <div className="chat-composer-wrap">
         {error && <p className="chat-error">{error.message}</p>}
-        {messages.length > 0 && availablePacks.length > 0 ? (
-          <div className="chat-tools-composer-hint">
-            <span>Tools：{availablePacks.map((id) => getPackMeta(id).label).join(" · ")}</span>
-            {exampleHints[0] ? (
-              <button type="button" onClick={() => setInput(exampleHints[0])}>
-                试试：{exampleHints[0]}
-              </button>
-            ) : null}
-          </div>
-        ) : null}
         <div className="chat-composer">
           <textarea
             aria-label="输入消息"
