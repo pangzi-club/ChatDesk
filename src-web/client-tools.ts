@@ -90,3 +90,7 @@ export function createClientTools(toolNames: string[] | undefined): ToolSet | un
   if (selected.length === 0) return undefined;
   return Object.fromEntries(selected.map((name) => [name, clientTools[name]]));
 }
+
+export function closeClientTools() {
+  browser.close();
+}

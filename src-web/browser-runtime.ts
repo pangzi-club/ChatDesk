@@ -12,7 +12,13 @@ export class BrowserRuntime {
     this.ensureWorker();
     const id = randomUUID();
     const result = new Promise<BrowserResponse>((resolve) => this.pending.set(id, resolve));
-    this.worker?.stdin.write(`${JSON.stringify({ id, method, params })}\n`);
+    try {
+      this.worker?.stdin.write(`${JSON.stringify({ id, method, params })}\n`);
+    } catch (error) {
+      this.pending.delete(id);
+      this.close();
+      return { ok: false, code: "worker_error", message: error instanceof Error ? error.message : String(error) };
+    }
     return result;
   }
 
@@ -34,6 +40,9 @@ export class BrowserRuntime {
       stdio: "pipe",
     });
     const lines = createInterface({ input: worker.stdout });
+    worker.stderr.on("data", (chunk) => {
+      console.error(`[Chat Server] browser worker stderr: ${String(chunk).trimEnd()}`);
+    });
     lines.on("line", (line) => {
       try {
         const value = JSON.parse(line) as BrowserResponse & { id?: string };
@@ -46,8 +55,17 @@ export class BrowserRuntime {
         // Ignore worker diagnostics.
       }
     });
-    worker.once("exit", () => this.close());
+    worker.once("exit", () => {
+      if (this.worker === worker) this.close();
+    });
+    worker.once("error", (error) => {
+      console.error(`[Chat Server] browser worker 进程错误: ${error.message}`);
+      if (this.worker === worker) this.close();
+    });
+    worker.stdin.on("error", (error) => {
+      console.error(`[Chat Server] browser worker stdin 错误: ${error.message}`);
+      if (this.worker === worker) this.close();
+    });
     this.worker = worker;
   }
 }
-

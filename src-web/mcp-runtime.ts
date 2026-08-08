@@ -44,6 +44,9 @@ export class McpRuntime {
     const child = spawn(command, args, { env: { ...process.env, ...(server.env ?? {}) }, stdio: "pipe" });
     const handle: ProcessHandle = { child, nextId: 0, pending: new Map() };
     const lines = createInterface({ input: child.stdout });
+    child.stderr.on("data", (chunk) => {
+      console.error(`[Chat Server] MCP ${server.id} stderr: ${String(chunk).trimEnd()}`);
+    });
     lines.on("line", (line) => {
       try {
         const payload = JSON.parse(line) as { id?: number; result?: unknown; error?: unknown };
@@ -58,9 +61,24 @@ export class McpRuntime {
       }
     });
     child.once("exit", () => {
+      if (this.processes.get(server.id) !== handle) return;
       for (const resolve of handle.pending.values()) resolve({ error: "MCP 进程已退出" });
       handle.pending.clear();
       this.processes.delete(server.id);
+    });
+    child.once("error", (error) => {
+      if (this.processes.get(server.id) !== handle) return;
+      for (const resolve of handle.pending.values()) resolve({ error: error.message });
+      handle.pending.clear();
+      this.processes.delete(server.id);
+      console.error(`[Chat Server] MCP ${server.id} 进程错误: ${error.message}`);
+    });
+    child.stdin.on("error", (error) => {
+      if (this.processes.get(server.id) !== handle) return;
+      for (const resolve of handle.pending.values()) resolve({ error: error.message });
+      handle.pending.clear();
+      this.processes.delete(server.id);
+      console.error(`[Chat Server] MCP ${server.id} stdin 错误: ${error.message}`);
     });
     this.processes.set(server.id, handle);
     await this.rpc(server.id, "initialize", {
@@ -100,6 +118,11 @@ export class McpRuntime {
     }
   }
 
+  async close() {
+    const serverIds = new Set([...this.remotes.keys(), ...this.processes.keys()]);
+    await Promise.all([...serverIds].map((serverId) => this.stop(serverId)));
+  }
+
   async test(value: unknown) {
     const server = asConfig(value);
     await this.start(server);
@@ -111,7 +134,12 @@ export class McpRuntime {
     if (!handle) throw new Error("MCP 尚未启动");
     const id = ++handle.nextId;
     const result = new Promise<unknown>((resolve) => handle.pending.set(id, resolve));
-    handle.child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+    try {
+      handle.child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+    } catch (error) {
+      handle.pending.delete(id);
+      throw error;
+    }
     const payload = await result;
     if (payload && typeof payload === "object" && "error" in payload) {
       throw new Error(JSON.stringify((payload as { error: unknown }).error));
@@ -119,4 +147,3 @@ export class McpRuntime {
     return payload;
   }
 }
-

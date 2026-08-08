@@ -7,6 +7,7 @@ import {
   Brain,
   ChartColumn,
   ChevronDown,
+  CircleAlert,
   Clock3,
   CornerDownLeft,
   ExternalLink,
@@ -27,6 +28,7 @@ import {
   PanelTop,
   PlugZap,
   Plus,
+  RefreshCw,
   ScrollText,
   Search,
   Server,
@@ -63,7 +65,10 @@ import { Button } from "@/components/ui/button";
 import { rememberReturnPath } from "@/lib/app-return-path";
 import {
   type ChatServerSession,
+  canRestartChatServer,
+  getChatServerStatus,
   loadChatServerPort,
+  restartChatServer,
   subscribeChatServerEvents,
 } from "@/lib/chat-server";
 import { type ChatIndexItem, deleteChatSession, loadChatIndex } from "@/lib/chat-store";
@@ -275,6 +280,7 @@ function AppShell() {
 
   return (
     <main className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+      <ChatServerStatusBanner />
       <div className="flex min-h-0 w-full flex-1 overflow-hidden bg-background">
         {hideMainSidebar ? (
           <div className="relative flex min-w-0 flex-1 flex-col bg-background">
@@ -362,6 +368,70 @@ function AppShell() {
       </div>
       {isCommandMenuOpen && <CommandMenu onClose={() => setIsCommandMenuOpen(false)} />}
     </main>
+  );
+}
+
+function ChatServerStatusBanner() {
+  const queryClient = useQueryClient();
+  const enabled = canRestartChatServer();
+  const statusQuery = useQuery({
+    queryKey: ["chat-server-status"],
+    queryFn: getChatServerStatus,
+    enabled,
+    refetchInterval: 5000,
+    refetchIntervalInBackground: true,
+    retry: false,
+  });
+  const previousState = useRef<string | undefined>(undefined);
+  const restartMutation = useMutation({
+    mutationFn: restartChatServer,
+    onSuccess: () => {
+      void statusQuery.refetch();
+      void queryClient.invalidateQueries({ queryKey: ["chat-index"] });
+    },
+  });
+
+  useEffect(() => {
+    const state = statusQuery.data?.state;
+    if (state === "running" && previousState.current && previousState.current !== "running") {
+      void queryClient.invalidateQueries({ queryKey: ["chat-index"] });
+      void queryClient.invalidateQueries({ queryKey: ["chat-server-config"] });
+    }
+    previousState.current = state;
+  }, [queryClient, statusQuery.data?.state]);
+
+  if (!enabled || !statusQuery.data || statusQuery.data.state === "running") return null;
+
+  const isRestarting =
+    statusQuery.data.state === "starting" || statusQuery.data.state === "restarting";
+  return (
+    <div
+      aria-live="polite"
+      className={`flex min-h-10 shrink-0 items-center justify-between gap-3 border-border border-b px-4 py-2 text-xs max-sm:items-start ${isRestarting ? "bg-amber-500/10 text-amber-800 dark:text-amber-200" : "bg-destructive/10 text-destructive"}`}
+      role="status"
+    >
+      <div className="flex min-w-0 items-center gap-2">
+        {isRestarting ? (
+          <LoaderCircle aria-hidden="true" className="size-4 shrink-0 animate-spin" />
+        ) : (
+          <CircleAlert aria-hidden="true" className="size-4 shrink-0" />
+        )}
+        <span className="truncate">
+          {isRestarting ? "Chat Server 正在恢复" : "Chat Server 当前不可用"}
+        </span>
+      </div>
+      <Button
+        className="h-7 shrink-0 px-2 text-xs"
+        disabled={restartMutation.isPending || isRestarting}
+        onClick={() => restartMutation.mutate()}
+        size="sm"
+        type="button"
+        variant="outline"
+      >
+        <RefreshCw className={restartMutation.isPending ? "size-3.5 animate-spin" : "size-3.5"} />
+        重启服务
+      </Button>
+    </div>
   );
 }
 

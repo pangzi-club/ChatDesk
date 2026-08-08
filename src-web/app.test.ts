@@ -5,6 +5,8 @@ import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { createChatServer } from "./app.ts";
 import type { ServerConfig } from "./config.ts";
+import { RunJournal } from "./run-journal.ts";
+import { SessionStore } from "./store.ts";
 
 const temporaryDirectories: string[] = [];
 
@@ -140,5 +142,40 @@ describe("chat server", () => {
     assert.equal(attachment.status, 201);
     const downloaded = await server.app.request("http://localhost/v1/sessions/attachment-session/attachments/file-1", { headers: auth() });
     assert.equal(await downloaded.text(), "hello");
+  });
+
+  it("recovers interrupted runs as errored sessions", async () => {
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), "m-dashboard-recovery-"));
+    temporaryDirectories.push(dataDir);
+    const store = new SessionStore(dataDir);
+    await store.init();
+    await store.save({
+      schemaVersion: 2,
+      id: "recovered-session",
+      title: "Interrupted",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      messages: [],
+      attachments: [],
+    });
+    const journal = new RunJournal(dataDir);
+    await journal.begin({
+      sessionId: "recovered-session",
+      runId: "run-recovered",
+      startedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    const server = await createChatServer({
+      host: "127.0.0.1",
+      port: 14317,
+      dataDir,
+      token: "test-token",
+      version: "test",
+    });
+    const sessions = await server.app.request("http://localhost/v1/sessions", {
+      headers: auth(),
+    });
+    assert.equal((await sessions.json())[0]?.status, "error");
+    assert.deepEqual(await journal.recover(), []);
   });
 });

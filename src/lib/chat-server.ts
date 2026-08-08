@@ -12,6 +12,31 @@ const runtimeConfig: { port: number; token: string } = {
 let runtimePortKnown = Boolean(import.meta.env.VITE_CHAT_SERVER_PORT);
 let runtimeInitialization: Promise<void> | undefined;
 
+export type ChatServerState = "running" | "starting" | "restarting" | "offline";
+
+export type ChatServerRuntimeInfo = {
+  host?: string;
+  port?: unknown;
+  token?: unknown;
+  running?: boolean;
+  state?: ChatServerState;
+  restartAttempt?: number;
+  lastExit?: string | null;
+};
+
+export type ChatServerHealth = {
+  ok: true;
+  host: string;
+  port: number;
+  activeRuns: number;
+};
+
+export type ChatServerConnectionStatus = {
+  state: ChatServerState;
+  info: ChatServerRuntimeInfo | null;
+  health: ChatServerHealth | null;
+};
+
 function isTauri() {
   // `isTauri()` relies on the injected global, while older packaged webviews
   // only expose the IPC internals object.
@@ -26,19 +51,7 @@ function normalizePort(value: unknown) {
 export function initializeChatServer() {
   if (runtimeInitialization) return runtimeInitialization;
   runtimeInitialization = (async () => {
-    try {
-      const info = await invoke<{ port?: unknown; token?: unknown; running?: boolean }>(
-        "chat_server_info",
-      );
-      if (info.running === true) {
-        runtimeConfig.port = normalizePort(info.port);
-        runtimePortKnown = true;
-        if (typeof info.token === "string" && info.token) runtimeConfig.token = info.token;
-      }
-    } catch (error) {
-      // The command is unavailable in a normal browser build; that is expected.
-      if (isTauri()) console.error("Failed to initialize Chat Server", error);
-    }
+    await refreshChatServerRuntime();
   })();
   return runtimeInitialization;
 }
@@ -77,12 +90,8 @@ export function canRestartChatServer() {
 export async function restartChatServer() {
   await initializeChatServer();
   if (!isTauri()) throw new Error("只有 Tauri 应用可以重启 Chat Server");
-  const info = await invoke<{ port?: unknown; token?: unknown; running?: boolean }>(
-    "chat_server_restart",
-  );
-  runtimeConfig.port = normalizePort(info.port);
-  runtimePortKnown = true;
-  if (typeof info.token === "string" && info.token) runtimeConfig.token = info.token;
+  const info = await invoke<ChatServerRuntimeInfo>("chat_server_restart");
+  applyChatServerRuntime(info);
   runtimeInitialization = Promise.resolve();
   return info;
 }
@@ -104,19 +113,41 @@ export function chatServerHeaders() {
   return headers;
 }
 
-async function refreshChatServerRuntime() {
-  if (!isTauri()) return;
+export async function refreshChatServerRuntime() {
+  if (!isTauri()) return null;
   try {
-    const info = await invoke<{ port?: unknown; token?: unknown; running?: boolean }>(
-      "chat_server_info",
-    );
-    if (info.running === true) {
-      runtimeConfig.port = normalizePort(info.port);
-      runtimePortKnown = true;
-      if (typeof info.token === "string" && info.token) runtimeConfig.token = info.token;
-    }
+    const info = await invoke<ChatServerRuntimeInfo>("chat_server_info");
+    applyChatServerRuntime(info);
+    return info;
   } catch (error) {
     console.error("Failed to refresh Chat Server authentication", error);
+    return null;
+  }
+}
+
+function applyChatServerRuntime(info: ChatServerRuntimeInfo) {
+  if (info.port !== undefined) {
+    runtimeConfig.port = normalizePort(info.port);
+    runtimePortKnown = true;
+  }
+  if (typeof info.token === "string" && info.token) runtimeConfig.token = info.token;
+}
+
+export async function getChatServerStatus(): Promise<ChatServerConnectionStatus> {
+  await initializeChatServer();
+  const info = await refreshChatServerRuntime();
+  const port = normalizePort(info?.port ?? (await loadChatServerPort()));
+  try {
+    const health = await checkChatServer(port);
+    return { state: "running", info, health };
+  } catch {
+    const latest =
+      info?.state === "starting" || info?.state === "restarting"
+        ? info
+        : await refreshChatServerRuntime();
+    const state =
+      latest?.state === "starting" || latest?.state === "restarting" ? latest.state : "offline";
+    return { state, info: latest, health: null };
   }
 }
 
@@ -135,7 +166,16 @@ async function requestChatServerResponse(
     return fetch(url, { ...init, headers });
   };
 
-  let response = await request();
+  const method = (init?.method ?? "GET").toUpperCase();
+  const retryable = method === "GET" || method === "HEAD" || method === "OPTIONS";
+  let response: Response;
+  try {
+    response = await request();
+  } catch (error) {
+    if (!isTauri() || !retryable) throw error;
+    await refreshChatServerRuntime();
+    response = await request();
+  }
   if (response.status === 401 && isTauri()) {
     await refreshChatServerRuntime();
     response = await request();
@@ -167,7 +207,7 @@ export async function checkChatServer(port = CHAT_SERVER_DEFAULT_PORT) {
     signal: AbortSignal.timeout(1500),
   });
   if (!response.ok) throw new Error(`Chat Server 返回 ${response.status}`);
-  return (await response.json()) as { ok: true; host: string; port: number; activeRuns: number };
+  return (await response.json()) as ChatServerHealth;
 }
 
 export type ChatServerSession = {
@@ -406,64 +446,102 @@ export function subscribeChatServerEvents(
     onMessageUpdated?: (event: { sessionId: string; runId?: string; message?: UIMessage }) => void;
   },
 ) {
-  const token = getChatServerToken();
-  const query = token ? `?token=${encodeURIComponent(token)}` : "";
-  const source = new EventSource(`${chatServerUrl(port)}/v1/events${query}`);
-  source.addEventListener("snapshot", (event) => {
-    try {
-      handlers.onSnapshot?.(JSON.parse((event as MessageEvent).data) as ChatServerSession[]);
-    } catch {
-      // Ignore malformed reconnect snapshots.
-    }
-  });
-  source.addEventListener("session.status", (event) => {
-    try {
-      const payload = JSON.parse((event as MessageEvent).data) as {
-        sessionId?: string;
-        status?: ChatServerSession["status"];
+  let source: EventSource | undefined;
+  let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  let closed = false;
+  let retryAttempt = 0;
+
+  function scheduleReconnect() {
+    if (closed || reconnectTimer) return;
+    const delay = [1000, 2000, 5000][Math.min(retryAttempt, 2)];
+    retryAttempt += 1;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = undefined;
+      void connect();
+    }, delay);
+  }
+
+  async function connect() {
+    if (closed) return;
+    if (isTauri()) await refreshChatServerRuntime();
+    if (closed) return;
+    const token = getChatServerToken();
+    const query = token ? `?token=${encodeURIComponent(token)}` : "";
+    const next = new EventSource(`${chatServerUrl(port)}/v1/events${query}`);
+    source = next;
+    if (isTauri()) {
+      next.onopen = () => {
+        retryAttempt = 0;
       };
-      if (payload.sessionId && payload.status) {
-        handlers.onStatus?.({ sessionId: payload.sessionId, status: payload.status });
-      }
-    } catch {
-      // Ignore malformed event payloads.
-    }
-  });
-  source.addEventListener("message.delta", (event) => {
-    try {
-      const payload = JSON.parse((event as MessageEvent).data) as {
-        sessionId?: string;
-        runId?: string;
-        delta?: string;
+      next.onerror = () => {
+        next.close();
+        if (source === next) source = undefined;
+        scheduleReconnect();
       };
-      if (payload.sessionId && typeof payload.delta === "string") {
-        handlers.onDelta?.({
-          sessionId: payload.sessionId,
-          runId: payload.runId,
-          delta: payload.delta,
-        });
-      }
-    } catch {
-      // Ignore malformed event payloads.
     }
-  });
-  source.addEventListener("message.updated", (event) => {
-    try {
-      const payload = JSON.parse((event as MessageEvent).data) as {
-        sessionId?: string;
-        runId?: string;
-        message?: UIMessage;
-      };
-      if (payload.sessionId) {
-        handlers.onMessageUpdated?.({
-          sessionId: payload.sessionId,
-          runId: payload.runId,
-          message: payload.message,
-        });
+    next.addEventListener("snapshot", (event) => {
+      try {
+        handlers.onSnapshot?.(JSON.parse((event as MessageEvent).data) as ChatServerSession[]);
+      } catch {
+        // Ignore malformed reconnect snapshots.
       }
-    } catch {
-      // Ignore malformed event payloads.
-    }
-  });
-  return () => source.close();
+    });
+    next.addEventListener("session.status", (event) => {
+      try {
+        const payload = JSON.parse((event as MessageEvent).data) as {
+          sessionId?: string;
+          status?: ChatServerSession["status"];
+        };
+        if (payload.sessionId && payload.status) {
+          handlers.onStatus?.({ sessionId: payload.sessionId, status: payload.status });
+        }
+      } catch {
+        // Ignore malformed event payloads.
+      }
+    });
+    next.addEventListener("message.delta", (event) => {
+      try {
+        const payload = JSON.parse((event as MessageEvent).data) as {
+          sessionId?: string;
+          runId?: string;
+          delta?: string;
+        };
+        if (payload.sessionId && typeof payload.delta === "string") {
+          handlers.onDelta?.({
+            sessionId: payload.sessionId,
+            runId: payload.runId,
+            delta: payload.delta,
+          });
+        }
+      } catch {
+        // Ignore malformed event payloads.
+      }
+    });
+    next.addEventListener("message.updated", (event) => {
+      try {
+        const payload = JSON.parse((event as MessageEvent).data) as {
+          sessionId?: string;
+          runId?: string;
+          message?: UIMessage;
+        };
+        if (payload.sessionId) {
+          handlers.onMessageUpdated?.({
+            sessionId: payload.sessionId,
+            runId: payload.runId,
+            message: payload.message,
+          });
+        }
+      } catch {
+        // Ignore malformed event payloads.
+      }
+    });
+  }
+
+  void connect();
+  return () => {
+    closed = true;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    source?.close();
+    source = undefined;
+  };
 }

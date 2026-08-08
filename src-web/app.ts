@@ -14,6 +14,7 @@ import { ChatConfigStore } from "./chat-config.ts";
 import { MemoryStore } from "./memory-store.ts";
 import { scanSkills } from "./skills-store.ts";
 import { McpRuntime } from "./mcp-runtime.ts";
+import { closeClientTools } from "./client-tools.ts";
 
 const runInputSchema = z.object({
   messages: z.array(z.unknown()).optional(),
@@ -68,6 +69,7 @@ export type ChatServer = {
   events: EventHub;
   runs: RunRegistry;
   config: ServerConfig;
+  shutdown: () => Promise<void>;
 };
 
 export async function createChatServer(config: ServerConfig): Promise<ChatServer> {
@@ -89,6 +91,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   const archive = new ArchiveStore(config.dataDir);
   await archive.init(process.env.CHAT_SERVER_LEGACY_ARCHIVE_DIR);
   const mcp = new McpRuntime();
+  await runs.initialize();
   const app = new Hono();
 
   app.use(
@@ -412,5 +415,16 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   });
 
   app.onError((error) => jsonError(error.message || "服务器错误", 500));
-  return { app, store, events, runs, config };
+  return {
+    app,
+    store,
+    events,
+    runs,
+    config,
+    shutdown: async () => {
+      await runs.shutdown();
+      await mcp.close();
+      closeClientTools();
+    },
+  };
 }

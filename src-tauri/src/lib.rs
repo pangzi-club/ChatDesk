@@ -45,10 +45,7 @@ pub fn run() {
                 eprintln!("Chat Server is managed by pnpm dev:all in development");
                 ChatServerManager::unavailable(app.handle())
             } else {
-                match ChatServerManager::start(app.handle()) {
-                    Ok(manager) => manager,
-                    Err(error) => return Err(error.into()),
-                }
+                ChatServerManager::start(app.handle())
             };
             app.manage(chat_server);
             let dashboard_item =

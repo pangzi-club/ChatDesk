@@ -16,6 +16,7 @@ import { createWorkspaceTools } from "./workspace-tools.ts";
 import type { ChatConfigStore } from "./chat-config.ts";
 import { createBusinessTools } from "./business-tools.ts";
 import { openai } from "@ai-sdk/openai";
+import { RunJournal } from "./run-journal.ts";
 
 type ActiveRun = {
   id: string;
@@ -48,11 +49,28 @@ export class RunRegistry {
   private readonly store: SessionStore;
   private readonly events: EventHub;
   private readonly chatConfig: ChatConfigStore;
+  private readonly journal: RunJournal;
 
   constructor(store: SessionStore, events: EventHub, chatConfig: ChatConfigStore) {
     this.store = store;
     this.events = events;
     this.chatConfig = chatConfig;
+    this.journal = new RunJournal(store.root);
+  }
+
+  async initialize() {
+    const interrupted = await this.journal.recover();
+    for (const entry of interrupted) {
+      this.statuses.set(entry.sessionId, "error");
+      await this.journal.clear(entry.runId);
+    }
+  }
+
+  async shutdown() {
+    const runs = [...this.active.values()];
+    for (const run of runs) run.controller.abort();
+    await Promise.all(runs.map((run) => this.journal.clear(run.id)));
+    this.drafts.clear();
   }
 
   statusMap() {
@@ -99,47 +117,56 @@ export class RunRegistry {
     await this.store.save(session);
 
     const runId = randomUUID();
+    await this.journal.begin({ sessionId, runId, startedAt: now });
     const controller = new AbortController();
     this.active.set(sessionId, { id: runId, sessionId, controller });
     this.drafts.set(sessionId, assistantMessage(runId, ""));
     this.setStatus(sessionId, "submitted", runId);
 
-    const provider = createOpenAI({ apiKey: model.apiKey, baseURL: baseUrl(model.baseUrl) });
-    const languageModel = model.responsive
-      ? provider.responses(model.name.trim())
-      : provider.chat(model.name.trim());
-    const modelMessages = await convertToModelMessages(messages);
-    const system = [input.system, input.memory, input.cwd ? `当前 workspace：${input.cwd}` : ""]
-      .filter(Boolean)
-      .join("\n\n");
-    const result = streamText({
-      model: languageModel,
-      messages: modelMessages,
-      ...(system ? (model.responsive ? { instructions: system } : { system }) : {}),
-      tools: model.supportsTools
-        ? {
-            ...(createClientTools(input.toolNames) ?? {}),
-            ...createWorkspaceToolsForInput({ ...input, model }),
-            ...selectTools(createBusinessTools(this.chatConfig.get().apiKeys), input.toolNames),
-            ...(input.toolNames?.includes("web_search") && model.responsive
-              ? { web_search: openai.tools.webSearch({}) as unknown as ToolSet[string] }
-              : {}),
-          }
-        : undefined,
-      stopWhen: stepCountIs(20),
-      abortSignal: controller.signal,
-    });
-    let completedMessages: UIMessage[] | undefined;
-    const uiStream = result.toUIMessageStream({
-      originalMessages: messages,
-      onFinish: ({ messages: finishedMessages }) => {
-        completedMessages = finishedMessages;
-      },
-      onError: errorMessage,
-    });
-    const [clientStream, observerStream] = uiStream.tee();
-    void this.consume(session, runId, observerStream, () => completedMessages);
-    return createUIMessageStreamResponse({ stream: clientStream });
+    try {
+      const provider = createOpenAI({ apiKey: model.apiKey, baseURL: baseUrl(model.baseUrl) });
+      const languageModel = model.responsive
+        ? provider.responses(model.name.trim())
+        : provider.chat(model.name.trim());
+      const modelMessages = await convertToModelMessages(messages);
+      const system = [input.system, input.memory, input.cwd ? `当前 workspace：${input.cwd}` : ""]
+        .filter(Boolean)
+        .join("\n\n");
+      const result = streamText({
+        model: languageModel,
+        messages: modelMessages,
+        ...(system ? (model.responsive ? { instructions: system } : { system }) : {}),
+        tools: model.supportsTools
+          ? {
+              ...(createClientTools(input.toolNames) ?? {}),
+              ...createWorkspaceToolsForInput({ ...input, model }),
+              ...selectTools(createBusinessTools(this.chatConfig.get().apiKeys), input.toolNames),
+              ...(input.toolNames?.includes("web_search") && model.responsive
+                ? { web_search: openai.tools.webSearch({}) as unknown as ToolSet[string] }
+                : {}),
+            }
+          : undefined,
+        stopWhen: stepCountIs(20),
+        abortSignal: controller.signal,
+      });
+      let completedMessages: UIMessage[] | undefined;
+      const uiStream = result.toUIMessageStream({
+        originalMessages: messages,
+        onFinish: ({ messages: finishedMessages }) => {
+          completedMessages = finishedMessages;
+        },
+        onError: errorMessage,
+      });
+      const [clientStream, observerStream] = uiStream.tee();
+      void this.consume(session, runId, observerStream, () => completedMessages);
+      return createUIMessageStreamResponse({ stream: clientStream });
+    } catch (error) {
+      this.active.delete(sessionId);
+      this.drafts.delete(sessionId);
+      await this.journal.clear(runId);
+      this.setStatus(sessionId, "error", runId);
+      throw error;
+    }
   }
 
   stop(sessionId: string) {
@@ -201,6 +228,9 @@ export class RunRegistry {
       this.events.publish({ type: "run.error", sessionId, runId, error: message });
     } finally {
       this.active.delete(sessionId);
+      await this.journal.clear(runId).catch((error) => {
+        console.error("Failed to clear Chat Server run journal", error);
+      });
     }
   }
 }

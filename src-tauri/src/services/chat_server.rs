@@ -1,15 +1,28 @@
 use serde::Serialize;
 use std::fs;
+use std::io::{BufRead, BufReader, Read};
 use std::net::{SocketAddr, TcpStream};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
 pub const DEFAULT_PORT: u16 = 14317;
+const MONITOR_INTERVAL: Duration = Duration::from_secs(5);
+const STABLE_RUNTIME: Duration = Duration::from_secs(60);
+const MAX_RESTART_ATTEMPTS: u32 = 3;
+
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ChatServerState {
+    Running,
+    Starting,
+    Restarting,
+    Offline,
+}
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -18,90 +31,364 @@ pub struct ChatServerInfo {
     pub port: u16,
     pub token: String,
     pub running: bool,
+    pub state: ChatServerState,
+    pub restart_attempt: u32,
+    pub last_exit: Option<String>,
 }
 
+struct RuntimeState {
+    child: Option<Child>,
+    info: ChatServerInfo,
+    stop_requested: bool,
+    stable_since: Option<Instant>,
+}
+
+#[derive(Clone)]
 pub struct ChatServerManager {
     app: AppHandle,
-    child: Mutex<Option<Child>>,
-    info: Mutex<ChatServerInfo>,
+    state: Arc<Mutex<RuntimeState>>,
+    lifecycle: Arc<Mutex<()>>,
 }
 
 impl ChatServerManager {
-    pub fn start(app: &AppHandle) -> Result<Self, String> {
-        let (child, info) = spawn_server(app)?;
-        Ok(Self {
+    pub fn start(app: &AppHandle) -> Self {
+        let manager = Self {
             app: app.clone(),
-            child: Mutex::new(Some(child)),
-            info: Mutex::new(info),
-        })
+            state: Arc::new(Mutex::new(RuntimeState {
+                child: None,
+                info: default_info(ChatServerState::Starting),
+                stop_requested: false,
+                stable_since: None,
+            })),
+            lifecycle: Arc::new(Mutex::new(())),
+        };
+        manager.start_monitor();
+
+        let initial = manager.clone();
+        let _ = thread::Builder::new()
+            .name("chat-server-start".to_string())
+            .spawn(move || initial.spawn_and_store(0));
+        manager
     }
 
-    fn spawn(&self) -> Result<(Child, ChatServerInfo), String> {
-        spawn_server(&self.app)
+    fn start_monitor(&self) {
+        let monitor = self.clone();
+        let _ = thread::Builder::new()
+            .name("chat-server-monitor".to_string())
+            .spawn(move || monitor.monitor_loop());
     }
 
     pub fn unavailable(app: &AppHandle) -> Self {
         Self {
             app: app.clone(),
-            child: Mutex::new(None),
-            info: Mutex::new(ChatServerInfo {
-                host: "127.0.0.1".to_string(),
-                port: DEFAULT_PORT,
-                token: String::new(),
-                running: false,
-            }),
+            state: Arc::new(Mutex::new(RuntimeState {
+                child: None,
+                info: default_info(ChatServerState::Offline),
+                stop_requested: true,
+                stable_since: None,
+            })),
+            lifecycle: Arc::new(Mutex::new(())),
         }
     }
 
     pub fn info(&self) -> ChatServerInfo {
-        self.info
+        self.state
             .lock()
-            .expect("Chat Server info lock poisoned")
+            .expect("Chat Server state lock poisoned")
+            .info
             .clone()
     }
 
     pub fn restart(&self) -> Result<ChatServerInfo, String> {
-        self.shutdown()?;
-        let (child, info) = self.spawn()?;
-        let mut child_guard = self
-            .child
+        let _lifecycle = self
+            .lifecycle
             .lock()
-            .map_err(|error| format!("重启 Chat Server 时锁定进程失败：{error}"))?;
-        *child_guard = Some(child);
-        *self
-            .info
-            .lock()
-            .map_err(|error| format!("重启 Chat Server 时锁定状态失败：{error}"))? = info.clone();
-        Ok(info)
+            .map_err(|error| format!("重启 Chat Server 时锁定生命周期失败：{error}"))?;
+        let child = {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|error| format!("重启 Chat Server 时锁定状态失败：{error}"))?;
+            state.info.state = ChatServerState::Restarting;
+            state.info.running = false;
+            state.info.restart_attempt = 0;
+            state.stop_requested = true;
+            state.stable_since = None;
+            state.child.take()
+        };
+        terminate_child(child);
+
+        {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|error| format!("重启 Chat Server 时更新状态失败：{error}"))?;
+            state.stop_requested = false;
+            state.info.state = ChatServerState::Starting;
+        }
+
+        match spawn_server(&self.app) {
+            Ok((child, mut info)) => {
+                let mut state = self
+                    .state
+                    .lock()
+                    .map_err(|error| format!("重启 Chat Server 时保存状态失败：{error}"))?;
+                info.last_exit = state.info.last_exit.clone();
+                state.child = Some(child);
+                state.info = info;
+                state.stable_since = Some(Instant::now());
+                Ok(state.info.clone())
+            }
+            Err(error) => {
+                let mut state = self.state.lock().map_err(|lock_error| {
+                    format!("重启 Chat Server 时保存失败状态失败：{lock_error}")
+                })?;
+                state.info.state = ChatServerState::Offline;
+                state.info.running = false;
+                state.info.last_exit = Some(error.clone());
+                tauri_plugin_log::log::error!("Chat Server 手动重启失败：{error}");
+                Err(error)
+            }
+        }
     }
 
     pub fn shutdown(&self) -> Result<(), String> {
-        let mut child = self
-            .child
+        let _lifecycle = self
+            .lifecycle
             .lock()
-            .map_err(|error| format!("关闭 Chat Server 时锁定进程失败：{error}"))?
-            .take();
-        let Some(mut child) = child.take() else {
-            self.info
+            .map_err(|error| format!("关闭 Chat Server 时锁定生命周期失败：{error}"))?;
+        let child = {
+            let mut state = self
+                .state
                 .lock()
-                .map_err(|error| format!("关闭 Chat Server 时锁定状态失败：{error}"))?
-                .running = false;
-            return Ok(());
+                .map_err(|error| format!("关闭 Chat Server 时锁定状态失败：{error}"))?;
+            state.stop_requested = true;
+            state.info.running = false;
+            state.info.state = ChatServerState::Offline;
+            state.stable_since = None;
+            state.child.take()
         };
-
-        let kill_error = child.kill().err();
-        child
-            .wait()
-            .map_err(|error| format!("等待 Chat Server 退出失败：{error}"))?;
-        if let Some(error) = kill_error {
-            eprintln!("Chat Server 可能已提前退出：{error}");
-        }
-        self.info
-            .lock()
-            .map_err(|error| format!("关闭 Chat Server 时锁定状态失败：{error}"))?
-            .running = false;
+        terminate_child(child);
         Ok(())
     }
+
+    fn spawn_and_store(&self, attempt: u32) {
+        let Ok(_lifecycle) = self.lifecycle.lock() else {
+            tauri_plugin_log::log::error!("Chat Server 生命周期锁已损坏，无法启动");
+            return;
+        };
+        let Ok(mut state) = self.state.lock() else {
+            tauri_plugin_log::log::error!("Chat Server 状态锁已损坏，无法启动");
+            return;
+        };
+        if state.stop_requested || state.child.is_some() {
+            return;
+        }
+        state.info.state = if attempt == 0 {
+            ChatServerState::Starting
+        } else {
+            ChatServerState::Restarting
+        };
+        state.info.running = false;
+        state.info.restart_attempt = attempt;
+        drop(state);
+
+        match spawn_server(&self.app) {
+            Ok((child, mut info)) => {
+                if let Ok(mut state) = self.state.lock() {
+                    info.restart_attempt = attempt;
+                    if attempt > 0 {
+                        info.last_exit = state.info.last_exit.clone();
+                    }
+                    state.child = Some(child);
+                    state.info = info;
+                    state.stable_since = Some(Instant::now());
+                }
+                tauri_plugin_log::log::info!("Chat Server 已启动，重启次数：{attempt}");
+            }
+            Err(error) => {
+                if let Ok(mut state) = self.state.lock() {
+                    state.info.state = ChatServerState::Offline;
+                    state.info.running = false;
+                    state.info.restart_attempt = attempt;
+                    state.info.last_exit = Some(error.clone());
+                    state.stable_since = None;
+                }
+                tauri_plugin_log::log::error!("Chat Server 启动失败（第 {attempt} 次）：{error}");
+            }
+        }
+    }
+
+    fn monitor_loop(&self) {
+        loop {
+            thread::sleep(MONITOR_INTERVAL);
+            if self.is_stopping() {
+                return;
+            }
+
+            let should_restart = {
+                let Ok(_lifecycle) = self.lifecycle.lock() else {
+                    return;
+                };
+                let Ok(mut state) = self.state.lock() else {
+                    return;
+                };
+                if state.stop_requested {
+                    return;
+                }
+                if let Some(child) = state.child.as_mut() {
+                    match child.try_wait() {
+                        Ok(None) => {
+                            if state
+                                .stable_since
+                                .is_some_and(|started| started.elapsed() >= STABLE_RUNTIME)
+                            {
+                                state.info.restart_attempt = 0;
+                            }
+                            false
+                        }
+                        Ok(Some(status)) => {
+                            state.child.take();
+                            state.info.running = false;
+                            state.info.state = ChatServerState::Offline;
+                            state.info.last_exit = Some(format!("进程退出：{status}"));
+                            state.stable_since = None;
+                            tauri_plugin_log::log::error!("Chat Server 异常退出：{status}");
+                            true
+                        }
+                        Err(error) => {
+                            state.child.take();
+                            state.info.running = false;
+                            state.info.state = ChatServerState::Offline;
+                            state.info.last_exit = Some(format!("检查进程状态失败：{error}"));
+                            state.stable_since = None;
+                            tauri_plugin_log::log::error!("检查 Chat Server 进程状态失败：{error}");
+                            true
+                        }
+                    }
+                } else {
+                    !matches!(state.info.state, ChatServerState::Starting)
+                }
+            };
+
+            if !should_restart {
+                continue;
+            }
+
+            let attempt = self
+                .state
+                .lock()
+                .map(|state| state.info.restart_attempt.saturating_add(1))
+                .unwrap_or(MAX_RESTART_ATTEMPTS + 1);
+            if attempt > MAX_RESTART_ATTEMPTS {
+                if let Ok(mut state) = self.state.lock() {
+                    state.info.state = ChatServerState::Offline;
+                    state.info.running = false;
+                }
+                tauri_plugin_log::log::error!("Chat Server 自动重启次数已达上限");
+                continue;
+            }
+
+            if let Ok(mut state) = self.state.lock() {
+                state.info.state = ChatServerState::Restarting;
+                state.info.restart_attempt = attempt;
+            }
+
+            if !sleep_before_restart(self, attempt) {
+                return;
+            }
+            self.spawn_and_store(attempt);
+        }
+    }
+
+    fn is_stopping(&self) -> bool {
+        self.state
+            .lock()
+            .map(|state| state.stop_requested)
+            .unwrap_or(true)
+    }
+}
+
+fn default_info(state: ChatServerState) -> ChatServerInfo {
+    ChatServerInfo {
+        host: "127.0.0.1".to_string(),
+        port: DEFAULT_PORT,
+        token: String::new(),
+        running: matches!(state, ChatServerState::Running),
+        state,
+        restart_attempt: 0,
+        last_exit: None,
+    }
+}
+
+fn sleep_before_restart(manager: &ChatServerManager, attempt: u32) -> bool {
+    let delay = restart_delay(attempt);
+    let started = Instant::now();
+    while started.elapsed() < delay {
+        if manager.is_stopping() {
+            return false;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    true
+}
+
+fn restart_delay(attempt: u32) -> Duration {
+    match attempt {
+        1 => Duration::from_secs(1),
+        2 => Duration::from_secs(2),
+        _ => Duration::from_secs(5),
+    }
+}
+
+fn terminate_child(child: Option<Child>) {
+    let Some(mut child) = child else {
+        return;
+    };
+
+    if request_graceful_exit(&child) {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < deadline {
+            match child.try_wait() {
+                Ok(Some(_)) => return,
+                Ok(None) => thread::sleep(Duration::from_millis(50)),
+                Err(error) => {
+                    tauri_plugin_log::log::warn!("检查 Chat Server 优雅退出状态失败：{error}");
+                    break;
+                }
+            }
+        }
+    }
+
+    if let Err(error) = child.kill() {
+        tauri_plugin_log::log::warn!("Chat Server 可能已提前退出：{error}");
+    }
+    if let Err(error) = child.wait() {
+        tauri_plugin_log::log::warn!("等待 Chat Server 退出失败：{error}");
+    }
+}
+
+#[cfg(unix)]
+fn request_graceful_exit(child: &Child) -> bool {
+    std::process::Command::new("kill")
+        .args(["-TERM", &child.id().to_string()])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+#[cfg(all(not(unix), not(windows)))]
+fn request_graceful_exit(_child: &Child) -> bool {
+    false
+}
+
+#[cfg(windows)]
+fn request_graceful_exit(child: &Child) -> bool {
+    std::process::Command::new("taskkill")
+        .args(["/PID", &child.id().to_string(), "/T"])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
 }
 
 fn spawn_server(app: &AppHandle) -> Result<(Child, ChatServerInfo), String> {
@@ -118,12 +405,13 @@ fn spawn_server(app: &AppHandle) -> Result<(Child, ChatServerInfo), String> {
     let mut command = Command::new(executable);
     command
         .env("CHAT_SERVER_HOST", "127.0.0.1")
+        .env("CHAT_SERVER_PRODUCTION", "1")
         .env("CHAT_SERVER_TOKEN", &token)
         .env("CHAT_SERVER_DATA_DIR", &data_dir)
         .env("CHAT_SERVER_PORT", port.to_string())
         .stdin(Stdio::null())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit());
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     if let Ok(app_data_dir) = app.path().app_data_dir() {
         command
             .env(
@@ -174,6 +462,12 @@ fn spawn_server(app: &AppHandle) -> Result<(Child, ChatServerInfo), String> {
     let mut child = command
         .spawn()
         .map_err(|error| format!("无法启动 Chat Server sidecar：{error}"))?;
+    if let Some(stdout) = child.stdout.take() {
+        spawn_output_logger(stdout, false);
+    }
+    if let Some(stderr) = child.stderr.take() {
+        spawn_output_logger(stderr, true);
+    }
     if let Err(error) = wait_for_server(&mut child, port) {
         let _ = child.kill();
         let _ = child.wait();
@@ -187,8 +481,28 @@ fn spawn_server(app: &AppHandle) -> Result<(Child, ChatServerInfo), String> {
             port,
             token,
             running: true,
+            state: ChatServerState::Running,
+            restart_attempt: 0,
+            last_exit: None,
         },
     ))
+}
+
+fn spawn_output_logger<R>(reader: R, is_error: bool)
+where
+    R: Read + Send + 'static,
+{
+    let _ = thread::Builder::new()
+        .name("chat-server-log".to_string())
+        .spawn(move || {
+            for line in BufReader::new(reader).lines().map_while(Result::ok) {
+                if is_error {
+                    tauri_plugin_log::log::error!("Chat Server stderr: {line}");
+                } else {
+                    tauri_plugin_log::log::info!("Chat Server stdout: {line}");
+                }
+            }
+        });
 }
 
 fn wait_for_server(child: &mut Child, port: u16) -> Result<(), String> {
@@ -208,12 +522,6 @@ fn wait_for_server(child: &mut Child, port: u16) -> Result<(), String> {
             return Err(format!("Chat Server sidecar 在端口 {port} 上未就绪"));
         }
         thread::sleep(Duration::from_millis(100));
-    }
-}
-
-impl Drop for ChatServerManager {
-    fn drop(&mut self) {
-        let _ = self.shutdown();
     }
 }
 
@@ -288,4 +596,18 @@ fn find_sidecar(app: &AppHandle) -> Result<std::path::PathBuf, String> {
         .flatten()
         .find(|path| path.is_file())
         .ok_or_else(|| "未找到已构建的 chat-server sidecar".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::restart_delay;
+    use std::time::Duration;
+
+    #[test]
+    fn restart_backoff_is_bounded() {
+        assert_eq!(restart_delay(1), Duration::from_secs(1));
+        assert_eq!(restart_delay(2), Duration::from_secs(2));
+        assert_eq!(restart_delay(3), Duration::from_secs(5));
+        assert_eq!(restart_delay(99), Duration::from_secs(5));
+    }
 }
