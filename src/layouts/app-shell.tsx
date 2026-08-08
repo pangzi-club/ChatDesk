@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -17,6 +17,7 @@ import {
   Image,
   KeyRound,
   LayoutDashboard,
+  LoaderCircle,
   Lock,
   MessageCircle,
   Monitor,
@@ -25,8 +26,10 @@ import {
   PanelLeft,
   PanelTop,
   PlugZap,
+  Plus,
   ScrollText,
   Search,
+  Server,
   Settings,
   Shield,
   Sparkles,
@@ -47,6 +50,11 @@ import { TitlebarDragRegion } from "@/components/titlebar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { rememberReturnPath } from "@/lib/app-return-path";
+import {
+  type ChatServerSession,
+  loadChatServerPort,
+  subscribeChatServerEvents,
+} from "@/lib/chat-server";
 import { type ChatIndexItem, loadChatIndex } from "@/lib/chat-store";
 import { appendSystemLog } from "@/lib/system-log";
 import { applyTrayEnabled, loadTrayEnabled } from "@/lib/tray";
@@ -165,6 +173,12 @@ const commandItems = [
   },
   { to: "/settings/tray", label: "托盘", icon: PanelTop, keywords: ["设置", "tray"] },
   {
+    to: "/settings/chat-server",
+    label: "Chat Server",
+    icon: Server,
+    keywords: ["设置", "chat", "server", "端口", "localhost", "hono"],
+  },
+  {
     to: "/settings/logs",
     label: "活动记录",
     icon: ScrollText,
@@ -177,6 +191,26 @@ const commandItems = [
   keywords: string[];
 }>;
 type CommandItem = (typeof commandItems)[number];
+
+const CHAT_UNREAD_STORAGE_KEY = "m-dashboard-chat-unread-v1";
+
+function loadUnreadChatIds() {
+  if (typeof window === "undefined") return new Set<string>();
+  try {
+    const value = JSON.parse(window.localStorage.getItem(CHAT_UNREAD_STORAGE_KEY) ?? "[]");
+    return new Set(
+      Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : [],
+    );
+  } catch {
+    return new Set<string>();
+  }
+}
+
+function saveUnreadChatIds(ids: Set<string>) {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(CHAT_UNREAD_STORAGE_KEY, JSON.stringify([...ids]));
+  }
+}
 
 function AppShell() {
   const [isCommandMenuOpen, setIsCommandMenuOpen] = useState(false);
@@ -252,7 +286,7 @@ function AppShell() {
               </div>
               <SidebarHeader />
               <nav
-                className="space-y-0.5 px-3 py-2 max-md:px-2 max-sm:px-1.5"
+                className="space-y-0.5 px-3 py-2 pb-1 max-md:px-2 max-sm:px-1.5"
                 aria-label="Main navigation"
               >
                 {navItems.slice(0, 2).map((item) => (
@@ -353,14 +387,21 @@ function SidebarNavItem({ item }: { item: (typeof navItems)[number] }) {
 type WorkspaceChatGroup = {
   key: string;
   label: string;
+  cwd?: string;
   sessions: ChatIndexItem[];
 };
 
 function WorkspaceConversationGroups() {
   const navigate = useNavigate();
   const location = useLocation();
+  const queryClient = useQueryClient();
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set());
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
+  const [serverStatuses, setServerStatuses] = useState<Record<string, ChatServerSession["status"]>>(
+    {},
+  );
+  const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(loadUnreadChatIds);
+  const [serverPort, setServerPort] = useState(14317);
   const chatIndexQuery = useQuery({
     queryKey: ["chat-index"],
     queryFn: loadChatIndex,
@@ -369,13 +410,51 @@ function WorkspaceConversationGroups() {
     queryKey: ["workspace-projects"],
     queryFn: loadWorkspaceProjects,
   });
-  const activeSessionId = new URLSearchParams(location.search).get("sessionId");
+  const activeSessionId =
+    location.pathname === "/chat" ? new URLSearchParams(location.search).get("sessionId") : null;
+  const activeSessionIdRef = useRef(activeSessionId);
+  activeSessionIdRef.current = activeSessionId;
   const groups = useMemo(
     () => groupChatsByWorkspace(chatIndexQuery.data ?? [], workspaceProjectsQuery.data ?? []),
     [chatIndexQuery.data, workspaceProjectsQuery.data],
   );
   const isPending = chatIndexQuery.isPending || workspaceProjectsQuery.isPending;
   const isError = chatIndexQuery.isError || workspaceProjectsQuery.isError;
+
+  useEffect(() => {
+    let active = true;
+    void loadChatServerPort().then((port) => {
+      if (active) setServerPort(port);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const cleanup = subscribeChatServerEvents(serverPort, {
+      onSnapshot: (sessions) => {
+        setServerStatuses(
+          Object.fromEntries(sessions.map((session) => [session.id, session.status])),
+        );
+        void queryClient.invalidateQueries({ queryKey: ["chat-index"] });
+      },
+      onStatus: ({ sessionId, status }) => {
+        setServerStatuses((current) => ({ ...current, [sessionId]: status }));
+        if (status === "ready") {
+          setUnreadSessionIds((current) => {
+            const next = new Set(current);
+            if (activeSessionIdRef.current === sessionId) next.delete(sessionId);
+            else next.add(sessionId);
+            saveUnreadChatIds(next);
+            return next;
+          });
+        }
+        void queryClient.invalidateQueries({ queryKey: ["chat-index"] });
+      },
+    });
+    return cleanup;
+  }, [queryClient, serverPort]);
 
   function toggleCollapsed(groupKey: string) {
     setCollapsedGroups((current) => {
@@ -393,6 +472,23 @@ function WorkspaceConversationGroups() {
       else next.add(groupKey);
       return next;
     });
+  }
+
+  function startWorkspaceSession(group: WorkspaceChatGroup) {
+    const params = new URLSearchParams({ workspaceId: group.key });
+    if (group.cwd) params.set("workspaceCwd", group.cwd);
+    navigate(`/chat?${params.toString()}`);
+  }
+
+  function openSession(sessionId: string) {
+    setUnreadSessionIds((current) => {
+      if (!current.has(sessionId)) return current;
+      const next = new Set(current);
+      next.delete(sessionId);
+      saveUnreadChatIds(next);
+      return next;
+    });
+    navigate(`/chat?sessionId=${encodeURIComponent(sessionId)}`);
   }
 
   return (
@@ -420,25 +516,40 @@ function WorkspaceConversationGroups() {
 
             return (
               <div key={group.key}>
-                <button
-                  aria-expanded={!isCollapsed}
-                  className="flex h-7 w-full items-center gap-1.5 rounded-md px-2 text-left font-medium text-[13px] text-foreground transition-colors hover:bg-accent/60"
-                  onClick={() => toggleCollapsed(group.key)}
-                  title={group.label}
-                  type="button"
-                >
-                  <ChevronDown
-                    className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
-                  />
-                  <FolderGit2 className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="truncate">{group.label}</span>
-                </button>
+                <div className="flex h-7 items-center gap-1.5">
+                  <button
+                    aria-expanded={!isCollapsed}
+                    className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left font-medium text-[13px] text-foreground transition-colors hover:bg-accent/60"
+                    onClick={() => toggleCollapsed(group.key)}
+                    title={group.label}
+                    type="button"
+                  >
+                    <ChevronDown
+                      className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
+                    />
+                    <FolderGit2 className="size-4 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{group.label}</span>
+                  </button>
+                  <button
+                    aria-label={`在 ${group.label} 中新建对话`}
+                    className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+                    onClick={() => startWorkspaceSession(group)}
+                    title={`在 ${group.label} 中新建对话`}
+                    type="button"
+                  >
+                    <Plus className="size-3.5" />
+                  </button>
+                </div>
                 {!isCollapsed ? (
                   group.sessions.length > 0 ? (
                     <div className="space-y-0.5">
                       {visibleSessions.map((session) => {
                         const isActive =
                           location.pathname === "/chat" && activeSessionId === session.id;
+                        const sessionStatus = serverStatuses[session.id];
+                        const isRunning =
+                          sessionStatus === "submitted" || sessionStatus === "streaming";
+                        const isUnread = unreadSessionIds.has(session.id);
 
                         return (
                           <button
@@ -449,13 +560,22 @@ function WorkspaceConversationGroups() {
                                 : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
                             }`}
                             key={session.id}
-                            onClick={() =>
-                              navigate(`/chat?sessionId=${encodeURIComponent(session.id)}`)
-                            }
+                            onClick={() => openSession(session.id)}
                             title={session.title}
                             type="button"
                           >
                             <span className="truncate">{session.title}</span>
+                            {isRunning ? (
+                              <LoaderCircle
+                                aria-hidden="true"
+                                className="ml-auto size-3.5 shrink-0 animate-spin text-primary"
+                              />
+                            ) : isUnread ? (
+                              <span
+                                className="ml-auto size-1.5 shrink-0 rounded-full bg-primary"
+                                title="未读消息"
+                              />
+                            ) : null}
                           </button>
                         );
                       })}
@@ -533,11 +653,11 @@ function groupChatsByWorkspace(
   ];
 
   for (const project of projects) {
-    const workspaceSessions = sessionsByWorkspace.get(project.id);
-    if (!workspaceSessions?.length) continue;
+    const workspaceSessions = sessionsByWorkspace.get(project.id) ?? [];
     groups.push({
       key: project.id,
       label: pathBasename(project.path),
+      cwd: project.path,
       sessions: workspaceSessions,
     });
     sessionsByWorkspace.delete(project.id);
@@ -547,6 +667,7 @@ function groupChatsByWorkspace(
     groups.push({
       key: workspaceId,
       label: pathBasename(workspaceSessions[0]?.cwd ?? "") || "已移除的 Workspace",
+      cwd: workspaceSessions[0]?.cwd,
       sessions: workspaceSessions,
     });
   }

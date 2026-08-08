@@ -1,18 +1,12 @@
-import { createOpenAI } from "@ai-sdk/openai";
 import { useChat } from "@ai-sdk/react";
 import { code } from "@streamdown/code";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import {
   type ChatTransport,
-  convertToModelMessages,
+  DefaultChatTransport,
   getToolName,
   isToolUIPart,
-  streamText,
-  type ToolSet,
-  toUIMessageStream,
   type UIMessage,
-  type UIMessageChunk,
 } from "ai";
 import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
@@ -37,7 +31,7 @@ import {
   Trash2,
   User,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import { ChatMemoryDialog } from "@/components/chat-memory-dialog";
@@ -74,6 +68,14 @@ import {
 } from "@/lib/chat-memory";
 import { isWorkspaceMemoryExcludedTool, scheduleMemoryUpdateFromTurn } from "@/lib/chat-memory-ops";
 import {
+  chatServerHeaders,
+  chatServerUrl,
+  ensureChatServerSession,
+  loadChatServerPort,
+  stopChatServerRun,
+  subscribeChatServerEvents,
+} from "@/lib/chat-server";
+import {
   type ChatDisplaySettings,
   DEFAULT_CHAT_DISPLAY,
   loadChatDisplaySettings,
@@ -90,11 +92,7 @@ import {
   loadChatSession,
   saveChatSession,
 } from "@/lib/chat-store";
-import {
-  formatToolsSystemHint,
-  resolveActiveTools,
-  resolveAvailablePacks,
-} from "@/lib/chat-tool-defs";
+import { resolveAvailablePacks } from "@/lib/chat-tool-defs";
 import {
   type ChatToolPackId,
   type ChatToolsSettings,
@@ -103,14 +101,8 @@ import {
   loadChatToolsSettings,
   saveChatToolsSettings,
 } from "@/lib/chat-tools";
-import {
-  formatTokenUsage,
-  getMessageUsage,
-  normalizeTokenUsage,
-  type TokenUsage,
-} from "@/lib/chat-usage";
-import { loadMcpServers, type McpServerConfig, saveMcpServers } from "@/lib/mcp";
-import { closeMcpServers, loadMcpToolsForServers } from "@/lib/mcp-client";
+import { formatTokenUsage, getMessageUsage } from "@/lib/chat-usage";
+import { loadMcpServers, saveMcpServers } from "@/lib/mcp";
 import { loadModels, type ModelConfig } from "@/lib/models";
 import {
   formatSkillsSystemHint,
@@ -122,10 +114,31 @@ import {
 } from "@/lib/skills";
 import { loadWorkspaceProjects } from "@/lib/workspaces";
 
+const EMPTY_STRING_ARRAY: string[] = [];
+
+type LiveDraft = {
+  runId: string;
+  text: string;
+};
+
+function mergeLiveDraft(messages: UIMessage[], draft: LiveDraft | undefined) {
+  if (!draft?.text) return messages;
+  const assistant: UIMessage = {
+    id: draft.runId,
+    role: "assistant",
+    parts: [{ type: "text", text: draft.text }],
+  };
+  const existingIndex = messages.findIndex((message) => message.id === draft.runId);
+  if (existingIndex < 0) return [...messages, assistant];
+  return messages.map((message, index) => (index === existingIndex ? assistant : message));
+}
+
 function ChatPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedSessionId = searchParams.get("sessionId");
+  const requestedWorkspaceId = searchParams.get("workspaceId");
+  const requestedWorkspaceCwd = searchParams.get("workspaceCwd") ?? "";
   const { data: chatIndex = [], isLoading: isChatHistoryLoading } = useQuery({
     queryKey: ["chat-index"],
     queryFn: loadChatIndex,
@@ -158,8 +171,8 @@ function ChatPage() {
     queryKey: ["chat-skills-selected"],
     queryFn: loadChatSkillSelection,
   });
-  const installedSkillIds = installedSkillsQuery.data ?? [];
-  const savedChatSkillIds = chatSkillSelectionQuery.data ?? [];
+  const installedSkillIds = installedSkillsQuery.data ?? EMPTY_STRING_ARRAY;
+  const savedChatSkillIds = chatSkillSelectionQuery.data ?? EMPTY_STRING_ARRAY;
   const { data: workspaceProjects = [], isLoading: isWorkspacesLoading } = useQuery({
     queryKey: ["workspace-projects"],
     queryFn: loadWorkspaceProjects,
@@ -168,8 +181,6 @@ function ChatPage() {
   memoryRef.current = chatMemory;
   const toolsRef = useRef(chatTools);
   toolsRef.current = chatTools;
-  const mcpRef = useRef<McpServerConfig[]>(mcpServers);
-  mcpRef.current = mcpServers;
   const skillsRef = useRef<SkillDefinition[]>(availableSkills);
   skillsRef.current = availableSkills;
   const models = configuredModels ?? [];
@@ -179,7 +190,6 @@ function ChatPage() {
   const [sessionTitle, setSessionTitle] = useState("新对话");
   const [workspaceKey, setWorkspaceKey] = useState("");
   const [sessionCwd, setSessionCwd] = useState("");
-  const previousMcpIdsRef = useRef<string[]>([]);
   const skillsSelectionInitializedRef = useRef(false);
   const sessionCreatedAtRef = useRef(new Date().toISOString());
   const sessionAttachmentsRef = useRef<ChatAttachment[]>([]);
@@ -212,14 +222,15 @@ function ChatPage() {
   const transport = useMemo(
     () =>
       createModelTransport(
+        sessionId,
         selectedModel,
         () => memoryRef.current,
         () => toolsRef.current,
         () => workspaceRef.current,
-        () => mcpRef.current.filter((server) => selectedMcpIds.includes(server.id)),
+        () => workspaceKey,
         () => skillsRef.current.filter((skill) => selectedSkillIds.includes(skill.id)),
       ),
-    [selectedModel, selectedMcpIds, selectedSkillIds],
+    [selectedModel, selectedSkillIds, sessionId, workspaceKey],
   );
   const { messages, setMessages, sendMessage, stop, status, error } = useChat({
     id: sessionId,
@@ -228,6 +239,105 @@ function ChatPage() {
       console.error("Chat request failed", chatError);
     },
   });
+  const activeSessionRef = useRef(sessionId);
+  activeSessionRef.current = sessionId;
+  const chatStatusRef = useRef(status);
+  chatStatusRef.current = status;
+  const attachedStreamSessionRef = useRef<string | null>(null);
+  const liveDraftsRef = useRef(new Map<string, LiveDraft>());
+
+  const startNewSession = useCallback(
+    (nextWorkspaceId = "", nextWorkspaceCwd = "") => {
+      const nextSessionId = createSessionId();
+      setSessionId(nextSessionId);
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set("sessionId", nextSessionId);
+          next.delete("workspaceId");
+          next.delete("workspaceCwd");
+          return next;
+        },
+        { replace: true },
+      );
+      workspaceSelectionInitializedRef.current = true;
+      setWorkspaceKey(nextWorkspaceId);
+      setSessionCwd(nextWorkspaceCwd);
+      const installed = new Set(installedSkillIds);
+      setSelectedSkillIds(savedChatSkillIds.filter((id) => installed.has(id)));
+      sessionCreatedAtRef.current = new Date().toISOString();
+      sessionAttachmentsRef.current = [];
+      setSessionTitle("新对话");
+      savedFingerprintRef.current = "";
+      extractedFingerprintRef.current = "";
+      suppressSaveRef.current = false;
+      setMessages([]);
+      setInput("");
+    },
+    [installedSkillIds, savedChatSkillIds, setMessages, setSearchParams],
+  );
+
+  useEffect(() => {
+    if (sessionId) attachedStreamSessionRef.current = null;
+  }, [sessionId]);
+
+  useEffect(() => {
+    // Stop consuming the previous browser stream when switching chats. The server run remains
+    // active; its SSE deltas are retained so the response can be rendered when we return.
+    const sessionToDetach = sessionId;
+    return () => {
+      if (sessionToDetach) stop();
+    };
+  }, [sessionId, stop]);
+
+  useEffect(() => {
+    let active = true;
+    let cleanup: (() => void) | undefined;
+    void loadChatServerPort().then((port) => {
+      if (!active) return;
+      cleanup = subscribeChatServerEvents(port, {
+        onDelta: ({ sessionId: eventSessionId, runId, delta }) => {
+          const current = liveDraftsRef.current.get(eventSessionId) ?? {
+            runId: runId ?? `run-${eventSessionId}`,
+            text: "",
+          };
+          current.text += delta;
+          if (runId) current.runId = runId;
+          liveDraftsRef.current.set(eventSessionId, current);
+
+          if (
+            activeSessionRef.current === eventSessionId &&
+            attachedStreamSessionRef.current !== eventSessionId &&
+            chatStatusRef.current !== "submitted" &&
+            chatStatusRef.current !== "streaming"
+          ) {
+            setMessages((messages) => mergeLiveDraft(messages, current));
+          }
+        },
+        onMessageUpdated: ({ sessionId: eventSessionId, message }) => {
+          const draft = liveDraftsRef.current.get(eventSessionId);
+          liveDraftsRef.current.delete(eventSessionId);
+          if (
+            activeSessionRef.current === eventSessionId &&
+            attachedStreamSessionRef.current !== eventSessionId &&
+            message
+          ) {
+            setMessages((messages) => {
+              const withoutDraft = messages.filter(
+                (item) => item.id !== draft?.runId && item.id !== message.id,
+              );
+              return [...withoutDraft, message];
+            });
+          }
+        },
+      });
+    });
+    return () => {
+      active = false;
+      cleanup?.();
+    };
+  }, [setMessages]);
+
   useEffect(() => {
     void loadChatDisplaySettings().then(setChatDisplay);
   }, []);
@@ -347,49 +457,64 @@ function ChatPage() {
   }, [models, selectedModelId]);
 
   useEffect(() => {
-    const removed = previousMcpIdsRef.current.filter((id) => !selectedMcpIds.includes(id));
-    previousMcpIdsRef.current = selectedMcpIds;
-    if (removed.length > 0) void closeMcpServers(removed);
-  }, [selectedMcpIds]);
-
-  useEffect(() => {
-    if (selectedMcpIds.length === 0) return;
-    void loadMcpToolsForServers(mcpServers.filter((server) => selectedMcpIds.includes(server.id)));
-  }, [mcpServers, selectedMcpIds]);
-
-  useEffect(() => {
     if (isChatHistoryLoading) return;
 
     if (requestedSessionId) {
-      const clearRequestedSession = () => {
-        setSearchParams(
-          (prev) => {
-            const next = new URLSearchParams(prev);
-            next.delete("sessionId");
-            return next;
-          },
-          { replace: true },
-        );
-      };
       if (requestedSessionId === sessionId) {
-        clearRequestedSession();
         return;
       }
       void loadChatSession(requestedSessionId).then((session) => {
         if (!session) {
-          clearRequestedSession();
+          startNewSession();
           return;
         }
-        stop();
         savedFingerprintRef.current = "";
         extractedFingerprintRef.current = "";
         pendingSessionRef.current = session;
         setSessionId(session.id);
-        clearRequestedSession();
       });
       return;
     }
-  }, [isChatHistoryLoading, requestedSessionId, sessionId, setSearchParams, stop]);
+  }, [isChatHistoryLoading, requestedSessionId, sessionId, startNewSession]);
+
+  useEffect(() => {
+    if (isChatHistoryLoading || requestedSessionId || requestedWorkspaceId === null) return;
+    startNewSession(
+      requestedWorkspaceId === "default" ? "" : requestedWorkspaceId,
+      requestedWorkspaceId === "default" ? "" : requestedWorkspaceCwd,
+    );
+  }, [
+    isChatHistoryLoading,
+    requestedSessionId,
+    requestedWorkspaceCwd,
+    requestedWorkspaceId,
+    startNewSession,
+  ]);
+
+  useEffect(() => {
+    if (
+      isChatHistoryLoading ||
+      requestedSessionId ||
+      requestedWorkspaceId !== null ||
+      searchParams.get("sessionId") === sessionId
+    )
+      return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("sessionId", sessionId);
+        return next;
+      },
+      { replace: true },
+    );
+  }, [
+    isChatHistoryLoading,
+    requestedSessionId,
+    requestedWorkspaceId,
+    searchParams,
+    sessionId,
+    setSearchParams,
+  ]);
 
   useEffect(() => {
     const session = pendingSessionRef.current;
@@ -408,7 +533,14 @@ function ChatPage() {
     setSessionCwd(session.cwd ?? "");
     sessionCreatedAtRef.current = session.createdAt;
     sessionAttachmentsRef.current = session.attachments;
-    setMessages(session.messages);
+    const lastSessionMessage = session.messages[session.messages.length - 1];
+    if (lastSessionMessage?.role === "assistant") {
+      liveDraftsRef.current.set(session.id, {
+        runId: lastSessionMessage.id,
+        text: messageText(lastSessionMessage),
+      });
+    }
+    setMessages(mergeLiveDraft(session.messages, liveDraftsRef.current.get(session.id)));
     if (session.modelId) setSelectedModelId(session.modelId);
     const sessionSkillIds = session.skillIds ?? savedChatSkillIds;
     setSelectedSkillIds(sessionSkillIds.filter((id) => installedSkillIds.includes(id)));
@@ -515,32 +647,22 @@ function ChatPage() {
     const text = input.trim();
     if (!text || isGenerating) return;
     setInput("");
+    liveDraftsRef.current.delete(sessionId);
+    attachedStreamSessionRef.current = sessionId;
     void sendMessage({ text });
   }
 
-  function startNewSession() {
+  function stopCurrentRun() {
     stop();
-    setSessionId(createSessionId());
-    workspaceSelectionInitializedRef.current = true;
-    setWorkspaceKey("");
-    setSessionCwd("");
-    const installed = new Set(installedSkillIds);
-    setSelectedSkillIds(savedChatSkillIds.filter((id) => installed.has(id)));
-    sessionCreatedAtRef.current = new Date().toISOString();
-    sessionAttachmentsRef.current = [];
-    setSessionTitle("新对话");
-    savedFingerprintRef.current = "";
-    extractedFingerprintRef.current = "";
-    suppressSaveRef.current = false;
-    setMessages([]);
-    setInput("");
+    void stopChatServerRun(sessionId).catch((error) => {
+      console.error("Failed to stop Chat Server run", error);
+    });
   }
 
   function openSession(item: ChatIndexItem) {
     if (item.id === sessionId) return;
     void loadChatSession(item.id).then((session) => {
       if (!session) return;
-      stop();
       savedFingerprintRef.current = "";
       extractedFingerprintRef.current = "";
       pendingSessionRef.current = session;
@@ -598,7 +720,7 @@ function ChatPage() {
             size="icon"
             variant="ghost"
             type="button"
-            onClick={startNewSession}
+            onClick={() => startNewSession()}
           >
             <Plus className="size-4" />
           </Button>
@@ -889,7 +1011,7 @@ function ChatPage() {
                 aria-label={isGenerating ? "停止生成" : "发送消息"}
                 className="chat-send-button"
                 disabled={(!input.trim() || !selectedModel) && !isGenerating}
-                onClick={isGenerating ? () => stop() : submitMessage}
+                onClick={isGenerating ? stopCurrentRun : submitMessage}
                 size="icon"
                 type="button"
               >
@@ -1031,24 +1153,23 @@ function messageHasToolParts(message: UIMessage) {
   return message.parts.some(isToolUIPart);
 }
 
-function makeId(prefix: string) {
-  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
 function formatModelLabel(model: ModelConfig) {
   return model.responsive ? `${model.name} · Responses` : model.name;
 }
 
 function createModelTransport(
+  sessionId: string,
   model: ModelConfig | undefined,
   getMemory: () => ChatMemoryStore,
   getToolsSettings: () => ChatToolsSettings,
   getCwd: () => string,
-  getMcpServers: () => McpServerConfig[],
+  getWorkspaceId: () => string,
   getSkills: () => SkillDefinition[],
 ): ChatTransport<UIMessage> {
-  return {
-    async sendMessages({ messages, abortSignal }) {
+  return new DefaultChatTransport<UIMessage>({
+    api: `${chatServerUrl()}/v1/sessions/${sessionId}/runs`,
+    headers: chatServerHeaders,
+    prepareSendMessagesRequest: async ({ messages }) => {
       if (!model || model.baseUrl.startsWith("local://")) {
         throw new Error("请先在设置中配置一个真实的模型 API。");
       }
@@ -1056,250 +1177,40 @@ function createModelTransport(
       const memorySystem =
         memory.enabled && memory.items.length > 0 ? formatMemoryForInject(memory.items) : "";
       const cwd = getCwd().trim();
-      const { tools, activePacks } = await resolveActiveTools(getToolsSettings(), model, getCwd);
-      const mcpTools = await loadMcpToolsForServers(getMcpServers());
-      const combinedTools = Object.assign({}, tools, mcpTools);
-      const combinedToolNames = Object.keys(combinedTools);
-      const toolsHint = formatToolsSystemHint(activePacks);
+      const workspaceId = getWorkspaceId().trim();
+      await ensureChatServerSession(sessionId, {
+        cwd: cwd || undefined,
+        workspaceId: workspaceId || undefined,
+      });
       const skillsHint = formatSkillsSystemHint(getSkills());
+      const toolsHint =
+        getToolsSettings().list_dir ||
+        getToolsSettings().read_file ||
+        getToolsSettings().search_files
+          ? "可使用只读 workspace 工具：列目录、读取文件、搜索文件。"
+          : "当前未启用工具。";
       const workspaceHint = cwd
-        ? `当前 workspace：${cwd}\n本地文件工具以此目录为根；当前为完全访问模式。`
-        : "当前未选择 workspace。文件工具必须使用绝对路径；Bash 使用默认执行目录。";
-      const systemPrompt = [memorySystem, workspaceHint, toolsHint, skillsHint]
-        .filter(Boolean)
-        .join("\n\n");
-
-      if (combinedToolNames.length > 0) {
-        return sendToolEnabledMessages(model, messages, abortSignal, systemPrompt, combinedTools);
-      }
-
-      if (model.responsive) {
-        return sendResponsiveMessages(model, messages, abortSignal, systemPrompt);
-      }
-      const mappedMessages = messages.map((message) => ({
-        role: message.role,
-        content: message.parts
-          .filter((part) => part.type === "text")
-          .map((part) => part.text)
-          .join(""),
-      }));
-      const requestMessages = systemPrompt
-        ? [{ role: "system" as const, content: systemPrompt }, ...mappedMessages]
-        : mappedMessages;
-      const response = await resolveFetch()(model.baseUrl, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${model.apiKey}`,
-          "Content-Type": "application/json",
+        ? `当前 workspace：${cwd}\n本地文件工具以此目录为根。`
+        : "当前未选择 workspace。";
+      return {
+        body: {
+          messages,
+          model: {
+            id: model.id,
+            name: model.name,
+            provider: model.provider,
+            baseUrl: model.baseUrl,
+            apiKey: model.apiKey,
+            responsive: model.responsive,
+            supportsTools: model.supportsTools,
+          },
+          system: [workspaceHint, toolsHint, skillsHint].filter(Boolean).join("\n\n"),
+          memory: memorySystem,
+          cwd: cwd || undefined,
+          workspaceId: workspaceId || undefined,
+          title: undefined,
         },
-        body: JSON.stringify({
-          model: resolveModelId(model),
-          stream: true,
-          stream_options: { include_usage: true },
-          messages: requestMessages,
-        }),
-        signal: abortSignal,
-      });
-      if (!response.ok || !response.body) {
-        throw new Error(await readModelError(response));
-      }
-      return response.body.pipeThrough(createOpenAIStreamTransform());
-    },
-    async reconnectToStream() {
-      return null;
-    },
-  };
-}
-
-async function sendToolEnabledMessages(
-  model: ModelConfig,
-  messages: UIMessage[],
-  abortSignal: AbortSignal | undefined,
-  systemPrompt: string,
-  tools: ToolSet,
-): Promise<ReadableStream<UIMessageChunk>> {
-  let toolLimitReached = false;
-  const provider = createOpenAI({
-    apiKey: model.apiKey,
-    baseURL: resolveOpenAICompatibleBaseURL(model.baseUrl),
-    fetch: resolveFetch(),
-  });
-  const modelMessages = await convertToModelMessages(messages);
-  const languageModel = model.responsive
-    ? provider.responses(resolveModelId(model))
-    : provider.chat(resolveModelId(model));
-  const result = streamText({
-    model: languageModel,
-    messages: modelMessages,
-    tools,
-    stopWhen: ({ steps }) => {
-      const lastStep = steps[steps.length - 1];
-      toolLimitReached = steps.length >= 20 && (lastStep?.toolCalls?.length ?? 0) > 0;
-      return toolLimitReached;
-    },
-    ...(systemPrompt
-      ? model.responsive
-        ? { instructions: systemPrompt }
-        : { system: systemPrompt }
-      : {}),
-    abortSignal,
-  });
-  return toUIMessageStream({
-    stream: result.stream,
-    onError: (streamError) => {
-      console.error("Chat tool stream failed", streamError);
-      if (streamError instanceof Error && streamError.message.trim()) {
-        return streamError.message;
-      }
-      return String(streamError);
-    },
-    messageMetadata: ({ part }) => {
-      if (part.type !== "finish") return undefined;
-      const usage = normalizeTokenUsage({
-        inputTokens: part.totalUsage.inputTokens,
-        outputTokens: part.totalUsage.outputTokens,
-        totalTokens: part.totalUsage.totalTokens,
-      });
-      return usage || toolLimitReached
-        ? { usage, toolLimitReached: toolLimitReached || undefined }
-        : undefined;
-    },
-  });
-}
-
-async function sendResponsiveMessages(
-  model: ModelConfig,
-  messages: UIMessage[],
-  abortSignal: AbortSignal | undefined,
-  memorySystem: string,
-): Promise<ReadableStream<UIMessageChunk>> {
-  const provider = createOpenAI({
-    apiKey: model.apiKey,
-    baseURL: resolveOpenAICompatibleBaseURL(model.baseUrl),
-    fetch: resolveFetch(),
-  });
-  const modelMessages = await convertToModelMessages(messages);
-  const result = streamText({
-    model: provider.responses(resolveModelId(model)),
-    messages: modelMessages,
-    ...(memorySystem ? { instructions: memorySystem } : {}),
-    abortSignal,
-  });
-  return toUIMessageStream({
-    stream: result.stream,
-    onError: (streamError) => {
-      console.error("Chat Responses stream failed", streamError);
-      if (streamError instanceof Error && streamError.message.trim()) {
-        return streamError.message;
-      }
-      return String(streamError);
-    },
-    messageMetadata: ({ part }) => {
-      if (part.type !== "finish") return undefined;
-      const usage = normalizeTokenUsage({
-        inputTokens: part.totalUsage.inputTokens,
-        outputTokens: part.totalUsage.outputTokens,
-        totalTokens: part.totalUsage.totalTokens,
-      });
-      return usage ? { usage } : undefined;
-    },
-  });
-}
-
-/** Strip Chat Completions / Responses path suffixes so AI SDK can append `/responses`. */
-function resolveOpenAICompatibleBaseURL(baseUrl: string): string {
-  return baseUrl
-    .trim()
-    .replace(/\/+$/, "")
-    .replace(/\/chat\/completions$/i, "")
-    .replace(/\/responses$/i, "");
-}
-
-function resolveModelId(model: ModelConfig): string {
-  if (model.provider !== "深度求索 / DeepSeek") return model.name;
-  const legacyNames: Record<string, string> = {
-    "DeepSeek-V4 Flash": "deepseek-v4-flash",
-    "DeepSeek-V4 Pro": "deepseek-v4-pro",
-    "deepseek-chat": "deepseek-v4-flash",
-    "deepseek-reasoner": "deepseek-v4-flash",
-  };
-  return legacyNames[model.name] ?? model.name;
-}
-
-async function readModelError(response: Response): Promise<string> {
-  let detail = "";
-  try {
-    const payload = (await response.json()) as { error?: { message?: string }; message?: string };
-    detail = payload.error?.message ?? payload.message ?? "";
-  } catch {
-    // Some proxies return an empty or non-JSON error response.
-  }
-  return detail
-    ? `模型请求失败（${response.status}）：${detail}`
-    : `模型请求失败（${response.status}）`;
-}
-
-function resolveFetch(): typeof fetch {
-  return ("__TAURI_INTERNALS__" in window ? tauriFetch : window.fetch.bind(window)) as typeof fetch;
-}
-
-function parseUsageFromSsePayload(payload: unknown): TokenUsage | undefined {
-  if (!payload || typeof payload !== "object") return undefined;
-  const usage = (payload as { usage?: unknown }).usage;
-  if (!usage || typeof usage !== "object") return undefined;
-  return normalizeTokenUsage(usage as Parameters<typeof normalizeTokenUsage>[0]);
-}
-
-function createOpenAIStreamTransform() {
-  const textId = makeId("text");
-  let buffer = "";
-  let usage: TokenUsage | undefined;
-
-  const consumeLine = (
-    line: string,
-    controller: TransformStreamDefaultController<UIMessageChunk>,
-  ) => {
-    if (!line.startsWith("data:")) return;
-    const value = line.slice(5).trim();
-    if (!value || value === "[DONE]") return;
-    try {
-      const payload = JSON.parse(value) as unknown;
-      const delta = (payload as { choices?: Array<{ delta?: { content?: string } }> }).choices?.[0]
-        ?.delta?.content;
-      if (typeof delta === "string" && delta.length > 0) {
-        controller.enqueue({ type: "text-delta", id: textId, delta });
-      }
-      const parsedUsage = parseUsageFromSsePayload(payload);
-      if (parsedUsage) usage = parsedUsage;
-    } catch {
-      // Provider chunks can be split across SSE lines.
-    }
-  };
-
-  return new TransformStream<Uint8Array, UIMessageChunk>({
-    start(controller) {
-      controller.enqueue({ type: "text-start", id: textId });
-    },
-    transform(chunk, controller) {
-      buffer += new TextDecoder().decode(chunk, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        consumeLine(line, controller);
-      }
-    },
-    flush(controller) {
-      if (buffer.trim()) {
-        consumeLine(buffer, controller);
-        buffer = "";
-      }
-      controller.enqueue({ type: "text-end", id: textId });
-      if (usage) {
-        controller.enqueue({
-          type: "message-metadata",
-          messageMetadata: { usage },
-        });
-      }
+      };
     },
   });
 }

@@ -18,6 +18,7 @@ import {
   RefreshCw,
   ScrollText,
   Search,
+  Server,
   Sparkles,
   Trash2,
   Wrench,
@@ -71,6 +72,7 @@ import {
   saveChatMemory,
 } from "@/lib/chat-memory";
 import { compactChatMemory } from "@/lib/chat-memory-ops";
+import { checkChatServer, loadChatServerPort, updateChatServerPort } from "@/lib/chat-server";
 import {
   type ChatToolsSettings as ChatToolsSettingsValue,
   DEFAULT_CHAT_TOOLS,
@@ -109,6 +111,10 @@ const themes: Array<{ value: Theme; label: string; description: string }> = [
   { value: "light", label: "浅色", description: "明亮、清晰的工作界面" },
   { value: "dark", label: "深色", description: "适合夜间和低光环境" },
 ];
+
+function describeError(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
 
 const themeColors: Array<{
   value: ThemeColor;
@@ -204,6 +210,7 @@ function SettingsLayout() {
           <SettingsNavItem to="/settings/history" icon={History} label="History" />
           <SettingsNavItem to="/settings/keys" icon={KeyRound} label="API Keys" />
           <SettingsNavItem to="/settings/tray" icon={PanelTop} label="托盘" />
+          <SettingsNavItem to="/settings/chat-server" icon={Server} label="Chat Server" />
           <SettingsNavItem to="/settings/statistics" icon={ChartColumn} label="使用量" />
           <SettingsNavItem to="/settings/logs" icon={ScrollText} label="活动记录" />
         </nav>
@@ -1099,6 +1106,83 @@ function TraySettingsPage() {
   );
 }
 
+function ChatServerSettingsPage() {
+  const queryClient = useQueryClient();
+  const configQuery = useQuery({
+    queryKey: ["chat-server-config"],
+    queryFn: async () => {
+      const port = await loadChatServerPort();
+      try {
+        return { port, health: await checkChatServer(port) };
+      } catch {
+        return { port, health: null };
+      }
+    },
+  });
+  const [port, setPort] = useState(14317);
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    if (configQuery.data) setPort(configQuery.data.port);
+  }, [configQuery.data]);
+
+  const saveMutation = useMutation({
+    mutationFn: () => updateChatServerPort(port),
+    onSuccess: (result) => {
+      setNotice(result.restartRequired ? "端口已保存，重启 Chat Server 后生效。" : "端口已保存。 ");
+      void queryClient.invalidateQueries({ queryKey: ["chat-server-config"] });
+    },
+  });
+
+  return (
+    <>
+      <SettingsHeading
+        eyebrow="连接"
+        title="Chat Server"
+        description="配置本地 Hono Chat Server 的监听端口。修改后需要重启开发命令或 Tauri。"
+      />
+      <div className="max-w-xl space-y-5 rounded-lg border border-border bg-card p-5">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="font-medium text-sm">监听端口</p>
+            <p className="mt-1 text-muted-foreground text-xs">默认端口为 14317。</p>
+          </div>
+          <Input
+            className="w-32 font-mono"
+            max={65535}
+            min={1024}
+            onChange={(event) => setPort(Number(event.target.value))}
+            type="number"
+            value={port}
+          />
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p
+            className={
+              configQuery.data?.health
+                ? "text-emerald-600 text-xs"
+                : "text-muted-foreground text-xs"
+            }
+          >
+            {configQuery.data?.health ? "Server 已连接" : "Server 当前未连接"}
+          </p>
+          <Button
+            disabled={saveMutation.isPending || port < 1024 || port > 65535}
+            onClick={() => saveMutation.mutate()}
+            type="button"
+          >
+            保存端口
+          </Button>
+        </div>
+        {notice ? <p className="text-muted-foreground text-xs">{notice}</p> : null}
+        {saveMutation.isError ? (
+          <p className="text-destructive text-xs">保存失败：{describeError(saveMutation.error)}</p>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
 type KeyConfig = {
   title: string;
   keyName: string;
@@ -1943,6 +2027,7 @@ function PriceField({
 
 export {
   ApiKeysSettingsPage,
+  ChatServerSettingsPage,
   McpSettingsPage,
   MemorySettingsPage,
   ModelsSettingsPage,

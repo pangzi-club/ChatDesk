@@ -1,5 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { UIMessage } from "ai";
+import {
+  deleteChatServerSession,
+  getChatServerToken,
+  loadChatServerSession,
+  loadChatServerSessions,
+  saveChatServerSession,
+} from "@/lib/chat-server";
 
 export const CHAT_SCHEMA_VERSION = 2;
 
@@ -138,6 +145,14 @@ export function deriveChatTitle(messages: UIMessage[]) {
 }
 
 export async function loadChatIndex(): Promise<ChatIndexItem[]> {
+  if (getChatServerToken()) {
+    try {
+      const serverItems = await loadChatServerSessions();
+      return sortIndex(serverItems);
+    } catch (error) {
+      console.error("Failed to load Chat Server index", error);
+    }
+  }
   try {
     const contents = isTauri() ? await invoke<string>("read_chat_index") : null;
     const parsed = parseJson<unknown>(contents ?? window.localStorage.getItem(INDEX_KEY), []);
@@ -150,6 +165,14 @@ export async function loadChatIndex(): Promise<ChatIndexItem[]> {
 }
 
 export async function loadChatSession(id: string): Promise<ChatSession | null> {
+  if (getChatServerToken()) {
+    try {
+      const serverSession = await loadChatServerSession<ChatSession>(id);
+      if (serverSession) return normalizeChatSession(serverSession);
+    } catch (error) {
+      console.error("Failed to load Chat Server session", error);
+    }
+  }
   try {
     const contents = isTauri()
       ? await invoke<string | null>("read_chat_session", { sessionId: id })
@@ -163,6 +186,14 @@ export async function loadChatSession(id: string): Promise<ChatSession | null> {
 }
 
 export async function saveChatSession(session: ChatSession): Promise<void> {
+  if (getChatServerToken()) {
+    try {
+      await saveChatServerSession(session);
+      return;
+    } catch (error) {
+      console.error("Failed to save Chat Server session", error);
+    }
+  }
   const contents = JSON.stringify(session);
   if (isTauri()) {
     await invoke("write_chat_session", { sessionId: session.id, contents });
@@ -191,6 +222,14 @@ export async function saveChatSession(session: ChatSession): Promise<void> {
 }
 
 export async function deleteChatSession(id: string): Promise<void> {
+  if (getChatServerToken()) {
+    try {
+      await deleteChatServerSession(id);
+      return;
+    } catch (error) {
+      console.error("Failed to delete Chat Server session", error);
+    }
+  }
   if (isTauri()) {
     await invoke("delete_chat_session", { sessionId: id });
     const index = await loadChatIndex();

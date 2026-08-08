@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "org.bohao.mdashboard",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "pnpm dev:all",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "pnpm build",
     "frontendDist": "../dist"
