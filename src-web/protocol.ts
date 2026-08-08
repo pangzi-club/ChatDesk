@@ -59,6 +59,7 @@ export type RunStartInput = {
   cwd?: string;
   workspaceId?: string;
   title?: string;
+  toolNames?: string[];
 };
 
 export type ServerEvent = {

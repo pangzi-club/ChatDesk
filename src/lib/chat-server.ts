@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri as tauriIsTauri } from "@tauri-apps/api/core";
 import type { UIMessage } from "ai";
 import { settingsStore } from "@/lib/settings-store";
 
@@ -12,7 +12,9 @@ const runtimeConfig: { port: number; token: string } = {
 let runtimeInitialization: Promise<void> | undefined;
 
 function isTauri() {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  // `isTauri()` relies on the injected global, while older packaged webviews
+  // only expose the IPC internals object.
+  return tauriIsTauri() || (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window);
 }
 
 function normalizePort(value: unknown) {
@@ -23,7 +25,6 @@ function normalizePort(value: unknown) {
 export function initializeChatServer() {
   if (runtimeInitialization) return runtimeInitialization;
   runtimeInitialization = (async () => {
-    if (!isTauri()) return;
     try {
       const info = await invoke<{ port?: unknown; token?: unknown; running?: boolean }>(
         "chat_server_info",
@@ -33,13 +34,15 @@ export function initializeChatServer() {
         if (typeof info.token === "string" && info.token) runtimeConfig.token = info.token;
       }
     } catch (error) {
-      console.error("Failed to initialize Chat Server", error);
+      // The command is unavailable in a normal browser build; that is expected.
+      if (isTauri()) console.error("Failed to initialize Chat Server", error);
     }
   })();
   return runtimeInitialization;
 }
 
 export async function loadChatServerPort() {
+  await initializeChatServer();
   if (isTauri()) {
     try {
       return normalizePort(await settingsStore.get<unknown>(CHAT_SERVER_PORT_KEY));
@@ -51,6 +54,7 @@ export async function loadChatServerPort() {
 }
 
 export async function saveChatServerPort(port: number) {
+  await initializeChatServer();
   const next = normalizePort(port);
   if (isTauri()) {
     await settingsStore.set(CHAT_SERVER_PORT_KEY, next);
@@ -62,6 +66,22 @@ export async function saveChatServerPort(port: number) {
 
 export function getChatServerToken() {
   return runtimeConfig.token;
+}
+
+export function canRestartChatServer() {
+  return isTauri();
+}
+
+export async function restartChatServer() {
+  await initializeChatServer();
+  if (!isTauri()) throw new Error("只有 Tauri 应用可以重启 Chat Server");
+  const info = await invoke<{ port?: unknown; token?: unknown; running?: boolean }>(
+    "chat_server_restart",
+  );
+  runtimeConfig.port = normalizePort(info.port);
+  if (typeof info.token === "string" && info.token) runtimeConfig.token = info.token;
+  runtimeInitialization = Promise.resolve();
+  return info;
 }
 
 export function chatServerUrl(port = CHAT_SERVER_DEFAULT_PORT) {
@@ -86,6 +106,7 @@ export function chatServerHeaders() {
 }
 
 export async function updateChatServerPort(port: number) {
+  await initializeChatServer();
   const currentUrl = chatServerUrl();
   const savedPort = await saveChatServerPort(port);
   const response = await fetch(`${currentUrl}/v1/config`, {
@@ -98,6 +119,7 @@ export async function updateChatServerPort(port: number) {
 }
 
 export async function checkChatServer(port = CHAT_SERVER_DEFAULT_PORT) {
+  await initializeChatServer();
   const response = await fetch(`${chatServerUrl(port)}/health`, {
     signal: AbortSignal.timeout(1500),
   });
@@ -118,6 +140,7 @@ export type ChatServerSession = {
 };
 
 export async function loadChatServerSessions(port = CHAT_SERVER_DEFAULT_PORT) {
+  await initializeChatServer();
   const response = await fetch(`${chatServerUrl(port)}/v1/sessions`, {
     headers: chatServerHeaders(),
   });
@@ -130,6 +153,7 @@ export async function ensureChatServerSession(
   options?: { title?: string; workspaceId?: string; cwd?: string },
   port = CHAT_SERVER_DEFAULT_PORT,
 ) {
+  await initializeChatServer();
   const response = await fetch(
     `${chatServerUrl(port)}/v1/sessions/${encodeURIComponent(sessionId)}`,
     {
@@ -149,6 +173,7 @@ export async function ensureChatServerSession(
 }
 
 export async function loadChatServerSession<T>(sessionId: string, port?: number) {
+  await initializeChatServer();
   const response = await fetch(
     `${chatServerUrl(port ?? CHAT_SERVER_DEFAULT_PORT)}/v1/sessions/${encodeURIComponent(sessionId)}`,
     { headers: chatServerHeaders() },
@@ -159,6 +184,7 @@ export async function loadChatServerSession<T>(sessionId: string, port?: number)
 }
 
 export async function saveChatServerSession(session: unknown, port?: number) {
+  await initializeChatServer();
   const value = session as { id?: unknown };
   if (typeof value.id !== "string") throw new Error("invalid chat session id");
   const response = await fetch(
@@ -173,6 +199,7 @@ export async function saveChatServerSession(session: unknown, port?: number) {
 }
 
 export async function deleteChatServerSession(sessionId: string, port?: number) {
+  await initializeChatServer();
   const response = await fetch(
     `${chatServerUrl(port ?? CHAT_SERVER_DEFAULT_PORT)}/v1/sessions/${encodeURIComponent(sessionId)}`,
     { method: "DELETE", headers: chatServerHeaders() },
@@ -183,6 +210,7 @@ export async function deleteChatServerSession(sessionId: string, port?: number) 
 }
 
 export async function stopChatServerRun(sessionId: string, port?: number) {
+  await initializeChatServer();
   const response = await fetch(
     `${chatServerUrl(port ?? CHAT_SERVER_DEFAULT_PORT)}/v1/sessions/${encodeURIComponent(sessionId)}/runs/stop`,
     { method: "POST", headers: chatServerHeaders() },

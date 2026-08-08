@@ -21,64 +21,139 @@ pub struct ChatServerInfo {
 }
 
 pub struct ChatServerManager {
+    app: AppHandle,
     child: Mutex<Option<Child>>,
-    info: ChatServerInfo,
+    info: Mutex<ChatServerInfo>,
 }
 
 impl ChatServerManager {
     pub fn start(app: &AppHandle) -> Result<Self, String> {
-        let data_dir = app
-            .path()
-            .app_data_dir()
-            .map_err(|error| format!("无法定位 Chat Server 数据目录：{error}"))?
-            .join("chat-server");
-        fs::create_dir_all(&data_dir)
-            .map_err(|error| format!("无法创建 Chat Server 数据目录：{error}"))?;
-        let port = read_persisted_port(&data_dir);
-        let token = Uuid::new_v4().to_string();
-        let executable = find_sidecar(app)?;
-        let mut child = Command::new(executable)
-            .env("CHAT_SERVER_HOST", "127.0.0.1")
-            .env("CHAT_SERVER_TOKEN", &token)
-            .env("CHAT_SERVER_DATA_DIR", &data_dir)
-            .env("CHAT_SERVER_PORT", port.to_string())
-            .stdin(Stdio::null())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .map_err(|error| format!("无法启动 Chat Server sidecar：{error}"))?;
-        if let Err(error) = wait_for_server(&mut child, port) {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(error);
-        }
-
+        let (child, info) = spawn_server(app)?;
         Ok(Self {
+            app: app.clone(),
             child: Mutex::new(Some(child)),
-            info: ChatServerInfo {
-                host: "127.0.0.1".to_string(),
-                port,
-                token,
-                running: true,
-            },
+            info: Mutex::new(info),
         })
     }
 
-    pub fn unavailable() -> Self {
+    fn spawn(&self) -> Result<(Child, ChatServerInfo), String> {
+        spawn_server(&self.app)
+    }
+
+    pub fn unavailable(app: &AppHandle) -> Self {
         Self {
+            app: app.clone(),
             child: Mutex::new(None),
-            info: ChatServerInfo {
+            info: Mutex::new(ChatServerInfo {
                 host: "127.0.0.1".to_string(),
                 port: DEFAULT_PORT,
                 token: String::new(),
                 running: false,
-            },
+            }),
         }
     }
 
     pub fn info(&self) -> ChatServerInfo {
-        self.info.clone()
+        self.info
+            .lock()
+            .expect("Chat Server info lock poisoned")
+            .clone()
     }
+
+    pub fn restart(&self) -> Result<ChatServerInfo, String> {
+        self.shutdown()?;
+        let (child, info) = self.spawn()?;
+        let mut child_guard = self
+            .child
+            .lock()
+            .map_err(|error| format!("重启 Chat Server 时锁定进程失败：{error}"))?;
+        *child_guard = Some(child);
+        *self
+            .info
+            .lock()
+            .map_err(|error| format!("重启 Chat Server 时锁定状态失败：{error}"))? = info.clone();
+        Ok(info)
+    }
+
+    pub fn shutdown(&self) -> Result<(), String> {
+        let mut child = self
+            .child
+            .lock()
+            .map_err(|error| format!("关闭 Chat Server 时锁定进程失败：{error}"))?
+            .take();
+        let Some(mut child) = child.take() else {
+            self.info
+                .lock()
+                .map_err(|error| format!("关闭 Chat Server 时锁定状态失败：{error}"))?
+                .running = false;
+            return Ok(());
+        };
+
+        let kill_error = child.kill().err();
+        child
+            .wait()
+            .map_err(|error| format!("等待 Chat Server 退出失败：{error}"))?;
+        if let Some(error) = kill_error {
+            eprintln!("Chat Server 可能已提前退出：{error}");
+        }
+        self.info
+            .lock()
+            .map_err(|error| format!("关闭 Chat Server 时锁定状态失败：{error}"))?
+            .running = false;
+        Ok(())
+    }
+}
+
+fn spawn_server(app: &AppHandle) -> Result<(Child, ChatServerInfo), String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("无法定位 Chat Server 数据目录：{error}"))?
+        .join("chat-server");
+    fs::create_dir_all(&data_dir)
+        .map_err(|error| format!("无法创建 Chat Server 数据目录：{error}"))?;
+    let port = read_persisted_port(&data_dir);
+    let token = Uuid::new_v4().to_string();
+    let executable = find_sidecar(app)?;
+    let mut command = Command::new(executable);
+    command
+        .env("CHAT_SERVER_HOST", "127.0.0.1")
+        .env("CHAT_SERVER_TOKEN", &token)
+        .env("CHAT_SERVER_DATA_DIR", &data_dir)
+        .env("CHAT_SERVER_PORT", port.to_string())
+        .stdin(Stdio::null())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    let legacy_dirs = find_legacy_dirs(app, &data_dir);
+    if !legacy_dirs.is_empty() {
+        let delimiter = if cfg!(windows) { ';' } else { ':' };
+        command.env(
+            "CHAT_SERVER_LEGACY_DIRS",
+            legacy_dirs
+                .iter()
+                .map(|path| path.to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join(&delimiter.to_string()),
+        );
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("无法启动 Chat Server sidecar：{error}"))?;
+    if let Err(error) = wait_for_server(&mut child, port) {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(error);
+    }
+
+    Ok((
+        child,
+        ChatServerInfo {
+            host: "127.0.0.1".to_string(),
+            port,
+            token,
+            running: true,
+        },
+    ))
 }
 
 fn wait_for_server(child: &mut Child, port: u16) -> Result<(), String> {
@@ -103,12 +178,7 @@ fn wait_for_server(child: &mut Child, port: u16) -> Result<(), String> {
 
 impl Drop for ChatServerManager {
     fn drop(&mut self) {
-        if let Ok(mut child) = self.child.lock() {
-            if let Some(mut child) = child.take() {
-                let _ = child.kill();
-                let _ = child.wait();
-            }
-        }
+        let _ = self.shutdown();
     }
 }
 
@@ -128,6 +198,33 @@ fn read_persisted_port(data_dir: &Path) -> u16 {
     } else {
         DEFAULT_PORT
     }
+}
+
+fn find_legacy_dirs(app: &AppHandle, data_dir: &Path) -> Vec<std::path::PathBuf> {
+    let mut candidates = Vec::new();
+    if let Ok(directory) = std::env::var("M_DASHBOARD_LEGACY_CHAT_DIR") {
+        candidates.push(std::path::PathBuf::from(directory));
+    }
+    if let Ok(app_data_dir) = app.path().app_data_dir() {
+        candidates.push(app_data_dir.join("chat"));
+    }
+    if let Ok(current_dir) = std::env::current_dir() {
+        candidates.push(current_dir.join(".data/chat-server"));
+        candidates.push(current_dir.join(".data/chat"));
+    }
+    if let Ok(current_exe) = std::env::current_exe() {
+        for ancestor in current_exe.ancestors() {
+            candidates.push(ancestor.join(".data/chat-server"));
+            candidates.push(ancestor.join(".data/chat"));
+        }
+    }
+    candidates
+        .into_iter()
+        .filter(|candidate| {
+            candidate != data_dir
+                && (candidate.join("index.json").is_file() || candidate.join("sessions").is_dir())
+        })
+        .collect()
 }
 
 fn find_sidecar(app: &AppHandle) -> Result<std::path::PathBuf, String> {

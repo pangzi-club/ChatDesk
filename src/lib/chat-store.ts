@@ -1,8 +1,9 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri as tauriIsTauri } from "@tauri-apps/api/core";
 import type { UIMessage } from "ai";
 import {
   deleteChatServerSession,
   getChatServerToken,
+  initializeChatServer,
   loadChatServerSession,
   loadChatServerSessions,
   saveChatServerSession,
@@ -53,7 +54,7 @@ const INDEX_KEY = "m-dashboard-chat-index-v1";
 const SESSION_KEY_PREFIX = "m-dashboard-chat-session-";
 
 function isTauri() {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  return tauriIsTauri() || (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window);
 }
 
 function sortIndex(items: ChatIndexItem[]) {
@@ -114,9 +115,30 @@ function isChatSession(value: unknown): value is ChatSession {
 
 function normalizeChatSession(value: unknown): ChatSession | null {
   if (!isChatSession(value)) return null;
+  const messageIds = new Set<string>();
+  const messages = value.messages.map((message, index) => {
+    const source =
+      message && typeof message === "object"
+        ? message
+        : ({ id: "", role: "assistant", parts: [] } as UIMessage);
+    const candidate = typeof source.id === "string" ? source.id.trim() : "";
+    let id = candidate && !messageIds.has(candidate) ? candidate : `legacy-message-${index}`;
+    while (messageIds.has(id)) id = `${id}-duplicate`;
+    messageIds.add(id);
+    return {
+      ...source,
+      id,
+      parts: Array.isArray(source.parts)
+        ? source.parts.filter(
+            (part) => part && typeof part === "object" && typeof part.type === "string",
+          )
+        : [],
+    };
+  });
   return {
     ...value,
     schemaVersion: CHAT_SCHEMA_VERSION,
+    messages,
     workspaceId: typeof value.workspaceId === "string" ? value.workspaceId : undefined,
     cwd: typeof value.cwd === "string" ? value.cwd : undefined,
     mcpServerIds: Array.isArray(value.mcpServerIds)
@@ -145,6 +167,7 @@ export function deriveChatTitle(messages: UIMessage[]) {
 }
 
 export async function loadChatIndex(): Promise<ChatIndexItem[]> {
+  await initializeChatServer();
   if (getChatServerToken()) {
     try {
       const serverItems = await loadChatServerSessions();
@@ -165,6 +188,7 @@ export async function loadChatIndex(): Promise<ChatIndexItem[]> {
 }
 
 export async function loadChatSession(id: string): Promise<ChatSession | null> {
+  await initializeChatServer();
   if (getChatServerToken()) {
     try {
       const serverSession = await loadChatServerSession<ChatSession>(id);
@@ -186,6 +210,7 @@ export async function loadChatSession(id: string): Promise<ChatSession | null> {
 }
 
 export async function saveChatSession(session: ChatSession): Promise<void> {
+  await initializeChatServer();
   if (getChatServerToken()) {
     try {
       await saveChatServerSession(session);
@@ -222,6 +247,7 @@ export async function saveChatSession(session: ChatSession): Promise<void> {
 }
 
 export async function deleteChatSession(id: string): Promise<void> {
+  await initializeChatServer();
   if (getChatServerToken()) {
     try {
       await deleteChatServerSession(id);

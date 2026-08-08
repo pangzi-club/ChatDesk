@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
@@ -30,14 +30,15 @@ function auth() {
 }
 
 describe("chat server", () => {
-  it("exposes health without authentication and protects API routes", async () => {
+  it("exposes health and API routes without authentication", async () => {
     const server = await createTestServer();
     const health = await server.app.request("http://localhost/health");
     assert.equal(health.status, 200);
     assert.deepEqual((await health.json()).ok, true);
 
     const sessions = await server.app.request("http://localhost/v1/sessions");
-    assert.equal(sessions.status, 401);
+    assert.equal(sessions.status, 200);
+    assert.deepEqual(await sessions.json(), []);
   });
 
   it("creates, lists, reads and deletes sessions", async () => {
@@ -81,5 +82,32 @@ describe("chat server", () => {
       port: 14318,
       restartRequired: true,
     });
+  });
+
+  it("imports legacy sessions from both supported layouts", async () => {
+    const legacyDir = await mkdtemp(path.join(os.tmpdir(), "m-dashboard-legacy-chat-"));
+    temporaryDirectories.push(legacyDir);
+    await mkdir(path.join(legacyDir, "sessions", "legacy-session"), { recursive: true });
+    await writeFile(
+      path.join(legacyDir, "sessions", "legacy-session", "session.json"),
+      JSON.stringify({
+        schemaVersion: 2,
+        id: "legacy-session",
+        title: "Legacy",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        messages: [],
+        attachments: [],
+      }),
+    );
+    const previous = process.env.CHAT_SERVER_LEGACY_DIRS;
+    process.env.CHAT_SERVER_LEGACY_DIRS = legacyDir;
+    try {
+      const server = await createTestServer();
+      assert.equal((await server.store.get("legacy-session"))?.title, "Legacy");
+    } finally {
+      if (previous === undefined) delete process.env.CHAT_SERVER_LEGACY_DIRS;
+      else process.env.CHAT_SERVER_LEGACY_DIRS = previous;
+    }
   });
 });

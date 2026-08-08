@@ -7,10 +7,10 @@ import {
   streamText,
   type UIMessage,
 } from "ai";
+import { createClientTools } from "./client-tools.ts";
 import type { EventHub } from "./events.ts";
 import { deriveTitle, type ChatSession, type RunStartInput, type SessionStatus } from "./protocol.ts";
 import { SessionStore } from "./store.ts";
-import { createWorkspaceTools } from "./workspace-tools.ts";
 
 type ActiveRun = {
   id: string;
@@ -102,7 +102,7 @@ export class RunRegistry {
       model: languageModel,
       messages: modelMessages,
       ...(system ? (input.model.responsive ? { instructions: system } : { system }) : {}),
-      tools: input.model.supportsTools && input.cwd ? createWorkspaceTools(input.cwd) : undefined,
+      tools: input.model.supportsTools ? createClientTools(input.toolNames) : undefined,
       stopWhen: stepCountIs(20),
       abortSignal: controller.signal,
     });

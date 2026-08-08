@@ -99,20 +99,31 @@ export class SessionStore {
 
   async importDirectory(legacyRoot: string) {
     const legacyIndex = await readJson<unknown>(path.join(legacyRoot, INDEX_FILE), []);
-    const ids = Array.isArray(legacyIndex)
-      ? legacyIndex.flatMap((item) =>
-          item && typeof item === "object" && typeof (item as { id?: unknown }).id === "string"
-            ? [(item as { id: string }).id]
-            : [],
-        )
-      : [];
+    const ids = new Set<string>();
+    if (Array.isArray(legacyIndex)) {
+      for (const item of legacyIndex) {
+        if (item && typeof item === "object" && typeof (item as { id?: unknown }).id === "string") {
+          ids.add((item as { id: string }).id);
+        }
+      }
+    }
+    for (const sessionsRoot of [legacyRoot, path.join(legacyRoot, "sessions")]) {
+      const entries = await readdir(sessionsRoot, { withFileTypes: true }).catch(() => []);
+      for (const entry of entries) {
+        if (entry.isDirectory() && validId(entry.name)) ids.add(entry.name);
+      }
+    }
     let imported = 0;
     for (const id of ids) {
       if (!validId(id) || (await this.get(id))) continue;
-      const session = await readJson<unknown>(
+      let session: unknown = null;
+      for (const sessionPath of [
         path.join(legacyRoot, id, "session.json"),
-        null,
-      );
+        path.join(legacyRoot, "sessions", id, "session.json"),
+      ]) {
+        session = await readJson<unknown>(sessionPath, null);
+        if (isSession(session)) break;
+      }
       if (!isSession(session)) continue;
       await this.save({ ...session, schemaVersion: 2 });
       imported += 1;

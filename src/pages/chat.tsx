@@ -6,6 +6,7 @@ import {
   DefaultChatTransport,
   getToolName,
   isToolUIPart,
+  lastAssistantMessageIsCompleteWithToolCalls,
   type UIMessage,
 } from "ai";
 import { Streamdown } from "streamdown";
@@ -71,6 +72,7 @@ import {
   chatServerHeaders,
   chatServerUrl,
   ensureChatServerSession,
+  initializeChatServer,
   loadChatServerPort,
   stopChatServerRun,
   subscribeChatServerEvents,
@@ -92,7 +94,7 @@ import {
   loadChatSession,
   saveChatSession,
 } from "@/lib/chat-store";
-import { resolveAvailablePacks } from "@/lib/chat-tool-defs";
+import { resolveActiveTools, resolveAvailablePacks } from "@/lib/chat-tool-defs";
 import {
   type ChatToolPackId,
   type ChatToolsSettings,
@@ -122,7 +124,7 @@ type LiveDraft = {
 };
 
 function mergeLiveDraft(messages: UIMessage[], draft: LiveDraft | undefined) {
-  if (!draft?.text) return messages;
+  if (!draft?.runId || !draft.text) return messages;
   const assistant: UIMessage = {
     id: draft.runId,
     role: "assistant",
@@ -215,6 +217,8 @@ function ChatPage() {
     workspaceProjects.find((project) => project.id === workspaceKey)?.path ?? sessionCwd;
   workspaceRef.current = selectedCwd;
   const selectedModel = models.find((model) => model.id === selectedModelId) ?? models[0];
+  const selectedModelRef = useRef(selectedModel);
+  selectedModelRef.current = selectedModel;
   const selectedMcpIds = useMemo(
     () => mcpServers.filter((server) => server.enabledByDefault).map((server) => server.id),
     [mcpServers],
@@ -232,13 +236,50 @@ function ChatPage() {
       ),
     [selectedModel, selectedSkillIds, sessionId, workspaceKey],
   );
-  const { messages, setMessages, sendMessage, stop, status, error } = useChat({
+  const addToolOutputRef = useRef<
+    ((options: { tool: string; toolCallId: string; output: unknown }) => void) | null
+  >(null);
+  const { messages, setMessages, sendMessage, stop, status, error, addToolOutput } = useChat({
     id: sessionId,
     transport,
+    onToolCall: ({ toolCall }) => {
+      void (async () => {
+        const active = await resolveActiveTools(
+          toolsRef.current,
+          selectedModelRef.current,
+          () => workspaceRef.current,
+        );
+        const configured = active.tools[toolCall.toolName] as
+          | {
+              execute?: (input: unknown, options: unknown) => unknown;
+            }
+          | undefined;
+        let output: unknown;
+        if (!configured?.execute) {
+          output = { error: `工具未启用：${toolCall.toolName}` };
+        } else {
+          try {
+            output = await configured.execute(toolCall.input, {
+              toolCallId: toolCall.toolCallId,
+            });
+          } catch (toolError) {
+            output = { error: toolError instanceof Error ? toolError.message : String(toolError) };
+          }
+        }
+        addToolOutputRef.current?.({
+          tool: toolCall.toolName,
+          toolCallId: toolCall.toolCallId,
+          output,
+        });
+      })();
+    },
+    sendAutomaticallyWhen: ({ messages: nextMessages }) =>
+      lastAssistantMessageIsCompleteWithToolCalls({ messages: nextMessages }),
     onError: (chatError) => {
       console.error("Chat request failed", chatError);
     },
   });
+  addToolOutputRef.current = addToolOutput;
   const activeSessionRef = useRef(sessionId);
   activeSessionRef.current = sessionId;
   const chatStatusRef = useRef(status);
@@ -267,6 +308,7 @@ function ChatPage() {
       setSelectedSkillIds(savedChatSkillIds.filter((id) => installed.has(id)));
       sessionCreatedAtRef.current = new Date().toISOString();
       sessionAttachmentsRef.current = [];
+      pendingSessionRef.current = null;
       setSessionTitle("新对话");
       savedFingerprintRef.current = "";
       extractedFingerprintRef.current = "";
@@ -458,12 +500,14 @@ function ChatPage() {
 
   useEffect(() => {
     if (isChatHistoryLoading) return;
+    let active = true;
 
     if (requestedSessionId) {
       if (requestedSessionId === sessionId) {
         return;
       }
       void loadChatSession(requestedSessionId).then((session) => {
+        if (!active) return;
         if (!session) {
           startNewSession();
           return;
@@ -473,8 +517,13 @@ function ChatPage() {
         pendingSessionRef.current = session;
         setSessionId(session.id);
       });
-      return;
+      return () => {
+        active = false;
+      };
     }
+    return () => {
+      active = false;
+    };
   }, [isChatHistoryLoading, requestedSessionId, sessionId, startNewSession]);
 
   useEffect(() => {
@@ -535,10 +584,13 @@ function ChatPage() {
     sessionAttachmentsRef.current = session.attachments;
     const lastSessionMessage = session.messages[session.messages.length - 1];
     if (lastSessionMessage?.role === "assistant") {
-      liveDraftsRef.current.set(session.id, {
-        runId: lastSessionMessage.id,
-        text: messageText(lastSessionMessage),
-      });
+      const draftText = messageText(lastSessionMessage);
+      if (lastSessionMessage.id && draftText) {
+        liveDraftsRef.current.set(session.id, {
+          runId: lastSessionMessage.id,
+          text: draftText,
+        });
+      }
     }
     setMessages(mergeLiveDraft(session.messages, liveDraftsRef.current.get(session.id)));
     if (session.modelId) setSelectedModelId(session.modelId);
@@ -661,13 +713,16 @@ function ChatPage() {
 
   function openSession(item: ChatIndexItem) {
     if (item.id === sessionId) return;
-    void loadChatSession(item.id).then((session) => {
-      if (!session) return;
-      savedFingerprintRef.current = "";
-      extractedFingerprintRef.current = "";
-      pendingSessionRef.current = session;
-      setSessionId(session.id);
-    });
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("sessionId", item.id);
+        next.delete("workspaceId");
+        next.delete("workspaceCwd");
+        return next;
+      },
+      { replace: true },
+    );
   }
 
   async function confirmRemoveSession() {
@@ -1094,9 +1149,9 @@ function MessageBubble({
         </div>
         {!isUser && toolParts.length > 0 ? (
           <div className="chat-tool-calls">
-            {toolParts.map((part) => (
+            {toolParts.map((part, index) => (
               <ChatToolCallCard
-                key={part.toolCallId}
+                key={`${message.id}-${part.toolCallId ?? index}`}
                 toolName={getToolName(part)}
                 state={part.state}
                 input={part.input}
@@ -1168,8 +1223,12 @@ function createModelTransport(
 ): ChatTransport<UIMessage> {
   return new DefaultChatTransport<UIMessage>({
     api: `${chatServerUrl()}/v1/sessions/${sessionId}/runs`,
-    headers: chatServerHeaders,
+    headers: async () => {
+      await initializeChatServer();
+      return chatServerHeaders();
+    },
     prepareSendMessagesRequest: async ({ messages }) => {
+      await initializeChatServer();
       if (!model || model.baseUrl.startsWith("local://")) {
         throw new Error("请先在设置中配置一个真实的模型 API。");
       }
@@ -1183,12 +1242,10 @@ function createModelTransport(
         workspaceId: workspaceId || undefined,
       });
       const skillsHint = formatSkillsSystemHint(getSkills());
-      const toolsHint =
-        getToolsSettings().list_dir ||
-        getToolsSettings().read_file ||
-        getToolsSettings().search_files
-          ? "可使用只读 workspace 工具：列目录、读取文件、搜索文件。"
-          : "当前未启用工具。";
+      const activeTools = await resolveActiveTools(getToolsSettings(), model, getCwd);
+      const toolsHint = activeTools.toolNames.length
+        ? `当前已启用工具：${activeTools.toolNames.join(", ")}`
+        : "当前未启用工具。";
       const workspaceHint = cwd
         ? `当前 workspace：${cwd}\n本地文件工具以此目录为根。`
         : "当前未选择 workspace。";
@@ -1208,8 +1265,11 @@ function createModelTransport(
           memory: memorySystem,
           cwd: cwd || undefined,
           workspaceId: workspaceId || undefined,
+          toolNames: activeTools.toolNames,
           title: undefined,
         },
+        api: `${chatServerUrl()}/v1/sessions/${sessionId}/runs`,
+        headers: chatServerHeaders(),
       };
     },
   });

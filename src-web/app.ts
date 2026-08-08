@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 import { cors } from "hono/cors";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
@@ -26,6 +27,7 @@ const runInputSchema = z.object({
   cwd: z.string().optional(),
   workspaceId: z.string().optional(),
   title: z.string().optional(),
+  toolNames: z.array(z.string()).max(100).optional(),
 });
 
 function jsonError(message: string, status = 400) {
@@ -65,8 +67,12 @@ export type ChatServer = {
 export async function createChatServer(config: ServerConfig): Promise<ChatServer> {
   const store = new SessionStore(config.dataDir);
   await store.init();
-  if (process.env.CHAT_SERVER_LEGACY_DIR) {
-    await store.importDirectory(process.env.CHAT_SERVER_LEGACY_DIR);
+  const legacyDirs = [
+    process.env.CHAT_SERVER_LEGACY_DIR,
+    ...(process.env.CHAT_SERVER_LEGACY_DIRS?.split(path.delimiter) ?? []),
+  ].filter((directory): directory is string => Boolean(directory?.trim()));
+  for (const legacyDir of [...new Set(legacyDirs)]) {
+    await store.importDirectory(legacyDir);
   }
   const events = new EventHub();
   const runs = new RunRegistry(store, events);
@@ -84,15 +90,8 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
       ],
     }),
   );
-  app.use("*", async (c, next) => {
-    if (c.req.method === "OPTIONS" || c.req.path === "/health") return next();
-    const authorization = c.req.header("Authorization");
-    const token = c.req.query("token");
-    if (authorization !== `Bearer ${config.token}` && token !== config.token) {
-      return c.json({ error: "Unauthorized" }, 401);
-    }
-    return next();
-  });
+  // Authentication is intentionally disabled for the local desktop server for now.
+  // Keep the runtime token plumbing in place so this boundary can be restored later.
 
   app.get("/health", (c) =>
     c.json({

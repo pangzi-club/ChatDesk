@@ -5,3 +5,10 @@ use tauri::State;
 pub fn chat_server_info(manager: State<'_, ChatServerManager>) -> ChatServerInfo {
     manager.info()
 }
+
+#[tauri::command]
+pub fn chat_server_restart(
+    manager: State<'_, ChatServerManager>,
+) -> Result<ChatServerInfo, String> {
+    manager.restart()
+}

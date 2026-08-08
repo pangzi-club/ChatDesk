@@ -72,7 +72,13 @@ import {
   saveChatMemory,
 } from "@/lib/chat-memory";
 import { compactChatMemory } from "@/lib/chat-memory-ops";
-import { checkChatServer, loadChatServerPort, updateChatServerPort } from "@/lib/chat-server";
+import {
+  canRestartChatServer,
+  checkChatServer,
+  loadChatServerPort,
+  restartChatServer,
+  updateChatServerPort,
+} from "@/lib/chat-server";
 import {
   type ChatToolsSettings as ChatToolsSettingsValue,
   DEFAULT_CHAT_TOOLS,
@@ -1133,13 +1139,20 @@ function ChatServerSettingsPage() {
       void queryClient.invalidateQueries({ queryKey: ["chat-server-config"] });
     },
   });
+  const restartMutation = useMutation({
+    mutationFn: restartChatServer,
+    onSuccess: () => {
+      setNotice("Chat Server 已重启。");
+      void queryClient.invalidateQueries({ queryKey: ["chat-server-config"] });
+    },
+  });
 
   return (
     <>
       <SettingsHeading
         eyebrow="连接"
         title="Chat Server"
-        description="配置本地 Hono Chat Server 的监听端口。修改后需要重启开发命令或 Tauri。"
+        description="配置本地 Hono Chat Server 的监听端口，或在 Tauri 应用中手动重启服务。"
       />
       <div className="max-w-xl space-y-5 rounded-lg border border-border bg-card p-5">
         <div className="flex items-center justify-between gap-4">
@@ -1166,17 +1179,33 @@ function ChatServerSettingsPage() {
           >
             {configQuery.data?.health ? "Server 已连接" : "Server 当前未连接"}
           </p>
-          <Button
-            disabled={saveMutation.isPending || port < 1024 || port > 65535}
-            onClick={() => saveMutation.mutate()}
-            type="button"
-          >
-            保存端口
-          </Button>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              disabled={saveMutation.isPending || port < 1024 || port > 65535}
+              onClick={() => saveMutation.mutate()}
+              type="button"
+            >
+              保存端口
+            </Button>
+            <Button
+              disabled={!canRestartChatServer() || restartMutation.isPending}
+              onClick={() => restartMutation.mutate()}
+              type="button"
+              variant="outline"
+            >
+              <RefreshCw className={restartMutation.isPending ? "size-4 animate-spin" : "size-4"} />
+              重启服务
+            </Button>
+          </div>
         </div>
         {notice ? <p className="text-muted-foreground text-xs">{notice}</p> : null}
         {saveMutation.isError ? (
           <p className="text-destructive text-xs">保存失败：{describeError(saveMutation.error)}</p>
+        ) : null}
+        {restartMutation.isError ? (
+          <p className="text-destructive text-xs">
+            重启失败：{describeError(restartMutation.error)}
+          </p>
         ) : null}
       </div>
     </>

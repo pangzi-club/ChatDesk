@@ -32,6 +32,8 @@ Cross-platform artifacts should be built on native CI runners. Set `TAURI_TARGET
 
 Tauri starts `chat-server` with a loopback host, a per-launch token, and a data directory under the platform app-data directory. The frontend obtains the token through the `chat_server_info` command. The browser worker prefers its packaged executable and falls back to the source Node worker only in development.
 
+The server still receives a per-launch token and the frontend still passes it through for a future authentication layer, but the local API currently does not enforce token validation. On the first packaged launch, the server imports sessions from the previous Tauri `chat` directory or a detected `.data/chat-server` / `.data/chat` directory. Set `M_DASHBOARD_LEGACY_CHAT_DIR` when the old data lives elsewhere.
+
 The app bundles only Chromium's headless shell. Updating Playwright requires rebuilding the browser resource and retesting the packaged browser tools.
 
 ## Signing

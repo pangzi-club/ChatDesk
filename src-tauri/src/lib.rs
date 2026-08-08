@@ -10,7 +10,7 @@ use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Emitter, Manager,
+    AppHandle, Emitter, Manager, RunEvent,
 };
 
 #[tauri::command]
@@ -47,7 +47,7 @@ pub fn run() {
                 Ok(manager) => manager,
                 Err(error) if cfg!(debug_assertions) => {
                     eprintln!("Chat Server sidecar unavailable in development: {error}");
-                    ChatServerManager::unavailable()
+                    ChatServerManager::unavailable(app.handle())
                 }
                 Err(error) => return Err(error.into()),
             };
@@ -56,23 +56,24 @@ pub fn run() {
             app.manage(McpManager::default());
             let dashboard_item =
                 MenuItem::with_id(app, "dashboard", "Dashboard", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&dashboard_item])?;
+            let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&dashboard_item, &quit_item])?;
 
             TrayIconBuilder::with_id("main-tray")
                 .menu(&menu)
                 .show_menu_on_left_click(true)
                 .icon(Image::new(include_bytes!("../icons/tray.rgba"), 32, 32))
-                .on_menu_event(|app, event| {
-                    if event.id.as_ref() != "dashboard" {
-                        return;
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "quit" => app.exit(0),
+                    "dashboard" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_focus();
+                            let _ = window.emit("tray-dashboard", ());
+                        }
                     }
-
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.unminimize();
-                        let _ = window.set_focus();
-                        let _ = window.emit("tray-dashboard", ());
-                    }
+                    _ => {}
                 })
                 .build(app)?;
 
@@ -100,6 +101,7 @@ pub fn run() {
             commands::browser::browser_eval,
             commands::browser::browser_close,
             commands::chat_server::chat_server_info,
+            commands::chat_server::chat_server_restart,
             commands::chat::read_chat_index,
             commands::chat::write_chat_index,
             commands::chat::read_chat_session,
@@ -126,6 +128,14 @@ pub fn run() {
             commands::workspaces::select_workspace_directory,
             commands::workspaces::inspect_workspace,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| match event {
+            RunEvent::ExitRequested { .. } | RunEvent::Exit => {
+                if let Err(error) = app.state::<ChatServerManager>().shutdown() {
+                    eprintln!("关闭 Chat Server 失败：{error}");
+                }
+            }
+            _ => {}
+        });
 }
