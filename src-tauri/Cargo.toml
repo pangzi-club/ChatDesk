@@ -27,3 +27,6 @@ tauri-plugin-http = "2.5.9"
 rfd = "0.15"
 chrono = "0.4"
 uuid = { version = "1", features = ["v4"] }
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-window-state = "2"

@@ -13,6 +13,7 @@
     "windows": [
       {
         "title": "m-dashboard",
+        "visible": false,
         "hiddenTitle": true,
         "width": 1280,
         "height": 720,

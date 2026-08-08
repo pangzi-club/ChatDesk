@@ -1,6 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "@/components/theme-provider";
-import { WindowStatePersistence } from "@/components/window-state-persistence";
 import { AppRouter } from "@/router/routes";
 
 import "./App.css";
@@ -18,7 +17,6 @@ const queryClient = new QueryClient({
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <WindowStatePersistence />
       <ThemeProvider>
         <AppRouter />
       </ThemeProvider>
