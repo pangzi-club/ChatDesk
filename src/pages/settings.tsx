@@ -176,10 +176,10 @@ function SettingsLayout() {
           : "flex min-h-full w-full bg-background"
       }
     >
-      <aside className="sticky top-0 flex h-screen w-[272px] shrink-0 flex-col border-border border-r bg-card/80 px-4 pt-10 max-md:w-[220px] max-sm:w-[76px] max-sm:px-2">
+      <aside className="sticky top-0 flex h-screen w-[272px] shrink-0 flex-col border-border border-r bg-card/80 px-4 pt-8 max-md:w-[220px] max-sm:w-[76px] max-sm:px-2">
         <Button
           aria-label="返回应用"
-          className="mb-5 justify-start gap-2 px-2 text-muted-foreground hover:text-foreground max-sm:justify-center max-sm:px-0"
+          className="mb-3 h-8 justify-start gap-2 px-2 text-muted-foreground text-sm hover:text-foreground max-sm:justify-center max-sm:px-0"
           onClick={() => navigate(getReturnPath())}
           type="button"
           variant="ghost"
@@ -187,14 +187,14 @@ function SettingsLayout() {
           <ArrowLeft className="size-4" />
           <span className="max-sm:hidden">返回应用</span>
         </Button>
-        <div className="mb-7 flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm text-muted-foreground shadow-xs">
+        <div className="mb-4 flex h-8 items-center gap-2 rounded-md border border-border bg-background px-3 text-[13px] text-muted-foreground shadow-xs">
           <Search className="size-4 shrink-0" />
           <span className="max-sm:hidden">搜索设置...</span>
         </div>
-        <p className="px-2 pb-2 font-medium text-muted-foreground text-xs uppercase tracking-wider max-sm:hidden">
+        <p className="px-2 pb-1 font-medium text-[11px] text-muted-foreground uppercase tracking-wider max-sm:hidden">
           工作区
         </p>
-        <nav className="space-y-1" aria-label="设置导航">
+        <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto" aria-label="设置导航">
           <SettingsNavItem to="/settings/theme" icon={Palette} label="主题" />
           <SettingsNavItem to="/settings/models" icon={Package} label="模型" />
           <SettingsNavItem to="/settings/mcp" icon={PlugZap} label="MCP" />
@@ -207,7 +207,7 @@ function SettingsLayout() {
           <SettingsNavItem to="/settings/statistics" icon={ChartColumn} label="使用量" />
           <SettingsNavItem to="/settings/logs" icon={ScrollText} label="活动记录" />
         </nav>
-        <div className="mt-auto border-border border-t py-5 text-muted-foreground text-xs max-sm:hidden">
+        <div className="mt-3 border-border border-t py-3 text-[11px] text-muted-foreground max-sm:hidden">
           m-dashboard
           <span className="mt-1 block opacity-60">本地工作区设置</span>
         </div>
@@ -376,7 +376,7 @@ function SettingsNavItem({
   return (
     <NavLink
       className={({ isActive }) =>
-        `flex h-10 items-center gap-3 rounded-md px-3 text-sm transition-colors max-sm:justify-center max-sm:px-0 ${isActive ? "bg-accent text-accent-foreground font-medium" : "text-muted-foreground hover:bg-accent/70 hover:text-foreground"}`
+        `flex h-7 items-center gap-2 rounded-md px-3 text-[13px] transition-colors max-sm:justify-center max-sm:px-0 ${isActive ? "bg-accent text-accent-foreground font-medium" : "text-muted-foreground hover:bg-accent/70 hover:text-foreground"}`
       }
       to={to}
     >

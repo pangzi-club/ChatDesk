@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -5,6 +6,7 @@ import {
   ArrowUp,
   Brain,
   ChartColumn,
+  ChevronDown,
   Clock3,
   CornerDownLeft,
   ExternalLink,
@@ -45,8 +47,10 @@ import { TitlebarDragRegion } from "@/components/titlebar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { rememberReturnPath } from "@/lib/app-return-path";
+import { type ChatIndexItem, loadChatIndex } from "@/lib/chat-store";
 import { appendSystemLog } from "@/lib/system-log";
 import { applyTrayEnabled, loadTrayEnabled } from "@/lib/tray";
+import { loadWorkspaceProjects } from "@/lib/workspaces";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -242,45 +246,37 @@ function AppShell() {
         {!hideMainSidebar ? (
           <>
             {/* 左列：红绿灯 + 侧栏同一背景，连成一体 */}
-            <aside className="flex w-[280px] shrink-0 flex-col border-border border-r bg-card max-md:w-[72px] max-sm:w-16">
+            <aside className="flex w-[272px] shrink-0 flex-col border-border border-r bg-card max-md:w-[72px] max-sm:w-16">
               <div className="flex h-8 shrink-0 items-center select-none">
                 <TitlebarDragRegion />
               </div>
               <SidebarHeader />
               <nav
-                className="space-y-1 px-3 py-2 max-md:px-2 max-sm:px-1.5"
+                className="space-y-0.5 px-3 py-2 max-md:px-2 max-sm:px-1.5"
                 aria-label="Main navigation"
               >
-                {navItems.map((item) => {
-                  const Icon = item.icon;
-
-                  return (
-                    <NavLink
-                      className={({ isActive }) =>
-                        `flex h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium transition-colors ${
-                          isActive
-                            ? "bg-primary/12 text-primary shadow-xs ring-1 ring-primary/25"
-                            : "text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground"
-                        } max-md:justify-center max-md:px-0 max-sm:h-8`
-                      }
-                      key={item.to}
-                      to={item.to}
-                    >
-                      <Icon className="size-4 shrink-0" />
-                      <span className="max-md:hidden">{item.label}</span>
-                    </NavLink>
-                  );
-                })}
+                {navItems.slice(0, 2).map((item) => (
+                  <SidebarNavItem item={item} key={item.to} />
+                ))}
               </nav>
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <nav
+                  className="space-y-0.5 px-3 pt-0 pb-2 max-md:px-2 max-sm:px-1.5"
+                  aria-label="Secondary navigation"
+                >
+                  {navItems.slice(2).map((item) => (
+                    <SidebarNavItem item={item} key={item.to} />
+                  ))}
+                </nav>
+                <WorkspaceConversationGroups />
+              </div>
 
-              <div className="min-h-0 flex-1" />
-
-              <footer className="relative mt-auto border-border border-t px-3 max-md:px-2 max-sm:px-1.5">
+              <footer className="relative mt-auto border-border border-t px-3 py-1 max-md:px-2 max-sm:px-1.5">
                 <details className="group">
-                  <summary className="flex h-12 cursor-pointer list-none items-center justify-between rounded-md px-3 text-left text-sm font-semibold text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground max-md:justify-center max-md:px-0 max-sm:h-10 [&::-webkit-details-marker]:hidden">
+                  <summary className="flex h-8 cursor-pointer list-none items-center justify-between rounded-md px-3 text-left text-[13px] font-semibold text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground max-md:justify-center max-md:px-0 [&::-webkit-details-marker]:hidden">
                     <span className="flex min-w-0 items-center gap-2">
-                      <Avatar className="size-6 bg-primary text-[10px] font-bold text-primary-foreground">
-                        <AvatarFallback className="bg-primary text-[10px] font-bold text-primary-foreground">
+                      <Avatar className="size-5 bg-primary text-[9px] font-bold text-primary-foreground">
+                        <AvatarFallback className="bg-primary text-[9px] font-bold text-primary-foreground">
                           O
                         </AvatarFallback>
                       </Avatar>
@@ -326,11 +322,244 @@ function AppShell() {
 
 function SidebarHeader() {
   return (
-    <header className="flex items-center px-3 pt-4 pb-3 max-md:justify-center max-md:px-2 max-sm:px-1.5">
+    <header className="flex items-center px-3 pt-3 pb-2 max-md:justify-center max-md:px-2 max-sm:px-1.5">
       <h1 className="truncate pl-2 font-semibold text-base text-primary max-md:hidden">
         m-dashboard
       </h1>
     </header>
+  );
+}
+
+function SidebarNavItem({ item }: { item: (typeof navItems)[number] }) {
+  const Icon = item.icon;
+
+  return (
+    <NavLink
+      className={({ isActive }) =>
+        `flex h-7 w-full items-center gap-2 rounded-md px-3 text-left text-[13px] font-medium transition-colors ${
+          isActive
+            ? "bg-primary/12 text-primary shadow-xs ring-1 ring-primary/25"
+            : "text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground"
+        } max-md:justify-center max-md:px-0 max-sm:h-8`
+      }
+      to={item.to}
+    >
+      <Icon className="size-4 shrink-0" />
+      <span className="max-md:hidden">{item.label}</span>
+    </NavLink>
+  );
+}
+
+type WorkspaceChatGroup = {
+  key: string;
+  label: string;
+  sessions: ChatIndexItem[];
+};
+
+function WorkspaceConversationGroups() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set());
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
+  const chatIndexQuery = useQuery({
+    queryKey: ["chat-index"],
+    queryFn: loadChatIndex,
+  });
+  const workspaceProjectsQuery = useQuery({
+    queryKey: ["workspace-projects"],
+    queryFn: loadWorkspaceProjects,
+  });
+  const activeSessionId = new URLSearchParams(location.search).get("sessionId");
+  const groups = useMemo(
+    () => groupChatsByWorkspace(chatIndexQuery.data ?? [], workspaceProjectsQuery.data ?? []),
+    [chatIndexQuery.data, workspaceProjectsQuery.data],
+  );
+  const isPending = chatIndexQuery.isPending || workspaceProjectsQuery.isPending;
+  const isError = chatIndexQuery.isError || workspaceProjectsQuery.isError;
+
+  function toggleCollapsed(groupKey: string) {
+    setCollapsedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(groupKey)) next.delete(groupKey);
+      else next.add(groupKey);
+      return next;
+    });
+  }
+
+  function toggleExpanded(groupKey: string) {
+    setExpandedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(groupKey)) next.delete(groupKey);
+      else next.add(groupKey);
+      return next;
+    });
+  }
+
+  return (
+    <section
+      aria-labelledby="workspace-conversations-heading"
+      className="px-3 pt-3 pb-2 max-md:hidden"
+    >
+      <h2
+        className="px-2 pb-1 font-medium text-[11px] text-muted-foreground uppercase"
+        id="workspace-conversations-heading"
+      >
+        Workspace
+      </h2>
+      {isPending ? (
+        <WorkspaceConversationSkeleton />
+      ) : isError ? (
+        <p className="px-2 py-2 text-[12px] text-destructive">对话记录加载失败</p>
+      ) : (
+        <div className="space-y-1.5">
+          {groups.map((group) => {
+            const isExpanded = expandedGroups.has(group.key);
+            const isCollapsed = collapsedGroups.has(group.key);
+            const visibleSessions = isExpanded ? group.sessions : group.sessions.slice(0, 5);
+            const hiddenCount = group.sessions.length - 5;
+
+            return (
+              <div key={group.key}>
+                <button
+                  aria-expanded={!isCollapsed}
+                  className="flex h-7 w-full items-center gap-1.5 rounded-md px-2 text-left font-medium text-[13px] text-foreground transition-colors hover:bg-accent/60"
+                  onClick={() => toggleCollapsed(group.key)}
+                  title={group.label}
+                  type="button"
+                >
+                  <ChevronDown
+                    className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
+                  />
+                  <FolderGit2 className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{group.label}</span>
+                </button>
+                {!isCollapsed ? (
+                  group.sessions.length > 0 ? (
+                    <div className="space-y-0.5">
+                      {visibleSessions.map((session) => {
+                        const isActive =
+                          location.pathname === "/chat" && activeSessionId === session.id;
+
+                        return (
+                          <button
+                            aria-current={isActive ? "page" : undefined}
+                            className={`flex h-7 w-full items-center rounded-md pr-2 pl-8 text-left text-[13px] transition-colors ${
+                              isActive
+                                ? "bg-accent text-accent-foreground font-medium"
+                                : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                            }`}
+                            key={session.id}
+                            onClick={() =>
+                              navigate(`/chat?sessionId=${encodeURIComponent(session.id)}`)
+                            }
+                            title={session.title}
+                            type="button"
+                          >
+                            <span className="truncate">{session.title}</span>
+                          </button>
+                        );
+                      })}
+                      {hiddenCount > 0 ? (
+                        <button
+                          aria-expanded={isExpanded}
+                          className="flex h-7 w-full items-center gap-1 rounded-md pr-2 pl-8 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+                          onClick={() => toggleExpanded(group.key)}
+                          type="button"
+                        >
+                          <ChevronDown
+                            className={`size-3.5 shrink-0 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                          />
+                          <span>{isExpanded ? "收起" : `展开其余 ${hiddenCount} 条`}</span>
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="px-2 py-1 pl-8 text-[12px] text-muted-foreground">暂无对话</p>
+                  )
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function WorkspaceConversationSkeleton() {
+  return (
+    <div className="space-y-2" role="status" aria-label="正在加载 Workspace 对话记录">
+      {[0, 1, 2].map((group) => (
+        <div className="space-y-1" key={group}>
+          <div className="flex h-7 items-center gap-2 px-2">
+            <div className="size-4 animate-pulse rounded bg-muted" />
+            <div className="h-3 w-24 animate-pulse rounded bg-muted" />
+          </div>
+          {[0, 1].map((item) => (
+            <div
+              className="ml-8 h-7 animate-pulse rounded-md bg-muted/70"
+              key={`${group}-${item}`}
+            />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function groupChatsByWorkspace(
+  sessions: ChatIndexItem[],
+  projects: Awaited<ReturnType<typeof loadWorkspaceProjects>>,
+): WorkspaceChatGroup[] {
+  const sessionsByWorkspace = new Map<string, ChatIndexItem[]>();
+  const defaultSessions: ChatIndexItem[] = [];
+  const projectIdByPath = new Map(projects.map((project) => [project.path, project.id]));
+
+  for (const session of sessions) {
+    const workspaceKey =
+      session.workspaceId ??
+      (session.cwd ? (projectIdByPath.get(session.cwd) ?? `cwd:${session.cwd}`) : undefined);
+    if (!workspaceKey) {
+      defaultSessions.push(session);
+      continue;
+    }
+    const workspaceSessions = sessionsByWorkspace.get(workspaceKey) ?? [];
+    workspaceSessions.push(session);
+    sessionsByWorkspace.set(workspaceKey, workspaceSessions);
+  }
+
+  const groups: WorkspaceChatGroup[] = [
+    { key: "default", label: "Default", sessions: defaultSessions },
+  ];
+
+  for (const project of projects) {
+    const workspaceSessions = sessionsByWorkspace.get(project.id);
+    if (!workspaceSessions?.length) continue;
+    groups.push({
+      key: project.id,
+      label: pathBasename(project.path),
+      sessions: workspaceSessions,
+    });
+    sessionsByWorkspace.delete(project.id);
+  }
+
+  for (const [workspaceId, workspaceSessions] of sessionsByWorkspace) {
+    groups.push({
+      key: workspaceId,
+      label: pathBasename(workspaceSessions[0]?.cwd ?? "") || "已移除的 Workspace",
+      sessions: workspaceSessions,
+    });
+  }
+
+  return groups;
+}
+
+function pathBasename(path: string) {
+  return (
+    path
+      .replace(/[\\/]+$/, "")
+      .split(/[\\/]/)
+      .pop() ?? path
   );
 }
 
