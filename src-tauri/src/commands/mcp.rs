@@ -188,9 +188,7 @@ pub fn mcp_list_tools(
         .cloned()
         .ok_or_else(|| "MCP 尚未启动".to_string())?;
     drop(processes);
-    let mut process = process
-        .lock()
-        .map_err(|_| "MCP 进程锁失败".to_string())?;
+    let mut process = process.lock().map_err(|_| "MCP 进程锁失败".to_string())?;
     let result = rpc(&mut process, "tools/list", json!({}))?;
     let tools = result
         .get("tools")
@@ -228,9 +226,7 @@ pub fn mcp_call_tool(
         .cloned()
         .ok_or_else(|| "MCP 尚未启动".to_string())?;
     drop(processes);
-    let mut process = process
-        .lock()
-        .map_err(|_| "MCP 进程锁失败".to_string())?;
+    let mut process = process.lock().map_err(|_| "MCP 进程锁失败".to_string())?;
     rpc(
         &mut process,
         "tools/call",

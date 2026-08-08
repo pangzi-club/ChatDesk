@@ -160,7 +160,12 @@ const commandItems = [
     keywords: ["设置", "历史", "对话历史", "归档", "导入", "codex", "claude"],
   },
   { to: "/settings/tray", label: "托盘", icon: PanelTop, keywords: ["设置", "tray"] },
-  { to: "/settings/logs", label: "系统日志", icon: ScrollText, keywords: ["设置", "日志", "logs"] },
+  {
+    to: "/settings/logs",
+    label: "活动记录",
+    icon: ScrollText,
+    keywords: ["设置", "活动", "记录", "日志", "logs"],
+  },
 ] satisfies Array<{
   to: string;
   label: string;

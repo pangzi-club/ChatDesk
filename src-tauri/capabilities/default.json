@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "opener:default",
+    "log:default",
     "store:default",
     "core:window:allow-close",
     "core:window:allow-destroy",

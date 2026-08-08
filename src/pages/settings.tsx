@@ -205,7 +205,7 @@ function SettingsLayout() {
           <SettingsNavItem to="/settings/keys" icon={KeyRound} label="API Keys" />
           <SettingsNavItem to="/settings/tray" icon={PanelTop} label="托盘" />
           <SettingsNavItem to="/settings/statistics" icon={ChartColumn} label="使用量" />
-          <SettingsNavItem to="/settings/logs" icon={ScrollText} label="系统日志" />
+          <SettingsNavItem to="/settings/logs" icon={ScrollText} label="活动记录" />
         </nav>
         <div className="mt-auto border-border border-t py-5 text-muted-foreground text-xs max-sm:hidden">
           m-dashboard
@@ -255,7 +255,7 @@ function SystemLogsSettingsPage() {
     <>
       <SettingsHeading
         eyebrow="System"
-        title="系统日志"
+        title="活动记录"
         description="查看最近的应用运行记录，帮助定位设置保存、窗口状态和连接问题。"
       />
       <section className="overflow-hidden rounded-lg border border-border bg-card">
@@ -271,7 +271,7 @@ function SystemLogsSettingsPage() {
               onValueChange={(value) => setLevel(value as "all" | SystemLogLevel)}
               value={level}
             >
-              <SelectTrigger aria-label="按级别筛选日志" className="w-[112px] text-xs" size="sm">
+              <SelectTrigger aria-label="按级别筛选记录" className="w-[112px] text-xs" size="sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -284,7 +284,7 @@ function SystemLogsSettingsPage() {
               </SelectContent>
             </Select>
             <Button
-              aria-label="刷新系统日志"
+              aria-label="刷新活动记录"
               disabled={logsQuery.isFetching}
               onClick={() => void logsQuery.refetch()}
               size="icon"
@@ -313,13 +313,13 @@ function SystemLogsSettingsPage() {
           </div>
         ) : logsQuery.isError ? (
           <div className="px-5 py-14 text-center">
-            <p className="font-medium text-sm">读取系统日志失败</p>
+            <p className="font-medium text-sm">读取活动记录失败</p>
             <p className="mt-1 text-muted-foreground text-xs">请点击右上角刷新后重试。</p>
           </div>
         ) : logs.length === 0 ? (
           <div className="px-5 py-14 text-center">
             <ScrollText className="mx-auto size-8 text-muted-foreground" />
-            <p className="mt-3 font-medium text-sm">暂无系统日志</p>
+            <p className="mt-3 font-medium text-sm">暂无活动记录</p>
             <p className="mt-1 text-muted-foreground text-xs">应用运行后，相关记录会显示在这里。</p>
           </div>
         ) : (

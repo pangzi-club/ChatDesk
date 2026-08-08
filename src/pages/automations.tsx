@@ -144,7 +144,7 @@ function AutomationsPage() {
             </p>
             <h1 className="mt-2 font-semibold text-3xl tracking-tight">自动化</h1>
             <p className="mt-2 max-w-xl text-muted-foreground text-sm">
-              让重复的小事按固定节奏运行，执行记录会写入系统日志。
+              让重复的小事按固定节奏运行，执行结果会写入活动记录。
             </p>
           </div>
           <Button onClick={openCreate} type="button">
