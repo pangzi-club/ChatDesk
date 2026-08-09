@@ -6,6 +6,7 @@ import {
   DefaultChatTransport,
   getToolName,
   isToolUIPart,
+  lastAssistantMessageIsCompleteWithApprovalResponses,
   type UIMessage,
 } from "ai";
 import { Streamdown } from "streamdown";
@@ -28,6 +29,7 @@ import {
   RefreshCw,
   Settings,
   Settings2,
+  ShieldCheck,
   Sparkles,
   Trash2,
   User,
@@ -68,6 +70,14 @@ import {
   saveChatMemory,
 } from "@/lib/chat-memory";
 import { isWorkspaceMemoryExcludedTool, scheduleMemoryUpdateFromTurn } from "@/lib/chat-memory-ops";
+import {
+  CHAT_SANDBOX_MODE_LABELS,
+  type ChatSandboxMode,
+  DEFAULT_CHAT_SANDBOX_MODE,
+  loadChatSandboxMode,
+  normalizeChatSandboxMode,
+  saveChatSandboxMode,
+} from "@/lib/chat-sandbox";
 import {
   chatServerHeaders,
   chatServerUrl,
@@ -175,6 +185,10 @@ function ChatPage() {
     queryKey: ["chat-skills-selected"],
     queryFn: loadChatSkillSelection,
   });
+  const chatSandboxModeQuery = useQuery({
+    queryKey: ["chat-sandbox-mode"],
+    queryFn: loadChatSandboxMode,
+  });
   const installedSkillIds = installedSkillsQuery.data ?? EMPTY_STRING_ARRAY;
   const savedChatSkillIds = chatSkillSelectionQuery.data ?? EMPTY_STRING_ARRAY;
   const { data: workspaceProjects = [], isLoading: isWorkspacesLoading } = useQuery({
@@ -200,6 +214,7 @@ function ChatPage() {
   const suppressSaveRef = useRef(false);
   const pendingSessionRef = useRef<ChatSession | null>(null);
   const workspaceSelectionInitializedRef = useRef(false);
+  const sandboxModeInitializedRef = useRef(false);
   const savedFingerprintRef = useRef("");
   const extractedFingerprintRef = useRef("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -210,14 +225,17 @@ function ChatPage() {
   const [toolsOpen, setToolsOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
+  const [sandboxMode, setSandboxMode] = useState<ChatSandboxMode>(DEFAULT_CHAT_SANDBOX_MODE);
   const [chatDisplay, setChatDisplay] = useState<ChatDisplaySettings>(DEFAULT_CHAT_DISPLAY);
   const [availablePacks, setAvailablePacks] = useState<ChatToolPackId[]>([]);
   const generationStartedAtRef = useRef<number | null>(null);
   const [generationElapsedSeconds, setGenerationElapsedSeconds] = useState(0);
   const workspaceRef = useRef("");
+  const sandboxModeRef = useRef<ChatSandboxMode>(DEFAULT_CHAT_SANDBOX_MODE);
   const selectedCwd =
     workspaceProjects.find((project) => project.id === workspaceKey)?.path ?? sessionCwd;
   workspaceRef.current = selectedCwd;
+  sandboxModeRef.current = sandboxMode;
   const selectedModel = models.find((model) => model.id === selectedModelId) ?? models[0];
   const selectedModelRef = useRef(selectedModel);
   selectedModelRef.current = selectedModel;
@@ -234,17 +252,20 @@ function ChatPage() {
         () => toolsRef.current,
         () => workspaceRef.current,
         () => workspaceKey,
+        () => sandboxModeRef.current,
         () => skillsRef.current.filter((skill) => selectedSkillIds.includes(skill.id)),
       ),
     [selectedModel, selectedSkillIds, sessionId, workspaceKey],
   );
-  const { messages, setMessages, sendMessage, stop, status, error } = useChat({
-    id: sessionId,
-    transport,
-    onError: (chatError) => {
-      console.error("Chat request failed", chatError);
-    },
-  });
+  const { addToolApprovalResponse, messages, setMessages, sendMessage, stop, status, error } =
+    useChat({
+      id: sessionId,
+      transport,
+      sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
+      onError: (chatError) => {
+        console.error("Chat request failed", chatError);
+      },
+    });
   const activeSessionRef = useRef(sessionId);
   activeSessionRef.current = sessionId;
   const chatStatusRef = useRef(status);
@@ -275,6 +296,7 @@ function ChatPage() {
       sessionAttachmentsRef.current = [];
       pendingSessionRef.current = null;
       setSessionTitle("新对话");
+      setSandboxMode(sandboxModeRef.current);
       savedFingerprintRef.current = "";
       extractedFingerprintRef.current = "";
       suppressSaveRef.current = false;
@@ -363,6 +385,16 @@ function ChatPage() {
     queryClient.setQueryData(["chat-tools"], next);
     void saveChatToolsSettings(next).catch((error) =>
       console.error("Failed to save chat tools settings", error),
+    );
+  };
+
+  const updateSandboxMode = (next: ChatSandboxMode) => {
+    const normalized = normalizeChatSandboxMode(next);
+    sandboxModeInitializedRef.current = true;
+    setSandboxMode(normalized);
+    queryClient.setQueryData(["chat-sandbox-mode"], normalized);
+    void saveChatSandboxMode(normalized).catch((error) =>
+      console.error("Failed to save global chat sandbox mode", error),
     );
   };
 
@@ -560,6 +592,12 @@ function ChatPage() {
   ]);
 
   useEffect(() => {
+    if (sandboxModeInitializedRef.current || chatSandboxModeQuery.isPending) return;
+    setSandboxMode(normalizeChatSandboxMode(chatSandboxModeQuery.data));
+    sandboxModeInitializedRef.current = true;
+  }, [chatSandboxModeQuery.data, chatSandboxModeQuery.isPending]);
+
+  useEffect(() => {
     if (status !== "ready" || messages.length === 0) return;
     if (suppressSaveRef.current) {
       suppressSaveRef.current = false;
@@ -599,6 +637,7 @@ function ChatPage() {
           modelId: selectedModel?.id,
           workspaceId: workspaceKey || undefined,
           cwd: selectedCwd || undefined,
+          sandboxMode,
           mcpServerIds: selectedMcpIds,
           skillIds: selectedSkillIds,
           messages: materialized.messages,
@@ -636,6 +675,7 @@ function ChatPage() {
     selectedCwd,
     selectedModel,
     selectedMcpIds,
+    sandboxMode,
     selectedSkillIds,
     sessionId,
     status,
@@ -662,6 +702,14 @@ function ChatPage() {
     stop();
     void stopChatServerRun(sessionId).catch((error) => {
       console.error("Failed to stop Chat Server run", error);
+    });
+  }
+
+  function respondToApproval(id: string, approved: boolean) {
+    void addToolApprovalResponse({
+      id,
+      approved,
+      reason: approved ? undefined : "用户拒绝了此次操作",
     });
   }
 
@@ -821,7 +869,7 @@ function ChatPage() {
             <span className="truncate" title={selectedCwd || undefined}>
               {selectedCwd ? pathBasename(selectedCwd) : "未选择 Workspace"}
             </span>
-            {selectedCwd ? <span className="chat-access-badge">完全访问</span> : null}
+            <span className="chat-access-badge">{CHAT_SANDBOX_MODE_LABELS[sandboxMode]}</span>
           </div>
           {messages.length === 0 ? (
             <div className="chat-tools-hint">
@@ -856,6 +904,7 @@ function ChatPage() {
             <MessageBubble
               key={message.id}
               message={message}
+              onApprovalResponse={respondToApproval}
               isStreaming={status === "streaming" && message.id === lastMessage?.id}
               showTokenUsage={chatDisplay.showTokenUsage}
             />
@@ -952,6 +1001,23 @@ function ChatPage() {
                   {workspaceProjects.map((project) => (
                     <option key={project.id} value={project.id}>
                       {pathBasename(project.path)}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="size-3.5" />
+              </div>
+              <div className="chat-sandbox-picker" title="Sandbox permissions">
+                <ShieldCheck className="size-3.5" />
+                <select
+                  aria-label="Sandbox permissions"
+                  value={sandboxMode}
+                  onChange={(event) =>
+                    updateSandboxMode(normalizeChatSandboxMode(event.target.value))
+                  }
+                >
+                  {Object.entries(CHAT_SANDBOX_MODE_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
                     </option>
                   ))}
                 </select>
@@ -1066,15 +1132,18 @@ function MessageBubble({
   message,
   isStreaming,
   showTokenUsage,
+  onApprovalResponse,
 }: {
   message: UIMessage;
   isStreaming: boolean;
   showTokenUsage: boolean;
+  onApprovalResponse: (id: string, approved: boolean) => void;
 }) {
   const text = messageText(message);
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
   const toolParts = message.parts.filter(isToolUIPart);
+  const pendingApprovalParts = toolParts.filter((part) => part.state === "approval-requested");
   if (!isUser && !text.trim() && toolParts.length === 0) return null;
   const usage = showTokenUsage && !isUser ? getMessageUsage(message) : undefined;
   const usageLabel = usage ? formatTokenUsage(usage) : null;
@@ -1117,6 +1186,37 @@ function MessageBubble({
               }))}
             />
           </div>
+        ) : null}
+        {pendingApprovalParts.length > 0 ? (
+          <fieldset className="chat-approval-strip">
+            <legend className="sr-only">工具审批</legend>
+            <div className="chat-approval-strip-copy">
+              <strong>Approval required</strong>
+              <span>此操作将修改工作区或执行终端命令。</span>
+            </div>
+            <div className="chat-approval-strip-actions">
+              {pendingApprovalParts.map((part) => (
+                <span className="chat-approval-strip-item" key={part.approval.id}>
+                  <code>{getToolName(part)}</code>
+                  <Button
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                    onClick={() => onApprovalResponse(part.approval.id, false)}
+                  >
+                    Deny
+                  </Button>
+                  <Button
+                    size="sm"
+                    type="button"
+                    onClick={() => onApprovalResponse(part.approval.id, true)}
+                  >
+                    Approve
+                  </Button>
+                </span>
+              ))}
+            </div>
+          </fieldset>
         ) : null}
         {text.trim() ? (
           <div className="chat-message-text">
@@ -1186,6 +1286,7 @@ function createModelTransport(
   getToolsSettings: () => ChatToolsSettings,
   getCwd: () => string,
   getWorkspaceId: () => string,
+  getSandboxMode: () => ChatSandboxMode,
   getSkills: () => SkillDefinition[],
 ): ChatTransport<UIMessage> {
   return new DefaultChatTransport<UIMessage>({
@@ -1204,6 +1305,7 @@ function createModelTransport(
         memory.enabled && memory.items.length > 0 ? formatMemoryForInject(memory.items) : "";
       const cwd = getCwd().trim();
       const workspaceId = getWorkspaceId().trim();
+      const sandboxMode = getSandboxMode();
       await ensureChatServerSession(sessionId, {
         cwd: cwd || undefined,
         workspaceId: workspaceId || undefined,
@@ -1237,6 +1339,7 @@ function createModelTransport(
           memory: memorySystem,
           cwd: cwd || undefined,
           workspaceId: workspaceId || undefined,
+          sandboxMode,
           toolNames: activeTools.toolNames,
           title: undefined,
         },

@@ -117,10 +117,19 @@ describe("chat server", () => {
     const config = await server.app.request("http://localhost/v1/chat-config", {
       method: "PATCH",
       headers: { ...auth(), "Content-Type": "application/json" },
-      body: JSON.stringify({ apiKeys: { dataer: "secret" }, selectedSkillIds: ["skill-a"] }),
+      body: JSON.stringify({
+        apiKeys: { dataer: "secret" },
+        selectedSkillIds: ["skill-a"],
+        sandboxMode: "auto",
+      }),
     });
     assert.equal(config.status, 200);
     assert.deepEqual((await config.json()).apiKeys, { dataer: "secret" });
+
+    const loadedConfig = await server.app.request("http://localhost/v1/chat-config", {
+      headers: auth(),
+    });
+    assert.equal((await loadedConfig.json()).sandboxMode, "auto");
 
     const memory = await server.app.request("http://localhost/v1/memory", {
       method: "PUT",

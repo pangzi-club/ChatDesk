@@ -1,4 +1,5 @@
 import type { UIMessage } from "ai";
+import type { ChatSandboxMode } from "@/lib/chat-sandbox";
 import {
   deleteChatServerSession,
   initializeChatServer,
@@ -36,6 +37,7 @@ export type ChatSession = {
   modelId?: string;
   workspaceId?: string;
   cwd?: string;
+  sandboxMode?: ChatSandboxMode;
   mcpServerIds?: string[];
   skillIds?: string[];
   messages: UIMessage[];
@@ -109,6 +111,8 @@ function normalizeChatSession(value: unknown): ChatSession | null {
     messages,
     workspaceId: typeof value.workspaceId === "string" ? value.workspaceId : undefined,
     cwd: typeof value.cwd === "string" ? value.cwd : undefined,
+    sandboxMode:
+      value.sandboxMode === "auto" || value.sandboxMode === "full" ? value.sandboxMode : "ask",
     mcpServerIds: Array.isArray(value.mcpServerIds)
       ? value.mcpServerIds.filter((item): item is string => typeof item === "string")
       : undefined,

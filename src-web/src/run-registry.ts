@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 import { createOpenAI } from "@ai-sdk/openai";
 import {
   convertToModelMessages,
@@ -10,7 +11,13 @@ import {
 } from "ai";
 import { createClientTools } from "./client-tools.ts";
 import type { EventHub } from "./events.ts";
-import { deriveTitle, type ChatSession, type RunStartInput, type SessionStatus } from "./protocol.ts";
+import {
+  deriveTitle,
+  type ChatSession,
+  type RunStartInput,
+  type SandboxMode,
+  type SessionStatus,
+} from "./protocol.ts";
 import { SessionStore } from "./store.ts";
 import { createWorkspaceTools } from "./workspace-tools.ts";
 import type { ChatConfigStore } from "./chat-config.ts";
@@ -50,6 +57,7 @@ export class RunRegistry {
   private readonly events: EventHub;
   private readonly chatConfig: ChatConfigStore;
   private readonly journal: RunJournal;
+  private readonly toolApprovalSecret = randomUUID();
 
   constructor(store: SessionStore, events: EventHub, chatConfig: ChatConfigStore) {
     this.store = store;
@@ -99,6 +107,7 @@ export class RunRegistry {
 
     const current = await this.store.get(sessionId);
     if (!current) throw new Error("会话不存在");
+    const sandboxMode = input.sandboxMode ?? this.chatConfig.get().sandboxMode ?? "ask";
     const messages = input.messages?.length
       ? input.messages
       : input.message
@@ -112,6 +121,7 @@ export class RunRegistry {
       modelId: model.id || model.name,
       workspaceId: input.workspaceId ?? current.workspaceId,
       cwd: input.cwd ?? current.cwd,
+      sandboxMode,
       messages,
     };
     await this.store.save(session);
@@ -139,13 +149,15 @@ export class RunRegistry {
         tools: model.supportsTools
           ? {
               ...(createClientTools(input.toolNames) ?? {}),
-              ...createWorkspaceToolsForInput({ ...input, model }),
+              ...createWorkspaceToolsForInput({ ...input, model, sandboxMode }),
               ...selectTools(createBusinessTools(this.chatConfig.get().apiKeys), input.toolNames),
               ...(input.toolNames?.includes("web_search") && model.responsive
                 ? { web_search: openai.tools.webSearch({}) as unknown as ToolSet[string] }
                 : {}),
             }
           : undefined,
+        toolApproval: createToolApproval(sandboxMode, session.cwd),
+        experimental_toolApprovalSecret: this.toolApprovalSecret,
         stopWhen: stepCountIs(20),
         abortSignal: controller.signal,
       });
@@ -239,6 +251,81 @@ export class RunRegistry {
   }
 }
 
+function createToolApproval(mode: SandboxMode, workspace: string | undefined) {
+  if (mode === "full") return undefined;
+  return ({
+    toolCall,
+  }: {
+    toolCall: { toolName?: string; input?: unknown } | undefined;
+  }) => {
+    const toolName = toolCall?.toolName;
+    if (!toolName || !isWorkspaceTool(toolName)) return "not-applicable" as const;
+    if (isExternalWorkspaceRequest(toolCall.input, workspace, toolName)) {
+      return "user-approval" as const;
+    }
+    if (!isWorkspaceMutationTool(toolName)) return "not-applicable" as const;
+    if (mode === "auto" && !isExternalWorkspaceRequest(toolCall.input, workspace, toolName)) {
+      return "approved" as const;
+    }
+    return "user-approval" as const;
+  };
+}
+
+function isWorkspaceMutationTool(toolName: string) {
+  return toolName === "write_file" || toolName === "edit_file" || toolName === "bash";
+}
+
+function isWorkspaceTool(toolName: string) {
+  return (
+    toolName === "list_dir" ||
+    toolName === "search_files" ||
+    toolName === "read_file" ||
+    isWorkspaceMutationTool(toolName)
+  );
+}
+
+function isExternalWorkspaceRequest(input: unknown, workspace: string | undefined, toolName: string) {
+  if (!input || typeof input !== "object") return false;
+  const value = input as { path?: unknown; cwd?: unknown };
+  if (
+    toolName === "bash" &&
+    typeof (value as { command?: unknown }).command === "string" &&
+    /\b(curl|wget|ssh|scp|nc|npm\s+(install|publish)|pnpm\s+(install|add)|pip\s+install|git\s+(clone|fetch|push))\b/i.test(
+      (value as { command: string }).command,
+    )
+  ) {
+    return true;
+  }
+  if (!workspace) return false;
+  const candidate = toolName === "bash" ? value.cwd : value.path;
+  if (typeof candidate !== "string" || !candidate.trim()) return false;
+  const root = path.resolve(workspace);
+  const target = path.resolve(root, candidate);
+  return target !== root && !target.startsWith(`${root}${path.sep}`);
+}
+
+function collectApprovedToolCallIds(messages: UIMessage[]) {
+  const approved = new Set<string>();
+  for (const message of messages) {
+    for (const part of message.parts) {
+      if (!part || typeof part !== "object") continue;
+      const value = part as {
+        toolCallId?: unknown;
+        state?: unknown;
+        approval?: { approved?: unknown };
+      };
+      if (
+        typeof value.toolCallId === "string" &&
+        value.state === "approval-responded" &&
+        value.approval?.approved === true
+      ) {
+        approved.add(value.toolCallId);
+      }
+    }
+  }
+  return approved;
+}
+
 function resolveConfiguredModel(
   config: { models: unknown[]; apiKeys: Record<string, string> },
   input: RunStartInput,
@@ -257,7 +344,11 @@ function createWorkspaceToolsForInput(input: RunStartInput) {
   if (!input.cwd) return {};
   const names = new Set(input.toolNames ?? []);
   if (!["list_dir", "search_files", "read_file", "write_file", "edit_file", "terminal", "bash"].some((name) => names.has(name))) return {};
-  const tools = createWorkspaceTools(input.cwd);
+  const tools = createWorkspaceTools(
+    input.cwd,
+    input.sandboxMode ?? "ask",
+    collectApprovedToolCallIds(input.messages ?? []),
+  );
   const selected = names.has("terminal") ? ["bash"] : ["list_dir", "search_files", "read_file", "write_file", "edit_file", "bash"];
   return Object.fromEntries(selected.filter((name) => names.has(name) || (name === "bash" && names.has("terminal"))).map((name) => [name, tools[name]]));
 }

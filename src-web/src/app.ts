@@ -33,6 +33,7 @@ const runInputSchema = z.object({
   memory: z.string().optional(),
   cwd: z.string().optional(),
   workspaceId: z.string().optional(),
+  sandboxMode: z.enum(["ask", "auto", "full"]).optional(),
   title: z.string().optional(),
   toolNames: z.array(z.string()).max(100).optional(),
 });

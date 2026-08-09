@@ -1,9 +1,11 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import type { SandboxMode } from "./protocol.ts";
 
 export type ChatServerConfigData = {
   models: unknown[];
   chatTools: Record<string, boolean>;
+  sandboxMode: SandboxMode;
   mcpServers: unknown[];
   installedSkillIds: string[];
   selectedSkillIds: string[];
@@ -13,6 +15,7 @@ export type ChatServerConfigData = {
 const DEFAULT_CONFIG: ChatServerConfigData = {
   models: [],
   chatTools: {},
+  sandboxMode: "ask",
   mcpServers: [],
   installedSkillIds: [],
   selectedSkillIds: [],
@@ -28,6 +31,8 @@ function normalize(value: unknown): ChatServerConfigData {
       record.chatTools && typeof record.chatTools === "object"
         ? (record.chatTools as Record<string, boolean>)
         : {},
+    sandboxMode:
+      record.sandboxMode === "auto" || record.sandboxMode === "full" ? record.sandboxMode : "ask",
     mcpServers: Array.isArray(record.mcpServers) ? record.mcpServers : [],
     installedSkillIds: Array.isArray(record.installedSkillIds)
       ? record.installedSkillIds.filter((item): item is string => typeof item === "string")

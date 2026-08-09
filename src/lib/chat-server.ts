@@ -1,5 +1,6 @@
 import { invoke, isTauri as tauriIsTauri } from "@tauri-apps/api/core";
 import type { UIMessage } from "ai";
+import type { ChatSandboxMode } from "@/lib/chat-sandbox";
 import { settingsStore } from "@/lib/settings-store";
 
 export const CHAT_SERVER_DEFAULT_PORT = 14317;
@@ -231,6 +232,7 @@ export async function loadChatServerSessions(port = CHAT_SERVER_DEFAULT_PORT) {
 export type ChatServerConfigData = {
   models: unknown[];
   chatTools: Record<string, boolean>;
+  sandboxMode?: ChatSandboxMode;
   mcpServers: unknown[];
   installedSkillIds: string[];
   selectedSkillIds: string[];

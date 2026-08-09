@@ -10,6 +10,7 @@ export const SESSION_STATUSES = [
 ] as const;
 
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
+export type SandboxMode = "ask" | "auto" | "full";
 
 export type ServerModelConfig = {
   id?: string;
@@ -32,6 +33,7 @@ export type ChatSession = {
   modelId?: string;
   workspaceId?: string;
   cwd?: string;
+  sandboxMode?: SandboxMode;
   mcpServerIds?: string[];
   skillIds?: string[];
   messages: UIMessage[];
@@ -59,6 +61,7 @@ export type RunStartInput = {
   memory?: string;
   cwd?: string;
   workspaceId?: string;
+  sandboxMode?: SandboxMode;
   title?: string;
   toolNames?: string[];
 };

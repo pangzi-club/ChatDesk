@@ -1077,6 +1077,7 @@
 }
 .chat-model-picker,
 .chat-workspace-picker,
+.chat-sandbox-picker,
 .chat-tools-picker {
   position: relative;
   display: flex;
@@ -1091,6 +1092,7 @@
 }
 .chat-model-picker::before,
 .chat-workspace-picker::before,
+.chat-sandbox-picker::before,
 .chat-tools-picker::before {
   content: "";
   position: absolute;
@@ -1103,6 +1105,7 @@
 }
 .dark .chat-model-picker::before,
 .dark .chat-workspace-picker::before,
+.dark .chat-sandbox-picker::before,
 .dark .chat-tools-picker::before {
   background: rgb(180 200 190 / 28%);
 }
@@ -1122,7 +1125,8 @@
   white-space: nowrap;
 }
 .chat-model-picker select,
-.chat-workspace-picker select {
+.chat-workspace-picker select,
+.chat-sandbox-picker select {
   max-width: 130px;
   border: 0;
   outline: 0;
@@ -1136,6 +1140,50 @@
 }
 .chat-workspace-picker select {
   max-width: 150px;
+}
+.chat-sandbox-picker select {
+  max-width: 132px;
+}
+.chat-approval-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  border: 1px solid rgb(190 120 44 / 28%);
+  border-radius: 8px;
+  background: rgb(214 149 69 / 9%);
+  padding: 9px 10px;
+  color: var(--chat-ink);
+  font-size: 11px;
+}
+.chat-approval-strip-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.chat-approval-strip-copy span {
+  color: var(--chat-muted);
+  font-size: 10px;
+}
+.chat-approval-strip-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+.chat-approval-strip-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border-left: 1px solid rgb(190 120 44 / 22%);
+  padding-left: 7px;
+}
+.chat-approval-strip-item code {
+  margin-right: 2px;
+  color: var(--chat-muted);
+  font-size: 10px;
 }
 .chat-tools-menu {
   display: flex;
@@ -1467,6 +1515,7 @@
   }
   .chat-model-picker,
   .chat-workspace-picker,
+  .chat-sandbox-picker,
   .chat-tools-picker {
     margin-left: 0;
     padding-left: 6px;
@@ -1476,6 +1525,9 @@
   }
   .chat-workspace-picker select {
     max-width: 82px;
+  }
+  .chat-sandbox-picker select {
+    max-width: 116px;
   }
   .chat-tools-picker span {
     max-width: 56px;
