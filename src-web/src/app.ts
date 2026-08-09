@@ -142,6 +142,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   });
 
   app.get("/v1/chat-config", (c) => c.json(chatConfig.get()));
+  app.get("/v1/sandbox-reviews", (c) => c.json(runs.reviewLogs(c.req.query("sessionId"))));
   app.patch("/v1/chat-config", async (c) => {
     try {
       return c.json(await chatConfig.update(await c.req.json()));

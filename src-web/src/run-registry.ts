@@ -28,6 +28,7 @@ import {
   reviewSandboxBoundary,
   type SandboxBoundaryAssessment,
 } from "./sandbox-boundary-reviewer.ts";
+import { SandboxReviewLogStore } from "./sandbox-review-log.ts";
 
 type ActiveRun = {
   id: string;
@@ -61,6 +62,7 @@ export class RunRegistry {
   private readonly events: EventHub;
   private readonly chatConfig: ChatConfigStore;
   private readonly journal: RunJournal;
+  private readonly reviewLog: SandboxReviewLogStore;
   private readonly toolApprovalSecret = randomUUID();
 
   constructor(store: SessionStore, events: EventHub, chatConfig: ChatConfigStore) {
@@ -68,9 +70,11 @@ export class RunRegistry {
     this.events = events;
     this.chatConfig = chatConfig;
     this.journal = new RunJournal(store.root);
+    this.reviewLog = new SandboxReviewLogStore(store.root);
   }
 
   async initialize() {
+    await this.reviewLog.init();
     const interrupted = await this.journal.recover();
     for (const entry of interrupted) {
       this.statuses.set(entry.sessionId, "error");
@@ -91,6 +95,11 @@ export class RunRegistry {
 
   activeCount() {
     return this.active.size;
+  }
+
+  reviewLogs(sessionId?: string) {
+    const entries = this.reviewLog.list();
+    return sessionId ? entries.filter((entry) => entry.sessionId === sessionId) : entries;
   }
 
   draftMessage(sessionId: string) {
@@ -174,6 +183,9 @@ export class RunRegistry {
           messages,
           reviewerModel,
           approvedEscalationToolCallIds,
+          reviewLog: this.reviewLog,
+          sessionId,
+          runId,
         }),
         experimental_toolApprovalSecret: this.toolApprovalSecret,
         stopWhen: stepCountIs(20),
@@ -275,6 +287,9 @@ function createToolApproval(options: {
   messages: UIMessage[];
   reviewerModel: import("./protocol.ts").ServerModelConfig | undefined;
   approvedEscalationToolCallIds: Set<string>;
+  reviewLog: SandboxReviewLogStore;
+  sessionId: string;
+  runId: string;
 }) {
   const mode = options.mode;
   if (mode === "full") return undefined;
@@ -297,9 +312,21 @@ function createToolApproval(options: {
       return options.mode === "auto" ? "not-applicable" : "user-approval";
     }
 
-    if (mode === "ask") return "user-approval";
+    if (mode === "ask") {
+      await logSandboxReview(options.reviewLog, {
+        sessionId: options.sessionId,
+        runId: options.runId,
+        toolCall,
+        assessment,
+        decision: "user-approval",
+        reason: "sandbox-mode-ask",
+      });
+      return "user-approval";
+    }
     if (!toolCallId || !options.workspace || !options.reviewerModel) {
-      logSandboxReview({
+      await logSandboxReview(options.reviewLog, {
+        sessionId: options.sessionId,
+        runId: options.runId,
         toolCall,
         assessment,
         decision: "user-approval",
@@ -317,14 +344,22 @@ function createToolApproval(options: {
         sandboxMode: mode,
         messages: options.messages,
       });
-      logSandboxReview({ toolCall, assessment, ...result });
+      await logSandboxReview(options.reviewLog, {
+        sessionId: options.sessionId,
+        runId: options.runId,
+        toolCall,
+        assessment,
+        ...result,
+      });
       if (result.decision === "approve") {
         options.approvedEscalationToolCallIds.add(toolCallId);
         return { type: "approved" as const, reason: result.rationale };
       }
       return { type: "denied" as const, reason: result.rationale };
     } catch (error) {
-      logSandboxReview({
+      await logSandboxReview(options.reviewLog, {
+        sessionId: options.sessionId,
+        runId: options.runId,
         toolCall,
         assessment,
         decision: "user-approval",
@@ -409,7 +444,11 @@ function createWorkspaceToolsForInput(
   return Object.fromEntries(selected.filter((name) => names.has(name) || (name === "bash" && names.has("terminal"))).map((name) => [name, tools[name]]));
 }
 
-function logSandboxReview(payload: {
+async function logSandboxReview(
+  reviewLog: SandboxReviewLogStore,
+  payload: {
+    sessionId?: string;
+    runId?: string;
   toolCall?: { toolCallId?: string; toolName?: string };
   assessment: SandboxBoundaryAssessment;
   decision: string;
@@ -418,10 +457,32 @@ function logSandboxReview(payload: {
   modelId?: string;
   durationMs?: number;
   error?: string;
-}) {
+  },
+) {
+  try {
+    await reviewLog.append({
+      sessionId: payload.sessionId,
+      runId: payload.runId,
+      toolCallId: payload.toolCall?.toolCallId,
+      toolName: payload.toolCall?.toolName,
+      reasons: payload.assessment.reasons,
+      decision: payload.decision as "approve" | "deny" | "user-approval",
+      rationale: payload.rationale,
+      reason: payload.reason,
+      modelId: payload.modelId,
+      durationMs: payload.durationMs,
+      error: payload.error
+        ?.replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+        .slice(0, 500),
+    });
+  } catch (error) {
+    console.error("Failed to persist sandbox review log", error);
+  }
   console.info(
     "[Sandbox reviewer]",
     JSON.stringify({
+      sessionId: payload.sessionId,
+      runId: payload.runId,
       toolCallId: payload.toolCall?.toolCallId,
       toolName: payload.toolCall?.toolName,
       reasons: payload.assessment.reasons,

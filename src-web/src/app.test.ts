@@ -40,6 +40,19 @@ describe("chat server", () => {
 
     const sessions = await server.app.request("http://localhost/v1/sessions");
     assert.equal(sessions.status, 401);
+
+    const reviews = await server.app.request("http://localhost/v1/sandbox-reviews", {
+      headers: auth(),
+    });
+    assert.equal(reviews.status, 200);
+    assert.deepEqual(await reviews.json(), []);
+
+    const filteredReviews = await server.app.request(
+      "http://localhost/v1/sandbox-reviews?sessionId=other-session",
+      { headers: auth() },
+    );
+    assert.equal(filteredReviews.status, 200);
+    assert.deepEqual(await filteredReviews.json(), []);
   });
 
   it("creates, lists, reads and deletes sessions", async () => {

@@ -240,6 +240,22 @@ export type ChatServerConfigData = {
   apiKeys: Record<string, string>;
 };
 
+export type ChatServerReviewerLog = {
+  id: string;
+  timestamp: string;
+  sessionId?: string;
+  runId?: string;
+  toolCallId?: string;
+  toolName?: string;
+  reasons: string[];
+  decision: "approve" | "deny" | "user-approval";
+  rationale?: string;
+  reason?: string;
+  modelId?: string;
+  durationMs?: number;
+  error?: string;
+};
+
 export async function chatServerRequest(
   pathname: string,
   init?: RequestInit,
@@ -267,6 +283,12 @@ export async function saveChatServerConfig(value: unknown, port?: number) {
     port,
   );
   return (await response.json()) as ChatServerConfigData;
+}
+
+export async function loadChatServerReviewerLogs(sessionId?: string, port?: number) {
+  const query = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
+  const response = await chatServerRequest(`/v1/sandbox-reviews${query}`, undefined, port);
+  return (await response.json()) as ChatServerReviewerLog[];
 }
 
 export async function loadChatServerMemory(port?: number) {

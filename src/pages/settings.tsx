@@ -1525,6 +1525,10 @@ function ModelsSettingsPage() {
               Approve for me 遇到需要越过 workspace 或 Seatbelt
               的请求时，由选定模型判断是否允许一次性执行。 未配置或调用失败时回退为人工确认。
             </p>
+            <p className="mt-2 max-w-lg text-muted-foreground text-xs leading-5">
+              Reviewer 只接收精简的对话上下文、工具名称和参数摘要，不会执行工具或读取工作区内容。
+              每次批准只对当前 tool call 生效，不会修改全局沙箱权限。
+            </p>
           </div>
           <Select
             disabled={

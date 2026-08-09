@@ -12,6 +12,12 @@ export const CHAT_SANDBOX_MODE_LABELS: Record<ChatSandboxMode, string> = {
   full: "Full access",
 };
 
+export const CHAT_SANDBOX_MODE_DESCRIPTIONS: Record<ChatSandboxMode, string> = {
+  ask: "需要审批的写入和越界请求先询问你。",
+  auto: "工作区内直接执行；越界请求交给 Reviewer，失败时询问你。",
+  full: "不调用 Reviewer；由完整沙箱权限执行工具。",
+};
+
 const CHAT_SANDBOX_STORAGE_KEY = "m-dashboard-chat-sandbox-mode-v1";
 
 export function normalizeChatSandboxMode(value: unknown): ChatSandboxMode {

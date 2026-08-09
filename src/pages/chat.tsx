@@ -18,6 +18,7 @@ import {
   Check,
   ChevronDown,
   CircleStop,
+  ClipboardCheck,
   Copy,
   FilePlus2,
   History,
@@ -37,6 +38,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import { ChatMemoryDialog } from "@/components/chat-memory-dialog";
+import { ChatReviewerDialog } from "@/components/chat-reviewer-dialog";
 import { ChatSettingsDialog } from "@/components/chat-settings-dialog";
 import { ChatSkillsPicker } from "@/components/chat-skills-picker";
 import { ChatToolCallGroup } from "@/components/chat-tool-call-card";
@@ -72,6 +74,7 @@ import {
 } from "@/lib/chat-memory";
 import { isWorkspaceMemoryExcludedTool, scheduleMemoryUpdateFromTurn } from "@/lib/chat-memory-ops";
 import {
+  CHAT_SANDBOX_MODE_DESCRIPTIONS,
   CHAT_SANDBOX_MODE_LABELS,
   type ChatSandboxMode,
   DEFAULT_CHAT_SANDBOX_MODE,
@@ -223,6 +226,7 @@ function ChatPage() {
   const [sessionToDelete, setSessionToDelete] = useState<ChatIndexItem | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
+  const [reviewerOpen, setReviewerOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
@@ -839,6 +843,17 @@ function ChatPage() {
             </DropdownMenuContent>
           </DropdownMenu>
           <Button
+            aria-label="Reviewer 记录"
+            className="chat-icon-button"
+            size="icon"
+            title="查看当前对话的 Reviewer 记录"
+            variant="ghost"
+            type="button"
+            onClick={() => setReviewerOpen(true)}
+          >
+            <ClipboardCheck className="size-4" />
+          </Button>
+          <Button
             aria-label="长期记忆"
             className="chat-icon-button"
             size="icon"
@@ -870,7 +885,9 @@ function ChatPage() {
             <span className="truncate" title={selectedCwd || undefined}>
               {selectedCwd ? pathBasename(selectedCwd) : "未选择 Workspace"}
             </span>
-            <span className="chat-access-badge">{CHAT_SANDBOX_MODE_LABELS[sandboxMode]}</span>
+            <span className="chat-access-badge" title={CHAT_SANDBOX_MODE_DESCRIPTIONS[sandboxMode]}>
+              {CHAT_SANDBOX_MODE_LABELS[sandboxMode]}
+            </span>
           </div>
           {messages.length === 0 ? (
             <div className="chat-tools-hint">
@@ -1012,7 +1029,16 @@ function ChatPage() {
                         key={value}
                         value={value}
                       >
-                        {label}
+                        <span className="flex min-w-0 flex-col gap-0.5">
+                          <span>{label}</span>
+                          <span
+                            className={`font-normal text-[10px] leading-4 ${
+                              value === "full" ? "text-destructive" : "text-muted-foreground"
+                            }`}
+                          >
+                            {CHAT_SANDBOX_MODE_DESCRIPTIONS[value as ChatSandboxMode]}
+                          </span>
+                        </span>
                       </DropdownMenuRadioItem>
                     ))}
                   </DropdownMenuRadioGroup>
@@ -1059,6 +1085,10 @@ function ChatPage() {
                       ))
                     )}
                   </DropdownMenuRadioGroup>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild className="!py-1 !text-[11px]">
+                    <Link to="/settings/models">前往模型设置</Link>
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
               <ChatToolsPicker
@@ -1119,6 +1149,11 @@ function ChatPage() {
         onStoreChange={updateChatMemory}
         open={memoryOpen}
         store={chatMemory}
+      />
+      <ChatReviewerDialog
+        onOpenChange={setReviewerOpen}
+        open={reviewerOpen}
+        sessionId={sessionId}
       />
       <AlertDialog
         open={sessionToDelete !== null}
