@@ -20,7 +20,6 @@ import {
   CircleStop,
   Copy,
   FilePlus2,
-  FolderGit2,
   History,
   Mic,
   MoreHorizontal,
@@ -58,6 +57,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -191,7 +192,7 @@ function ChatPage() {
   });
   const installedSkillIds = installedSkillsQuery.data ?? EMPTY_STRING_ARRAY;
   const savedChatSkillIds = chatSkillSelectionQuery.data ?? EMPTY_STRING_ARRAY;
-  const { data: workspaceProjects = [], isLoading: isWorkspacesLoading } = useQuery({
+  const { data: workspaceProjects = [] } = useQuery({
     queryKey: ["workspace-projects"],
     queryFn: loadWorkspaceProjects,
   });
@@ -964,7 +965,7 @@ function ChatPage() {
             <div className="chat-composer-tools">
               <Button
                 aria-label="添加附件"
-                className="chat-tool-button"
+                className="chat-tool-button !size-7"
                 size="icon"
                 type="button"
                 variant="ghost"
@@ -973,73 +974,93 @@ function ChatPage() {
               </Button>
               <Button
                 aria-label="添加文件"
-                className="chat-tool-button hidden sm:inline-flex"
+                className="chat-tool-button !size-7 hidden sm:inline-flex"
                 size="icon"
                 type="button"
                 variant="ghost"
               >
                 <FilePlus2 className="size-4" />
               </Button>
-              <div className="chat-workspace-picker" title={selectedCwd || "未选择 Workspace"}>
-                <FolderGit2 className="size-3.5" />
-                <select
-                  aria-label="选择 Workspace"
-                  disabled={isWorkspacesLoading || Boolean(selectedCwd) || messages.length > 0}
-                  value={workspaceKey}
-                  onChange={(event) => {
-                    const nextKey = event.target.value;
-                    const project = workspaceProjects.find((item) => item.id === nextKey);
-                    setWorkspaceKey(nextKey);
-                    setSessionCwd(project?.path ?? "");
-                  }}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    aria-label="Sandbox permissions"
+                    className="chat-sandbox-picker !h-7 !gap-1.5 !px-2 !text-[11px]"
+                    title="Sandbox permissions"
+                    type="button"
+                  >
+                    <ShieldCheck className="size-3.5" />
+                    <span className="chat-picker-value !text-[11px]">
+                      {CHAT_SANDBOX_MODE_LABELS[sandboxMode]}
+                    </span>
+                    <ChevronDown className="size-3.5" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="start"
+                  className="chat-select-menu !text-[11px]"
+                  side="top"
+                  sideOffset={8}
                 >
-                  <option value="">无 Workspace</option>
-                  {workspaceKey &&
-                  !workspaceProjects.some((project) => project.id === workspaceKey) ? (
-                    <option value={workspaceKey}>{pathBasename(sessionCwd)}（已移除）</option>
-                  ) : null}
-                  {workspaceProjects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {pathBasename(project.path)}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="size-3.5" />
-              </div>
-              <div className="chat-sandbox-picker" title="Sandbox permissions">
-                <ShieldCheck className="size-3.5" />
-                <select
-                  aria-label="Sandbox permissions"
-                  value={sandboxMode}
-                  onChange={(event) =>
-                    updateSandboxMode(normalizeChatSandboxMode(event.target.value))
-                  }
+                  <DropdownMenuRadioGroup
+                    value={sandboxMode}
+                    onValueChange={(value) => updateSandboxMode(normalizeChatSandboxMode(value))}
+                  >
+                    {Object.entries(CHAT_SANDBOX_MODE_LABELS).map(([value, label]) => (
+                      <DropdownMenuRadioItem
+                        className="!py-1 !text-[11px]"
+                        key={value}
+                        value={value}
+                      >
+                        {label}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    aria-label="选择模型"
+                    className="chat-model-picker !h-7 !gap-1.5 !px-2 !text-[11px]"
+                    disabled={isModelsLoading || models.length === 0}
+                    type="button"
+                  >
+                    <Settings2 className="size-3.5" />
+                    <span className="chat-picker-value !text-[11px]">
+                      {selectedModel ? formatModelLabel(selectedModel) : "未配置模型"}
+                    </span>
+                    <ChevronDown className="size-3.5" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="start"
+                  className="chat-select-menu !text-[11px]"
+                  side="top"
+                  sideOffset={8}
                 >
-                  {Object.entries(CHAT_SANDBOX_MODE_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="size-3.5" />
-              </div>
-              <div className="chat-model-picker">
-                <Settings2 className="size-3.5" />
-                <select
-                  aria-label="选择模型"
-                  disabled={isModelsLoading || models.length === 0}
-                  value={selectedModel?.id ?? ""}
-                  onChange={(event) => setSelectedModelId(event.target.value)}
-                >
-                  {models.length === 0 ? <option value="">未配置模型</option> : null}
-                  {models.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {formatModelLabel(model)}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="size-3.5" />
-              </div>
+                  <DropdownMenuRadioGroup
+                    value={selectedModel?.id ?? ""}
+                    onValueChange={setSelectedModelId}
+                  >
+                    {models.length === 0 ? (
+                      <DropdownMenuItem className="!py-1 !text-[11px]" disabled>
+                        未配置模型
+                      </DropdownMenuItem>
+                    ) : (
+                      models.map((model) => (
+                        <DropdownMenuRadioItem
+                          className="!py-1 !text-[11px]"
+                          key={model.id}
+                          value={model.id}
+                        >
+                          {formatModelLabel(model)}
+                        </DropdownMenuRadioItem>
+                      ))
+                    )}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <ChatToolsPicker
                 open={toolsOpen}
                 settings={chatTools}
@@ -1065,7 +1086,7 @@ function ChatPage() {
             <div className="chat-composer-actions">
               <Button
                 aria-label="语音输入"
-                className="chat-tool-button hidden sm:inline-flex"
+                className="chat-tool-button !size-7 hidden sm:inline-flex"
                 size="icon"
                 type="button"
                 variant="ghost"
@@ -1074,7 +1095,7 @@ function ChatPage() {
               </Button>
               <Button
                 aria-label={isGenerating ? "停止生成" : "发送消息"}
-                className="chat-send-button"
+                className="chat-send-button !size-9 !rounded-[10px]"
                 disabled={(!input.trim() || !selectedModel) && !isGenerating}
                 onClick={isGenerating ? stopCurrentRun : submitMessage}
                 size="icon"

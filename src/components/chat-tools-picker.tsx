@@ -47,14 +47,20 @@ export function ChatToolsPicker({
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
-        <button aria-label="选择 Tools" className="chat-tools-picker" type="button">
+        <button
+          aria-label="选择 Tools"
+          className="chat-tools-picker !h-7 !gap-1.5 !px-2 !text-[11px]"
+          type="button"
+        >
           <Wrench className="size-3.5" />
-          <span>{enabledCount > 0 ? `Tools ${enabledCount}` : "Tools"}</span>
+          <span className="chat-picker-value !text-[11px]">
+            {enabledCount > 0 ? `Tools ${enabledCount}` : "Tools"}
+          </span>
           <ChevronDown className="size-3.5" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="chat-tools-menu" sideOffset={8}>
-        <DropdownMenuLabel>启用工具包</DropdownMenuLabel>
+      <DropdownMenuContent align="start" className="chat-tools-menu" side="top" sideOffset={8}>
+        <DropdownMenuLabel className="!text-[11px]">启用工具包</DropdownMenuLabel>
         <DropdownMenuSeparator />
         <div className="chat-tools-menu-list">
           {CHAT_TOOL_CATEGORIES.map((category) => (
@@ -63,7 +69,11 @@ export function ChatToolsPicker({
               {CHAT_TOOL_PACKS.filter((pack) => pack.category === category.id).map((pack) => {
                 const switchId = `chat-tools-picker-${pack.id}`;
                 return (
-                  <label className="chat-tools-menu-row" htmlFor={switchId} key={pack.id}>
+                  <label
+                    className="chat-tools-menu-row !text-[11px]"
+                    htmlFor={switchId}
+                    key={pack.id}
+                  >
                     <span className="min-w-0">
                       <span className="block">{pack.label}</span>
                     </span>
@@ -88,7 +98,11 @@ export function ChatToolsPicker({
               {mcpServers.map((server) => {
                 const switchId = `chat-mcp-picker-${server.id}`;
                 return (
-                  <label className="chat-tools-menu-row" htmlFor={switchId} key={server.id}>
+                  <label
+                    className="chat-tools-menu-row !text-[11px]"
+                    htmlFor={switchId}
+                    key={server.id}
+                  >
                     <span className="min-w-0">
                       <span className="block">{server.name}</span>
                       <span className="block text-muted-foreground text-[11px]">

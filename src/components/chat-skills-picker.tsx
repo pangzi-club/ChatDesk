@@ -32,9 +32,13 @@ export function ChatSkillsPicker({
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
-        <button aria-label="选择 Skills" className="chat-tools-picker" type="button">
+        <button
+          aria-label="选择 Skills"
+          className="chat-tools-picker !h-7 !gap-1.5 !px-2 !text-[11px]"
+          type="button"
+        >
           <Sparkles className="size-3.5" />
-          <span>
+          <span className="chat-picker-value !text-[11px]">
             {selectedSkillIds.length > 0 ? `Skills ${selectedSkillIds.length}` : "Skills"}
           </span>
           <ChevronDown className="size-3.5" />
@@ -43,16 +47,21 @@ export function ChatSkillsPicker({
       <DropdownMenuContent
         align="start"
         className="chat-tools-menu chat-skills-menu"
+        side="top"
         sideOffset={8}
       >
-        <DropdownMenuLabel>启用已安装 Skills</DropdownMenuLabel>
+        <DropdownMenuLabel className="!text-[11px]">启用已安装 Skills</DropdownMenuLabel>
         <DropdownMenuSeparator />
         <div className="chat-tools-menu-list">
           {skills.length > 0 ? (
             skills.map((skill) => {
               const switchId = `chat-skill-picker-${skill.id}`;
               return (
-                <label className="chat-tools-menu-row" htmlFor={switchId} key={skill.id}>
+                <label
+                  className="chat-tools-menu-row !text-[11px]"
+                  htmlFor={switchId}
+                  key={skill.id}
+                >
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{skill.name}</span>
                     <span
