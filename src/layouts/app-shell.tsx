@@ -39,10 +39,12 @@ import {
   TextCursorInput,
   Trash2,
   Wrench,
+  X,
 } from "lucide-react";
 import {
   type ComponentType,
   type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
   useEffect,
   useMemo,
   useRef,
@@ -230,8 +232,11 @@ function saveUnreadChatIds(ids: Set<string>) {
 
 function AppShell() {
   const [isCommandMenuOpen, setIsCommandMenuOpen] = useState(false);
+  const [chatWindowStates, setChatWindowStates] = useState<Record<string, ChatWindowState>>({});
   const location = useLocation();
   const navigate = useNavigate();
+  const isChatPage = location.pathname === "/chat";
+  const chatWindowKey = getChatWindowKey(location.search);
   const hideMainSidebar =
     location.pathname.startsWith("/settings") || location.pathname.startsWith("/dev-tools/");
   const lockOutletScroll =
@@ -355,12 +360,71 @@ function AppShell() {
 
             {/* 右列：内容区铺满到窗口顶部，拖拽条透明浮在上方 */}
             <div className="relative flex min-w-0 flex-1 flex-col bg-background max-sm:w-[calc(100vw-4rem)]">
-              <section className="min-h-0 flex-1 overflow-y-auto">
-                <Outlet />
-              </section>
+              <div
+                className={`chat-split-layout ${isChatPage && chatWindowStates[chatWindowKey]?.open ? "is-open" : ""}`}
+              >
+                <section
+                  className="min-h-0 flex-1 overflow-y-auto"
+                  style={
+                    isChatPage && chatWindowStates[chatWindowKey]?.open
+                      ? {
+                          flexBasis: `${(1 - (chatWindowStates[chatWindowKey]?.splitRatio ?? 0.5)) * 100}%`,
+                        }
+                      : undefined
+                  }
+                >
+                  <Outlet />
+                </section>
+                {isChatPage && chatWindowStates[chatWindowKey]?.open ? (
+                  <>
+                    <ChatSplitDivider
+                      ratio={chatWindowStates[chatWindowKey]?.splitRatio ?? 0.5}
+                      onChange={(splitRatio) =>
+                        setChatWindowStates((current) => ({
+                          ...current,
+                          [chatWindowKey]: {
+                            ...(current[chatWindowKey] ?? createChatWindowState()),
+                            splitRatio,
+                          },
+                        }))
+                      }
+                    />
+                    <ChatWorkspaceWindow
+                      split
+                      state={chatWindowStates[chatWindowKey] ?? createChatWindowState()}
+                      onToggle={() =>
+                        setChatWindowStates((current) => ({
+                          ...current,
+                          [chatWindowKey]: {
+                            ...(current[chatWindowKey] ?? createChatWindowState()),
+                            open: false,
+                          },
+                        }))
+                      }
+                      onChange={(next) =>
+                        setChatWindowStates((current) => ({ ...current, [chatWindowKey]: next }))
+                      }
+                    />
+                  </>
+                ) : null}
+              </div>
               <div className="absolute inset-x-0 top-0 z-10 flex h-8 items-center">
                 <TitlebarDragRegion />
-                <TopActions onOpenCommandMenu={() => setIsCommandMenuOpen(true)} />
+                <TopActions
+                  isPanelOpen={isChatPage && Boolean(chatWindowStates[chatWindowKey]?.open)}
+                  onOpenCommandMenu={() => setIsCommandMenuOpen(true)}
+                  onTogglePanel={() => {
+                    if (!isChatPage) return;
+                    setChatWindowStates((current) => {
+                      const state = current[chatWindowKey] ?? createChatWindowState();
+                      return {
+                        ...current,
+                        [chatWindowKey]: { ...state, open: !state.open },
+                      };
+                    });
+                  }}
+                  showPanelToggle={isChatPage && !chatWindowStates[chatWindowKey]?.open}
+                />
               </div>
             </div>
           </>
@@ -824,7 +888,268 @@ function pathBasename(path: string) {
   );
 }
 
-function TopActions({ onOpenCommandMenu }: { onOpenCommandMenu: () => void }) {
+type ChatWindowTab = { id: string; title: string };
+type ChatWindowState = {
+  open: boolean;
+  tabs: ChatWindowTab[];
+  activeTabId: string | null;
+  right: number;
+  top: number;
+  width: number;
+  height: number;
+  splitRatio: number;
+};
+
+type WindowInteraction = {
+  direction: ResizeDirection | "move";
+  startX: number;
+  startY: number;
+  initial: Pick<ChatWindowState, "right" | "top" | "width" | "height">;
+};
+
+type ResizeDirection = "n" | "e" | "s" | "w" | "ne" | "se" | "sw" | "nw";
+
+function createChatWindowState(): ChatWindowState {
+  const firstTab = { id: createChatWindowTabId(), title: "空白窗口" };
+  return {
+    open: false,
+    tabs: [firstTab],
+    activeTabId: firstTab.id,
+    right: 18,
+    top: 48,
+    width: 420,
+    height: 360,
+    splitRatio: 0.5,
+  };
+}
+
+function createChatWindowTabId() {
+  return `chat-window-tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function getChatWindowKey(search: string) {
+  const params = new URLSearchParams(search);
+  return params.get("sessionId") || `workspace:${params.get("workspaceId") || "new"}`;
+}
+
+function ChatWorkspaceWindow({
+  onChange,
+  onToggle,
+  split = false,
+  state,
+}: {
+  onChange: (state: ChatWindowState) => void;
+  onToggle: () => void;
+  split?: boolean;
+  state: ChatWindowState;
+}) {
+  const interactionRef = useRef<WindowInteraction | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  function beginInteraction(event: ReactPointerEvent, direction: ResizeDirection | "move") {
+    event.preventDefault();
+    event.stopPropagation();
+    interactionRef.current = {
+      direction,
+      startX: event.clientX,
+      startY: event.clientY,
+      initial: {
+        right: state.right,
+        top: state.top,
+        width: state.width,
+        height: state.height,
+      },
+    };
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      const interaction = interactionRef.current;
+      if (!interaction) return;
+      const dx = moveEvent.clientX - interaction.startX;
+      const dy = moveEvent.clientY - interaction.startY;
+      const bounds = containerRef.current?.parentElement?.getBoundingClientRect();
+      const maxWidth = Math.max(280, (bounds?.width ?? window.innerWidth) - 24);
+      const maxHeight = Math.max(220, (bounds?.height ?? window.innerHeight) - 36);
+      const minWidth = 280;
+      const minHeight = 220;
+      const initial = interaction.initial;
+      const next = { ...initial };
+
+      if (interaction.direction === "move") {
+        next.right = clamp(
+          initial.right - dx,
+          0,
+          Math.max(0, (bounds?.width ?? window.innerWidth) - initial.width),
+        );
+        next.top = clamp(
+          initial.top + dy,
+          32,
+          Math.max(32, (bounds?.height ?? window.innerHeight) - initial.height),
+        );
+      } else {
+        if (interaction.direction.includes("e"))
+          next.width = clamp(initial.width + dx, minWidth, maxWidth);
+        if (interaction.direction.includes("w")) {
+          next.width = clamp(initial.width - dx, minWidth, maxWidth);
+          next.right = initial.right + initial.width - next.width;
+        }
+        if (interaction.direction.includes("s"))
+          next.height = clamp(initial.height + dy, minHeight, maxHeight);
+        if (interaction.direction.includes("n")) {
+          next.height = clamp(initial.height - dy, minHeight, maxHeight);
+          next.top = Math.max(32, initial.top + initial.height - next.height);
+        }
+      }
+      onChange({ ...state, ...next });
+    };
+
+    const handleUp = () => {
+      interactionRef.current = null;
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+  }
+
+  function addTab() {
+    const nextTab = {
+      id: createChatWindowTabId(),
+      title: `空白窗口 ${state.tabs.length + 1}`,
+    };
+    onChange({ ...state, tabs: [...state.tabs, nextTab], activeTabId: nextTab.id });
+  }
+
+  function closeTab(tabId: string) {
+    const nextTabs = state.tabs.filter((tab) => tab.id !== tabId);
+    const nextActive =
+      state.activeTabId === tabId
+        ? (nextTabs[Math.max(0, state.tabs.findIndex((tab) => tab.id === tabId) - 1)]?.id ??
+          nextTabs[0]?.id ??
+          null)
+        : state.activeTabId;
+    onChange({ ...state, tabs: nextTabs, activeTabId: nextActive });
+  }
+
+  return (
+    <div
+      className={`chat-workspace-window ${split ? "is-split" : ""}`}
+      ref={containerRef}
+      style={
+        split
+          ? { flexBasis: `${state.splitRatio * 100}%` }
+          : { height: state.height, right: state.right, top: state.top, width: state.width }
+      }
+    >
+      <div
+        className="chat-workspace-window-tabs"
+        onPointerDown={split ? undefined : (event) => beginInteraction(event, "move")}
+        role="toolbar"
+        aria-label="Chat 独立窗口"
+      >
+        <div className="chat-workspace-window-tab-list">
+          {state.tabs.map((tab) => (
+            <div
+              className={`chat-workspace-window-tab ${tab.id === state.activeTabId ? "is-active" : ""}`}
+              key={tab.id}
+            >
+              <button
+                className="chat-workspace-window-tab-select"
+                onClick={() => onChange({ ...state, activeTabId: tab.id })}
+                type="button"
+              >
+                {tab.title}
+              </button>
+              <button
+                aria-label={`关闭${tab.title}`}
+                className="chat-workspace-window-tab-close"
+                onClick={() => closeTab(tab.id)}
+                type="button"
+              >
+                <X className="size-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+        <Button
+          aria-label="新建独立窗口"
+          className="chat-workspace-window-add"
+          onClick={addTab}
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          <Plus className="size-3.5" />
+        </Button>
+        <Button
+          aria-label="关闭 Chat 独立窗口"
+          className="chat-workspace-window-toggle"
+          onClick={onToggle}
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          <PanelLeft className="size-3.5 rotate-180" />
+        </Button>
+      </div>
+      <div className="chat-workspace-window-empty" aria-live="polite">
+        {state.tabs.length === 0 ? "窗口为空" : "空白占位窗口"}
+      </div>
+      {!split
+        ? (["n", "e", "s", "w", "ne", "se", "sw", "nw"] as ResizeDirection[]).map((direction) => (
+            <div
+              aria-hidden="true"
+              className={`chat-workspace-window-resize chat-workspace-window-resize-${direction}`}
+              key={direction}
+              onPointerDown={(event) => beginInteraction(event, direction)}
+            />
+          ))
+        : null}
+    </div>
+  );
+}
+
+function ChatSplitDivider({
+  onChange,
+  ratio,
+}: {
+  onChange: (ratio: number) => void;
+  ratio: number;
+}) {
+  function startResize(event: ReactPointerEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    const startX = event.clientX;
+    const parent = event.currentTarget.parentElement;
+    const width = parent?.getBoundingClientRect().width ?? window.innerWidth;
+    const handleMove = (moveEvent: PointerEvent) => {
+      onChange(clamp(ratio - (moveEvent.clientX - startX) / width, 0.25, 0.75));
+    };
+    const handleUp = () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+  }
+
+  return <div aria-hidden="true" className="chat-split-divider" onPointerDown={startResize} />;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function TopActions({
+  isPanelOpen,
+  onOpenCommandMenu,
+  onTogglePanel,
+  showPanelToggle,
+}: {
+  isPanelOpen: boolean;
+  onOpenCommandMenu: () => void;
+  onTogglePanel: () => void;
+  showPanelToggle: boolean;
+}) {
   return (
     <div className="mt-1 flex items-center gap-1.5 px-3 text-muted-foreground max-sm:gap-0.5 max-sm:px-2">
       <Button
@@ -846,15 +1171,21 @@ function TopActions({ onOpenCommandMenu }: { onOpenCommandMenu: () => void }) {
       >
         <Monitor className="size-4" />
       </Button>
-      <Button
-        aria-label="Toggle panel"
-        className="size-8"
-        size="icon"
-        type="button"
-        variant="ghost"
-      >
-        <PanelLeft className="size-4 rotate-180" />
-      </Button>
+      {showPanelToggle ? (
+        <Button
+          aria-label={isPanelOpen ? "关闭 Chat 独立窗口" : "打开 Chat 独立窗口"}
+          aria-pressed={isPanelOpen}
+          className="size-8"
+          onClick={onTogglePanel}
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          <PanelLeft
+            className={`size-4 rotate-180 transition-transform ${isPanelOpen ? "scale-x-[-1]" : ""}`}
+          />
+        </Button>
+      ) : null}
     </div>
   );
 }
