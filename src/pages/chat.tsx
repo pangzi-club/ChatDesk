@@ -469,6 +469,12 @@ function ChatPage() {
     (messageText(lastMessage).trim().length > 0 || messageHasToolParts(lastMessage));
   useEffect(() => {
     let active = true;
+    if (!selectedCwd.trim()) {
+      setAvailablePacks([]);
+      return () => {
+        active = false;
+      };
+    }
     void resolveAvailablePacks(
       chatTools,
       selectedModel
@@ -1094,6 +1100,7 @@ function ChatPage() {
               <ChatToolsPicker
                 open={toolsOpen}
                 settings={chatTools}
+                workspaceAvailable={Boolean(selectedCwd.trim())}
                 onOpenChange={setToolsOpen}
                 onSettingsChange={updateChatTools}
                 mcpServers={mcpServers}

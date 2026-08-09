@@ -7,6 +7,10 @@ export const WORKSPACE_TOOL_NAMES = [
   "bash",
 ] as const;
 
+export function hasWorkspace(cwd: string | undefined): cwd is string {
+  return Boolean(cwd?.trim());
+}
+
 export function selectWorkspaceToolNames(toolNames: Iterable<string>): string[] {
   const requested = new Set(toolNames);
   return WORKSPACE_TOOL_NAMES.filter(

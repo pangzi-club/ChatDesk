@@ -20,6 +20,7 @@ import type { McpServerConfig } from "@/lib/mcp";
 
 type ChatToolsPickerProps = {
   settings: ChatToolsSettings;
+  workspaceAvailable?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSettingsChange: (settings: ChatToolsSettings) => void;
@@ -30,6 +31,7 @@ type ChatToolsPickerProps = {
 
 export function ChatToolsPicker({
   settings,
+  workspaceAvailable = false,
   open,
   onOpenChange,
   onSettingsChange,
@@ -37,8 +39,11 @@ export function ChatToolsPicker({
   selectedMcpIds = [],
   onMcpSelectionChange,
 }: ChatToolsPickerProps) {
+  const visiblePacks = CHAT_TOOL_PACKS.filter(
+    (pack) => !pack.requiresWorkspace || workspaceAvailable,
+  );
   const enabledCount =
-    CHAT_TOOL_PACKS.filter((pack) => settings[pack.id]).length + selectedMcpIds.length;
+    visiblePacks.filter((pack) => settings[pack.id]).length + selectedMcpIds.length;
 
   function handleToggle(id: ChatToolPackId, enabled: boolean) {
     onSettingsChange({ ...settings, [id]: enabled });
@@ -63,32 +68,36 @@ export function ChatToolsPicker({
         <DropdownMenuLabel className="!text-[11px]">启用工具包</DropdownMenuLabel>
         <DropdownMenuSeparator />
         <div className="chat-tools-menu-list">
-          {CHAT_TOOL_CATEGORIES.map((category) => (
-            <section className="chat-tools-menu-group" key={category.id}>
-              <p>{category.label}</p>
-              {CHAT_TOOL_PACKS.filter((pack) => pack.category === category.id).map((pack) => {
-                const switchId = `chat-tools-picker-${pack.id}`;
-                return (
-                  <label
-                    className="chat-tools-menu-row !text-[11px]"
-                    htmlFor={switchId}
-                    key={pack.id}
-                  >
-                    <span className="min-w-0">
-                      <span className="block">{pack.label}</span>
-                    </span>
-                    <Switch
-                      aria-label={`启用 ${pack.label}`}
-                      checked={settings[pack.id]}
-                      id={switchId}
-                      size="sm"
-                      onCheckedChange={(checked) => handleToggle(pack.id, checked === true)}
-                    />
-                  </label>
-                );
-              })}
-            </section>
-          ))}
+          {CHAT_TOOL_CATEGORIES.map((category) => {
+            const packs = visiblePacks.filter((pack) => pack.category === category.id);
+            if (packs.length === 0) return null;
+            return (
+              <section className="chat-tools-menu-group" key={category.id}>
+                <p>{category.label}</p>
+                {packs.map((pack) => {
+                  const switchId = `chat-tools-picker-${pack.id}`;
+                  return (
+                    <label
+                      className="chat-tools-menu-row !text-[11px]"
+                      htmlFor={switchId}
+                      key={pack.id}
+                    >
+                      <span className="min-w-0">
+                        <span className="block">{pack.label}</span>
+                      </span>
+                      <Switch
+                        aria-label={`启用 ${pack.label}`}
+                        checked={settings[pack.id]}
+                        id={switchId}
+                        size="sm"
+                        onCheckedChange={(checked) => handleToggle(pack.id, checked === true)}
+                      />
+                    </label>
+                  );
+                })}
+              </section>
+            );
+          })}
           {mcpServers.length > 0 ? (
             <section className="chat-tools-menu-group">
               <p>

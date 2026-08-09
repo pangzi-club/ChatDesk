@@ -29,7 +29,7 @@ import {
   type SandboxBoundaryAssessment,
 } from "./sandbox-boundary-reviewer.ts";
 import { SandboxReviewLogStore } from "./sandbox-review-log.ts";
-import { selectWorkspaceToolNames } from "./tool-selection.ts";
+import { hasWorkspace, selectWorkspaceToolNames } from "./tool-selection.ts";
 
 type ActiveRun = {
   id: string;
@@ -436,11 +436,12 @@ function resolveApprovalReviewerModel(config: {
 function createWorkspaceToolsForInput(
   input: RunStartInput & { approvedEscalationToolCallIds: Set<string> },
 ) {
-  if (!input.cwd) return {};
+  const cwd = input.cwd?.trim();
+  if (!hasWorkspace(cwd)) return {};
   const names = new Set(input.toolNames ?? []);
   if (!["list_dir", "search_files", "read_file", "write_file", "edit_file", "terminal", "bash"].some((name) => names.has(name))) return {};
   const tools = createWorkspaceTools(
-    input.cwd,
+    cwd,
     input.sandboxMode ?? "ask",
     input.approvedEscalationToolCallIds,
   );
