@@ -6,8 +6,7 @@ import { ChatPage } from "@/pages/chat";
 import { DashboardPage } from "@/pages/dashboard";
 import { DevToolsLayout, DevToolsPage } from "@/pages/dev-tools";
 import { EncryptPage } from "@/pages/encrypt";
-import { HistoryDetailPage, HistoryPage } from "@/pages/history";
-import { HistoryAnalysisPage } from "@/pages/history-analysis";
+import { HistoryDetailPage } from "@/pages/history";
 import { ImageGenerationPage } from "@/pages/image-generation";
 import {
   ApiKeysSettingsPage,
@@ -89,8 +88,8 @@ const router = createHashRouter([
           { path: "skills", element: <SkillsSettingsPage /> },
           { path: "tools", element: <ToolsSettingsPage /> },
           { path: "memory", element: <MemorySettingsPage /> },
-          { path: "history", element: <HistoryPage /> },
-          { path: "history/analysis", element: <HistoryAnalysisPage /> },
+          { path: "history", element: <Navigate replace to="/settings/statistics" /> },
+          { path: "history/analysis", element: <Navigate replace to="/settings/statistics" /> },
           { path: "history/:source/:id", element: <HistoryDetailPage /> },
           { path: "statistics", element: <StatisticsSettingsPage /> },
           { path: "tray", element: <TraySettingsPage /> },
@@ -100,10 +99,10 @@ const router = createHashRouter([
       },
       { path: "encrypt", element: <Navigate replace to="/dev-tools/encrypt" /> },
       { path: "vite-ports", element: <Navigate replace to="/dev-tools/vite-ports" /> },
-      { path: "history", element: <Navigate replace to="/settings/history" /> },
+      { path: "history", element: <Navigate replace to="/settings/statistics" /> },
       {
         path: "history/analysis",
-        element: <Navigate replace to="/settings/history/analysis" />,
+        element: <Navigate replace to="/settings/statistics" />,
       },
       {
         path: "history/:source/:id",

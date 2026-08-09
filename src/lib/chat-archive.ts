@@ -8,7 +8,7 @@ import {
 
 export const ARCHIVE_SCHEMA_VERSION = 1;
 
-export type ArchiveSource = "codex" | "claude-code" | "native";
+export type ArchiveSource = "codex" | "claude-code" | "cursor" | "kimi" | "native";
 export type ImportedArchiveSource = Exclude<ArchiveSource, "native">;
 
 export type ArchiveAsset = {
@@ -114,7 +114,7 @@ function sortByUpdatedAt<T extends { updatedAt: string }>(items: T[]) {
 }
 
 function isImportedSource(value: unknown): value is ImportedArchiveSource {
-  return value === "codex" || value === "claude-code";
+  return value === "codex" || value === "claude-code" || value === "cursor" || value === "kimi";
 }
 
 function isArchiveAsset(value: unknown): value is ArchiveAsset {
@@ -303,12 +303,30 @@ export async function scanClaudeSessions(): Promise<ScannedSession[]> {
   return Array.isArray(items) ? items.filter(isScannedSession) : [];
 }
 
-export async function readImportTextFile(path: string): Promise<string> {
-  const response = await chatServerRequest("/v1/archive/read-file", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path }),
-  });
+export async function scanCursorSessions(): Promise<ScannedSession[]> {
+  const response = await chatServerRequest("/v1/archive/scan/cursor", { method: "POST" });
+  const items = (await response.json()) as unknown;
+  return Array.isArray(items) ? items.filter(isScannedSession) : [];
+}
+
+export async function scanKimiSessions(): Promise<ScannedSession[]> {
+  const response = await chatServerRequest("/v1/archive/scan/kimi", { method: "POST" });
+  const items = (await response.json()) as unknown;
+  return Array.isArray(items) ? items.filter(isScannedSession) : [];
+}
+
+export async function readImportTextFile(
+  path: string,
+  source?: ImportedArchiveSource,
+): Promise<string> {
+  const response = await chatServerRequest(
+    source === "cursor" ? "/v1/archive/read-cursor" : "/v1/archive/read-file",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    },
+  );
   if (!response.ok) throw new Error((await response.text()) || "无法读取导入文件");
   return response.text();
 }
@@ -330,5 +348,9 @@ export function sourceLabel(source: ArchiveSource) {
       return "Codex";
     case "claude-code":
       return "Claude Code";
+    case "cursor":
+      return "Cursor";
+    case "kimi":
+      return "Kimi";
   }
 }

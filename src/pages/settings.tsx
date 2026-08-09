@@ -7,7 +7,6 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
-  History,
   KeyRound,
   Package,
   Palette,
@@ -212,7 +211,6 @@ function SettingsLayout() {
           <SettingsNavItem to="/settings/skills" icon={Sparkles} label="Skills" />
           <SettingsNavItem to="/settings/tools" icon={Wrench} label="Tools" />
           <SettingsNavItem to="/settings/memory" icon={Brain} label="长期记忆" />
-          <SettingsNavItem to="/settings/history" icon={History} label="History" />
           <SettingsNavItem to="/settings/keys" icon={KeyRound} label="API Keys" />
           <SettingsNavItem to="/settings/tray" icon={PanelTop} label="托盘" />
           <SettingsNavItem to="/settings/chat-server" icon={Server} label="Chat Server" />

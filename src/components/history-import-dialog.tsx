@@ -22,10 +22,13 @@ import {
   saveArchiveSession,
   scanClaudeSessions,
   scanCodexSessions,
+  scanCursorSessions,
+  scanKimiSessions,
   sourceLabel,
 } from "@/lib/chat-archive";
 import { parseClaudeCodeSession } from "@/lib/importers/claude-code";
 import { parseCodexRollout } from "@/lib/importers/codex";
+import { parseCursorSession, parseKimiSession } from "@/lib/importers/generic";
 
 type HistoryImportDialogProps = {
   open: boolean;
@@ -77,8 +80,15 @@ function HistoryImportDialog({
   const scanQuery = useQuery({
     queryKey: ["history-scan"],
     queryFn: async () => {
-      const [codex, claude] = await Promise.all([scanCodexSessions(), scanClaudeSessions()]);
-      return [...codex, ...claude];
+      const [codex, claude, cursor, kimi] = await Promise.all([
+        scanCodexSessions(),
+        scanClaudeSessions(),
+        scanCursorSessions(),
+        scanKimiSessions(),
+      ]);
+      return [...codex, ...claude, ...cursor, ...kimi].sort((left, right) =>
+        (right.updatedAt ?? "").localeCompare(left.updatedAt ?? ""),
+      );
     },
     enabled: open,
   });
@@ -98,6 +108,8 @@ function HistoryImportDialog({
     const groups: Record<ImportedArchiveSource, ScannedSession[]> = {
       codex: [],
       "claude-code": [],
+      cursor: [],
+      kimi: [],
     };
     for (const item of scanned) {
       groups[item.source].push(item);
@@ -146,7 +158,7 @@ function HistoryImportDialog({
       setProgress({ done: index, total: targets.length, current: title });
 
       try {
-        const contents = await readImportTextFile(item.sourcePath);
+        const contents = await readImportTextFile(item.sourcePath, item.source);
         const session =
           item.source === "codex"
             ? parseCodexRollout(contents, {
@@ -154,12 +166,26 @@ function HistoryImportDialog({
                 sourcePath: item.sourcePath,
                 titleHint: item.title,
               })
-            : parseClaudeCodeSession(contents, {
-                externalId: item.externalId,
-                sourcePath: item.sourcePath,
-                titleHint: item.title,
-                cwdHint: item.cwd,
-              });
+            : item.source === "claude-code"
+              ? parseClaudeCodeSession(contents, {
+                  externalId: item.externalId,
+                  sourcePath: item.sourcePath,
+                  titleHint: item.title,
+                  cwdHint: item.cwd,
+                })
+              : item.source === "cursor"
+                ? parseCursorSession(contents, {
+                    externalId: item.externalId,
+                    sourcePath: item.sourcePath,
+                    titleHint: item.title,
+                    cwdHint: item.cwd,
+                  })
+                : parseKimiSession(contents, {
+                    externalId: item.externalId,
+                    sourcePath: item.sourcePath,
+                    titleHint: item.title,
+                    cwdHint: item.cwd,
+                  });
         const result = await saveArchiveSession(session);
         if (result.overwritten) overwritten += 1;
         else created += 1;
@@ -198,7 +224,8 @@ function HistoryImportDialog({
         <DialogHeader className="border-border border-b px-6 py-5">
           <DialogTitle>导入对话历史</DialogTitle>
           <DialogDescription>
-            自动扫描 ~/.codex 与 ~/.claude。已导入项可再次勾选，将覆盖本地归档并刷新 token 用量。
+            自动扫描 Codex、Claude Code、Cursor 和 Kimi
+            的本地会话。已导入项可再次勾选，将覆盖本地归档并刷新 token 用量。
           </DialogDescription>
         </DialogHeader>
 
@@ -213,18 +240,19 @@ function HistoryImportDialog({
             <p className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-destructive text-sm">
               扫描失败：
               {scanQuery.error instanceof Error ? scanQuery.error.message : String(scanQuery.error)}
-              。请确认已安装 Codex / Claude Code，且目录存在。
+              。请确认对应客户端已安装，且本地数据目录存在。
             </p>
           ) : null}
           {!scanQuery.isPending && !scanQuery.isError && scanned.length === 0 ? (
             <p className="rounded-md border border-border bg-muted/40 px-4 py-3 text-muted-foreground text-sm">
-              未发现可导入会话。默认路径：~/.codex/sessions、~/.claude/projects。
+              未发现可导入会话。请确认对应客户端已安装并产生过对话记录。
             </p>
           ) : null}
 
-          {(["codex", "claude-code"] as const).map((source) => {
+          {(["codex", "claude-code", "cursor", "kimi"] as const).map((source) => {
             const items = grouped[source];
             if (items.length === 0) return null;
+            const visibleItems = items.slice(0, 20);
             return (
               <section key={source} className="space-y-2">
                 <div className="flex items-center justify-between gap-3">
@@ -244,7 +272,7 @@ function HistoryImportDialog({
                 </div>
                 <div className="overflow-hidden rounded-lg border border-border">
                   <div className="divide-y divide-border">
-                    {items.map((item) => {
+                    {visibleItems.map((item) => {
                       const key = selectionKey(item);
                       const checkboxId = `history-import-${encodeURIComponent(key)}`;
                       const already = importedKeys.has(key);
@@ -288,6 +316,11 @@ function HistoryImportDialog({
                     })}
                   </div>
                 </div>
+                {items.length > visibleItems.length ? (
+                  <p className="text-muted-foreground text-xs">
+                    仅显示前 20 条，剩余 {items.length - visibleItems.length} 条可通过“全选”导入。
+                  </p>
+                ) : null}
               </section>
             );
           })}

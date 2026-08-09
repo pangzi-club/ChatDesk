@@ -1,5 +1,8 @@
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
 import { cors } from "hono/cors";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
@@ -37,6 +40,60 @@ const runInputSchema = z.object({
   title: z.string().optional(),
   toolNames: z.array(z.string()).max(100).optional(),
 });
+
+const execFileAsync = promisify(execFile);
+
+type ArchiveImportSource = "codex" | "claude-code" | "cursor" | "kimi";
+
+function archiveRoots(source: ArchiveImportSource): string[] {
+  const home = process.env.HOME || process.env.USERPROFILE || "";
+  const cursorRoots = process.platform === "win32"
+    ? [path.join(process.env.APPDATA || path.join(home, "AppData", "Roaming"), "Cursor", "User")]
+    : process.platform === "darwin"
+      ? [path.join(home, "Library", "Application Support", "Cursor", "User")]
+      : [path.join(home, ".config", "Cursor", "User")];
+  if (source === "codex") return [path.join(home, ".codex")];
+  if (source === "claude-code") return [path.join(home, ".claude")];
+  if (source === "cursor") return cursorRoots;
+  return [
+    process.env.KIMI_CODE_HOME || path.join(home, ".kimi-code"),
+    process.env.KIMI_SHARE_DIR || path.join(home, ".kimi"),
+  ];
+}
+
+function sourceFileMatches(source: ArchiveImportSource, fileName: string) {
+  if (source === "cursor") return fileName === "state.vscdb";
+  if (source === "kimi") return fileName === "context.jsonl";
+  return fileName.toLowerCase().endsWith(".jsonl");
+}
+
+async function scanArchiveSource(source: ArchiveImportSource) {
+  const results: Array<Record<string, unknown>> = [];
+  const walk = async (directory: string, root: string): Promise<void> => {
+    const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      const target = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        await walk(target, root);
+      } else if (entry.isFile() && sourceFileMatches(source, entry.name)) {
+        const metadata = await stat(target).catch(() => null);
+        const relativePath = path.relative(root, target);
+        results.push({
+          source,
+          externalId:
+            source === "codex" || source === "claude-code"
+              ? relativePath.replace(/\.jsonl$/i, "")
+              : relativePath,
+          sourcePath: target,
+          updatedAt: metadata?.mtime.toISOString(),
+          size: metadata?.size ?? 0,
+        });
+      }
+    }
+  };
+  for (const root of archiveRoots(source)) await walk(root, root);
+  return results;
+}
 
 function jsonError(message: string, status = 400) {
   return new Response(JSON.stringify({ error: message }), {
@@ -232,35 +289,60 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     return c.body(null, 204);
   });
   app.post("/v1/archive/scan/:source", async (c) => {
-    const source = c.req.param("source");
-    const root = source === "codex" ? path.join(process.env.HOME || "", ".codex") : path.join(process.env.HOME || "", ".claude");
-    const results: Array<Record<string, unknown>> = [];
-    const walk = async (directory: string): Promise<void> => {
-      const entries = await (await import("node:fs/promises")).readdir(directory, { withFileTypes: true }).catch(() => []);
-      for (const entry of entries) {
-        const target = path.join(directory, entry.name);
-        if (entry.isDirectory()) {
-          await walk(target);
-        } else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
-          const metadata = await (await import("node:fs/promises")).stat(target).catch(() => null);
-          results.push({ source, externalId: entry.name.replace(/\.jsonl$/i, ""), sourcePath: target, updatedAt: metadata?.mtime.toISOString(), size: metadata?.size ?? 0 });
-        }
-      }
-    };
-    await walk(root);
-    return c.json(results);
+    const source = c.req.param("source") as ArchiveImportSource;
+    if (!["codex", "claude-code", "cursor", "kimi"].includes(source)) {
+      return jsonError("不支持的归档来源", 400);
+    }
+    return c.json(await scanArchiveSource(source));
   });
   app.post("/v1/archive/read-file", async (c) => {
     try {
       const body = await c.req.json();
       const requested = typeof body.path === "string" ? body.path : "";
-      const roots = [path.join(process.env.HOME || "", ".codex"), path.join(process.env.HOME || "", ".claude")];
+      const roots = [...new Set(([
+        ...archiveRoots("codex"),
+        ...archiveRoots("claude-code"),
+        ...archiveRoots("kimi"),
+      ]))];
       const resolved = path.resolve(requested);
       if (!roots.some((root) => resolved === root || resolved.startsWith(`${root}${path.sep}`))) {
         return jsonError("path is outside allowed import roots", 403);
       }
       const { readFile } = await import("node:fs/promises");
       return c.text(await readFile(resolved, "utf8"));
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+  app.post("/v1/archive/read-cursor", async (c) => {
+    try {
+      const body = await c.req.json();
+      const requested = typeof body.path === "string" ? body.path : "";
+      const roots = archiveRoots("cursor");
+      const resolved = path.resolve(requested);
+      if (!roots.some((root) => resolved === root || resolved.startsWith(`${root}${path.sep}`))) {
+        return jsonError("path is outside allowed import roots", 403);
+      }
+      const { stdout: tables } = await execFileAsync("sqlite3", ["-readonly", resolved, ".tables"], {
+        maxBuffer: 1024 * 1024,
+      });
+      const table = tables.split(/\s+/).includes("ItemTable")
+        ? "ItemTable"
+        : tables.split(/\s+/).includes("cursorDiskKV")
+          ? "cursorDiskKV"
+          : null;
+      if (!table) return c.text("[]");
+      const { stdout } = await execFileAsync(
+        "sqlite3",
+        [
+          "-readonly",
+          "-json",
+          resolved,
+          `SELECT key, value FROM ${table};`,
+        ],
+        { maxBuffer: 64 * 1024 * 1024 },
+      );
+      return c.text(stdout);
     } catch (error) {
       return jsonError(error instanceof Error ? error.message : String(error));
     }

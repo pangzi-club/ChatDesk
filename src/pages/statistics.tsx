@@ -1,17 +1,19 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChartColumn,
-  CircleDollarSign,
   Database,
   Download,
+  Import,
   MessageSquare,
   Sparkles,
   TriangleAlert,
   Upload,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
+import { HistoryImportDialog } from "@/components/history-import-dialog";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -25,6 +27,7 @@ import {
   type UsageAggregate,
   type UsagePeriod,
 } from "@/lib/ai-usage-statistics";
+import { loadArchiveIndex } from "@/lib/chat-archive";
 
 const PERIODS: Array<{ value: UsagePeriod; label: string }> = [
   { value: "today", label: "今天" },
@@ -38,10 +41,6 @@ function formatNumber(value: number) {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
   if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
   return value.toLocaleString("zh-CN");
-}
-
-function formatMoney(value?: number) {
-  return value === undefined ? "暂无价格" : `$${value.toFixed(3)}`;
 }
 
 function StatCard({
@@ -86,7 +85,9 @@ function UsageBar({
                 {item.provider}
                 {item.model !== "全部" ? ` / ${item.model}` : ""}
               </span>
-              <span className="tabular-nums text-muted-foreground">{formatMoney(item.cost)}</span>
+              <span className="tabular-nums text-muted-foreground">
+                {formatNumber(amount)} tokens
+              </span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-muted">
               <div
@@ -137,16 +138,14 @@ function Heatmap({
 function DetailsTable({ rows }: { rows: UsageAggregate[] }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[760px] text-left text-sm">
+      <table className="w-full min-w-[680px] text-left text-sm">
         <thead className="border-border border-b text-muted-foreground text-xs">
           <tr>
-            {["模型", "供应商", "消息数", "输入", "输出", "缓存读", "缓存写", "费用"].map(
-              (heading) => (
-                <th className="px-3 py-3 font-medium" key={heading}>
-                  {heading}
-                </th>
-              ),
-            )}
+            {["模型", "供应商", "消息数", "输入", "输出", "缓存读", "缓存写"].map((heading) => (
+              <th className="px-3 py-3 font-medium" key={heading}>
+                {heading}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
@@ -167,7 +166,6 @@ function DetailsTable({ rows }: { rows: UsageAggregate[] }) {
               <td className="px-3 py-3 tabular-nums">
                 {formatNumber(row.usage.cacheWriteTokens ?? 0)}
               </td>
-              <td className="px-3 py-3 tabular-nums">{formatMoney(row.cost)}</td>
             </tr>
           ))}
         </tbody>
@@ -177,6 +175,8 @@ function DetailsTable({ rows }: { rows: UsageAggregate[] }) {
 }
 
 function StatisticsSettingsPage() {
+  const queryClient = useQueryClient();
+  const [importOpen, setImportOpen] = useState(false);
   const [period, setPeriod] = useState<UsagePeriod>("month");
   const query = useQuery({
     queryKey: ["ai-usage-statistics", period],
@@ -184,10 +184,11 @@ function StatisticsSettingsPage() {
     staleTime: 30_000,
     gcTime: 5 * 60_000,
   });
+  const archiveQuery = useQuery({
+    queryKey: ["chat-archive-index"],
+    queryFn: loadArchiveIndex,
+  });
   const data = query.data;
-  const maxDailyCost = Math.max(...(data?.daily.map((day) => day.cost ?? 0) ?? [0]), 0.001);
-  const unknownCost = data?.total.hasUnknownCost;
-  const chartDays = useMemo(() => data?.daily ?? [], [data]);
 
   return (
     <div className="space-y-6">
@@ -201,21 +202,26 @@ function StatisticsSettingsPage() {
             使用量
           </h1>
           <p className="mt-2 text-muted-foreground text-sm">
-            汇总本地 Chat、Codex 和 Claude Code 的模型用量。
+            汇总本地 Chat、Codex、Claude Code、Cursor 和 Kimi 的模型用量。
           </p>
         </div>
-        <Select value={period} onValueChange={(value) => setPeriod(value as UsagePeriod)}>
-          <SelectTrigger className="w-36 bg-card">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {PERIODS.map((item) => (
-              <SelectItem key={item.value} value={item.value}>
-                {item.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={() => setImportOpen(true)} type="button">
+            <Import className="size-4" /> 导入对话
+          </Button>
+          <Select value={period} onValueChange={(value) => setPeriod(value as UsagePeriod)}>
+            <SelectTrigger className="w-36 bg-card">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PERIODS.map((item) => (
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </header>
       {query.isError ? (
         <div className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-destructive text-sm">
@@ -226,7 +232,7 @@ function StatisticsSettingsPage() {
       {query.isPending && !data ? (
         <div className="space-y-6" aria-busy="true">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {[1, 2, 3, 4, 5, 6].map((key) => (
+            {[1, 2, 3, 4, 5].map((key) => (
               <div
                 className="h-28 animate-pulse rounded-lg border border-border bg-muted/50"
                 key={key}
@@ -247,12 +253,6 @@ function StatisticsSettingsPage() {
       ) : data ? (
         <>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <StatCard
-              icon={CircleDollarSign}
-              label="估算费用"
-              value={formatMoney(data.total.cost)}
-              detail={unknownCost ? "部分记录缺少价格" : "按模型价格估算"}
-            />
             <StatCard
               icon={MessageSquare}
               label="消息数"
@@ -294,30 +294,6 @@ function StatisticsSettingsPage() {
               <Heatmap days={data.heatmap} />
             </div>
           </section>
-          <section className="rounded-lg border border-border bg-card px-5 py-5">
-            <div>
-              <h2 className="font-medium">费用趋势</h2>
-              <p className="mt-1 text-muted-foreground text-xs">
-                {data.from} 至 {data.to} 的每日估算支出
-              </p>
-            </div>
-            <div className="mt-7 flex h-44 items-end gap-1 border-border border-b">
-              {chartDays.map((day) => (
-                <div
-                  className="group relative flex-1"
-                  key={day.date}
-                  title={`${day.date} · ${formatMoney(day.cost)}`}
-                >
-                  <div
-                    className="mx-auto w-full max-w-8 rounded-t-sm bg-primary/75 transition-colors group-hover:bg-primary"
-                    style={{
-                      height: `${Math.max(((day.cost ?? 0) / maxDailyCost) * 100, day.cost ? 3 : 0)}%`,
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
-          </section>
           <div className="grid gap-6 xl:grid-cols-2">
             <section className="rounded-lg border border-border bg-card px-5 py-5">
               <h2 className="font-medium">按提供商统计</h2>
@@ -339,6 +315,15 @@ function StatisticsSettingsPage() {
           </section>
         </>
       ) : null}
+      <HistoryImportDialog
+        archiveIndex={archiveQuery.data ?? []}
+        onImported={() => {
+          void queryClient.invalidateQueries({ queryKey: ["chat-archive-index"] });
+          void queryClient.invalidateQueries({ queryKey: ["ai-usage-statistics"] });
+        }}
+        onOpenChange={setImportOpen}
+        open={importOpen}
+      />
     </div>
   );
 }

@@ -5,7 +5,6 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { getToolName, isToolUIPart, type UIMessage } from "ai";
 import {
   ArrowLeft,
-  ChartColumn,
   ChevronDown,
   ChevronUp,
   FileIcon,
@@ -102,7 +101,7 @@ function historyItemKey(item: UnifiedItem) {
   return `${item.source}:${item.id}`;
 }
 
-function HistoryPage() {
+function HistoryPage({ embedded = false }: { embedded?: boolean }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const listScrollRef = useRef<HTMLDivElement>(null);
@@ -129,6 +128,7 @@ function HistoryPage() {
     mutationFn: deleteArchiveSession,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["chat-archive-index"] });
+      await queryClient.invalidateQueries({ queryKey: ["ai-usage-statistics"] });
       setItemToDelete(null);
     },
   });
@@ -249,29 +249,25 @@ function HistoryPage() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <header className="shrink-0 border-border border-b bg-background px-4 pt-12 pb-4 sm:px-6 lg:px-8">
+    <div className={embedded ? "space-y-4" : "flex h-full min-h-0 flex-col overflow-hidden"}>
+      <header
+        className={
+          embedded
+            ? "rounded-lg border border-border bg-card px-5 py-5"
+            : "shrink-0 border-border border-b bg-background px-4 pt-12 pb-4 sm:px-6 lg:px-8"
+        }
+      >
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="font-medium text-muted-foreground text-xs uppercase tracking-[0.16em]">
               Chat
             </p>
-            <h1 className="mt-2 font-semibold text-3xl tracking-tight">History</h1>
+            <h1 className="mt-2 font-semibold text-2xl tracking-tight">History</h1>
             <p className="mt-2 text-muted-foreground text-sm">
-              浏览本机对话，并导入 Codex / Claude Code 归档。
+              浏览本机对话，并导入 Codex、Claude Code、Cursor、Kimi 归档。
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              onClick={() => {
-                persistListScroll();
-                void navigate("/settings/history/analysis");
-              }}
-              type="button"
-              variant="outline"
-            >
-              <ChartColumn className="size-4" /> 分析
-            </Button>
             <Button onClick={() => setImportOpen(true)} type="button">
               <Import className="size-4" /> 导入
             </Button>
@@ -298,6 +294,8 @@ function HistoryPage() {
                 ["native", "本机"],
                 ["codex", "Codex"],
                 ["claude-code", "Claude Code"],
+                ["cursor", "Cursor"],
+                ["kimi", "Kimi"],
               ] as const
             ).map(([value, label]) => (
               <Button
@@ -317,7 +315,13 @@ function HistoryPage() {
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col px-4 py-6 sm:px-6 lg:px-8">
+      <div
+        className={
+          embedded
+            ? "flex min-h-0 flex-col"
+            : "flex min-h-0 flex-1 flex-col px-4 py-6 sm:px-6 lg:px-8"
+        }
+      >
         {error ? (
           <p className="mb-4 shrink-0 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-destructive text-sm">
             {error instanceof Error ? error.message : String(error)}
@@ -325,15 +329,17 @@ function HistoryPage() {
         ) : null}
 
         {isPending ? (
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className={embedded ? "min-h-0" : "min-h-0 flex-1 overflow-y-auto"}>
             <HistoryListSkeleton />
           </div>
         ) : filtered.length === 0 ? (
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className={embedded ? "min-h-0" : "min-h-0 flex-1 overflow-y-auto"}>
             <EmptyHistory hasAny={items.length > 0} onImport={() => setImportOpen(true)} />
           </div>
         ) : (
-          <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
+          <section
+            className={`flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card ${embedded ? "h-[32rem] max-h-[70vh] min-h-[24rem]" : "flex-1"}`}
+          >
             <div className="shrink-0 border-border border-b px-5 py-4">
               <h2 className="font-medium text-sm">
                 对话列表 <span className="ml-1 text-muted-foreground">{filtered.length}</span>
@@ -389,7 +395,7 @@ function HistoryPage() {
         archiveIndex={archiveQuery.data ?? []}
         onImported={() => {
           void queryClient.invalidateQueries({ queryKey: ["chat-archive-index"] });
-          void queryClient.invalidateQueries({ queryKey: ["history-analysis"] });
+          void queryClient.invalidateQueries({ queryKey: ["ai-usage-statistics"] });
         }}
         onOpenChange={setImportOpen}
         open={importOpen}
@@ -556,12 +562,13 @@ function HistoryDetailPage() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["chat-index"] }),
         queryClient.invalidateQueries({ queryKey: ["chat-archive-index"] }),
+        queryClient.invalidateQueries({ queryKey: ["ai-usage-statistics"] }),
       ]);
-      void navigate("/settings/history");
+      void navigate("/settings/statistics");
     },
   });
 
-  if (!id || !isHistorySource(source)) return <Navigate replace to="/settings/history" />;
+  if (!id || !isHistorySource(source)) return <Navigate replace to="/settings/statistics" />;
 
   if (sessionQuery.isPending) {
     return (
@@ -583,7 +590,7 @@ function HistoryDetailPage() {
       <div className="flex h-full min-h-0 flex-col overflow-hidden">
         <div className="shrink-0 border-border border-b bg-background px-4 pt-12 pb-4 sm:px-6 lg:px-8">
           <Button asChild className="w-fit" size="sm" variant="ghost">
-            <Link to="/settings/history">
+            <Link to="/settings/statistics">
               <ArrowLeft className="size-4" /> 返回
             </Link>
           </Button>
@@ -601,7 +608,7 @@ function HistoryDetailPage() {
 
   const session = sessionQuery.data;
   if (!session) {
-    return <Navigate replace to="/settings/history" />;
+    return <Navigate replace to="/settings/statistics" />;
   }
 
   return (
@@ -610,7 +617,7 @@ function HistoryDetailPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 flex-1 space-y-3">
             <Button asChild className="w-fit" size="sm" variant="ghost">
-              <Link to="/settings/history">
+              <Link to="/settings/statistics">
                 <ArrowLeft className="size-4" /> 返回列表
               </Link>
             </Button>
@@ -919,7 +926,7 @@ function EmptyHistory({ hasAny, onImport }: { hasAny: boolean; onImport: () => v
       <p className="mt-2 max-w-md text-muted-foreground text-sm">
         {hasAny
           ? "试试调整搜索词或来源筛选。"
-          : "在 Chat 中开始对话，或从 Codex / Claude Code 导入归档。"}
+          : "在 Chat 中开始对话，或从 Codex、Claude Code、Cursor、Kimi 导入归档。"}
       </p>
       {!hasAny ? (
         <Button className="mt-5" onClick={onImport} type="button">

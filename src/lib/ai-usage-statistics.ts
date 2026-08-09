@@ -7,7 +7,13 @@ import {
   loadArchiveSession,
 } from "@/lib/chat-archive";
 import { loadChatIndex, loadChatSession } from "@/lib/chat-store";
-import { addTokenUsage, emptyTokenUsage, getMessageUsage, type TokenUsage } from "@/lib/chat-usage";
+import {
+  addTokenUsage,
+  emptyTokenUsage,
+  getMessageUsage,
+  hasTokenUsage,
+  type TokenUsage,
+} from "@/lib/chat-usage";
 import { loadModels, type ModelConfig } from "@/lib/models";
 
 export type UsagePeriod = "today" | "week" | "month" | "30d" | "year";
@@ -18,7 +24,6 @@ export type UsageRecord = {
   provider: string;
   model: string;
   usage: TokenUsage;
-  cost?: number;
   messageCount: number;
 };
 
@@ -28,11 +33,9 @@ export type UsageAggregate = {
   source: ArchiveSource | "mixed";
   messageCount: number;
   usage: TokenUsage;
-  cost?: number;
-  hasUnknownCost: boolean;
 };
 
-export type DailyUsage = { date: string; usage: TokenUsage; messageCount: number; cost?: number };
+export type DailyUsage = { date: string; usage: TokenUsage; messageCount: number };
 
 export type AiUsageStatistics = {
   period: UsagePeriod;
@@ -95,32 +98,6 @@ function usageTokens(usage: TokenUsage) {
   );
 }
 
-function costForUsage(usage: TokenUsage, model?: ModelConfig, fallbackModel?: ModelConfig) {
-  const prices: Array<[keyof TokenUsage, keyof ModelConfig]> = [
-    ["inputTokens", "inputPricePerMillion"],
-    ["outputTokens", "outputPricePerMillion"],
-    ["cacheReadTokens", "cacheReadPricePerMillion"],
-    ["cacheWriteTokens", "cacheWritePricePerMillion"],
-  ];
-  let cost = 0;
-  for (const [usageKey, priceKey] of prices) {
-    const tokens = usage[usageKey];
-    if (typeof tokens !== "number" || tokens === 0) continue;
-    const baseInputPrice = model?.inputPricePerMillion ?? fallbackModel?.inputPricePerMillion;
-    const price =
-      model?.[priceKey] ??
-      fallbackModel?.[priceKey] ??
-      (priceKey === "cacheReadPricePerMillion" || priceKey === "cacheWritePricePerMillion"
-        ? baseInputPrice === undefined
-          ? undefined
-          : baseInputPrice / 10
-        : undefined);
-    if (typeof price !== "number" || price < 0) return undefined;
-    cost += (tokens / 1_000_000) * price;
-  }
-  return cost;
-}
-
 function addAggregate(target: Map<string, UsageAggregate>, record: UsageRecord, key: string) {
   const current = target.get(key);
   if (!current) {
@@ -130,16 +107,12 @@ function addAggregate(target: Map<string, UsageAggregate>, record: UsageRecord, 
       source: record.source,
       messageCount: record.messageCount,
       usage: record.usage,
-      cost: record.cost,
-      hasUnknownCost: record.cost === undefined && usageTokens(record.usage) > 0,
     });
     return;
   }
   current.messageCount += record.messageCount;
   current.usage = addTokenUsage(current.usage, record.usage);
   current.source = current.source === record.source ? current.source : "mixed";
-  current.hasUnknownCost ||= record.cost === undefined && usageTokens(record.usage) > 0;
-  if (record.cost !== undefined) current.cost = (current.cost ?? 0) + record.cost;
 }
 
 function recordFromMessage(
@@ -148,8 +121,6 @@ function recordFromMessage(
   model: string,
   message: UIMessage | ArchiveMessage,
   fallbackDate: Date,
-  modelConfig?: ModelConfig,
-  fallbackModel?: ModelConfig,
 ): UsageRecord | null {
   if (message.role !== "assistant") return null;
   const usage =
@@ -162,14 +133,12 @@ function recordFromMessage(
     provider,
     model,
     usage,
-    cost: costForUsage(usage, modelConfig, fallbackModel),
     messageCount: 1,
   };
 }
 
 async function collectRecords(models: ModelConfig[]): Promise<UsageRecord[]> {
   const records: UsageRecord[] = [];
-  const fallbackModel = models.find((model) => model.isDefault) ?? models[0];
   const modelById = new Map(models.map((model) => [model.id, model]));
   const modelByName = new Map(models.map((model) => [model.name, model]));
   const [nativeIndex, archiveIndex] = await Promise.all([loadChatIndex(), loadArchiveIndex()]);
@@ -188,8 +157,6 @@ async function collectRecords(models: ModelConfig[]): Promise<UsageRecord[]> {
           model,
           message,
           new Date(session.updatedAt),
-          config,
-          fallbackModel,
         );
         if (record) records.push(record);
       }
@@ -202,19 +169,33 @@ async function collectRecords(models: ModelConfig[]): Promise<UsageRecord[]> {
       if (!session) return;
       const config = session.model ? modelByName.get(session.model) : undefined;
       const model = session.model ?? "未知模型";
-      const provider = config?.provider ?? (session.source === "codex" ? "Codex" : "Claude Code");
-      for (const message of session.messages) {
-        const record = recordFromMessage(
-          session.source,
+      const provider =
+        config?.provider ??
+        (session.source === "codex"
+          ? "Codex"
+          : session.source === "claude-code"
+            ? "Claude Code"
+            : session.source === "cursor"
+              ? "Cursor"
+              : "Kimi");
+      // Prefer the importer-provided total so usage attached to hidden tool results is included.
+      if (session.usageTotal && hasTokenUsage(session.usageTotal)) {
+        records.push({
+          date: dateKey(session.updatedAt, new Date()),
+          source: session.source,
           provider,
           model,
-          message,
-          new Date(session.updatedAt),
-          config,
-          fallbackModel,
-        );
-        if (record) records.push(record);
+          usage: session.usageTotal,
+          messageCount: session.messages.filter((message) => message.role === "assistant").length,
+        });
+        return;
       }
+      const archiveRecords = session.messages
+        .map((message) =>
+          recordFromMessage(session.source, provider, model, message, new Date(session.updatedAt)),
+        )
+        .filter((record): record is UsageRecord => record !== null);
+      records.push(...archiveRecords);
     }),
   );
   return records;
@@ -243,20 +224,15 @@ export async function analyzeAiUsage(
       date: record.date,
       usage: emptyTokenUsage(),
       messageCount: 0,
-      cost: 0,
     };
     day.usage = addTokenUsage(day.usage, record.usage);
-    day.messageCount += 1;
-    if (record.cost === undefined) day.cost = undefined;
-    else if (day.cost !== undefined) day.cost += record.cost;
+    day.messageCount += record.messageCount;
     dailyMap.set(record.date, day);
   }
   const total = [...byModel.values()].reduce<UsageAggregate>(
     (acc, value) => {
       acc.messageCount += value.messageCount;
       acc.usage = addTokenUsage(acc.usage, value.usage);
-      acc.hasUnknownCost ||= value.hasUnknownCost;
-      if (value.cost !== undefined) acc.cost = (acc.cost ?? 0) + value.cost;
       return acc;
     },
     {
@@ -265,11 +241,8 @@ export async function analyzeAiUsage(
       source: "mixed",
       messageCount: 0,
       usage: emptyTokenUsage(),
-      cost: 0,
-      hasUnknownCost: false,
     },
   );
-  if (total.hasUnknownCost) total.cost = undefined;
   const heatmapStart = new Date(startOfDay(now).getTime() - 139 * DAY_MS);
   const heatmapMap = new Map<string, DailyUsage>();
   for (const record of records) {
@@ -279,12 +252,9 @@ export async function analyzeAiUsage(
       date: record.date,
       usage: emptyTokenUsage(),
       messageCount: 0,
-      cost: 0,
     };
     day.usage = addTokenUsage(day.usage, record.usage);
-    day.messageCount += 1;
-    if (record.cost === undefined) day.cost = undefined;
-    else if (day.cost !== undefined) day.cost += record.cost;
+    day.messageCount += record.messageCount;
     heatmapMap.set(record.date, day);
   }
   const heatmap = [...heatmapMap.values()];
@@ -296,7 +266,7 @@ export async function analyzeAiUsage(
   ) {
     const key = formatDate(cursor);
     if (!heatmapDates.has(key))
-      heatmap.push({ date: key, usage: emptyTokenUsage(), messageCount: 0, cost: 0 });
+      heatmap.push({ date: key, usage: emptyTokenUsage(), messageCount: 0 });
   }
   const sortByTokens = (left: UsageAggregate, right: UsageAggregate) =>
     usageTokens(right.usage) - usageTokens(left.usage);

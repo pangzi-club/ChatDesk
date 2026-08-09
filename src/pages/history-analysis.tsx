@@ -19,6 +19,8 @@ const SOURCE_FILTERS: Array<{ value: SourceFilter; label: string }> = [
   { value: "native", label: "本机" },
   { value: "codex", label: "Codex" },
   { value: "claude-code", label: "Claude Code" },
+  { value: "cursor", label: "Cursor" },
+  { value: "kimi", label: "Kimi" },
 ];
 
 const CATEGORY_COLORS: Record<string, string> = {

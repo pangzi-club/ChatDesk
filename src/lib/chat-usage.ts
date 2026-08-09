@@ -265,7 +265,7 @@ export async function analyzeHistoryUsage(): Promise<HistoryUsageAnalysis> {
     bump(session.source, session.messages.length, sessionUsageFromArchive(session));
   }
 
-  const sourceOrder: ArchiveSource[] = ["native", "codex", "claude-code"];
+  const sourceOrder: ArchiveSource[] = ["native", "codex", "claude-code", "cursor", "kimi"];
   const bySource = sourceOrder.flatMap((source) => {
     const entry = bySourceMap.get(source);
     if (!entry) return [];
