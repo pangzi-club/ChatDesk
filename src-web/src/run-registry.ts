@@ -155,7 +155,10 @@ export class RunRegistry {
         ? provider.responses(model.name.trim())
         : provider.chat(model.name.trim());
       const modelMessages = await convertToModelMessages(messages);
-      const system = [input.system, input.memory, input.cwd ? `当前 workspace：${input.cwd}` : ""]
+      const workspaceToolInstructions = input.cwd
+        ? "本地源码检索规则：按文件名或关键词查找时必须使用 search_files，它支持 query 关键词并遵循 workspace 的 Git 排除规则；不要通过 bash 执行递归 grep、find 或 rg，尤其不要扫描 node_modules、.git、dist、target。"
+        : "";
+      const system = [workspaceToolInstructions, input.system, input.memory, input.cwd ? `当前 workspace：${input.cwd}` : ""]
         .filter(Boolean)
         .join("\n\n");
       const result = streamText({

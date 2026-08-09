@@ -29,11 +29,12 @@ export function createChatWorkspaceTools(
       inputSchema: z.object({ path: z.string().optional() }),
     }),
     search_files: tool({
-      description: "按文件名模式和文本内容搜索文件。",
+      description:
+        "按文件名模式或文本关键词搜索文件；query 支持不区分大小写的关键词匹配，Git workspace 遵循 .gitignore。",
       inputSchema: z.object({
         path: z.string().optional(),
         pattern: z.string().optional(),
-        query: z.string().optional(),
+        query: z.string().optional().describe("要查找的不区分大小写文本关键词"),
         maxResults: z.number().int().min(1).max(500).optional(),
       }),
     }),
@@ -54,7 +55,8 @@ export function createChatWorkspaceTools(
       }),
     }),
     bash: tool({
-      description: "在 workspace 中执行 Bash 命令。",
+      description:
+        "在 workspace 中执行 Bash 命令。源码或文件名搜索必须使用 search_files；不要用 grep/find/rg 递归扫描 workspace，尤其不要扫描 node_modules、.git、dist 或 target。Bash 适合运行测试、构建、Git 状态等命令。",
       inputSchema: z.object({ command: z.string().min(1) }),
     }),
   };

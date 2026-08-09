@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process";
 import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { existsSync, realpathSync } from "node:fs";
 import path from "node:path";
+import { promisify } from "node:util";
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 import type { SandboxMode } from "./protocol.ts";
@@ -8,7 +10,9 @@ import { resolveCommandCwd, runSandboxedShell } from "./sandbox-exec.ts";
 
 const MAX_FILE_BYTES = 512 * 1024;
 const MAX_SEARCH_RESULTS = 500;
+const MAX_GIT_FILE_LIST_BYTES = 32 * 1024 * 1024;
 const SKIPPED_DIRECTORIES = new Set([".git", "node_modules", "target", "dist"]);
+const execFileAsync = promisify(execFile);
 function rootPath(cwd: string) {
   const value = cwd.trim();
   if (!value) throw new Error("请选择 workspace 后再使用文件工具");
@@ -100,6 +104,47 @@ async function searchFiles(
   const needle = options.query?.trim().toLowerCase();
   const pattern = options.pattern?.trim();
 
+  const matchesFilePattern = (file: string) => {
+    if (!pattern) return true;
+    return new RegExp(
+      `^${pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$$`,
+      "i",
+    ).test(path.basename(file));
+  };
+
+  const matchesContent = async (target: string) => {
+    if (!needle) return true;
+    const metadata = await stat(target);
+    if (!metadata.isFile() || metadata.size > MAX_FILE_BYTES) return false;
+    try {
+      return (await readFile(target, "utf8")).toLowerCase().includes(needle);
+    } catch {
+      return false;
+    }
+  };
+
+  const addFile = async (target: string) => {
+    if (matches.length >= limit || !matchesFilePattern(target)) return;
+    try {
+      const resolvedTarget = realpathSync(target);
+      if (resolvedTarget !== root && !resolvedTarget.startsWith(`${root}${path.sep}`)) return;
+      const metadata = await stat(resolvedTarget);
+      if (!metadata.isFile() || !(await matchesContent(resolvedTarget))) return;
+    } catch {
+      return;
+    }
+    matches.push(path.relative(root, target));
+  };
+
+  const gitFiles = await listGitFiles(root, start);
+  if (gitFiles) {
+    for (const target of gitFiles) {
+      await addFile(target);
+      if (matches.length >= limit) break;
+    }
+    return { query: options.query?.trim() || undefined, pattern, matches, truncated: matches.length >= limit };
+  }
+
   async function visit(directory: string): Promise<void> {
     if (matches.length >= limit) return;
     for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -109,25 +154,35 @@ async function searchFiles(
         continue;
       }
       if (!entry.isFile()) continue;
-      if (pattern && !new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\\\*/g, ".*")}$$`, "i").test(entry.name)) continue;
       const target = path.join(directory, entry.name);
-      if (needle) {
-        const metadata = await stat(target);
-        if (metadata.size > MAX_FILE_BYTES) continue;
-        let content = "";
-        try {
-          content = await readFile(target, "utf8");
-        } catch {
-          continue;
-        }
-        if (!content.toLowerCase().includes(needle)) continue;
-      }
-      matches.push(path.relative(root, target));
+      await addFile(target);
     }
   }
 
   await visit(start);
   return { query: options.query?.trim() || undefined, pattern, matches, truncated: matches.length >= limit };
+}
+
+async function listGitFiles(root: string, start: string): Promise<string[] | null> {
+  try {
+    await execFileAsync("git", ["-C", root, "rev-parse", "--is-inside-work-tree"], {
+      cwd: root,
+      timeout: 3_000,
+      maxBuffer: 1_024 * 1024,
+    });
+    const relativeStart = path.relative(root, start) || ".";
+    const result = await execFileAsync(
+      "git",
+      ["-C", root, "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", relativeStart],
+      { cwd: root, timeout: 10_000, maxBuffer: MAX_GIT_FILE_LIST_BYTES },
+    );
+    return result.stdout
+      .split("\0")
+      .filter(Boolean)
+      .map((file) => path.resolve(root, file));
+  } catch {
+    return null;
+  }
 }
 
 export function createWorkspaceTools(
@@ -153,11 +208,11 @@ export function createWorkspaceTools(
         readTextFile(cwd, relativePath, mode, approvedToolCallIds.has(toolCallId)),
     }),
     search_files: tool({
-      description: `按文件名模式或文本内容搜索文件。${pathScope}`,
+      description: `按文件名模式或文本关键词搜索文件，query 支持不区分大小写的关键词匹配。Git workspace 遵循 .gitignore，非 Git workspace 跳过 .git、node_modules、target、dist。${pathScope}`,
       inputSchema: z.object({
         path: z.string().optional(),
         pattern: z.string().optional(),
-        query: z.string().optional(),
+        query: z.string().optional().describe("要查找的不区分大小写文本关键词"),
         maxResults: z.number().int().min(1).max(MAX_SEARCH_RESULTS).optional(),
       }),
       execute: (options, { toolCallId }) =>
@@ -187,7 +242,7 @@ export function createWorkspaceTools(
       },
     }),
     bash: tool({
-      description: `执行 Bash 命令。${pathScope}完全访问模式支持外部 Bash cwd。`,
+      description: `执行 Bash 命令。${pathScope}完全访问模式支持外部 Bash cwd。源码或文件名搜索必须使用 search_files；不要用 grep/find/rg 递归扫描 workspace，尤其不要扫描 node_modules、.git、dist 或 target。Bash 适合运行测试、构建、Git 状态等命令。`,
       inputSchema: z.object({
         command: z.string().min(1),
         cwd: z.string().optional().describe("可选的 Bash 工作目录；完全访问模式支持外部绝对路径"),
