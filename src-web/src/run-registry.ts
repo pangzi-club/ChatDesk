@@ -29,6 +29,7 @@ import {
   type SandboxBoundaryAssessment,
 } from "./sandbox-boundary-reviewer.ts";
 import { SandboxReviewLogStore } from "./sandbox-review-log.ts";
+import { selectWorkspaceToolNames } from "./tool-selection.ts";
 
 type ActiveRun = {
   id: string;
@@ -443,8 +444,8 @@ function createWorkspaceToolsForInput(
     input.sandboxMode ?? "ask",
     input.approvedEscalationToolCallIds,
   );
-  const selected = names.has("terminal") ? ["bash"] : ["list_dir", "search_files", "read_file", "write_file", "edit_file", "bash"];
-  return Object.fromEntries(selected.filter((name) => names.has(name) || (name === "bash" && names.has("terminal"))).map((name) => [name, tools[name]]));
+  const selected = selectWorkspaceToolNames(names);
+  return Object.fromEntries(selected.map((name) => [name, tools[name]]));
 }
 
 async function logSandboxReview(

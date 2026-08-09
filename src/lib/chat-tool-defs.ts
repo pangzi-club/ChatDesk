@@ -14,32 +14,20 @@ import {
 } from "@/lib/chat-workspace-tools";
 import {
   generateImage,
+  IMAGE_ASPECT_RATIOS,
+  IMAGE_RESOLUTIONS,
   type ImageAspectRatio,
   type ImageResolution,
   loadKieApiKey,
 } from "@/lib/image-generation";
 import type { ModelConfig } from "@/lib/models";
 
-const ASPECT_RATIO_SCHEMA = z.enum([
-  "auto",
-  "1:1",
-  "3:2",
-  "2:3",
-  "4:3",
-  "3:4",
-  "16:9",
-  "9:16",
-  "2:1",
-  "1:2",
-  "3:1",
-  "1:3",
-  "21:9",
-  "9:21",
-  "5:4",
-  "4:5",
-]);
-const RESOLUTION_SCHEMA = z.enum(["1K", "2K", "4K"]);
-const BUSINESS_PACKS = new Set<ChatToolPackId>(["image_generation"]);
+const ASPECT_RATIO_SCHEMA = z.enum(IMAGE_ASPECT_RATIOS);
+const RESOLUTION_SCHEMA = z.enum(IMAGE_RESOLUTIONS);
+
+const PACK_API_KEY_LOADERS: Partial<Record<ChatToolPackId, () => Promise<string>>> = {
+  image_generation: loadKieApiKey,
+};
 
 export const CHAT_TOOL_DISPLAY_NAMES: Record<string, string> = {
   ...CHAT_WORKSPACE_TOOL_DISPLAY_NAMES,
@@ -68,8 +56,8 @@ async function withToolError<T>(run: () => Promise<T>): Promise<T | { error: str
 }
 
 async function loadPackApiKey(pack: ChatToolPackId): Promise<string> {
-  if (pack === "image_generation") return (await loadKieApiKey()).trim();
-  return "";
+  const loader = PACK_API_KEY_LOADERS[pack];
+  return loader ? (await loader()).trim() : "";
 }
 
 function createPackTools(pack: ChatToolPackId): ToolSet {
@@ -128,6 +116,17 @@ function canActivatePack(
   return true;
 }
 
+async function isPackAvailable(
+  pack: (typeof CHAT_TOOL_PACKS)[number],
+  model: Pick<ModelConfig, "supportsTools" | "responsive"> | undefined,
+  getCwd?: () => string,
+) {
+  if (!model?.supportsTools) return false;
+  if (pack.requiresWorkspace && !getCwd?.().trim()) return false;
+  const apiKey = pack.keyLabel ? await loadPackApiKey(pack.id) : "";
+  return canActivatePack(pack, model, apiKey);
+}
+
 /** 按启用 ∩ API Key / Responses ∩ 模型能力，动态组装当前可用 tools。 */
 export async function resolveActiveTools(
   enabled: ChatToolsSettings,
@@ -143,9 +142,7 @@ export async function resolveActiveTools(
 
   for (const pack of CHAT_TOOL_PACKS) {
     if (!enabled[pack.id]) continue;
-    if (pack.requiresWorkspace && !getCwd?.().trim()) continue;
-    const apiKey = BUSINESS_PACKS.has(pack.id) ? await loadPackApiKey(pack.id) : "";
-    if (!canActivatePack(pack, model, apiKey)) continue;
+    if (!(await isPackAvailable(pack, model, getCwd))) continue;
     if (
       pack.id === "list_dir" ||
       pack.id === "search_files" ||
@@ -181,9 +178,7 @@ export async function resolveAvailablePacks(
   const available: ChatToolPackId[] = [];
   for (const pack of CHAT_TOOL_PACKS) {
     if (!enabled[pack.id]) continue;
-    if (pack.requiresWorkspace && !getCwd?.().trim()) continue;
-    const apiKey = BUSINESS_PACKS.has(pack.id) ? await loadPackApiKey(pack.id) : "";
-    if (canActivatePack(pack, model, apiKey)) available.push(pack.id);
+    if (await isPackAvailable(pack, model, getCwd)) available.push(pack.id);
   }
   return available;
 }

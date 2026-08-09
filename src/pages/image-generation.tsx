@@ -23,6 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   downloadGeneratedImage,
   generateImage,
+  IMAGE_ASPECT_RATIOS,
   IMAGE_MODELS,
   type ImageAspectRatio,
   type ImageModel,
@@ -39,25 +40,6 @@ import {
   type ImageGenerationTemplate,
 } from "@/lib/image-generation-templates";
 import { appendSystemLog } from "@/lib/system-log";
-
-const ASPECT_RATIOS: ImageAspectRatio[] = [
-  "auto",
-  "1:1",
-  "3:2",
-  "2:3",
-  "4:3",
-  "3:4",
-  "16:9",
-  "9:16",
-  "2:1",
-  "1:2",
-  "3:1",
-  "1:3",
-  "21:9",
-  "9:21",
-  "5:4",
-  "4:5",
-];
 
 async function saveImageFile(url: string, filename: string) {
   if ("__TAURI_INTERNALS__" in window) {
@@ -279,7 +261,7 @@ function ImageGenerationPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {ASPECT_RATIOS.map((value) => (
+                    {IMAGE_ASPECT_RATIOS.map((value) => (
                       <SelectItem key={value} value={value}>
                         {value}
                       </SelectItem>

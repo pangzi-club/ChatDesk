@@ -31,12 +31,17 @@ export function ChatToolsSettings({
   modelResponsive,
   idPrefix = "chat-tools",
 }: ChatToolsSettingsProps) {
+  const keyPacks = CHAT_TOOL_PACKS.filter((pack) => pack.keyLabel);
   const keyQueries = useQueries({
-    queries: CHAT_TOOL_PACKS.map((pack) => ({
+    queries: keyPacks.map((pack) => ({
       queryKey: ["chat-tool-pack-key", pack.id],
       queryFn: () => loadPackHasKey(pack.id),
+      staleTime: 60_000,
     })),
   });
+  const keyAvailability = new Map(
+    keyPacks.map((pack, index) => [pack.id, keyQueries[index]?.data === true]),
+  );
 
   function handleToggle(id: ChatToolPackId, enabled: boolean) {
     onSettingsChange({ ...settings, [id]: enabled });
@@ -70,8 +75,7 @@ export function ChatToolsSettings({
             </div>
             <div className="divide-y divide-border">
               {CHAT_TOOL_PACKS.filter((pack) => pack.category === category.id).map((pack) => {
-                const index = CHAT_TOOL_PACKS.findIndex((item) => item.id === pack.id);
-                const hasKey = !pack.keyLabel || keyQueries[index]?.data === true;
+                const hasKey = !pack.keyLabel || keyAvailability.get(pack.id) === true;
                 const switchId = `${idPrefix}-${pack.id}`;
                 const needsResponsive = pack.requiresResponsive === true;
                 return (

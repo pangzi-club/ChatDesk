@@ -1,12 +1,30 @@
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { loadChatServerConfig, saveChatServerConfig } from "@/lib/chat-server";
 import { settingsStore } from "@/lib/settings-store";
+import {
+  type GenerateImageResult,
+  generateImageWithApiKey,
+  IMAGE_ASPECT_RATIOS,
+  IMAGE_RESOLUTIONS,
+  type ImageAspectRatio,
+  type ImageGenerationInput,
+  type ImageModel,
+  type ImageResolution,
+  KIE_API_BASE_URL,
+  KieApiError,
+} from "@/shared/image-generation";
 
-export const KIE_API_BASE_URL = "https://api.kie.ai";
+export type {
+  GenerateImageResult,
+  ImageAspectRatio,
+  ImageGenerationInput,
+  ImageModel,
+  ImageResolution,
+};
+export { IMAGE_ASPECT_RATIOS, IMAGE_RESOLUTIONS, KIE_API_BASE_URL, KieApiError };
+
 const KIE_API_KEY_STORE_KEY = "kieApiKey";
 const KIE_API_KEY_STORAGE_KEY = "m-dashboard-kie-api-key-v1";
-const POLL_INTERVAL_MS = 5_000;
-const MAX_POLL_ATTEMPTS = 90;
 
 function isTauri() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -61,190 +79,18 @@ export async function clearKieApiKey() {
   window.localStorage.removeItem(KIE_API_KEY_STORAGE_KEY);
 }
 
-export type ImageAspectRatio =
-  | "auto"
-  | "1:1"
-  | "3:2"
-  | "2:3"
-  | "4:3"
-  | "3:4"
-  | "16:9"
-  | "9:16"
-  | "2:1"
-  | "1:2"
-  | "3:1"
-  | "1:3"
-  | "21:9"
-  | "9:21"
-  | "5:4"
-  | "4:5";
-export type ImageResolution = "1K" | "2K" | "4K";
-export type ImageModel = "gpt-image-2-text-to-image";
-
 export const IMAGE_MODELS: Array<{ value: ImageModel; label: string }> = [
   { value: "gpt-image-2-text-to-image", label: "GPT Image 2" },
 ];
-
-export interface ImageGenerationInput {
-  model: ImageModel;
-  prompt: string;
-  aspect_ratio: ImageAspectRatio;
-  resolution: ImageResolution;
-}
-
-export class KieApiError extends Error {
-  constructor(
-    message: string,
-    readonly status?: number,
-  ) {
-    super(message);
-    this.name = "KieApiError";
-  }
-}
-
-interface KieEnvelope<T> {
-  code: number;
-  msg: string;
-  data: T;
-}
-
-interface TaskRecord {
-  taskId: string;
-  state: "waiting" | "success" | "fail" | string;
-  resultJson?: string | null;
-  failMsg?: string | null;
-}
-
-function mergeAbortSignals(...signals: Array<AbortSignal | undefined>): AbortSignal | undefined {
-  const active = signals.filter((signal): signal is AbortSignal => Boolean(signal));
-  if (active.length === 0) return undefined;
-  if (active.length === 1) return active[0];
-  if (typeof AbortSignal.any === "function") return AbortSignal.any(active);
-  const controller = new AbortController();
-  for (const signal of active) {
-    if (signal.aborted) {
-      controller.abort(signal.reason);
-      break;
-    }
-    signal.addEventListener("abort", () => controller.abort(signal.reason), { once: true });
-  }
-  return controller.signal;
-}
-
-async function sleep(ms: number, abortSignal?: AbortSignal) {
-  if (!abortSignal) {
-    await new Promise<void>((resolve) => setTimeout(resolve, ms));
-    return;
-  }
-  if (abortSignal.aborted) {
-    throw abortSignal.reason instanceof Error
-      ? abortSignal.reason
-      : new DOMException("Aborted", "AbortError");
-  }
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      abortSignal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(
-        abortSignal.reason instanceof Error
-          ? abortSignal.reason
-          : new DOMException("Aborted", "AbortError"),
-      );
-    };
-    abortSignal.addEventListener("abort", onAbort, { once: true });
-  });
-}
-
-async function request<T>(
-  apiKey: string,
-  input: RequestInit,
-  path: string,
-  abortSignal?: AbortSignal,
-): Promise<T> {
-  let response: Response;
-  try {
-    response = await resolveFetch()(new URL(path, KIE_API_BASE_URL), {
-      ...input,
-      headers: {
-        accept: "application/json",
-        Authorization: `Bearer ${apiKey}`,
-        ...input.headers,
-      },
-      signal: mergeAbortSignals(AbortSignal.timeout(30_000), abortSignal),
-    });
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    throw new KieApiError(`无法连接到 KIE API（${detail}）`);
-  }
-
-  const text = await response.text();
-  let body: unknown;
-  try {
-    body = text ? JSON.parse(text) : null;
-  } catch {
-    throw new KieApiError("KIE API 返回了非 JSON 响应", response.status);
-  }
-  if (!response.ok || !isEnvelope(body) || body.code !== 200) {
-    const message = isEnvelope(body) ? body.msg : `请求失败（HTTP ${response.status}）`;
-    throw new KieApiError(message || "KIE API 请求失败", response.status);
-  }
-  return body.data as T;
-}
-
-function isEnvelope(value: unknown): value is KieEnvelope<unknown> {
-  return typeof value === "object" && value !== null && "code" in value && "data" in value;
-}
-
-export type GenerateImageResult = {
-  taskId: string;
-  urls: string[];
-};
 
 export async function generateImage(
   input: ImageGenerationInput,
   options?: { abortSignal?: AbortSignal },
 ): Promise<GenerateImageResult> {
-  const apiKey = (await loadKieApiKey()).trim();
-  if (!apiKey) throw new KieApiError("请先在设置中配置 KIE_API_KEY。");
-  const abortSignal = options?.abortSignal;
-  const task = await request<{ taskId: string }>(
-    apiKey,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ model: input.model, input }),
-    },
-    "/api/v1/jobs/createTask",
-    abortSignal,
-  );
-  if (!task.taskId) throw new KieApiError("KIE API 未返回 taskId。");
-
-  for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt += 1) {
-    const record = await request<TaskRecord>(
-      apiKey,
-      { method: "GET" },
-      `/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(task.taskId)}`,
-      abortSignal,
-    );
-    if (record.state === "success") {
-      try {
-        const parsed = JSON.parse(record.resultJson ?? "{}");
-        const urls = Array.isArray(parsed.resultUrls) ? parsed.resultUrls : [];
-        if (urls.every((url: unknown) => typeof url === "string") && urls.length > 0) {
-          return { taskId: task.taskId, urls: urls as string[] };
-        }
-      } catch {
-        // Continue with a useful error below if the result payload is malformed.
-      }
-      throw new KieApiError("任务已完成，但未返回图片地址。");
-    }
-    if (record.state === "fail") throw new KieApiError(record.failMsg || "图片生成失败。");
-    await sleep(POLL_INTERVAL_MS, abortSignal);
-  }
-  throw new KieApiError("图片生成超时，请稍后重试。");
+  return generateImageWithApiKey((await loadKieApiKey()).trim(), input, {
+    abortSignal: options?.abortSignal,
+    fetchImpl: resolveFetch(),
+  });
 }
 
 export async function downloadGeneratedImage(url: string): Promise<Blob> {
