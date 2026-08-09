@@ -14,6 +14,7 @@ import {
   ArrowUp,
   Bot,
   Brain,
+  Check,
   ChevronDown,
   CircleStop,
   Copy,
@@ -1072,6 +1073,7 @@ function MessageBubble({
 }) {
   const text = messageText(message);
   const isUser = message.role === "user";
+  const [copied, setCopied] = useState(false);
   const toolParts = message.parts.filter(isToolUIPart);
   if (!isUser && !text.trim() && toolParts.length === 0) return null;
   const usage = showTokenUsage && !isUser ? getMessageUsage(message) : undefined;
@@ -1079,6 +1081,17 @@ function MessageBubble({
   const toolLimitReached = Boolean(
     !isUser && (message.metadata as { toolLimitReached?: boolean } | undefined)?.toolLimitReached,
   );
+
+  async function copyMessage() {
+    if (!text.trim() || !navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  }
 
   return (
     <div className={`chat-message ${isUser ? "user-message" : "assistant-message"}`}>
@@ -1117,15 +1130,26 @@ function MessageBubble({
             已达到工具调用上限（20 轮），如需继续请发送一条新消息。
           </p>
         ) : null}
-        {!isUser && (
+        {(!isUser || text.trim()) && (
           <div className="chat-message-actions">
-            <Button aria-label="复制回复" size="icon" variant="ghost">
-              <Copy className="size-3.5" />
+            <Button
+              aria-label={copied ? "已复制" : isUser ? "复制消息" : "复制回复"}
+              disabled={!text.trim()}
+              onClick={() => void copyMessage()}
+              size="icon"
+              type="button"
+              variant="ghost"
+            >
+              {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
             </Button>
-            <Button aria-label="重新生成" size="icon" variant="ghost">
-              <RefreshCw className="size-3.5" />
-            </Button>
-            {usageLabel && <span className="chat-message-usage">{usageLabel}</span>}
+            {!isUser && (
+              <>
+                <Button aria-label="重新生成" size="icon" type="button" variant="ghost">
+                  <RefreshCw className="size-3.5" />
+                </Button>
+                {usageLabel && <span className="chat-message-usage">{usageLabel}</span>}
+              </>
+            )}
           </div>
         )}
       </div>

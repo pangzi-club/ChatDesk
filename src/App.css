@@ -936,6 +936,9 @@
   margin-top: 10px;
   opacity: 0.65;
 }
+.user-message .chat-message-actions {
+  justify-content: flex-end;
+}
 .chat-message-actions button {
   width: 28px;
   height: 28px;
