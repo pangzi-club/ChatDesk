@@ -6,6 +6,7 @@ import {
   ArrowUp,
   Brain,
   ChartColumn,
+  Check,
   ChevronDown,
   CircleAlert,
   Clock3,
@@ -22,6 +23,7 @@ import {
   Lock,
   MessageCircle,
   Monitor,
+  MoreHorizontal,
   Package,
   Palette,
   PanelLeft,
@@ -64,6 +66,14 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { rememberReturnPath } from "@/lib/app-return-path";
 import {
   type ChatServerSession,
@@ -76,7 +86,11 @@ import {
 import { type ChatIndexItem, deleteChatSession, loadChatIndex } from "@/lib/chat-store";
 import { appendSystemLog } from "@/lib/system-log";
 import { applyTrayEnabled, loadTrayEnabled } from "@/lib/tray";
-import { loadWorkspaceProjects } from "@/lib/workspaces";
+import {
+  addWorkspaceProject,
+  loadWorkspaceProjects,
+  selectWorkspaceDirectory,
+} from "@/lib/workspaces";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -211,6 +225,7 @@ const commandItems = [
 type CommandItem = (typeof commandItems)[number];
 
 const CHAT_UNREAD_STORAGE_KEY = "m-dashboard-chat-unread-v1";
+const WORKSPACE_COLLAPSE_STORAGE_KEY = "m-dashboard-workspace-collapse-v1";
 
 function loadUnreadChatIds() {
   if (typeof window === "undefined") return new Set<string>();
@@ -227,6 +242,28 @@ function loadUnreadChatIds() {
 function saveUnreadChatIds(ids: Set<string>) {
   if (typeof window !== "undefined") {
     window.localStorage.setItem(CHAT_UNREAD_STORAGE_KEY, JSON.stringify([...ids]));
+  }
+}
+
+function loadWorkspaceCollapseState() {
+  if (typeof window === "undefined") return {};
+  try {
+    const value = JSON.parse(window.localStorage.getItem(WORKSPACE_COLLAPSE_STORAGE_KEY) ?? "{}");
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+    return Object.fromEntries(
+      Object.entries(value).filter(
+        (entry): entry is [string, boolean] =>
+          typeof entry[0] === "string" && typeof entry[1] === "boolean",
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function saveWorkspaceCollapseState(state: Record<string, boolean>) {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(WORKSPACE_COLLAPSE_STORAGE_KEY, JSON.stringify(state));
   }
 }
 
@@ -536,18 +573,23 @@ type WorkspaceChatGroup = {
   sessions: ChatIndexItem[];
 };
 
+type WorkspaceSort = "name" | "updated" | "count";
+
 function WorkspaceConversationGroups() {
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set());
-  const [collapseOverride, setCollapseOverride] = useState<Record<string, boolean>>({});
+  const [collapseOverride, setCollapseOverride] = useState<Record<string, boolean>>(
+    loadWorkspaceCollapseState,
+  );
   const [serverStatuses, setServerStatuses] = useState<Record<string, ChatServerSession["status"]>>(
     {},
   );
   const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(loadUnreadChatIds);
   const [serverPort, setServerPort] = useState(14317);
   const [sessionToDelete, setSessionToDelete] = useState<ChatIndexItem | null>(null);
+  const [workspaceSort, setWorkspaceSort] = useState<WorkspaceSort>("updated");
   const chatIndexQuery = useQuery({
     queryKey: ["chat-index"],
     queryFn: loadChatIndex,
@@ -561,8 +603,16 @@ function WorkspaceConversationGroups() {
   const activeSessionIdRef = useRef(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
   const groups = useMemo(
-    () => groupChatsByWorkspace(chatIndexQuery.data ?? [], workspaceProjectsQuery.data ?? []),
-    [chatIndexQuery.data, workspaceProjectsQuery.data],
+    () =>
+      groupChatsByWorkspace(
+        chatIndexQuery.data ?? [],
+        sortWorkspaceProjects(
+          workspaceProjectsQuery.data ?? [],
+          chatIndexQuery.data ?? [],
+          workspaceSort,
+        ),
+      ),
+    [chatIndexQuery.data, workspaceProjectsQuery.data, workspaceSort],
   );
   const isPending = chatIndexQuery.isPending || workspaceProjectsQuery.isPending;
   const isError = chatIndexQuery.isError || workspaceProjectsQuery.isError;
@@ -588,6 +638,13 @@ function WorkspaceConversationGroups() {
     onError: (error) => {
       console.error("Failed to delete chat session", error);
     },
+  });
+  const addWorkspaceMutation = useMutation({
+    mutationFn: async () => {
+      const path = await selectWorkspaceDirectory();
+      return path ? addWorkspaceProject(path) : null;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workspace-projects"] }),
   });
 
   useEffect(() => {
@@ -632,7 +689,11 @@ function WorkspaceConversationGroups() {
 
   function toggleCollapsed(group: WorkspaceChatGroup) {
     const nextCollapsed = !isGroupCollapsed(group);
-    setCollapseOverride((current) => ({ ...current, [group.key]: nextCollapsed }));
+    setCollapseOverride((current) => {
+      const next = { ...current, [group.key]: nextCollapsed };
+      saveWorkspaceCollapseState(next);
+      return next;
+    });
   }
 
   function toggleExpanded(groupKey: string) {
@@ -648,6 +709,10 @@ function WorkspaceConversationGroups() {
     const params = new URLSearchParams({ workspaceId: group.key });
     if (group.cwd) params.set("workspaceCwd", group.cwd);
     navigate(`/chat?${params.toString()}`);
+  }
+
+  function addWorkspace() {
+    if (!addWorkspaceMutation.isPending) void addWorkspaceMutation.mutateAsync();
   }
 
   function openSession(sessionId: string) {
@@ -671,12 +736,57 @@ function WorkspaceConversationGroups() {
       aria-labelledby="workspace-conversations-heading"
       className="px-3 pt-3 pb-2 max-md:hidden"
     >
-      <h2
-        className="px-2 pb-1 font-medium text-[11px] text-muted-foreground uppercase"
-        id="workspace-conversations-heading"
-      >
-        Workspace
-      </h2>
+      <div className="group flex h-7 items-center rounded-md px-2 transition-colors hover:bg-accent/60">
+        <h2
+          className="min-w-0 flex-1 truncate font-medium text-xs text-muted-foreground uppercase"
+          id="workspace-conversations-heading"
+        >
+          Workspace
+        </h2>
+        <button
+          aria-label="添加 Workspace"
+          className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100"
+          disabled={addWorkspaceMutation.isPending}
+          onClick={addWorkspace}
+          title="添加 Workspace"
+          type="button"
+        >
+          <Plus className="size-3.5" />
+        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              aria-label="Workspace 排序"
+              className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100"
+              title="Workspace 排序"
+              type="button"
+            >
+              <MoreHorizontal className="size-3.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" sideOffset={6}>
+            <DropdownMenuLabel>排序方式</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => setWorkspaceSort("name")}>
+              <span className="flex-1">按名称</span>
+              {workspaceSort === "name" ? <Check className="size-3.5" /> : null}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setWorkspaceSort("updated")}>
+              <span className="flex-1">按更新</span>
+              {workspaceSort === "updated" ? <Check className="size-3.5" /> : null}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setWorkspaceSort("count")}>
+              <span className="flex-1">按对话数量</span>
+              {workspaceSort === "count" ? <Check className="size-3.5" /> : null}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      {addWorkspaceMutation.error ? (
+        <p className="px-2 py-1 text-[11px] text-destructive">
+          {describeError(addWorkspaceMutation.error)}
+        </p>
+      ) : null}
       {isPending ? (
         <WorkspaceConversationSkeleton />
       ) : isError ? (
@@ -735,7 +845,7 @@ function WorkspaceConversationGroups() {
                           >
                             <button
                               aria-current={isActive ? "page" : undefined}
-                              className="flex min-w-0 flex-1 items-center rounded-md py-0 pr-1 pl-8 text-left text-[13px]"
+                              className={`flex min-w-0 flex-1 items-center rounded-md py-0 pr-1 pl-8 text-left font-medium text-[13px] ${isActive ? "text-accent-foreground" : "text-foreground"}`}
                               onClick={() => openSession(session.id)}
                               title={session.title}
                               type="button"
@@ -831,6 +941,45 @@ function WorkspaceConversationSkeleton() {
   );
 }
 
+function sortWorkspaceProjects(
+  projects: Awaited<ReturnType<typeof loadWorkspaceProjects>>,
+  sessions: ChatIndexItem[],
+  sort: WorkspaceSort,
+) {
+  const latestSessionByWorkspace = new Map<string, string>();
+  const sessionCountByWorkspace = new Map<string, number>();
+  for (const session of sessions) {
+    if (!session.workspaceId) continue;
+    sessionCountByWorkspace.set(
+      session.workspaceId,
+      (sessionCountByWorkspace.get(session.workspaceId) ?? 0) + 1,
+    );
+    const current = latestSessionByWorkspace.get(session.workspaceId);
+    if (!current || session.updatedAt > current) {
+      latestSessionByWorkspace.set(session.workspaceId, session.updatedAt);
+    }
+  }
+
+  return [...projects].sort((a, b) => {
+    if (sort === "name") {
+      return pathBasename(a.path).localeCompare(pathBasename(b.path), undefined, {
+        sensitivity: "base",
+      });
+    }
+    if (sort === "count") {
+      const countDifference =
+        (sessionCountByWorkspace.get(b.id) ?? 0) - (sessionCountByWorkspace.get(a.id) ?? 0);
+      if (countDifference !== 0) return countDifference;
+      return pathBasename(a.path).localeCompare(pathBasename(b.path), undefined, {
+        sensitivity: "base",
+      });
+    }
+    const aUpdated = latestSessionByWorkspace.get(a.id) ?? a.createdAt;
+    const bUpdated = latestSessionByWorkspace.get(b.id) ?? b.createdAt;
+    return bUpdated.localeCompare(aUpdated);
+  });
+}
+
 function groupChatsByWorkspace(
   sessions: ChatIndexItem[],
   projects: Awaited<ReturnType<typeof loadWorkspaceProjects>>,
@@ -886,6 +1035,10 @@ function pathBasename(path: string) {
       .split(/[\\/]/)
       .pop() ?? path
   );
+}
+
+function describeError(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 type ChatWindowTab = { id: string; title: string };

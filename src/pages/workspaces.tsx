@@ -11,8 +11,19 @@ import {
   Trash2,
   XCircle,
 } from "lucide-react";
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   addWorkspaceProject,
@@ -27,6 +38,7 @@ import {
 
 function WorkspacesPage() {
   const queryClient = useQueryClient();
+  const [projectToRemove, setProjectToRemove] = useState<WorkspaceProject | null>(null);
   const projectsQuery = useQuery({
     queryKey: ["workspace-projects"],
     queryFn: loadWorkspaceProjects,
@@ -40,10 +52,13 @@ function WorkspacesPage() {
   });
   const removeMutation = useMutation({
     mutationFn: removeWorkspaceProject,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workspace-projects"] }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["workspace-projects"] });
+      setProjectToRemove(null);
+    },
   });
   const projects = projectsQuery.data ?? [];
-  const error = addMutation.error ?? projectsQuery.error;
+  const error = addMutation.error ?? removeMutation.error ?? projectsQuery.error;
 
   return (
     <div className="flex w-full flex-1 flex-col gap-6 px-4 pt-12 pb-8 sm:px-6 lg:px-8">
@@ -86,13 +101,41 @@ function WorkspacesPage() {
               <ProjectRow
                 key={project.id}
                 project={project}
-                onRemove={() => void removeMutation.mutateAsync(project.id)}
+                onRemove={() => setProjectToRemove(project)}
                 removing={removeMutation.isPending}
               />
             ))}
           </div>
         </section>
       )}
+      <AlertDialog
+        open={projectToRemove !== null}
+        onOpenChange={(open) => {
+          if (!open && !removeMutation.isPending) setProjectToRemove(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>移除 Workspace？</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要移除“{projectToRemove ? projectName(projectToRemove) : "这个项目"}”吗？
+              这只会移除保存的项目目录，不会删除历史聊天记录。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removeMutation.isPending}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={removeMutation.isPending}
+              onClick={() => {
+                if (projectToRemove) removeMutation.mutate(projectToRemove.id);
+              }}
+              variant="destructive"
+            >
+              {removeMutation.isPending ? "移除中..." : "移除"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -106,7 +149,7 @@ function ProjectRow({
   onRemove: () => void;
   removing: boolean;
 }) {
-  const name = project.path.split(/[\\/]/).filter(Boolean).pop() ?? project.path;
+  const name = projectName(project);
   return (
     <article className="flex flex-wrap items-center gap-3 px-5 py-4 transition-colors hover:bg-accent/30">
       <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-accent text-muted-foreground">
@@ -123,9 +166,7 @@ function ProjectRow({
         aria-label={`移除 ${name}`}
         className="text-destructive hover:text-destructive"
         disabled={removing}
-        onClick={() => {
-          if (window.confirm(`确定移除“${name}”吗？`)) onRemove();
-        }}
+        onClick={onRemove}
         size="icon"
         type="button"
         variant="ghost"
@@ -134,6 +175,10 @@ function ProjectRow({
       </Button>
     </article>
   );
+}
+
+function projectName(project: WorkspaceProject) {
+  return project.path.split(/[\\/]/).filter(Boolean).pop() ?? project.path;
 }
 
 function EmptyProjects() {
