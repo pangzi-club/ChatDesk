@@ -55,7 +55,7 @@
 ### ✅ 工具生态
 - **MCP**：`mcp-runtime.ts` 支持 stdio 子进程 + remote HTTP 两种 transport，start / listTools / callTool / stop / test 全套，手写 JSON-RPC 2.0。
 - **Skills**：`skills-store.ts` 扫描 8 个目录（`~/.agents`、`~/.agent`、`~/.codex`、`~/.claude` 及对应 workspace 目录），解析 SKILL.md frontmatter，可多选启用并注入。
-- **内置工具**：web_search（responses 协议内置）、图片生成、业务工具（analytics / commit / monitor）。
+- **内置工具**：web_search（responses 协议内置）、图片生成。
 
 ### ✅ 模型与配置
 - 多模型配置（`chat-config.ts`），任意 OpenAI 兼容 baseUrl。

@@ -8,9 +8,6 @@ export type ChatToolPackId =
   | "write_file"
   | "edit_file"
   | "terminal"
-  | "analytics"
-  | "commit"
-  | "looker"
   | "web_search"
   | "image_generation"
   | "browser";
@@ -36,9 +33,6 @@ export const DEFAULT_CHAT_TOOLS: ChatToolsSettings = {
   write_file: false,
   edit_file: false,
   terminal: false,
-  analytics: false,
-  commit: false,
-  looker: false,
   web_search: false,
   image_generation: false,
   browser: false,
@@ -54,7 +48,7 @@ export type ChatToolPackMeta = {
   keysPath?: "/settings/keys";
   /** 需要模型开启 Responses API（如 OpenAI web_search）。 */
   requiresResponsive?: boolean;
-  category: "development" | "web" | "business";
+  category: "development" | "web";
   toolNames: string[];
   requiresWorkspace?: boolean;
   risk?: string;
@@ -63,7 +57,6 @@ export type ChatToolPackMeta = {
 export const CHAT_TOOL_CATEGORIES = [
   { id: "development", label: "本地开发" },
   { id: "web", label: "联网与创作" },
-  { id: "business", label: "业务数据" },
 ] as const;
 
 export const CHAT_TOOL_PACKS: ChatToolPackMeta[] = [
@@ -85,36 +78,6 @@ export const CHAT_TOOL_PACKS: ChatToolPackMeta[] = [
     risk: "完全访问：命令可能修改 workspace 外部环境。",
     description: "在 workspace 中执行 Shell 命令；未选择时使用默认执行目录。",
     examples: ["运行测试并告诉我失败原因", "查看当前 Git 状态", "启动一次构建"],
-  },
-  {
-    id: "analytics",
-    label: "Analytics",
-    description: "查询站点流量（浏览量、访客、跳出率）。",
-    examples: ["最近 7 天各站流量怎么样？", "列出我有哪些分析站点", "今天哪个站访客最多？"],
-    keyLabel: "Tan Dataer API Key",
-    keysPath: "/settings/keys",
-    category: "business",
-    toolNames: ["list_analytics_sites", "get_site_analytics", "get_all_sites_analytics"],
-  },
-  {
-    id: "commit",
-    label: "Commit",
-    description: "查看提交活跃度与最近提交记录。",
-    examples: ["我这周都提交了什么？", "最近的提交活跃度怎么样？", "列出最近 10 条提交"],
-    keyLabel: "Commit API Key",
-    keysPath: "/settings/keys",
-    category: "business",
-    toolNames: ["get_commit_overview", "list_recent_commits"],
-  },
-  {
-    id: "looker",
-    label: "Looker",
-    description: "浏览内容监控列表与最新条目。",
-    examples: ["看看有哪些监控", "读取某个监控的最新内容", "监控列表里最近更新了什么？"],
-    keyLabel: "Looker API Key",
-    keysPath: "/settings/keys",
-    category: "business",
-    toolNames: ["list_monitors", "read_monitor"],
   },
   {
     id: "web_search",
@@ -171,9 +134,6 @@ function isChatToolPackId(value: unknown): value is ChatToolPackId {
     value === "write_file" ||
     value === "edit_file" ||
     value === "terminal" ||
-    value === "analytics" ||
-    value === "commit" ||
-    value === "looker" ||
     value === "web_search" ||
     value === "image_generation" ||
     value === "browser"
@@ -200,10 +160,7 @@ function normalizeChatTools(value: unknown): ChatToolsSettings {
       record.write_file === true || legacyWorkspaceFiles || legacyChildren.write_file === true,
     edit_file:
       record.edit_file === true || legacyWorkspaceFiles || legacyChildren.edit_file === true,
-    analytics: record.analytics === true,
     terminal: record.terminal === true,
-    commit: record.commit === true,
-    looker: record.looker === true,
     web_search: record.web_search === true,
     image_generation: record.image_generation === true,
     browser: record.browser === true,

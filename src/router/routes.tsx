@@ -1,19 +1,14 @@
 import { createHashRouter, Navigate, RouterProvider, useParams } from "react-router-dom";
 
 import { AppShell } from "@/layouts/app-shell";
-import { AnalyticsPage } from "@/pages/analytics";
 import { AutomationsPage } from "@/pages/automations";
 import { ChatPage } from "@/pages/chat";
-import { CommitPage } from "@/pages/commit";
 import { DashboardPage } from "@/pages/dashboard";
 import { DevToolsLayout, DevToolsPage } from "@/pages/dev-tools";
 import { EncryptPage } from "@/pages/encrypt";
 import { HistoryDetailPage, HistoryPage } from "@/pages/history";
 import { HistoryAnalysisPage } from "@/pages/history-analysis";
 import { ImageGenerationPage } from "@/pages/image-generation";
-import { InputsPage } from "@/pages/inputs";
-import { LookerDetailPage, LookerPage } from "@/pages/looker";
-import { SandboxPage } from "@/pages/sandbox";
 import {
   ApiKeysSettingsPage,
   ChatServerSettingsPage,
@@ -78,12 +73,6 @@ const router = createHashRouter([
             children: [
               { path: "encrypt", element: <EncryptPage /> },
               { path: "vite-ports", element: <VitePortsPage /> },
-              { path: "inputs", element: <InputsPage /> },
-              { path: "analytics", element: <AnalyticsPage /> },
-              { path: "commit", element: <CommitPage /> },
-              { path: "looker", element: <LookerPage /> },
-              { path: "looker/:ref", element: <LookerDetailPage /> },
-              { path: "sandbox", element: <SandboxPage /> },
             ],
           },
         ],
@@ -111,15 +100,6 @@ const router = createHashRouter([
       },
       { path: "encrypt", element: <Navigate replace to="/dev-tools/encrypt" /> },
       { path: "vite-ports", element: <Navigate replace to="/dev-tools/vite-ports" /> },
-      { path: "inputs", element: <Navigate replace to="/dev-tools/inputs" /> },
-      { path: "analytics", element: <Navigate replace to="/dev-tools/analytics" /> },
-      { path: "commit", element: <Navigate replace to="/dev-tools/commit" /> },
-      { path: "looker", element: <Navigate replace to="/dev-tools/looker" /> },
-      {
-        path: "looker/:ref",
-        element: <LookerRedirect />,
-      },
-      { path: "sandbox", element: <Navigate replace to="/dev-tools/sandbox" /> },
       { path: "history", element: <Navigate replace to="/settings/history" /> },
       {
         path: "history/analysis",
@@ -136,11 +116,6 @@ const router = createHashRouter([
     element: <Navigate replace to="/dashboard" />,
   },
 ]);
-
-function LookerRedirect() {
-  const { ref } = useParams();
-  return <Navigate replace to={`/dev-tools/looker/${ref ?? ""}`} />;
-}
 
 function WorkspaceProjectRedirect() {
   const { projectId } = useParams();

@@ -98,9 +98,6 @@ export class ChatConfigStore {
         installedSkillIds: value.skills,
         selectedSkillIds: value.chatSkills,
         apiKeys: {
-          dataer: value.dataerApiKey,
-          commit: value.commitApiKey,
-          looker: value.lookerApiKey,
           kie: value.kieApiKey,
         },
       });

@@ -9,10 +9,7 @@ import {
   type ChatToolPackId,
   type ChatToolsSettings as ChatToolsSettingsValue,
 } from "@/lib/chat-tools";
-import { loadCommitApiKey } from "@/lib/commit";
-import { loadDataerApiKey } from "@/lib/dataer";
 import { loadKieApiKey } from "@/lib/image-generation";
-import { loadLookerApiKey } from "@/lib/looker";
 
 type ChatToolsSettingsProps = {
   settings: ChatToolsSettingsValue;
@@ -23,9 +20,6 @@ type ChatToolsSettingsProps = {
 };
 
 async function loadPackHasKey(pack: ChatToolPackId): Promise<boolean> {
-  if (pack === "analytics") return Boolean((await loadDataerApiKey()).trim());
-  if (pack === "commit") return Boolean((await loadCommitApiKey()).trim());
-  if (pack === "looker") return Boolean((await loadLookerApiKey()).trim());
   if (pack === "image_generation") return Boolean((await loadKieApiKey()).trim());
   return true;
 }

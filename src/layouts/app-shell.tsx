@@ -5,16 +5,13 @@ import {
   ArrowDown,
   ArrowUp,
   Brain,
-  ChartColumn,
   Check,
   ChevronDown,
   CircleAlert,
   Clock3,
   CornerDownLeft,
   ExternalLink,
-  Eye,
   FolderGit2,
-  GitCommitHorizontal,
   History,
   Image,
   KeyRound,
@@ -35,10 +32,8 @@ import {
   Search,
   Server,
   Settings,
-  Shield,
   Sparkles,
   SquareTerminal,
-  TextCursorInput,
   Trash2,
   Wrench,
   X,
@@ -138,36 +133,6 @@ const commandItems = [
     label: "VitePorts",
     icon: SquareTerminal,
     keywords: ["端口", "开发服务", "vite", "devtools"],
-  },
-  {
-    to: "/dev-tools/inputs",
-    label: "Inputs",
-    icon: TextCursorInput,
-    keywords: ["输入", "表单", "devtools"],
-  },
-  {
-    to: "/dev-tools/analytics",
-    label: "Analytics",
-    icon: ChartColumn,
-    keywords: ["流量分析", "数据", "devtools"],
-  },
-  {
-    to: "/dev-tools/commit",
-    label: "Commit",
-    icon: GitCommitHorizontal,
-    keywords: ["提交", "代码提交", "devtools"],
-  },
-  {
-    to: "/dev-tools/looker",
-    label: "Looker",
-    icon: Eye,
-    keywords: ["监控", "devtools"],
-  },
-  {
-    to: "/dev-tools/sandbox",
-    label: "Sandbox",
-    icon: Shield,
-    keywords: ["沙箱", "sandbox", "agent", "工作区", "权限", "devtools"],
   },
   { to: "/settings", label: "Settings", icon: Settings, keywords: ["设置"] },
   { to: "/settings/theme", label: "主题", icon: Palette, keywords: ["theme", "外观"] },
@@ -276,9 +241,7 @@ function AppShell() {
   const chatWindowKey = getChatWindowKey(location.search);
   const hideMainSidebar =
     location.pathname.startsWith("/settings") || location.pathname.startsWith("/dev-tools/");
-  const lockOutletScroll =
-    location.pathname.startsWith("/dev-tools/sandbox") ||
-    location.pathname.startsWith("/settings/history");
+  const lockOutletScroll = location.pathname.startsWith("/settings/history");
 
   useEffect(() => {
     rememberReturnPath(location.pathname, location.search);

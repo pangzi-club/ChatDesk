@@ -87,10 +87,7 @@ import {
   loadChatToolsSettings,
   saveChatToolsSettings,
 } from "@/lib/chat-tools";
-import { clearCommitApiKey, loadCommitApiKey, saveCommitApiKey } from "@/lib/commit";
-import { clearDataerApiKey, loadDataerApiKey, saveDataerApiKey } from "@/lib/dataer";
 import { clearKieApiKey, loadKieApiKey, saveKieApiKey } from "@/lib/image-generation";
-import { clearLookerApiKey, loadLookerApiKey, saveLookerApiKey } from "@/lib/looker";
 import {
   fetchMcpRegistry,
   loadMcpServers,
@@ -1223,30 +1220,6 @@ type KeyConfig = {
 };
 
 const keyConfigs: KeyConfig[] = [
-  {
-    title: "Tan Dataer",
-    keyName: "DATAER_API_KEY",
-    description: "用于流量分析页面获取站点数据。",
-    load: loadDataerApiKey,
-    save: saveDataerApiKey,
-    clear: clearDataerApiKey,
-  },
-  {
-    title: "Looker",
-    keyName: "LOOKER_API_KEY",
-    description: "用于读取 Looker 监控和告警数据。",
-    load: loadLookerApiKey,
-    save: saveLookerApiKey,
-    clear: clearLookerApiKey,
-  },
-  {
-    title: "Commit Summary",
-    keyName: "COMMIT_API_KEY",
-    description: "用于读取提交活跃度和最近提交记录。",
-    load: loadCommitApiKey,
-    save: saveCommitApiKey,
-    clear: clearCommitApiKey,
-  },
   {
     title: "KIE Image",
     keyName: "KIE_API_KEY",

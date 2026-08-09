@@ -1,14 +1,4 @@
-import {
-  ArrowLeft,
-  ChartColumn,
-  Eye,
-  GitCommitHorizontal,
-  Lock,
-  Shield,
-  SquareTerminal,
-  TextCursorInput,
-  Wrench,
-} from "lucide-react";
+import { ArrowLeft, Lock, SquareTerminal, Wrench } from "lucide-react";
 import type { ComponentType } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 
@@ -27,36 +17,6 @@ const tools = [
     label: "VitePorts",
     description: "查看本机 Vite 开发服务并快速释放占用端口。",
     icon: SquareTerminal,
-  },
-  {
-    to: "/dev-tools/inputs",
-    label: "Inputs",
-    description: "多 Tab 文本输入区，方便临时编辑与对照。",
-    icon: TextCursorInput,
-  },
-  {
-    to: "/dev-tools/analytics",
-    label: "Analytics",
-    description: "查看 tandataer.com 的全部网站浏览数据。",
-    icon: ChartColumn,
-  },
-  {
-    to: "/dev-tools/commit",
-    label: "Commit",
-    description: "查看提交活跃度与最近代码提交记录。",
-    icon: GitCommitHorizontal,
-  },
-  {
-    to: "/dev-tools/looker",
-    label: "Looker",
-    description: "读取 Looker 监控与告警数据。",
-    icon: Eye,
-  },
-  {
-    to: "/dev-tools/sandbox",
-    label: "Sandbox",
-    description: "在工作区目录用自然语言指挥 AI 读写文件；沙箱模式写入需确认。",
-    icon: Shield,
   },
 ] satisfies Array<{
   to: string;

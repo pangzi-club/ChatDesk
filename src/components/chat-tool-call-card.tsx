@@ -1,13 +1,10 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import {
-  Activity,
-  BarChart3,
   ChevronDown,
   Code2,
   FilePenLine,
   FileText,
   Folder,
-  GitCommitHorizontal,
   Globe2,
   Image,
   LoaderCircle,
@@ -27,7 +24,6 @@ import {
 } from "@/lib/chat-image-generation";
 import { CHAT_TOOL_DISPLAY_NAMES } from "@/lib/chat-tool-defs";
 import { CHAT_WORKSPACE_TOOL_DISPLAY_NAMES } from "@/lib/chat-workspace-tools";
-import { SANDBOX_TOOL_DISPLAY_NAMES } from "@/lib/sandbox-agent-tools";
 
 export type ChatToolCallCardProps = {
   id?: string;
@@ -107,10 +103,7 @@ function extractWorkspaceToolSummary(toolName: string, input: unknown, output: u
 
 export function getChatToolTitle(toolName: string) {
   return (
-    CHAT_TOOL_DISPLAY_NAMES[toolName] ??
-    CHAT_WORKSPACE_TOOL_DISPLAY_NAMES[toolName] ??
-    SANDBOX_TOOL_DISPLAY_NAMES[toolName] ??
-    toolName
+    CHAT_TOOL_DISPLAY_NAMES[toolName] ?? CHAT_WORKSPACE_TOOL_DISPLAY_NAMES[toolName] ?? toolName
   );
 }
 
@@ -124,9 +117,6 @@ function getChatToolIcon(toolName: string): LucideIcon {
   if (toolName === "browser_click") return MousePointerClick;
   if (toolName === "browser_eval") return Code2;
   if (toolName === "browser_screenshot" || toolName === IMAGE_GENERATION_TOOL_NAME) return Image;
-  if (toolName.includes("analytics")) return BarChart3;
-  if (toolName.includes("monitor")) return Activity;
-  if (toolName.includes("commit")) return GitCommitHorizontal;
   return Wrench;
 }
 
