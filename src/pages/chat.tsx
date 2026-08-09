@@ -424,8 +424,7 @@ function ChatPage() {
 
   const generationPhase = status === "submitted" ? "正在等待模型响应" : "正在生成回答";
   const generationElapsedLabel = formatGenerationElapsed(generationElapsedSeconds);
-  const generationDetail =
-    generationElapsedSeconds >= 10 ? "响应较慢，仍在等待中" : "可点击右侧按钮停止";
+  const generationDetail = generationElapsedSeconds >= 10 ? "响应较慢，仍在等待中" : "";
   const lastMessage = messages[messages.length - 1];
   const hasAssistantMessage =
     lastMessage?.role === "assistant" &&

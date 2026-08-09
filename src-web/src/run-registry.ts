@@ -152,6 +152,10 @@ export class RunRegistry {
       let completedMessages: UIMessage[] | undefined;
       const uiStream = result.toUIMessageStream({
         originalMessages: messages,
+        messageMetadata: ({ part }) => {
+          if (part.type !== "finish") return undefined;
+          return { usage: part.totalUsage };
+        },
         onFinish: ({ messages: finishedMessages }) => {
           completedMessages = finishedMessages;
         },
