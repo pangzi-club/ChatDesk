@@ -1,0 +1,144 @@
+# Chat Server
+
+`src-web` 是 M Dashboard 的本地 Node.js 聊天服务。它使用 Hono 提供 HTTP API，负责会话持久化、多会话运行、流式事件、模型配置、记忆、Skills、MCP 和归档导入。桌面端由 Tauri 启动并管理该服务；开发时也可以单独运行它进行接口调试。
+
+## 环境要求
+
+- Node.js 22 或更高版本
+- pnpm 9.15.9（仓库根目录已声明）
+
+依赖安装和脚本执行从仓库根目录进行：
+
+```sh
+pnpm install
+```
+
+## 开发与测试
+
+在仓库根目录运行：
+
+```sh
+# 只启动 Chat Server
+pnpm server:dev
+
+# 运行 src-web 的 Node 测试
+pnpm server:test
+```
+
+如果要将 `src-web` 作为独立 package 使用，请先在本目录安装依赖，再执行同等脚本：
+
+```sh
+cd src-web
+pnpm install
+pnpm dev
+pnpm test
+pnpm typecheck
+```
+
+`pnpm dev` 和 `pnpm start` 都会执行 `src/server.ts`。开发模式下服务默认监听 `http://127.0.0.1:14317`。
+
+## 配置
+
+通过环境变量配置服务。未设置时使用以下默认值：
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `CHAT_SERVER_HOST` | `127.0.0.1` | 监听地址，建议仅使用回环地址 |
+| `CHAT_SERVER_PORT` | `14317` | 监听端口，允许范围为 `1024-65535` |
+| `CHAT_SERVER_TOKEN` | 启动时随机生成 | API 鉴权 token |
+| `CHAT_SERVER_DATA_DIR` | `.data/chat-server` | 会话、设置、记忆和归档数据目录（相对于进程当前工作目录） |
+| `CHAT_SERVER_PRODUCTION` | 未设置 | 设为 `1` 后启用致命错误处理和关闭时的运行清理 |
+| `CHAT_SERVER_LEGACY_DIR` | 未设置 | 要导入的单个旧会话目录 |
+| `CHAT_SERVER_LEGACY_DIRS` | 未设置 | 要导入的多个旧会话目录，使用系统路径分隔符分隔 |
+| `CHAT_SERVER_LEGACY_SETTINGS_FILE` | 未设置 | 旧版设置文件路径 |
+| `CHAT_SERVER_LEGACY_MEMORY_FILE` | 未设置 | 旧版记忆文件路径 |
+| `CHAT_SERVER_LEGACY_ARCHIVE_DIR` | 未设置 | 旧版归档目录路径 |
+| `CHAT_SERVER_BROWSER_WORKER` | 未设置 | 浏览器 worker 可执行文件或脚本路径 |
+| `CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH` | 未设置 | Playwright 浏览器资源目录 |
+
+示例：
+
+```sh
+CHAT_SERVER_PORT=14318 \
+CHAT_SERVER_TOKEN=local-dev-token \
+pnpm server:dev
+```
+
+除 `GET /health` 和 CORS 预检 `OPTIONS` 请求外，API 请求需要携带以下任一形式的 token：
+
+```http
+Authorization: Bearer local-dev-token
+```
+
+或：
+
+```text
+/v1/sessions?token=local-dev-token
+```
+
+## HTTP API
+
+服务使用 JSON 请求/响应；错误响应格式为 `{ "error": "..." }`。
+
+### 运行状态
+
+- `GET /health`：健康检查，返回监听信息和当前运行任务数，不需要鉴权。
+- `GET/PATCH /v1/config`：读取或保存端口配置；修改端口后通常需要重启服务。
+
+### 会话与运行
+
+- `GET/POST /v1/sessions`：列出或创建会话。
+- `POST /v1/sessions/import`：批量导入会话。
+- `GET/PATCH/DELETE /v1/sessions/:id`：读取、更新或删除会话。
+- `POST/GET/DELETE /v1/sessions/:id/attachments...`：上传、读取或删除附件。
+- `POST /v1/sessions/:id/runs`：启动一次模型运行；同一会话已有运行时返回 `409`。
+- `POST /v1/sessions/:id/runs/stop`：停止当前运行。
+- `GET /v1/events`：SSE 事件流；可用 `sessionId` 查询参数过滤会话。
+
+会话列表中的 `status` 取值为 `idle`、`submitted`、`streaming`、`error` 或 `ready`。事件流会先发送 `snapshot`，随后发送 `session.status`、`message.delta`、`message.updated`、`run.error` 和 `run.done` 等事件，并定期发送 `ping` 保持连接。
+
+### 配置与扩展
+
+- `GET/PATCH /v1/chat-config`：模型、工具、沙箱、MCP、Skills 和 API key 配置。
+- `GET/PUT /v1/memory`：读取或保存长期记忆。
+- `GET /v1/skills`、`GET/PUT /v1/skills/selection`：扫描 Skills 和保存选择结果。
+- `GET/PUT /v1/mcp`、`POST /v1/mcp/start`、`POST /v1/mcp/test`：管理 MCP 服务。
+- `GET /v1/mcp/:id/tools`、`POST /v1/mcp/:id/call`、`POST /v1/mcp/:id/stop`：查看、调用或停止 MCP 工具。
+- `GET /v1/sandbox-reviews`：读取沙箱审批记录，可按 `sessionId` 过滤。
+
+### 归档
+
+- `GET /v1/archive`、`GET/PUT/DELETE /v1/archive/:id`：列出、读取、保存或删除归档。
+- `POST /v1/archive/scan/:source`：扫描 `codex` 或 `claude` 的 JSONL 会话归档。
+- `POST /v1/archive/read-file`、`POST /v1/archive/path-exists`：在受限导入目录内读取或检查文件。
+
+## 数据目录
+
+默认数据目录为 `.data/chat-server`，主要内容包括：
+
+```text
+.data/chat-server/
+├── sessions/<session-id>/session.json
+├── sessions/<session-id>/attachments/*
+├── settings.json
+├── memory.json
+└── server-config.json
+```
+
+服务启动时会初始化目录，并在配置了旧版路径时导入旧会话、设置、记忆和归档。请勿将包含 API key 的数据目录提交到版本库。
+
+## 与桌面端的关系
+
+开发时，`pnpm dev:all` 会同时启动 Vite 前端和 Chat Server，并将同一个端口和 token 注入两者。打包时，`pnpm build:sidecars` 会将此服务构建为 Tauri sidecar；最终用户不需要单独安装 Node.js 或 pnpm。详见 [`docs/desktop-packaging.md`](../docs/desktop-packaging.md) 和 [`docs/chat-http-server-architecture.md`](../docs/chat-http-server-architecture.md)。
+
+## 目录概览
+
+```text
+src-web/
+├── src/server.ts       # HTTP 服务入口
+├── src/app.ts          # Hono 路由和服务组装
+├── src/run-registry.ts # 并发运行和流式事件
+├── src/store.ts        # 会话与附件持久化
+├── src/*-store.ts      # 配置、记忆、归档和 Skills 存储
+└── src/*.test.ts       # Node.js 测试
+```
