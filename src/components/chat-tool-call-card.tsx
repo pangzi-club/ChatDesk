@@ -66,16 +66,35 @@ function isEmptyInput(value: unknown) {
   return Object.keys(value as Record<string, unknown>).length === 0;
 }
 
+function getLastPathSegment(value: string) {
+  const normalized = value.replace(/[\\/]+$/, "");
+  const segments = normalized.split(/[\\/]/);
+  return segments[segments.length - 1] || normalized;
+}
+
 function extractWorkspaceToolSummary(toolName: string, input: unknown, output: unknown) {
   const inputRecord = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
   const outputRecord =
     output && typeof output === "object" ? (output as Record<string, unknown>) : {};
+  const inputPath = typeof inputRecord.path === "string" ? inputRecord.path : "";
+  const outputPath = typeof outputRecord.path === "string" ? outputRecord.path : "";
+  const searchKeyword =
+    typeof inputRecord.query === "string" && inputRecord.query.trim()
+      ? inputRecord.query
+      : typeof outputRecord.query === "string" && outputRecord.query.trim()
+        ? outputRecord.query
+        : typeof inputRecord.pattern === "string"
+          ? inputRecord.pattern
+          : "";
   const subject =
-    typeof inputRecord.path === "string"
-      ? inputRecord.path
-      : toolName === "bash" && typeof inputRecord.command === "string"
-        ? inputRecord.command
-        : "";
+    toolName === "search_files"
+      ? searchKeyword
+      : toolName === "read_file"
+        ? getLastPathSegment(inputPath || outputPath)
+        : inputPath ||
+          (toolName === "bash" && typeof inputRecord.command === "string"
+            ? inputRecord.command
+            : "");
   const compact = subject.replace(/\s+/g, " ").trim();
   const details = compact ? ` · ${Array.from(compact).slice(0, 54).join("")}` : "";
   const code =
