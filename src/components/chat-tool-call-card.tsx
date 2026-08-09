@@ -1,5 +1,22 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { ChevronDown, LoaderCircle, Wrench } from "lucide-react";
+import {
+  Activity,
+  BarChart3,
+  ChevronDown,
+  Code2,
+  FilePenLine,
+  FileText,
+  Folder,
+  GitCommitHorizontal,
+  Globe2,
+  Image,
+  LoaderCircle,
+  type LucideIcon,
+  MousePointerClick,
+  Search,
+  Terminal,
+  Wrench,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -12,7 +29,8 @@ import { CHAT_TOOL_DISPLAY_NAMES } from "@/lib/chat-tool-defs";
 import { CHAT_WORKSPACE_TOOL_DISPLAY_NAMES } from "@/lib/chat-workspace-tools";
 import { SANDBOX_TOOL_DISPLAY_NAMES } from "@/lib/sandbox-agent-tools";
 
-type ChatToolCallCardProps = {
+export type ChatToolCallCardProps = {
+  id?: string;
   toolName: string;
   state: string;
   input?: unknown;
@@ -20,6 +38,12 @@ type ChatToolCallCardProps = {
   errorText?: string;
   /** AI SDK 流式中间结果（如 image_generation partial_image）。 */
   preliminary?: boolean;
+  /** 仅显示调用标题，不展示参数和结果。 */
+  compact?: boolean;
+};
+
+export type ChatToolCallGroupProps = {
+  calls: ChatToolCallCardProps[];
 };
 
 function formatJson(value: unknown) {
@@ -55,6 +79,44 @@ function extractWorkspaceToolSummary(toolName: string, input: unknown, output: u
       : "";
   const truncated = outputRecord.truncated === true ? " · 已截断" : "";
   return `${details}${code}${truncated}`;
+}
+
+export function getChatToolTitle(toolName: string) {
+  return (
+    CHAT_TOOL_DISPLAY_NAMES[toolName] ??
+    CHAT_WORKSPACE_TOOL_DISPLAY_NAMES[toolName] ??
+    SANDBOX_TOOL_DISPLAY_NAMES[toolName] ??
+    toolName
+  );
+}
+
+function getChatToolIcon(toolName: string): LucideIcon {
+  if (toolName === "bash") return Terminal;
+  if (toolName === "list_dir") return Folder;
+  if (toolName === "read_file") return FileText;
+  if (toolName === "write_file" || toolName === "edit_file") return FilePenLine;
+  if (toolName === "search_files" || toolName === "web_search") return Search;
+  if (toolName === "browser_open" || toolName === "browser_close") return Globe2;
+  if (toolName === "browser_click") return MousePointerClick;
+  if (toolName === "browser_eval") return Code2;
+  if (toolName === "browser_screenshot" || toolName === IMAGE_GENERATION_TOOL_NAME) return Image;
+  if (toolName.includes("analytics")) return BarChart3;
+  if (toolName.includes("monitor")) return Activity;
+  if (toolName.includes("commit")) return GitCommitHorizontal;
+  return Wrench;
+}
+
+export function getChatToolSummary(call: ChatToolCallCardProps) {
+  const title = getChatToolTitle(call.toolName);
+  const webSearch =
+    call.toolName === "web_search" || call.toolName === "web_search_preview"
+      ? extractWebSearchSummary(call.output)
+      : null;
+  const query = webSearch?.queries[0];
+  const workspaceSummary = CHAT_WORKSPACE_TOOL_DISPLAY_NAMES[call.toolName]
+    ? extractWorkspaceToolSummary(call.toolName, call.input, call.output)
+    : "";
+  return `${title}${query ? ` · ${query}` : ""}${workspaceSummary}`;
 }
 
 /** 业务 tool 经 withToolError 失败时返回 { error }，SDK 仍标为 output-available。 */
@@ -180,14 +242,11 @@ export function ChatToolCallCard({
   output,
   errorText,
   preliminary = false,
+  compact = false,
 }: ChatToolCallCardProps) {
   const [open, setOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const title =
-    CHAT_TOOL_DISPLAY_NAMES[toolName] ??
-    CHAT_WORKSPACE_TOOL_DISPLAY_NAMES[toolName] ??
-    SANDBOX_TOOL_DISPLAY_NAMES[toolName] ??
-    toolName;
+  const title = getChatToolTitle(toolName);
   const outputError = extractToolOutputError(output);
   const resolvedError = errorText || outputError;
   const failed = state === "output-error" || Boolean(resolvedError);
@@ -248,22 +307,23 @@ export function ChatToolCallCard({
   const workspaceSummary = CHAT_WORKSPACE_TOOL_DISPLAY_NAMES[toolName]
     ? extractWorkspaceToolSummary(toolName, input, output)
     : "";
+  const ToolIcon = getChatToolIcon(toolName);
 
   return (
     <div
-      className={`chat-tool-call ${failed || denied ? "is-error" : ""} ${pending ? "is-pending" : ""}`}
+      className={`chat-tool-call ${compact ? "is-compact" : ""} ${failed || denied ? "is-error" : ""} ${pending ? "is-pending" : ""}`}
     >
       <button
-        aria-expanded={open}
+        aria-expanded={compact ? undefined : open}
         className="chat-tool-call-summary"
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        onClick={compact ? undefined : () => setOpen((value) => !value)}
       >
         <span className="chat-tool-call-icon">
           {pending ? (
             <LoaderCircle className="size-3.5 animate-spin" />
           ) : (
-            <Wrench className="size-3.5" />
+            <ToolIcon className="size-3.5" />
           )}
         </span>
         <span className="chat-tool-call-title">
@@ -273,7 +333,9 @@ export function ChatToolCallCard({
           {workspaceSummary}
         </span>
         <span className="chat-tool-call-status">{status}</span>
-        <ChevronDown className={`chat-tool-call-chevron ${open ? "is-open" : ""}`} />
+        {!compact ? (
+          <ChevronDown className={`chat-tool-call-chevron ${open ? "is-open" : ""}`} />
+        ) : null}
       </button>
       {imagePreviewSrc && !failed ? (
         <div className="chat-tool-call-preview px-3 pb-2">
@@ -314,7 +376,7 @@ export function ChatToolCallCard({
           </Dialog>
         </div>
       ) : null}
-      {open ? (
+      {open && !compact ? (
         <div className="chat-tool-call-body">
           {showInput ? (
             <div className="chat-tool-call-section">
@@ -354,6 +416,47 @@ export function ChatToolCallCard({
               <pre>{formatJson(output)}</pre>
             )}
           </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function ChatToolCallGroup({ calls }: ChatToolCallGroupProps) {
+  const [open, setOpen] = useState(false);
+  const lastCall = calls[calls.length - 1];
+  if (!lastCall) return null;
+  const pending =
+    lastCall.preliminary ||
+    lastCall.state === "input-streaming" ||
+    lastCall.state === "input-available" ||
+    lastCall.state === "approval-requested";
+  const ToolIcon = getChatToolIcon(lastCall.toolName);
+
+  return (
+    <div className={`chat-tool-call-group ${pending ? "is-pending" : ""}`}>
+      <button
+        aria-expanded={open}
+        className="chat-tool-call-group-summary"
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span className="chat-tool-call-icon">
+          {pending ? (
+            <LoaderCircle className="size-3.5 animate-spin" />
+          ) : (
+            <ToolIcon className="size-3.5" />
+          )}
+        </span>
+        <span className="chat-tool-call-title">{getChatToolSummary(lastCall)}</span>
+        {calls.length > 1 ? <span className="chat-tool-call-count">{calls.length}</span> : null}
+        <ChevronDown className={`chat-tool-call-chevron ${open ? "is-open" : ""}`} />
+      </button>
+      {open ? (
+        <div className="chat-tool-call-group-items">
+          {calls.map((call) => (
+            <ChatToolCallCard key={call.id ?? call.toolName} {...call} compact />
+          ))}
         </div>
       ) : null}
     </div>

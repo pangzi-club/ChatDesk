@@ -21,7 +21,7 @@ import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
 
-import { ChatToolCallCard } from "@/components/chat-tool-call-card";
+import { ChatToolCallGroup } from "@/components/chat-tool-call-card";
 import { HistoryImportDialog } from "@/components/history-import-dialog";
 import {
   AlertDialog,
@@ -790,16 +790,16 @@ function ArchiveMessageBubble({ message }: { message: ArchiveMessage }) {
 
         {!isUser && toolCalls.length > 0 ? (
           <div className="chat-tool-calls mb-3">
-            {toolCalls.map((call) => (
-              <ChatToolCallCard
-                key={call.id}
-                toolName={call.toolName}
-                state={call.state}
-                input={call.input}
-                output={call.output}
-                errorText={call.errorText}
-              />
-            ))}
+            <ChatToolCallGroup
+              calls={toolCalls.map((call) => ({
+                id: call.id,
+                toolName: call.toolName,
+                state: call.state,
+                input: call.input,
+                output: call.output,
+                errorText: call.errorText,
+              }))}
+            />
           </div>
         ) : null}
 

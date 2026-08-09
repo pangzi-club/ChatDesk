@@ -37,7 +37,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { ChatMemoryDialog } from "@/components/chat-memory-dialog";
 import { ChatSettingsDialog } from "@/components/chat-settings-dialog";
 import { ChatSkillsPicker } from "@/components/chat-skills-picker";
-import { ChatToolCallCard } from "@/components/chat-tool-call-card";
+import { ChatToolCallGroup } from "@/components/chat-tool-call-card";
 import { ChatToolsPicker } from "@/components/chat-tools-picker";
 import {
   AlertDialog,
@@ -1093,17 +1093,17 @@ function MessageBubble({
         </div>
         {!isUser && toolParts.length > 0 ? (
           <div className="chat-tool-calls">
-            {toolParts.map((part, index) => (
-              <ChatToolCallCard
-                key={`${message.id}-${part.toolCallId ?? index}`}
-                toolName={getToolName(part)}
-                state={part.state}
-                input={part.input}
-                output={"output" in part ? part.output : undefined}
-                errorText={"errorText" in part ? part.errorText : undefined}
-                preliminary={"preliminary" in part ? Boolean(part.preliminary) : false}
-              />
-            ))}
+            <ChatToolCallGroup
+              calls={toolParts.map((part) => ({
+                id: part.toolCallId,
+                toolName: getToolName(part),
+                state: part.state,
+                input: part.input,
+                output: "output" in part ? part.output : undefined,
+                errorText: "errorText" in part ? part.errorText : undefined,
+                preliminary: "preliminary" in part ? Boolean(part.preliminary) : false,
+              }))}
+            />
           </div>
         ) : null}
         {text.trim() ? (

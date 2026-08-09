@@ -8,7 +8,7 @@ import { Link } from "react-router-dom";
 import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
 
-import { ChatToolCallCard } from "@/components/chat-tool-call-card";
+import { ChatToolCallGroup } from "@/components/chat-tool-call-card";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -432,17 +432,17 @@ function MessageBubble({ message, isStreaming }: { message: UIMessage; isStreami
         </div>
         {!isUser && toolParts.length > 0 ? (
           <div className="chat-tool-calls">
-            {toolParts.map((part) => (
-              <ChatToolCallCard
-                key={part.toolCallId}
-                errorText={"errorText" in part ? part.errorText : undefined}
-                input={part.input}
-                output={"output" in part ? part.output : undefined}
-                preliminary={"preliminary" in part ? Boolean(part.preliminary) : false}
-                state={part.state}
-                toolName={getToolName(part)}
-              />
-            ))}
+            <ChatToolCallGroup
+              calls={toolParts.map((part) => ({
+                id: part.toolCallId,
+                errorText: "errorText" in part ? part.errorText : undefined,
+                input: part.input,
+                output: "output" in part ? part.output : undefined,
+                preliminary: "preliminary" in part ? Boolean(part.preliminary) : false,
+                state: part.state,
+                toolName: getToolName(part),
+              }))}
+            />
           </div>
         ) : null}
         {text.trim() ? (
