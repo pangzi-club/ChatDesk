@@ -1203,6 +1203,7 @@ function MessageBubble({
                 input: part.input,
                 output: "output" in part ? part.output : undefined,
                 errorText: "errorText" in part ? part.errorText : undefined,
+                approval: "approval" in part ? part.approval : undefined,
                 preliminary: "preliminary" in part ? Boolean(part.preliminary) : false,
               }))}
             />

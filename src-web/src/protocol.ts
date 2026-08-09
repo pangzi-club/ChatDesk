@@ -22,6 +22,8 @@ export type ServerModelConfig = {
   supportsTools?: boolean;
 };
 
+export type SandboxReviewerDecision = "approve" | "deny";
+
 export type ChatAttachment = Record<string, unknown>;
 
 export type ChatSession = {

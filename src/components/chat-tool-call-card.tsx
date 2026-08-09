@@ -36,6 +36,11 @@ export type ChatToolCallCardProps = {
   input?: unknown;
   output?: unknown;
   errorText?: string;
+  approval?: {
+    approved?: boolean;
+    isAutomatic?: boolean;
+    reason?: string;
+  };
   /** AI SDK 流式中间结果（如 image_generation partial_image）。 */
   preliminary?: boolean;
   /** 仅显示调用标题，不展示参数和结果。 */
@@ -215,10 +220,11 @@ function statusLabel(options: {
   toolName: string;
   state: string;
   errorText?: string;
+  approval?: ChatToolCallCardProps["approval"];
   preliminary?: boolean;
   hasImagePreview: boolean;
 }) {
-  const { toolName, state, errorText, preliminary, hasImagePreview } = options;
+  const { toolName, state, errorText, approval, preliminary, hasImagePreview } = options;
   if (state === "output-error" || errorText) return "失败";
   if (toolName === IMAGE_GENERATION_TOOL_NAME) {
     if (preliminary || state === "input-streaming" || state === "input-available") {
@@ -227,8 +233,11 @@ function statusLabel(options: {
     if (state === "output-available") return "成功";
     return state;
   }
+  if (state === "output-denied") {
+    return approval?.isAutomatic ? "Reviewer 已拒绝" : "已拒绝";
+  }
+  if (approval?.isAutomatic && approval.approved === true) return "Reviewer 已批准";
   if (state === "output-available") return preliminary ? "更新中" : "成功";
-  if (state === "output-denied") return "已拒绝";
   if (state === "approval-requested") return "待批准";
   if (state === "approval-responded") return "已响应";
   if (state === "input-streaming" || state === "input-available") return "调用中";
@@ -241,6 +250,7 @@ export function ChatToolCallCard({
   input,
   output,
   errorText,
+  approval,
   preliminary = false,
   compact = false,
 }: ChatToolCallCardProps) {
@@ -299,6 +309,7 @@ export function ChatToolCallCard({
     toolName,
     state,
     errorText: resolvedError,
+    approval,
     preliminary,
     hasImagePreview: Boolean(imagePreviewSrc),
   });
@@ -394,6 +405,12 @@ export function ChatToolCallCard({
                   ...(webSearch.sources.length > 0 ? { sources: webSearch.sources } : {}),
                 })}
               </pre>
+            </div>
+          ) : null}
+          {approval?.reason ? (
+            <div className="chat-tool-call-section">
+              <p className="chat-tool-call-label">审批理由</p>
+              <pre>{approval.reason}</pre>
             </div>
           ) : null}
           <div className="chat-tool-call-section">

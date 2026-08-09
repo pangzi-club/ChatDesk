@@ -1,4 +1,5 @@
 import { readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { existsSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
@@ -11,11 +12,31 @@ const SKIPPED_DIRECTORIES = new Set([".git", "node_modules", "target", "dist"]);
 function rootPath(cwd: string) {
   const value = cwd.trim();
   if (!value) throw new Error("请选择 workspace 后再使用文件工具");
-  return path.resolve(value);
+  try {
+    return realpathSync(value);
+  } catch {
+    throw new Error(`workspace 不存在：${value}`);
+  }
+}
+
+function canonicalizeTarget(target: string) {
+  const missingParts: string[] = [];
+  let existing = target;
+  while (!existsSync(existing)) {
+    const parent = path.dirname(existing);
+    if (parent === existing) break;
+    missingParts.unshift(path.basename(existing));
+    existing = parent;
+  }
+  try {
+    return path.resolve(realpathSync(existing), ...missingParts);
+  } catch {
+    throw new Error("无法解析目标路径");
+  }
 }
 
 function withinRoot(root: string, candidate: string) {
-  const resolved = path.resolve(root, candidate || ".");
+  const resolved = canonicalizeTarget(path.resolve(root, candidate || "."));
   if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
     throw new Error("路径必须位于当前 workspace 内");
   }
@@ -23,10 +44,11 @@ function withinRoot(root: string, candidate: string) {
 }
 
 function resolveTarget(root: string, candidate: string, mode: SandboxMode, allowOutside = false) {
-  if ((mode === "full" || allowOutside) && path.isAbsolute(candidate.trim())) {
-    return path.resolve(candidate.trim());
+  const trimmed = candidate.trim();
+  if (mode === "full" || allowOutside) {
+    return canonicalizeTarget(path.resolve(root, trimmed));
   }
-  return withinRoot(root, candidate);
+  return withinRoot(root, trimmed);
 }
 
 async function listDirectory(

@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import path from "node:path";
 import { createOpenAI } from "@ai-sdk/openai";
 import {
   convertToModelMessages,
@@ -24,6 +23,11 @@ import type { ChatConfigStore } from "./chat-config.ts";
 import { createBusinessTools } from "./business-tools.ts";
 import { openai } from "@ai-sdk/openai";
 import { RunJournal } from "./run-journal.ts";
+import {
+  classifySandboxBoundary,
+  reviewSandboxBoundary,
+  type SandboxBoundaryAssessment,
+} from "./sandbox-boundary-reviewer.ts";
 
 type ActiveRun = {
   id: string;
@@ -100,14 +104,17 @@ export class RunRegistry {
 
   async start(sessionId: string, input: RunStartInput) {
     if (this.active.has(sessionId)) throw new Error("该会话已有正在运行的任务");
-    const model = resolveConfiguredModel(this.chatConfig.get(), input);
+    const chatConfig = this.chatConfig.get();
+    const model = resolveConfiguredModel(chatConfig, input);
     if (!model?.apiKey || !model.baseUrl || !model.name) {
       throw new Error("模型配置不完整");
     }
 
     const current = await this.store.get(sessionId);
     if (!current) throw new Error("会话不存在");
-    const sandboxMode = input.sandboxMode ?? this.chatConfig.get().sandboxMode ?? "ask";
+    const sandboxMode = input.sandboxMode ?? chatConfig.sandboxMode ?? "ask";
+    const approvedEscalationToolCallIds = collectApprovedToolCallIds(input.messages ?? []);
+    const reviewerModel = resolveApprovalReviewerModel(chatConfig);
     const messages = input.messages?.length
       ? input.messages
       : input.message
@@ -149,14 +156,25 @@ export class RunRegistry {
         tools: model.supportsTools
           ? {
               ...(createClientTools(input.toolNames) ?? {}),
-              ...createWorkspaceToolsForInput({ ...input, model, sandboxMode }),
-              ...selectTools(createBusinessTools(this.chatConfig.get().apiKeys), input.toolNames),
+              ...createWorkspaceToolsForInput({
+                ...input,
+                model,
+                sandboxMode,
+                approvedEscalationToolCallIds,
+              }),
+              ...selectTools(createBusinessTools(chatConfig.apiKeys), input.toolNames),
               ...(input.toolNames?.includes("web_search") && model.responsive
                 ? { web_search: openai.tools.webSearch({}) as unknown as ToolSet[string] }
                 : {}),
             }
           : undefined,
-        toolApproval: createToolApproval(sandboxMode, session.cwd),
+        toolApproval: createToolApproval({
+          mode: sandboxMode,
+          workspace: session.cwd,
+          messages,
+          reviewerModel,
+          approvedEscalationToolCallIds,
+        }),
         experimental_toolApprovalSecret: this.toolApprovalSecret,
         stopWhen: stepCountIs(20),
         abortSignal: controller.signal,
@@ -251,23 +269,70 @@ export class RunRegistry {
   }
 }
 
-function createToolApproval(mode: SandboxMode, workspace: string | undefined) {
+function createToolApproval(options: {
+  mode: SandboxMode;
+  workspace: string | undefined;
+  messages: UIMessage[];
+  reviewerModel: import("./protocol.ts").ServerModelConfig | undefined;
+  approvedEscalationToolCallIds: Set<string>;
+}) {
+  const mode = options.mode;
   if (mode === "full") return undefined;
-  return ({
+  return async ({
     toolCall,
   }: {
-    toolCall: { toolName?: string; input?: unknown } | undefined;
+    toolCall: { toolCallId?: string; toolName?: string; input?: unknown } | undefined;
   }) => {
     const toolName = toolCall?.toolName;
     if (!toolName || !isWorkspaceTool(toolName)) return "not-applicable" as const;
-    if (isExternalWorkspaceRequest(toolCall.input, workspace, toolName)) {
-      return "user-approval" as const;
-    }
-    if (!isWorkspaceMutationTool(toolName)) return "not-applicable" as const;
-    if (mode === "auto" && !isExternalWorkspaceRequest(toolCall.input, workspace, toolName)) {
+
+    const toolCallId = toolCall.toolCallId;
+    if (toolCallId && options.approvedEscalationToolCallIds.has(toolCallId)) {
       return "approved" as const;
     }
-    return "user-approval" as const;
+
+    const assessment = classifySandboxBoundary(toolCall, options.workspace);
+    if (!assessment.requiresReview) {
+      if (!isWorkspaceMutationTool(toolName)) return "not-applicable" as const;
+      return options.mode === "auto" ? "not-applicable" : "user-approval";
+    }
+
+    if (mode === "ask") return "user-approval";
+    if (!toolCallId || !options.workspace || !options.reviewerModel) {
+      logSandboxReview({
+        toolCall,
+        assessment,
+        decision: "user-approval",
+        reason: !options.reviewerModel ? "reviewer-not-configured" : "missing-tool-call-context",
+      });
+      return "user-approval";
+    }
+
+    try {
+      const result = await reviewSandboxBoundary({
+        model: options.reviewerModel,
+        toolCall,
+        assessment,
+        workspace: options.workspace,
+        sandboxMode: mode,
+        messages: options.messages,
+      });
+      logSandboxReview({ toolCall, assessment, ...result });
+      if (result.decision === "approve") {
+        options.approvedEscalationToolCallIds.add(toolCallId);
+        return { type: "approved" as const, reason: result.rationale };
+      }
+      return { type: "denied" as const, reason: result.rationale };
+    } catch (error) {
+      logSandboxReview({
+        toolCall,
+        assessment,
+        decision: "user-approval",
+        reason: "reviewer-failed",
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return "user-approval";
+    }
   };
 }
 
@@ -282,26 +347,6 @@ function isWorkspaceTool(toolName: string) {
     toolName === "read_file" ||
     isWorkspaceMutationTool(toolName)
   );
-}
-
-function isExternalWorkspaceRequest(input: unknown, workspace: string | undefined, toolName: string) {
-  if (!input || typeof input !== "object") return false;
-  const value = input as { path?: unknown; cwd?: unknown };
-  if (
-    toolName === "bash" &&
-    typeof (value as { command?: unknown }).command === "string" &&
-    /\b(curl|wget|ssh|scp|nc|npm\s+(install|publish)|pnpm\s+(install|add)|pip\s+install|git\s+(clone|fetch|push))\b/i.test(
-      (value as { command: string }).command,
-    )
-  ) {
-    return true;
-  }
-  if (!workspace) return false;
-  const candidate = toolName === "bash" ? value.cwd : value.path;
-  if (typeof candidate !== "string" || !candidate.trim()) return false;
-  const root = path.resolve(workspace);
-  const target = path.resolve(root, candidate);
-  return target !== root && !target.startsWith(`${root}${path.sep}`);
 }
 
 function collectApprovedToolCallIds(messages: UIMessage[]) {
@@ -340,17 +385,56 @@ function resolveConfiguredModel(
   return { ...value, apiKey: value.apiKey || config.apiKeys[value.id ?? value.name] };
 }
 
-function createWorkspaceToolsForInput(input: RunStartInput) {
+function resolveApprovalReviewerModel(config: {
+  models: unknown[];
+  apiKeys: Record<string, string>;
+  approvalReviewerModelId?: string;
+}) {
+  if (!config.approvalReviewerModelId) return undefined;
+  return resolveConfiguredModel(config, { modelId: config.approvalReviewerModelId });
+}
+
+function createWorkspaceToolsForInput(
+  input: RunStartInput & { approvedEscalationToolCallIds: Set<string> },
+) {
   if (!input.cwd) return {};
   const names = new Set(input.toolNames ?? []);
   if (!["list_dir", "search_files", "read_file", "write_file", "edit_file", "terminal", "bash"].some((name) => names.has(name))) return {};
   const tools = createWorkspaceTools(
     input.cwd,
     input.sandboxMode ?? "ask",
-    collectApprovedToolCallIds(input.messages ?? []),
+    input.approvedEscalationToolCallIds,
   );
   const selected = names.has("terminal") ? ["bash"] : ["list_dir", "search_files", "read_file", "write_file", "edit_file", "bash"];
   return Object.fromEntries(selected.filter((name) => names.has(name) || (name === "bash" && names.has("terminal"))).map((name) => [name, tools[name]]));
+}
+
+function logSandboxReview(payload: {
+  toolCall?: { toolCallId?: string; toolName?: string };
+  assessment: SandboxBoundaryAssessment;
+  decision: string;
+  rationale?: string;
+  reason?: string;
+  modelId?: string;
+  durationMs?: number;
+  error?: string;
+}) {
+  console.info(
+    "[Sandbox reviewer]",
+    JSON.stringify({
+      toolCallId: payload.toolCall?.toolCallId,
+      toolName: payload.toolCall?.toolName,
+      reasons: payload.assessment.reasons,
+      decision: payload.decision,
+      rationale: payload.rationale,
+      reason: payload.reason,
+      modelId: payload.modelId,
+      durationMs: payload.durationMs,
+      error: payload.error
+        ?.replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+        .slice(0, 500),
+    }),
+  );
 }
 
 function selectTools(tools: Record<string, unknown>, names: string[] | undefined) {

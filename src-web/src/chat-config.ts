@@ -6,6 +6,7 @@ export type ChatServerConfigData = {
   models: unknown[];
   chatTools: Record<string, boolean>;
   sandboxMode: SandboxMode;
+  approvalReviewerModelId?: string;
   mcpServers: unknown[];
   installedSkillIds: string[];
   selectedSkillIds: string[];
@@ -16,6 +17,7 @@ const DEFAULT_CONFIG: ChatServerConfigData = {
   models: [],
   chatTools: {},
   sandboxMode: "ask",
+  approvalReviewerModelId: undefined,
   mcpServers: [],
   installedSkillIds: [],
   selectedSkillIds: [],
@@ -25,14 +27,28 @@ const DEFAULT_CONFIG: ChatServerConfigData = {
 function normalize(value: unknown): ChatServerConfigData {
   if (!value || typeof value !== "object") return structuredClone(DEFAULT_CONFIG);
   const record = value as Record<string, unknown>;
+  const models = Array.isArray(record.models) ? record.models : [];
+  const configuredReviewerModelId =
+    typeof record.approvalReviewerModelId === "string" && record.approvalReviewerModelId.trim()
+      ? record.approvalReviewerModelId.trim()
+      : undefined;
+  const reviewerModelExists = configuredReviewerModelId
+    ? models.some(
+        (item) =>
+          item &&
+          typeof item === "object" &&
+          (item as { id?: unknown }).id === configuredReviewerModelId,
+      )
+    : false;
   return {
-    models: Array.isArray(record.models) ? record.models : [],
+    models,
     chatTools:
       record.chatTools && typeof record.chatTools === "object"
         ? (record.chatTools as Record<string, boolean>)
         : {},
     sandboxMode:
       record.sandboxMode === "auto" || record.sandboxMode === "full" ? record.sandboxMode : "ask",
+    approvalReviewerModelId: reviewerModelExists ? configuredReviewerModelId : undefined,
     mcpServers: Array.isArray(record.mcpServers) ? record.mcpServers : [],
     installedSkillIds: Array.isArray(record.installedSkillIds)
       ? record.installedSkillIds.filter((item): item is string => typeof item === "string")

@@ -153,6 +153,32 @@ describe("chat server", () => {
     assert.equal(await downloaded.text(), "hello");
   });
 
+  it("persists a reviewer model only while that model is configured", async () => {
+    const server = await createTestServer();
+    const model = {
+      id: "reviewer-model",
+      name: "reviewer-model",
+      baseUrl: "https://example.com/v1",
+    };
+    const saved = await server.app.request("http://localhost/v1/chat-config", {
+      method: "PATCH",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({
+        models: [model],
+        approvalReviewerModelId: model.id,
+      }),
+    });
+    assert.equal(saved.status, 200);
+    assert.equal((await saved.json()).approvalReviewerModelId, model.id);
+
+    const removed = await server.app.request("http://localhost/v1/chat-config", {
+      method: "PATCH",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ models: [] }),
+    });
+    assert.equal((await removed.json()).approvalReviewerModelId, undefined);
+  });
+
   it("recovers interrupted runs as errored sessions", async () => {
     const dataDir = await mkdtemp(path.join(os.tmpdir(), "m-dashboard-recovery-"));
     temporaryDirectories.push(dataDir);

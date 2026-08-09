@@ -75,8 +75,10 @@ import { compactChatMemory } from "@/lib/chat-memory-ops";
 import {
   canRestartChatServer,
   checkChatServer,
+  loadChatServerConfig,
   loadChatServerPort,
   restartChatServer,
+  saveChatServerConfig,
   updateChatServerPort,
 } from "@/lib/chat-server";
 import {
@@ -1146,7 +1148,6 @@ function ChatServerSettingsPage() {
       void queryClient.invalidateQueries({ queryKey: ["chat-server-config"] });
     },
   });
-
   return (
     <>
       <SettingsHeading
@@ -1435,11 +1436,26 @@ type ProviderKey = keyof typeof providerPresets;
 function ModelsSettingsPage() {
   const queryClient = useQueryClient();
   const modelsQuery = useQuery({ queryKey: ["models"], queryFn: loadModels });
+  const chatConfigQuery = useQuery({
+    queryKey: ["chat-server-chat-config"],
+    queryFn: () => loadChatServerConfig(),
+  });
   const models = modelsQuery.data ?? [];
   const [notice, setNotice] = useState("");
   const [editing, setEditing] = useState<ModelConfig | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modelToDelete, setModelToDelete] = useState<ModelConfig | null>(null);
+  const reviewerMutation = useMutation({
+    mutationFn: (modelId: string) =>
+      saveChatServerConfig({
+        approvalReviewerModelId: modelId === "__none__" ? undefined : modelId,
+      }),
+    onSuccess: (config) => {
+      queryClient.setQueryData(["chat-server-chat-config"], config);
+      setNotice("权限 Reviewer 设置已保存。");
+    },
+  });
+  const reviewerModelId = chatConfigQuery.data?.approvalReviewerModelId ?? "__none__";
 
   function openCreate() {
     setNotice("");
@@ -1462,6 +1478,7 @@ function ModelsSettingsPage() {
       : nextModels;
     await saveModels(normalized);
     queryClient.setQueryData(["models"], normalized);
+    void queryClient.invalidateQueries({ queryKey: ["chat-server-chat-config"] });
     await queryClient.invalidateQueries({ queryKey: ["ai-usage-statistics"] });
     setIsModalOpen(false);
     setEditing(null);
@@ -1476,6 +1493,7 @@ function ModelsSettingsPage() {
     try {
       await saveModels(remaining);
       queryClient.setQueryData(["models"], remaining);
+      void queryClient.invalidateQueries({ queryKey: ["chat-server-chat-config"] });
       setModelToDelete(null);
     } catch {
       setNotice("删除失败，请重试。");
@@ -1497,8 +1515,43 @@ function ModelsSettingsPage() {
       <SettingsHeading
         eyebrow="Models"
         title="模型"
-        description="管理可用的 OpenAI 兼容模型配置，密钥仅保存在当前设备。"
+        description="管理可用的 OpenAI 兼容模型配置，以及用于自动审批边界请求的 Reviewer。"
       />
+      <section className="mb-5 rounded-lg border border-border bg-card p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="font-medium text-sm">权限 Reviewer</h2>
+            <p className="mt-1 max-w-lg text-muted-foreground text-xs leading-5">
+              Approve for me 遇到需要越过 workspace 或 Seatbelt
+              的请求时，由选定模型判断是否允许一次性执行。 未配置或调用失败时回退为人工确认。
+            </p>
+          </div>
+          <Select
+            disabled={
+              chatConfigQuery.isLoading || modelsQuery.isLoading || reviewerMutation.isPending
+            }
+            value={reviewerModelId}
+            onValueChange={(value) => reviewerMutation.mutate(value)}
+          >
+            <SelectTrigger aria-label="选择权限 Reviewer" className="w-56">
+              <SelectValue placeholder="未配置" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">未配置（人工确认）</SelectItem>
+              {models.map((model) => (
+                <SelectItem key={model.id} value={model.id}>
+                  {model.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {reviewerMutation.isError ? (
+          <p className="mt-2 text-destructive text-xs">
+            Reviewer 设置保存失败：{describeError(reviewerMutation.error)}
+          </p>
+        ) : null}
+      </section>
       <section className="rounded-lg border border-border bg-card">
         <div className="flex items-center justify-between gap-4 border-border border-b px-5 py-4">
           <div>
