@@ -3,6 +3,7 @@ import { existsSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createKimiFetch } from "./kimi.ts";
+import { createMiniMaxFetch, isMiniMaxModel } from "./minimax.ts";
 import { generateText, Output, type UIMessage } from "ai";
 import { z } from "zod";
 
@@ -166,7 +167,9 @@ export async function reviewSandboxBoundary(options: {
   const provider = createOpenAI({
     apiKey: model.apiKey,
     baseURL: resolveBaseUrl(model.baseUrl),
-    fetch: createKimiFetch(model),
+    fetch: isMiniMaxModel(model)
+      ? createMiniMaxFetch(model)
+      : createKimiFetch(model),
   });
   const languageModel = model.responsive
     ? provider.responses(model.name.trim())

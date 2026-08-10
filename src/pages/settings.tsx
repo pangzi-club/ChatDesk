@@ -1374,6 +1374,7 @@ const emptyModel: Omit<ModelConfig, "id"> = {
 const DEEPSEEK_CHAT_BASE_URL = "https://api.deepseek.com/chat/completions";
 const DEEPSEEK_RESPONSES_BASE_URL = "https://api.deepseek.com";
 const KIMI_CHAT_BASE_URL = "https://api.moonshot.cn/v1";
+const MINIMAX_CHAT_BASE_URL = "https://api.minimaxi.com/v1";
 
 function deepseekBaseUrl(responsive: boolean) {
   return responsive ? DEEPSEEK_RESPONSES_BASE_URL : DEEPSEEK_CHAT_BASE_URL;
@@ -1428,6 +1429,15 @@ const providerPresets = {
       { name: "kimi-k2.5", supportsTools: true, supportsImages: true, supportsReasoning: true },
     ],
   },
+  minimax: {
+    label: "MiniMax",
+    baseUrl: MINIMAX_CHAT_BASE_URL,
+    models: [
+      { name: "MiniMax-M3", supportsTools: true, supportsImages: true, supportsReasoning: true },
+      { name: "MiniMax-M2.7", supportsTools: true, supportsImages: false, supportsReasoning: true },
+      { name: "MiniMax-M2.5", supportsTools: true, supportsImages: false, supportsReasoning: true },
+    ],
+  },
 } as const;
 
 type ProviderKey = keyof typeof providerPresets;
@@ -1441,6 +1451,13 @@ type ProviderPresetModel = {
 };
 
 type ListedProviderModel = ChatServerProviderModel;
+
+function providerKeyForLabel(label: string): ProviderKey {
+  if (label === providerPresets.deepseek.label) return "deepseek";
+  if (label === providerPresets.kimi.label) return "kimi";
+  if (label === providerPresets.minimax.label) return "minimax";
+  return "custom";
+}
 
 function providerModelsCacheKey(baseUrl: string, apiKey: string) {
   let hash = 2166136261;
@@ -1729,9 +1746,13 @@ function ModelDialog({
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [providerModels, setProviderModels] = useState<ProviderPresetModel[]>(() => {
-    const models: ProviderPresetModel[] = providerPresets.kimi.models.map((item) => ({ ...item }));
+    const initialProviderKey = providerKeyForLabel(initialModel.provider);
+    const models: ProviderPresetModel[] =
+      initialProviderKey === "kimi" || initialProviderKey === "minimax"
+        ? providerPresets[initialProviderKey].models.map((item) => ({ ...item }))
+        : [];
     if (
-      initialModel.provider === providerPresets.kimi.label &&
+      (initialProviderKey === "kimi" || initialProviderKey === "minimax") &&
       initialModel.name &&
       !models.some((item) => item.name === initialModel.name)
     ) {
@@ -1746,17 +1767,16 @@ function ModelDialog({
     }
     return models;
   });
+  const [providerModelsProvider, setProviderModelsProvider] = useState<ProviderKey | null>(() => {
+    const key = providerKeyForLabel(initialModel.provider);
+    return key === "kimi" || key === "minimax" ? key : null;
+  });
   const [testState, setTestState] = useState<
     { type: "success" | "error"; message: string } | undefined
   >();
-  const providerKey: ProviderKey =
-    model.provider === providerPresets.deepseek.label
-      ? "deepseek"
-      : model.provider === providerPresets.kimi.label
-        ? "kimi"
-        : "custom";
+  const providerKey = providerKeyForLabel(model.provider);
   const presetModels: ProviderPresetModel[] =
-    providerKey === "kimi"
+    (providerKey === "kimi" || providerKey === "minimax") && providerModelsProvider === providerKey
       ? providerModels
       : providerPresets[providerKey].models.map((item) => ({ ...item }));
   const providerBaseUrl = model.baseUrl.trim();
@@ -1808,20 +1828,30 @@ function ModelDialog({
         queryFn: () => listChatServerModels({ baseUrl, apiKey }),
         staleTime: 5 * 60 * 1000,
       });
+      const modelPrefix = providerKey === "minimax" ? /^minimax-/i : /^(kimi-|moonshot-)/i;
       const nextModels: ProviderPresetModel[] = (listed as ListedProviderModel[])
-        .filter((item) => item.id.startsWith("kimi-") || item.id.startsWith("moonshot-"))
+        .filter((item) => modelPrefix.test(item.id))
         .map((item: ChatServerProviderModel) => ({
           name: item.id,
           supportsTools: true,
-          supportsImages: item.supportsImageIn === true,
-          supportsReasoning: item.supportsReasoning === true,
+          supportsImages:
+            providerKey === "minimax"
+              ? item.id.toLowerCase() === "minimax-m3"
+              : item.supportsImageIn === true,
+          supportsReasoning: providerKey === "minimax" ? true : item.supportsReasoning === true,
           inputContext: item.contextLength,
         }));
-      if (nextModels.length === 0) throw new Error("接口未返回可用的 Kimi 模型");
+      if (nextModels.length === 0) {
+        throw new Error(`接口未返回可用的 ${providerPresets[providerKey].label} 模型`);
+      }
       setProviderModels(nextModels);
+      setProviderModelsProvider(providerKey);
       const selected = nextModels.find((item) => item.name === model.name) ?? nextModels[0];
       setModel((current) => ({ ...current, ...selected, baseUrl }));
-      setTestState({ type: "success", message: `已获取 ${nextModels.length} 个 Kimi 模型` });
+      setTestState({
+        type: "success",
+        message: `已获取 ${nextModels.length} 个 ${providerPresets[providerKey].label} 模型`,
+      });
     } catch (refreshError) {
       setTestState({ type: "error", message: `获取模型失败：${describeError(refreshError)}` });
     }
@@ -1856,7 +1886,9 @@ function ModelDialog({
           ? deepseekBaseUrl(current.responsive)
           : nextProvider === "kimi"
             ? KIMI_CHAT_BASE_URL
-            : "",
+            : nextProvider === "minimax"
+              ? MINIMAX_CHAT_BASE_URL
+              : "",
       responsive: nextProvider === "kimi" ? false : current.responsive,
       ...(nextProvider !== "custom" && firstModel
         ? {
@@ -1881,7 +1913,11 @@ function ModelDialog({
       ...current,
       name: preset.name,
       baseUrl:
-        providerKey === "deepseek" ? deepseekBaseUrl(current.responsive) : KIMI_CHAT_BASE_URL,
+        providerKey === "deepseek"
+          ? deepseekBaseUrl(current.responsive)
+          : providerKey === "minimax"
+            ? MINIMAX_CHAT_BASE_URL
+            : KIMI_CHAT_BASE_URL,
       supportsTools: preset.supportsTools,
       supportsImages: preset.supportsImages,
       supportsReasoning: preset.supportsReasoning,
@@ -1962,20 +1998,24 @@ function ModelDialog({
                 </SelectContent>
               </Select>
             </div>
-            {providerKey === "deepseek" || providerKey === "kimi" ? (
+            {providerKey !== "custom" ? (
               <a
                 className="mb-2 inline-flex shrink-0 items-center gap-1 text-sm text-sky-500 hover:text-sky-400"
                 href={
                   providerKey === "kimi"
                     ? "https://platform.kimi.com/docs"
-                    : "https://platform.deepseek.com/api-docs"
+                    : providerKey === "minimax"
+                      ? "https://platform.minimaxi.com/docs"
+                      : "https://platform.deepseek.com/api-docs"
                 }
                 onClick={(event) => {
                   event.preventDefault();
                   window.open(
                     providerKey === "kimi"
                       ? "https://platform.kimi.com/docs"
-                      : "https://platform.deepseek.com/api-docs",
+                      : providerKey === "minimax"
+                        ? "https://platform.minimaxi.com/docs"
+                        : "https://platform.deepseek.com/api-docs",
                     "_blank",
                     "noopener,noreferrer",
                   );
@@ -1987,7 +2027,7 @@ function ModelDialog({
               </a>
             ) : null}
           </div>
-          {providerKey === "custom" || providerKey === "kimi" ? (
+          {providerKey === "custom" || providerKey === "kimi" || providerKey === "minimax" ? (
             <div className="block text-sm">
               <label className="font-medium" htmlFor="model-base-url">
                 接口地址
@@ -2003,7 +2043,7 @@ function ModelDialog({
                 }
                 value={model.baseUrl}
               />
-              {providerKey === "kimi" ? (
+              {providerKey === "kimi" || providerKey === "minimax" ? (
                 <Button
                   className="mt-2"
                   disabled={isLoadingProviderModels || isTesting || isSaving}
@@ -2014,7 +2054,9 @@ function ModelDialog({
                   <RefreshCw
                     className={isLoadingProviderModels ? "size-3.5 animate-spin" : "size-3.5"}
                   />
-                  {isLoadingProviderModels ? "获取中…" : "从 Kimi 获取模型"}
+                  {isLoadingProviderModels
+                    ? "获取中…"
+                    : `从 ${providerPresets[providerKey].label} 获取模型`}
                 </Button>
               ) : null}
             </div>
@@ -2074,7 +2116,7 @@ function ModelDialog({
             <label className="font-medium" htmlFor="model-name">
               模型名称
             </label>
-            {providerKey === "deepseek" || providerKey === "kimi" ? (
+            {providerKey === "deepseek" || providerKey === "kimi" || providerKey === "minimax" ? (
               <Select value={model.name} onValueChange={handlePresetModelChange}>
                 <SelectTrigger className="mt-2 h-10 w-full bg-background" id="model-name">
                   <SelectValue />
@@ -2097,7 +2139,7 @@ function ModelDialog({
               />
             )}
           </div>
-          {providerKey === "custom" || providerKey === "kimi" ? (
+          {providerKey === "custom" || providerKey === "kimi" || providerKey === "minimax" ? (
             <fieldset>
               <legend className="font-medium text-sm">高级配置</legend>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">

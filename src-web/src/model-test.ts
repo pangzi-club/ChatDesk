@@ -1,6 +1,7 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateText } from "ai";
 import { createKimiFetch } from "./kimi.ts";
+import { createMiniMaxFetch, isMiniMaxModel } from "./minimax.ts";
 
 export type ModelTestInput = {
   name: string;
@@ -70,11 +71,14 @@ export async function listProviderModels(input: Pick<ModelTestInput, "baseUrl" |
 
 export async function testModelConnection(model: ModelTestInput) {
   const url = new URL(model.baseUrl);
+  const modelFetch = isMiniMaxModel(model)
+    ? createMiniMaxFetch(model)
+    : createKimiFetch(model);
 
   const provider = createOpenAI({
     apiKey: model.apiKey,
     baseURL: validateModelEndpoint(url.toString()),
-    fetch: createKimiFetch(model),
+    fetch: modelFetch,
   });
   const languageModel = model.responsive
     ? provider.responses(model.name.trim())

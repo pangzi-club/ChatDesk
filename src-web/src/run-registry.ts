@@ -31,6 +31,7 @@ import {
 import { SandboxReviewLogStore } from "./sandbox-review-log.ts";
 import { hasWorkspace, selectWorkspaceToolNames } from "./tool-selection.ts";
 import { createKimiFetch } from "./kimi.ts";
+import { createMiniMaxFetch, isMiniMaxModel } from "./minimax.ts";
 
 type ActiveRun = {
   id: string;
@@ -155,7 +156,9 @@ export class RunRegistry {
       const provider = createOpenAI({
         apiKey: model.apiKey,
         baseURL: baseUrl(model.baseUrl),
-        fetch: createKimiFetch(model),
+        fetch: isMiniMaxModel(model)
+          ? createMiniMaxFetch(model)
+          : createKimiFetch(model),
       });
       const languageModel = model.responsive
         ? provider.responses(model.name.trim())
