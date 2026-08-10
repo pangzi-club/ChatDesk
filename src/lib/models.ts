@@ -3,6 +3,19 @@ import { settingsStore } from "@/lib/settings-store";
 
 export const MODELS_STORE_KEY = "models";
 
+const KNOWN_MODEL_CONTEXT_WINDOWS: Record<string, number> = {
+  "deepseek-v4-flash": 128_000,
+  "deepseek-v4-pro": 128_000,
+  "kimi-k3": 1_000_000,
+  "kimi-k2.7-code": 256_000,
+  "kimi-k2.7-code-highspeed": 256_000,
+  "kimi-k2.6": 256_000,
+  "kimi-k2.5": 256_000,
+  "minimax-m3": 1_000_000,
+  "minimax-m2.7": 204_800,
+  "minimax-m2.5": 204_800,
+};
+
 export type ModelConfig = {
   id: string;
   name: string;
@@ -54,6 +67,8 @@ export async function loadModels(): Promise<ModelConfig[]> {
 function normalizeModelConfig(model: ModelConfig): ModelConfig {
   return {
     ...model,
+    inputContext:
+      model.inputContext ?? KNOWN_MODEL_CONTEXT_WINDOWS[model.name.trim().toLowerCase()],
     supportsTools: model.supportsTools === true,
     supportsImages: model.supportsImages === true,
     supportsReasoning: model.supportsReasoning === true,

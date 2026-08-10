@@ -47,6 +47,30 @@ function assistantMessage(id: string, text: string): UIMessage {
   return { id, role: "assistant", parts: text ? [{ type: "text", text }] : [] };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+export function mergeLatestMessageMetadata(messages: UIMessage[], metadata: unknown) {
+  if (metadata === undefined) return messages;
+  let lastAssistantIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === "assistant") {
+      lastAssistantIndex = index;
+      break;
+    }
+  }
+  if (lastAssistantIndex < 0) return messages;
+  const message = messages[lastAssistantIndex];
+  const mergedMetadata =
+    isRecord(message.metadata) && isRecord(metadata)
+      ? { ...message.metadata, ...metadata }
+      : metadata;
+  return messages.map((item, index) =>
+    index === lastAssistantIndex ? { ...item, metadata: mergedMetadata } : item,
+  );
+}
+
 function errorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
@@ -242,6 +266,7 @@ export class RunRegistry {
   ) {
     const sessionId = session.id;
     let assistantText = "";
+    let latestMessageMetadata: unknown;
     this.setStatus(sessionId, "streaming", runId);
     try {
       const reader = stream.getReader();
@@ -249,6 +274,9 @@ export class RunRegistry {
         const next = await reader.read();
         if (next.done) break;
         const chunk = next.value as { type?: string; delta?: string; messageMetadata?: unknown };
+        if (chunk.messageMetadata !== undefined) {
+          latestMessageMetadata = chunk.messageMetadata;
+        }
         if (chunk.type === "text-delta" && typeof chunk.delta === "string") {
           assistantText += chunk.delta;
           this.drafts.set(sessionId, assistantMessage(runId, assistantText));
@@ -261,8 +289,10 @@ export class RunRegistry {
           });
         }
       }
-      const nextMessages = getCompletedMessages() ??
+      const completedMessages = getCompletedMessages();
+      const persistedMessages = completedMessages ??
         (assistantText ? [...session.messages, assistantMessage(runId, assistantText)] : session.messages);
+      const nextMessages = mergeLatestMessageMetadata(persistedMessages, latestMessageMetadata);
       const updated: ChatSession = {
         ...session,
         messages: nextMessages,

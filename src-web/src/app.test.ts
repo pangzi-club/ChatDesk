@@ -83,6 +83,35 @@ describe("chat server", () => {
     assert.equal((await server.store.get("session-test")), null);
   });
 
+  it("preserves persisted message metadata when a stale client save omits it", async () => {
+    const server = await createTestServer();
+    await server.store.save({
+      schemaVersion: 2,
+      id: "metadata-session",
+      title: "Metadata",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      messages: [
+        { id: "user-1", role: "user", parts: [{ type: "text", text: "hello" }] },
+        { id: "assistant-1", role: "assistant", parts: [{ type: "text", text: "hi" }], metadata: { usage: { inputTokens: 120 } } },
+      ],
+      attachments: [],
+    });
+
+    const response = await server.app.request("http://localhost/v1/sessions/metadata-session", {
+      method: "PATCH",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: [{ id: "user-1", role: "user", parts: [{ type: "text", text: "hello again" }] }],
+      }),
+    });
+
+    assert.equal(response.status, 200);
+    const saved = await response.json();
+    assert.equal(saved.messages.length, 2);
+    assert.deepEqual(saved.messages[1].metadata, { usage: { inputTokens: 120 } });
+  });
+
   it("persists a pending port change for the next restart", async () => {
     const server = await createTestServer();
     const response = await server.app.request("http://localhost/v1/config", {

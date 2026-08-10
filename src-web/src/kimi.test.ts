@@ -30,4 +30,22 @@ describe("Kimi request compatibility", () => {
       thinking: { type: "enabled", keep: "all" },
     });
   });
+
+  it("requests usage in streaming chat completion responses", async () => {
+    let body = "";
+    globalThis.fetch = async (_input, init) => {
+      body = String(init?.body ?? "");
+      return new Response("{}", { status: 200 });
+    };
+
+    await createKimiFetch({ name: "kimi-k2.6", provider: "Kimi / Moonshot" })(
+      "https://api.moonshot.cn/v1/chat/completions",
+      {
+        method: "POST",
+        body: JSON.stringify({ model: "kimi-k2.6", messages: [], stream: true }),
+      },
+    );
+
+    assert.deepEqual(JSON.parse(body).stream_options, { include_usage: true });
+  });
 });

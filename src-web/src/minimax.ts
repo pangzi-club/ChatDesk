@@ -1,3 +1,5 @@
+import { normalizeProviderUsageResponse } from "./provider-usage.ts";
+
 export type MiniMaxModelInput = {
   name: string;
   provider?: string;
@@ -44,6 +46,10 @@ export function createMiniMaxFetch(model: MiniMaxModelInput) {
       body.thinking ??= { type: "adaptive" };
     }
 
-    return fetch(input, { ...init, body: JSON.stringify(body) });
+    if (body.stream === true) {
+      const streamOptions = (body.stream_options ?? {}) as Record<string, unknown>;
+      body.stream_options = { ...streamOptions, include_usage: true };
+    }
+    return normalizeProviderUsageResponse(await fetch(input, { ...init, body: JSON.stringify(body) }));
   };
 }

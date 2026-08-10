@@ -31,4 +31,22 @@ describe("MiniMax request compatibility", () => {
       thinking: { type: "adaptive" },
     });
   });
+
+  it("requests usage in streaming chat completion responses", async () => {
+    let body = "";
+    globalThis.fetch = async (_input, init) => {
+      body = String(init?.body ?? "");
+      return new Response("{}", { status: 200 });
+    };
+
+    await createMiniMaxFetch({ name: "MiniMax-M2.7", provider: "MiniMax" })(
+      "https://api.minimaxi.com/v1/chat/completions",
+      {
+        method: "POST",
+        body: JSON.stringify({ model: "MiniMax-M2.7", messages: [], stream: true }),
+      },
+    );
+
+    assert.deepEqual(JSON.parse(body).stream_options, { include_usage: true });
+  });
 });

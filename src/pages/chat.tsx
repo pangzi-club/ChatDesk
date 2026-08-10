@@ -21,6 +21,7 @@ import {
   ClipboardCheck,
   Copy,
   FilePlus2,
+  Gauge,
   History,
   Mic,
   MoreHorizontal,
@@ -37,6 +38,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
+import { ChatContextDialog } from "@/components/chat-context-dialog";
 import { ChatMemoryDialog } from "@/components/chat-memory-dialog";
 import { ChatReviewerDialog } from "@/components/chat-reviewer-dialog";
 import { ChatSettingsDialog } from "@/components/chat-settings-dialog";
@@ -148,7 +150,9 @@ function mergeLiveDraft(messages: UIMessage[], draft: LiveDraft | undefined) {
   };
   const existingIndex = messages.findIndex((message) => message.id === draft.runId);
   if (existingIndex < 0) return [...messages, assistant];
-  return messages.map((message, index) => (index === existingIndex ? assistant : message));
+  return messages.map((message, index) =>
+    index === existingIndex ? { ...message, ...assistant, metadata: message.metadata } : message,
+  );
 }
 
 function ChatPage() {
@@ -225,6 +229,7 @@ function ChatPage() {
   const isComposingRef = useRef(false);
   const [sessionToDelete, setSessionToDelete] = useState<ChatIndexItem | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [reviewerOpen, setReviewerOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -464,6 +469,13 @@ function ChatPage() {
   const generationElapsedLabel = formatGenerationElapsed(generationElapsedSeconds);
   const generationDetail = generationElapsedSeconds >= 10 ? "响应较慢，仍在等待中" : "";
   const lastMessage = messages[messages.length - 1];
+  const latestContextUsage = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const usage = getMessageUsage(messages[index]);
+      if (usage?.inputTokens !== undefined) return usage;
+    }
+    return undefined;
+  }, [messages]);
   const hasAssistantMessage =
     lastMessage?.role === "assistant" &&
     (messageText(lastMessage).trim().length > 0 || messageHasToolParts(lastMessage));
@@ -791,6 +803,17 @@ function ChatPage() {
             onClick={() => startNewSession()}
           >
             <Plus className="size-4" />
+          </Button>
+          <Button
+            aria-label="查看上下文用量"
+            className="chat-icon-button"
+            onClick={() => setContextOpen(true)}
+            size="icon"
+            title="查看当前上下文用量"
+            type="button"
+            variant="ghost"
+          >
+            <Gauge className="size-4" />
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -1150,6 +1173,14 @@ function ChatPage() {
         onSettingsChange={updateChatDisplay}
         open={settingsOpen}
         settings={chatDisplay}
+      />
+      <ChatContextDialog
+        isGenerating={isGenerating}
+        latestUsage={latestContextUsage}
+        messageCount={messages.length}
+        model={selectedModel}
+        onOpenChange={setContextOpen}
+        open={contextOpen}
       />
       <ChatMemoryDialog
         onOpenChange={setMemoryOpen}

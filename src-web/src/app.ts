@@ -69,6 +69,30 @@ const execFileAsync = promisify(execFile);
 
 type ArchiveImportSource = "codex" | "claude-code" | "cursor" | "kimi";
 
+function mergeSessionMessages(current: ChatSession["messages"], incoming: unknown[]) {
+  const incomingById = new Map<string, ChatSession["messages"][number]>();
+  for (const value of incoming) {
+    if (!value || typeof value !== "object") continue;
+    const id = (value as { id?: unknown }).id;
+    if (typeof id === "string" && id) {
+      incomingById.set(id, value as ChatSession["messages"][number]);
+    }
+  }
+
+  const merged = current.map((message) => {
+    const next = incomingById.get(message.id);
+    if (!next) return message;
+    return next.metadata === undefined && message.metadata !== undefined
+      ? { ...next, metadata: message.metadata }
+      : next;
+  });
+  const currentIds = new Set(current.map((message) => message.id));
+  for (const [id, message] of incomingById) {
+    if (!currentIds.has(id)) merged.push(message);
+  }
+  return merged;
+}
+
 function archiveRoots(source: ArchiveImportSource): string[] {
   const home = process.env.HOME || process.env.USERPROFILE || "";
   const cursorRoots = process.platform === "win32"
@@ -458,9 +482,13 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     if (!session) return jsonError("会话不存在", 404);
     const draft = runs.draftMessage(session.id);
     if (!draft?.parts.length) return c.json(session);
+    const persisted = session.messages.find((message) => message.id === draft.id);
+    const draftWithMetadata = persisted?.metadata
+      ? { ...draft, metadata: persisted.metadata }
+      : draft;
     return c.json({
       ...session,
-      messages: [...session.messages.filter((message) => message.id !== draft.id), draft],
+      messages: [...session.messages.filter((message) => message.id !== draft.id), draftWithMetadata],
     });
   });
 
@@ -469,9 +497,12 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
       const current = await store.get(c.req.param("id"));
       if (!current) return jsonError("会话不存在", 404);
       const body = await c.req.json();
+      const incomingMessages = Array.isArray(body.messages) ? body.messages : undefined;
+      const messages = incomingMessages ? mergeSessionMessages(current.messages, incomingMessages) : undefined;
       const next = {
         ...current,
         ...body,
+        ...(messages ? { messages } : {}),
         id: current.id,
         schemaVersion: 2 as const,
         updatedAt: new Date().toISOString(),
