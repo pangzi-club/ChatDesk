@@ -1,7 +1,22 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { LazyStore } from "@tauri-apps/plugin-store";
-import { Camera, Check, Mic, Pencil, Plus, Search, Sparkles, Trash2, X } from "lucide-react";
+import {
+  Camera,
+  Check,
+  Code2,
+  GitPullRequest,
+  Mic,
+  Pencil,
+  Plus,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Trash2,
+  Wrench,
+  X,
+} from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 
@@ -37,6 +52,7 @@ const BOOKMARK_COLORS = [
 ];
 
 function DashboardPage() {
+  const navigate = useNavigate();
   const [bookmarks, setBookmarks] = useState<Bookmark[]>(DEFAULT_BOOKMARKS);
   const [hasLoadedBookmarks, setHasLoadedBookmarks] = useState(false);
   const [query, setQuery] = useState("");
@@ -147,17 +163,23 @@ function DashboardPage() {
   }
 
   return (
-    <div className="dashboard-wallpaper relative min-h-full overflow-hidden text-white">
-      <main className="relative z-10 flex min-h-full flex-col items-center px-3 pt-[9vh] pb-6 sm:px-6 lg:px-10">
-        <h1 className="select-none font-medium text-[clamp(2.5rem,5vw,4rem)] text-white/88 leading-none tracking-normal drop-shadow-md">
-          工作台
-        </h1>
+    <div className="dashboard-home min-h-full overflow-y-auto">
+      <main className="mx-auto flex min-h-full w-full max-w-5xl flex-col px-5 pt-16 pb-10 sm:px-10 sm:pt-20">
+        <header className="max-w-2xl">
+          <p className="page-eyebrow">m-dashboard / workspace</p>
+          <h1 className="mt-3 font-semibold text-[clamp(2rem,4vw,3.25rem)] leading-tight tracking-[-0.04em]">
+            今天想从哪里开始？
+          </h1>
+          <p className="mt-3 text-[15px] text-muted-foreground leading-7">
+            连接你的模型、项目和自动化任务，把常用工作集中在一个安静的工作台里。
+          </p>
+        </header>
 
         <form
-          className="mt-7 flex h-12 w-full max-w-3xl items-center gap-2 rounded-full bg-card px-4 text-foreground shadow-[0_6px_18px_rgba(55,55,55,0.22)] sm:h-13 sm:px-5"
+          className="dashboard-search mt-8 flex min-h-14 w-full max-w-3xl items-center gap-2 px-4 text-foreground sm:px-5"
           onSubmit={searchGoogle}
         >
-          <Search className="size-5 shrink-0 text-muted-foreground" />
+          <Search className="size-4 shrink-0 text-muted-foreground" />
           <label className="sr-only" htmlFor="dashboard-search">
             工作台搜索
           </label>
@@ -165,7 +187,7 @@ function DashboardPage() {
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
-            className="min-w-0 flex-1 bg-transparent font-medium text-[15px] text-foreground outline-none placeholder:text-muted-foreground sm:text-lg"
+            className="min-w-0 flex-1 bg-transparent text-[15px] text-foreground outline-none placeholder:text-muted-foreground"
             id="dashboard-search"
             onChange={(event) => setQuery(event.target.value)}
             placeholder="在工作台中搜索或输入网址"
@@ -174,21 +196,21 @@ function DashboardPage() {
           />
           <button
             aria-label="语音搜索"
-            className="hidden size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40 sm:flex"
+            className="hidden size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40 sm:flex"
             type="button"
           >
             <Mic className="size-5" />
           </button>
           <button
             aria-label="图片搜索"
-            className="hidden size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40 sm:flex"
+            className="hidden size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40 sm:flex"
             type="button"
           >
             <Camera className="size-5" />
           </button>
           <button
             aria-label="AI 模式"
-            className="flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-muted px-3 font-semibold text-sm text-foreground transition hover:bg-accent focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40 max-sm:px-2.5"
+            className="flex h-9 shrink-0 items-center gap-1.5 rounded-md bg-foreground px-3 font-medium text-sm text-background transition hover:bg-foreground/85 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40 max-sm:px-2.5"
             type="button"
           >
             <Sparkles className="size-4" />
@@ -196,30 +218,59 @@ function DashboardPage() {
           </button>
         </form>
 
-        <section
-          aria-label="快捷方式"
-          className="mt-8 grid w-full max-w-5xl grid-cols-3 gap-x-2 gap-y-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-9"
-        >
-          {bookmarks.map((bookmark) => (
-            <BookmarkTile
-              bookmark={bookmark}
-              key={bookmark.id}
-              onEdit={() => openEditBookmark(bookmark)}
-              onOpen={() => void openExternal(bookmark.url)}
-            />
-          ))}
-          <button
-            className="group flex min-w-0 flex-col items-center gap-3 rounded-lg px-1.5 py-1.5 text-center outline-none transition hover:bg-foreground/10 focus-visible:ring-3 focus-visible:ring-foreground/45"
-            onClick={openAddBookmark}
-            type="button"
-          >
-            <span className="flex size-15 items-center justify-center rounded-full bg-foreground/80 text-background shadow-sm backdrop-blur">
-              <Plus className="size-7" />
-            </span>
-            <span className="max-w-full truncate font-medium text-sm text-white leading-5 drop-shadow">
-              添加快捷方式
-            </span>
-          </button>
+        <section className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="常用操作">
+          <DashboardAction
+            icon={Code2}
+            label="探索代码"
+            detail="阅读项目并定位关键文件"
+            onClick={() => navigate("/chat")}
+          />
+          <DashboardAction
+            icon={GitPullRequest}
+            label="构建功能"
+            detail="从想法到可交付的改动"
+            onClick={() => navigate("/chat")}
+          />
+          <DashboardAction
+            icon={ShieldCheck}
+            label="审查变更"
+            detail="检查风险并提出修改建议"
+            onClick={() => navigate("/chat")}
+          />
+          <DashboardAction
+            icon={Wrench}
+            label="修复问题"
+            detail="诊断失败并快速恢复"
+            onClick={() => navigate("/chat")}
+          />
+        </section>
+
+        <section aria-label="快捷方式" className="mt-12 border-border border-t pt-6">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="font-semibold text-sm">快捷方式</h2>
+              <p className="mt-1 text-muted-foreground text-xs">打开你经常使用的站点</p>
+            </div>
+            <button
+              aria-label="添加快捷方式"
+              className="flex size-8 items-center justify-center rounded-md border border-border text-muted-foreground transition hover:bg-muted hover:text-foreground"
+              onClick={openAddBookmark}
+              title="添加快捷方式"
+              type="button"
+            >
+              <Plus className="size-4" />
+            </button>
+          </div>
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-7">
+            {bookmarks.map((bookmark) => (
+              <BookmarkTile
+                bookmark={bookmark}
+                key={bookmark.id}
+                onEdit={() => openEditBookmark(bookmark)}
+                onOpen={() => void openExternal(bookmark.url)}
+              />
+            ))}
+          </div>
         </section>
       </main>
 
@@ -237,6 +288,32 @@ function DashboardPage() {
   );
 }
 
+function DashboardAction({
+  icon: Icon,
+  label,
+  detail,
+  onClick,
+}: {
+  icon: typeof Code2;
+  label: string;
+  detail: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className="dashboard-home-card flex min-h-28 flex-col items-start p-4 text-left"
+      onClick={onClick}
+      type="button"
+    >
+      <span className="flex size-8 items-center justify-center rounded-md bg-[#edf4ff] text-primary">
+        <Icon className="size-4" />
+      </span>
+      <span className="mt-4 font-medium text-sm">{label}</span>
+      <span className="mt-1 text-muted-foreground text-xs leading-5">{detail}</span>
+    </button>
+  );
+}
+
 function BookmarkTile({
   bookmark,
   onEdit,
@@ -249,12 +326,12 @@ function BookmarkTile({
   return (
     <div className="group relative min-w-0">
       <button
-        className="flex w-full min-w-0 flex-col items-center gap-3 rounded-lg px-1.5 py-1.5 text-center outline-none transition hover:bg-foreground/10 focus-visible:ring-3 focus-visible:ring-foreground/45"
+        className="flex w-full min-w-0 flex-col items-center gap-2 rounded-lg px-1.5 py-2 text-center outline-none transition hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/40"
         onClick={onOpen}
         title={bookmark.url}
         type="button"
       >
-        <span className="flex size-15 items-center justify-center rounded-full bg-foreground/80 shadow-sm backdrop-blur">
+        <span className="flex size-10 items-center justify-center rounded-lg bg-muted">
           <span
             className={`relative flex size-9 items-center justify-center overflow-hidden rounded-md bg-gradient-to-br ${bookmark.color} text-white shadow-inner`}
           >
@@ -271,9 +348,7 @@ function BookmarkTile({
             </span>
           </span>
         </span>
-        <span className="max-w-full truncate font-medium text-sm text-white leading-5 drop-shadow">
-          {bookmark.title}
-        </span>
+        <span className="max-w-full truncate font-medium text-xs leading-5">{bookmark.title}</span>
       </button>
       <button
         aria-label={`编辑 ${bookmark.title}`}

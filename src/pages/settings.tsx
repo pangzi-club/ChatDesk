@@ -192,7 +192,7 @@ function SettingsLayout() {
           : "flex min-h-full w-full bg-background"
       }
     >
-      <aside className="sticky top-0 flex h-screen w-[272px] shrink-0 flex-col border-border border-r bg-card/80 px-4 pt-8 max-md:w-[220px] max-sm:w-[76px] max-sm:px-2">
+      <aside className="app-shell-sidebar sticky top-0 flex h-screen w-[248px] shrink-0 flex-col border-border border-r px-4 pt-8 max-md:w-[220px] max-sm:w-[76px] max-sm:px-2">
         <Button
           aria-label="返回应用"
           className="mb-3 h-8 justify-start gap-2 px-2 text-muted-foreground text-sm hover:text-foreground max-sm:justify-center max-sm:px-0"
@@ -229,11 +229,11 @@ function SettingsLayout() {
         </div>
       </aside>
       {isHistoryRoute ? (
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <main className="app-shell-content flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <Outlet />
         </main>
       ) : (
-        <main className="min-w-0 flex-1 px-8 pt-16 pb-14 sm:px-12 lg:px-20">
+        <main className="app-shell-content min-w-0 flex-1 px-8 pt-16 pb-14 sm:px-12 lg:px-20">
           <div className="mx-auto w-full max-w-3xl">
             <Outlet />
           </div>
@@ -392,7 +392,7 @@ function SettingsNavItem({
   return (
     <NavLink
       className={({ isActive }) =>
-        `flex h-7 items-center gap-2 rounded-md px-3 text-[13px] transition-colors max-sm:justify-center max-sm:px-0 ${isActive ? "bg-accent text-accent-foreground font-medium" : "text-muted-foreground hover:bg-accent/70 hover:text-foreground"}`
+        `sidebar-nav-item flex h-8 items-center gap-2 px-3 text-[13px] transition-colors max-sm:justify-center max-sm:px-0 ${isActive ? "is-active font-medium" : ""}`
       }
       to={to}
     >

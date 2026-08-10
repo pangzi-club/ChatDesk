@@ -27,7 +27,7 @@ const tools = [
 
 function DevToolsPage() {
   return (
-    <div className="flex w-full flex-1 flex-col gap-6 px-4 pt-12 pb-8 sm:px-6 lg:px-8">
+    <div className="app-page-root flex w-full flex-1 flex-col gap-6 px-4 pt-12 pb-8 sm:px-6 lg:px-8">
       <header>
         <p className="font-medium text-muted-foreground text-xs uppercase tracking-[0.16em]">
           Development
@@ -67,8 +67,8 @@ function DevToolsLayout() {
   const navigate = useNavigate();
 
   return (
-    <div className="flex h-full min-h-0 w-full overflow-hidden bg-background">
-      <aside className="flex h-full w-[272px] shrink-0 flex-col overflow-y-auto border-border border-r bg-card/80 px-4 pt-10 max-md:w-[220px] max-sm:w-[76px] max-sm:px-2">
+    <div className="app-page-root flex h-full min-h-0 w-full overflow-hidden">
+      <aside className="app-shell-sidebar flex h-full w-[248px] shrink-0 flex-col overflow-y-auto border-border border-r px-4 pt-10 max-md:w-[220px] max-sm:w-[76px] max-sm:px-2">
         <Button
           aria-label="返回应用"
           className="mb-5 justify-start gap-2 px-2 text-muted-foreground hover:text-foreground max-sm:justify-center max-sm:px-0"
@@ -96,7 +96,7 @@ function DevToolsLayout() {
           <span className="mt-1 block opacity-60">本地开发工具</span>
         </div>
       </aside>
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
+      <main className="app-shell-content flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
         <Outlet />
       </main>
     </div>
@@ -115,7 +115,7 @@ function DevToolsNavItem({
   return (
     <NavLink
       className={({ isActive }) =>
-        `flex h-10 items-center gap-3 rounded-md px-3 text-sm transition-colors max-sm:justify-center max-sm:px-0 ${isActive ? "bg-accent text-accent-foreground font-medium" : "text-muted-foreground hover:bg-accent/70 hover:text-foreground"}`
+        `sidebar-nav-item flex h-8 items-center gap-3 px-3 text-sm transition-colors max-sm:justify-center max-sm:px-0 ${isActive ? "is-active font-medium" : ""}`
       }
       to={to}
     >

@@ -8,7 +8,7 @@ import { decryptText, encryptText } from "@/lib/crypto";
 
 function EncryptPage() {
   return (
-    <div className="flex w-full flex-1 flex-col gap-6 px-6 pt-14 pb-10 sm:px-10">
+    <div className="app-page-root flex w-full flex-1 flex-col gap-6 px-6 pt-14 pb-10 sm:px-10">
       <header>
         <p className="font-medium text-sm text-muted-foreground">Encrypt</p>
         <h1 className="mt-2 font-semibold text-3xl text-foreground tracking-normal">文本加密</h1>

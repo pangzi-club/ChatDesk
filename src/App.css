@@ -31,24 +31,24 @@
 
 :root {
   --radius: 0.625rem;
-  --background: oklch(0.98 0.015 225);
-  --foreground: oklch(0.22 0.035 246);
-  --card: oklch(1 0.006 225);
-  --card-foreground: oklch(0.22 0.035 246);
-  --popover: oklch(1 0.006 225);
-  --popover-foreground: oklch(0.22 0.035 246);
-  --primary: oklch(0.52 0.19 252);
-  --primary-foreground: oklch(0.99 0.01 250);
-  --secondary: oklch(0.93 0.045 190);
-  --secondary-foreground: oklch(0.25 0.08 215);
-  --muted: oklch(0.94 0.025 225);
-  --muted-foreground: oklch(0.49 0.055 244);
-  --accent: oklch(0.91 0.075 190);
-  --accent-foreground: oklch(0.25 0.08 215);
-  --destructive: oklch(0.59 0.21 25);
-  --border: oklch(0.86 0.04 225);
-  --input: oklch(0.86 0.04 225);
-  --ring: oklch(0.62 0.18 250);
+  --background: #f7f7f8;
+  --foreground: #202123;
+  --card: #ffffff;
+  --card-foreground: #202123;
+  --popover: #ffffff;
+  --popover-foreground: #202123;
+  --primary: #2f80ed;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f1f2;
+  --secondary-foreground: #343541;
+  --muted: #f1f1f2;
+  --muted-foreground: #6b6f76;
+  --accent: #e9e9eb;
+  --accent-foreground: #202123;
+  --destructive: #d64545;
+  --border: #e5e5e7;
+  --input: #dedee1;
+  --ring: #8bb9f5;
 }
 
 .dark {
@@ -205,12 +205,45 @@
     margin: 0;
     min-width: 320px;
     min-height: 100vh;
-    font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, sans-serif;
     font-synthesis: none;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     -webkit-text-size-adjust: 100%;
+  }
+
+  ::selection {
+    background: rgb(47 128 237 / 20%);
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  [data-slot="button"] {
+    border-radius: 7px;
+    box-shadow: none;
+  }
+
+  [data-slot="input"],
+  [data-slot="textarea"],
+  [data-slot="select-trigger"] {
+    border-radius: 8px;
+    background: var(--card);
+    box-shadow: none;
+  }
+
+  [data-slot="card"] {
+    border-radius: 10px;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 3%);
+  }
+
+  [data-slot="button"]:hover {
+    box-shadow: none;
   }
 
   /* WebView background stays transparent around the native macOS titlebar. */
@@ -221,62 +254,214 @@
   }
 }
 
-.dashboard-wallpaper {
-  background:
-    linear-gradient(116deg, rgb(42 125 190 / 72%) 0 18%, transparent 18%),
-    linear-gradient(160deg, rgb(86 195 181 / 62%) 0 28%, transparent 28%),
-    linear-gradient(42deg, transparent 0 48%, rgb(242 157 120 / 70%) 48% 75%, transparent 75%),
-    linear-gradient(73deg, rgb(63 158 178 / 72%) 0 42%, rgb(116 170 215 / 70%) 42% 100%);
+/* Shared desktop workbench language. Keep surfaces quiet so content carries the hierarchy. */
+.app-shell-sidebar {
+  background: #f1f1f2;
+  border-color: #e3e3e5;
 }
 
-.dashboard-wallpaper::before {
-  position: absolute;
-  inset: 0;
-  content: "";
-  pointer-events: none;
-  background:
-    linear-gradient(74deg, transparent 0 14%, rgb(30 97 160 / 24%) 14% 32%, transparent 32%),
-    linear-gradient(283deg, transparent 0 20%, rgb(255 224 184 / 38%) 20% 42%, transparent 42%),
-    linear-gradient(198deg, transparent 0 54%, rgb(42 116 147 / 30%) 54% 78%, transparent 78%),
-    linear-gradient(17deg, rgb(255 194 157 / 38%) 0 18%, transparent 18% 100%);
-  opacity: 0.9;
+.app-shell-sidebar > .border {
+  background: #ffffff;
 }
 
-.dashboard-wallpaper::after {
-  position: absolute;
-  inset: 0;
-  content: "";
-  pointer-events: none;
-  background: rgb(255 255 255 / 14%);
+.app-shell-content {
+  background: #ffffff;
 }
 
-.dark .dashboard-wallpaper {
-  background:
-    linear-gradient(116deg, rgb(15 65 112 / 82%) 0 18%, transparent 18%),
-    linear-gradient(160deg, rgb(20 91 93 / 72%) 0 28%, transparent 28%),
-    linear-gradient(42deg, transparent 0 48%, rgb(126 59 56 / 76%) 48% 75%, transparent 75%),
-    linear-gradient(73deg, rgb(17 73 91 / 78%) 0 42%, rgb(41 67 119 / 80%) 42% 100%);
+.sidebar-nav-item {
+  border-radius: 7px;
+  color: #5f6368;
 }
 
-.dark .dashboard-wallpaper::before {
-  position: absolute;
-  inset: 0;
-  content: "";
-  pointer-events: none;
-  background:
-    linear-gradient(74deg, transparent 0 14%, rgb(18 21 19 / 20%) 14% 32%, transparent 32%),
-    linear-gradient(283deg, transparent 0 20%, rgb(28 25 20 / 38%) 20% 42%, transparent 42%),
-    linear-gradient(198deg, transparent 0 54%, rgb(20 23 22 / 30%) 54% 78%, transparent 78%),
-    linear-gradient(17deg, rgb(24 21 19 / 40%) 0 18%, transparent 18% 100%);
-  opacity: 0.9;
+.sidebar-nav-item.is-active {
+  background: #e3e3e5;
+  color: #202123;
+  box-shadow: none;
 }
 
-.dark .dashboard-wallpaper::after {
-  position: absolute;
-  inset: 0;
-  content: "";
-  pointer-events: none;
-  background: rgb(0 0 0 / 14%);
+.sidebar-nav-item:not(.is-active):hover {
+  background: #e8e8e9;
+  color: #202123;
+}
+
+.page-surface {
+  background: #ffffff;
+}
+
+.page-frame {
+  width: min(100%, 960px);
+  margin: 0 auto;
+}
+
+.page-eyebrow {
+  color: #8a8d93;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.page-title {
+  color: #202123;
+  font-size: clamp(1.65rem, 2.2vw, 2.15rem);
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+
+.dashboard-home {
+  min-height: 100%;
+  background: #ffffff;
+  color: #202123;
+}
+
+.dashboard-home-card {
+  border: 1px solid #e7e7e8;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 3%);
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+.dashboard-home-card:hover {
+  border-color: #cfd0d3;
+  box-shadow: 0 5px 18px rgb(0 0 0 / 6%);
+  transform: translateY(-1px);
+}
+
+.dashboard-search {
+  border: 1px solid #dedee1;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 5%);
+}
+
+.dashboard-search:focus-within {
+  border-color: #8bb9f5;
+  box-shadow:
+    0 5px 18px rgb(47 128 237 / 10%),
+    0 0 0 3px rgb(47 128 237 / 9%);
+}
+
+.dark .app-shell-sidebar {
+  background: #202123;
+  border-color: #3a3b40;
+}
+
+.dark .app-shell-content,
+.dark .page-surface,
+.dark .dashboard-home {
+  background: #212124;
+}
+
+.dark .sidebar-nav-item {
+  color: #a6a7ab;
+}
+
+.dark .sidebar-nav-item.is-active,
+.dark .sidebar-nav-item:not(.is-active):hover {
+  background: #343541;
+  color: #f1f1f2;
+}
+
+.dark .dashboard-home {
+  color: #f1f1f2;
+}
+
+.dark .dashboard-home-card,
+.dark .dashboard-search {
+  border-color: #3a3b40;
+  background: #292a2e;
+}
+
+.dark .dashboard-home-card:hover {
+  border-color: #5a5b62;
+}
+
+.app-page-root {
+  background: #ffffff;
+  color: #202123;
+}
+
+.history-page-root {
+  background: #ffffff;
+  color: #202123;
+}
+
+.app-page-container {
+  width: min(100%, 960px);
+}
+
+.app-page-root > header,
+.app-settings-page > header {
+  border-color: #ededee;
+}
+
+.app-page-root section.rounded-lg.border.bg-card,
+.app-page-root section.overflow-hidden.rounded-lg.bg-card,
+.app-page-root .rounded-lg.border.bg-card,
+.app-settings-page section.rounded-lg.border.bg-card,
+.app-settings-page .rounded-lg.border.bg-card,
+[data-slot="card"] {
+  border-color: #e5e5e7;
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 3%);
+}
+
+.app-page-root table tbody tr,
+.app-settings-page table tbody tr {
+  transition: background-color 120ms ease;
+}
+
+.app-page-root table tbody tr:hover,
+.app-settings-page table tbody tr:hover {
+  background: #f7f7f8;
+}
+
+.app-page-root .bg-muted\/60,
+.app-page-root .bg-muted\/50 {
+  background: #f7f7f8;
+}
+
+.image-generation-workbench {
+  overflow: hidden;
+  border: 1px solid #e5e5e7;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.image-generation-workbench > div {
+  background: #ffffff;
+}
+
+.dark .app-page-root,
+.dark .app-settings-page,
+.dark .history-page-root {
+  background: #212124;
+  color: #f1f1f2;
+}
+
+.dark .app-page-root section.rounded-lg.border.bg-card,
+.dark .app-page-root section.overflow-hidden.rounded-lg.bg-card,
+.dark .app-page-root .rounded-lg.border.bg-card,
+.dark .app-settings-page section.rounded-lg.border.bg-card,
+.dark .app-settings-page .rounded-lg.border.bg-card,
+.dark [data-slot="card"],
+.dark .image-generation-workbench {
+  border-color: #3a3b40;
+}
+
+.dark .app-page-root table tbody tr:hover,
+.dark .app-settings-page table tbody tr:hover {
+  background: #292a2e;
+}
+
+.dark .app-page-root .bg-muted\/60,
+.dark .app-page-root .bg-muted\/50,
+.dark .image-generation-workbench > div {
+  background: #292a2e;
 }
 
 .chat-page {
@@ -1603,9 +1788,6 @@
     padding: 0 16px;
     padding-right: 8px;
   }
-  .chat-header-actions {
-    transform: translateY(9px);
-  }
   .chat-content,
   .chat-composer-wrap {
     width: calc(100% - 28px);
@@ -1673,4 +1855,200 @@
 
 .history-message-text [data-streamdown="code-block"] {
   max-width: 100%;
+}
+
+/* Chat surface follows the same neutral editor treatment as the rest of the app. */
+.chat-page {
+  --chat-ink: #202123;
+  --chat-muted: #73767d;
+  --chat-line: #e8e8ea;
+  background: #ffffff;
+}
+
+.chat-header {
+  position: relative;
+  height: 56px;
+  border-bottom-color: #ededee;
+  padding: 0 22px;
+}
+
+.chat-brand {
+  gap: 9px;
+}
+
+.chat-brand-mark {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: #edf4ff;
+  color: #2f80ed;
+}
+
+.chat-kicker {
+  display: none;
+}
+
+.chat-brand h1 {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.chat-header-actions {
+  position: absolute;
+  top: 50%;
+  right: 48px;
+  margin: 0;
+  z-index: 20;
+  transform: translateY(-50%);
+}
+
+/* Keep both toolbars on the same center line: Chat actions left, shell search actions right. */
+.chat-top-actions-layer {
+  height: 56px;
+}
+
+.chat-top-actions-layer .top-actions {
+  margin-right: 0;
+}
+
+.chat-top-actions-layer .top-actions [data-slot="button"] {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+
+.chat-content,
+.chat-composer-wrap {
+  width: min(820px, calc(100% - 48px));
+}
+
+.chat-content {
+  padding-top: 34px;
+}
+
+.chat-status-dot,
+.chat-generation-status-dot {
+  background: #2f80ed;
+  box-shadow: 0 0 0 3px rgb(47 128 237 / 12%);
+}
+
+.chat-message {
+  margin-top: 34px;
+}
+
+.assistant-avatar {
+  border-radius: 8px;
+  background: #edf4ff;
+  color: #2f80ed;
+}
+
+.user-avatar {
+  border-radius: 8px;
+  background: #343541;
+}
+
+.chat-message-text a,
+.chat-tools-hint a,
+.chat-tools-hint button,
+.chat-tools-composer-hint button {
+  color: #2f80ed;
+}
+
+.user-message .chat-message-text {
+  border: 0;
+  border-radius: 16px;
+  background: #f1f1f2;
+  padding: 10px 14px;
+}
+
+.chat-composer {
+  border-color: #dedee1;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 5%);
+}
+
+.chat-composer:focus-within {
+  border-color: #8bb9f5;
+  box-shadow:
+    0 5px 18px rgb(47 128 237 / 10%),
+    0 0 0 3px rgb(47 128 237 / 9%);
+}
+
+.chat-composer textarea {
+  min-height: 72px;
+  padding: 14px 16px 8px;
+}
+
+.chat-composer-footer {
+  border-top-color: #ededee;
+  padding: 6px 8px 8px;
+}
+
+.chat-tool-button,
+.chat-model-picker,
+.chat-sandbox-picker,
+.chat-tools-picker {
+  border-radius: 7px;
+}
+
+.chat-model-picker,
+.chat-sandbox-picker,
+.chat-tools-picker {
+  border-color: #e3e3e5;
+  background: #ffffff;
+}
+
+.chat-model-picker:hover,
+.chat-model-picker:focus-within,
+.chat-sandbox-picker:hover,
+.chat-sandbox-picker:focus-within,
+.chat-tools-picker:hover,
+.chat-tools-picker:focus-visible {
+  border-color: #cfd0d3;
+  background: #f7f7f8;
+}
+
+.chat-send-button {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #2f80ed;
+  box-shadow: none;
+}
+
+.chat-send-button:hover {
+  background: #1769d1;
+  box-shadow: none;
+  transform: none;
+}
+
+.chat-tools-hint-chips button {
+  border-radius: 8px;
+  background: #f7f7f8;
+}
+
+.dark .chat-page {
+  --chat-ink: #f1f1f2;
+  --chat-muted: #9b9ca1;
+  --chat-line: #393a40;
+  background: #212124;
+}
+
+.dark .chat-composer,
+.dark .chat-model-picker,
+.dark .chat-sandbox-picker,
+.dark .chat-tools-picker {
+  border-color: #4a4b52;
+  background: #292a2e;
+}
+
+.dark .user-message .chat-message-text {
+  background: #343541;
+}
+
+@media (max-width: 640px) {
+  .chat-header-actions {
+    right: 60px;
+  }
 }

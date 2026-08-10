@@ -178,7 +178,7 @@ function ImageGenerationPage() {
   }
 
   return (
-    <div className="flex w-full flex-1 flex-col gap-7 px-6 pt-14 pb-10 sm:px-10 lg:px-16">
+    <div className="app-page-root image-generation-page flex w-full flex-1 flex-col gap-7 px-6 pt-14 pb-10 sm:px-10 lg:px-16">
       <header>
         <p className="font-medium text-muted-foreground text-sm">Creative tools</p>
         <h1 className="mt-2 flex items-center gap-2 font-semibold text-3xl tracking-normal">
@@ -204,7 +204,7 @@ function ImageGenerationPage() {
         </section>
       ) : null}
 
-      <section className="grid gap-0 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+      <section className="image-generation-workbench grid gap-0 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         <div className="bg-card p-5">
           <div className="mb-5 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">

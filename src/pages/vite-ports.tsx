@@ -26,7 +26,7 @@ function VitePortsPage() {
   const isInitialLoading = processesQuery.isPending && !processesQuery.data;
 
   return (
-    <div className="flex w-full flex-1 flex-col gap-6 px-6 pt-14 pb-10 sm:px-10">
+    <div className="app-page-root flex w-full flex-1 flex-col gap-6 px-6 pt-14 pb-10 sm:px-10">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="font-medium text-sm text-muted-foreground">VitePorts</p>

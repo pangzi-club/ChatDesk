@@ -935,16 +935,7 @@ function ChatPage() {
                   {availablePacks.map((id) => getPackMeta(id).label).join(" · ")}
                   。用自然语言提问即可自动调用工具。
                 </p>
-              ) : (
-                <p>
-                  尚未启用可用 Tools。
-                  <button type="button" onClick={() => setToolsOpen(true)}>
-                    选择 Tools
-                  </button>
-                  {" · "}
-                  <Link to="/settings/tools">设置页</Link>
-                </p>
-              )}
+              ) : null}
             </div>
           ) : null}
           {messages.map((message) => (

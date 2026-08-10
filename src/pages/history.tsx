@@ -249,7 +249,13 @@ function HistoryPage({ embedded = false }: { embedded?: boolean }) {
   }
 
   return (
-    <div className={embedded ? "space-y-4" : "flex h-full min-h-0 flex-col overflow-hidden"}>
+    <div
+      className={
+        embedded
+          ? "history-page-root space-y-4"
+          : "history-page-root flex h-full min-h-0 flex-col overflow-hidden"
+      }
+    >
       <header
         className={
           embedded

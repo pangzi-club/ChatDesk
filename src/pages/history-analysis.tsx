@@ -72,7 +72,7 @@ function HistoryAnalysisPage() {
   const isInitialLoading = analysisQuery.isPending && !analysisQuery.data;
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+    <div className="app-page-root flex h-full min-h-0 flex-col overflow-hidden">
       <header className="shrink-0 border-border border-b bg-background px-4 pt-12 pb-4 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>

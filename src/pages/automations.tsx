@@ -135,8 +135,8 @@ function AutomationsPage() {
   }
 
   return (
-    <main className="min-h-full bg-background px-5 pt-14 pb-10 text-foreground sm:px-8 lg:px-12">
-      <div className="mx-auto max-w-5xl">
+    <main className="app-page-root min-h-full px-5 pt-14 pb-10 text-foreground sm:px-8 lg:px-12">
+      <div className="app-page-container mx-auto max-w-5xl">
         <header className="flex flex-wrap items-end justify-between gap-5 border-border border-b pb-6">
           <div>
             <p className="font-mono text-[11px] text-muted-foreground uppercase tracking-[0.18em]">

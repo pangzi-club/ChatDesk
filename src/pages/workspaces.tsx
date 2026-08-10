@@ -61,7 +61,7 @@ function WorkspacesPage() {
   const error = addMutation.error ?? removeMutation.error ?? projectsQuery.error;
 
   return (
-    <div className="flex w-full flex-1 flex-col gap-6 px-4 pt-12 pb-8 sm:px-6 lg:px-8">
+    <div className="app-page-root flex w-full flex-1 flex-col gap-6 px-4 pt-12 pb-8 sm:px-6 lg:px-8">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="font-medium text-muted-foreground text-xs uppercase tracking-[0.16em]">

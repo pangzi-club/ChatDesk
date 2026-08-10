@@ -19,7 +19,6 @@ import {
   LoaderCircle,
   Lock,
   MessageCircle,
-  Monitor,
   MoreHorizontal,
   Package,
   Palette,
@@ -288,7 +287,7 @@ function AppShell() {
       <ChatServerStatusBanner />
       <div className="flex min-h-0 w-full flex-1 overflow-hidden bg-background">
         {hideMainSidebar ? (
-          <div className="relative flex min-w-0 flex-1 flex-col bg-background">
+          <div className="app-shell-content relative flex min-w-0 flex-1 flex-col">
             <section
               className={`min-h-0 flex-1 ${lockOutletScroll ? "overflow-hidden" : "overflow-y-auto"}`}
             >
@@ -302,7 +301,7 @@ function AppShell() {
         {!hideMainSidebar ? (
           <>
             {/* 左列：红绿灯 + 侧栏同一背景，连成一体 */}
-            <aside className="flex w-[272px] shrink-0 flex-col border-border border-r bg-card max-md:w-[72px] max-sm:w-16">
+            <aside className="app-shell-sidebar flex w-[248px] shrink-0 flex-col border-border border-r max-md:w-[72px] max-sm:w-16">
               <div className="flex h-8 shrink-0 items-center select-none">
                 <TitlebarDragRegion />
               </div>
@@ -359,7 +358,7 @@ function AppShell() {
             </aside>
 
             {/* 右列：内容区铺满到窗口顶部，拖拽条透明浮在上方 */}
-            <div className="relative flex min-w-0 flex-1 flex-col bg-background max-sm:w-[calc(100vw-4rem)]">
+            <div className="app-shell-content relative flex min-w-0 flex-1 flex-col max-sm:w-[calc(100vw-4rem)]">
               <div
                 className={`chat-split-layout ${isChatPage && chatWindowStates[chatWindowKey]?.open ? "is-open" : ""}`}
               >
@@ -408,11 +407,12 @@ function AppShell() {
                   </>
                 ) : null}
               </div>
-              <div className="absolute inset-x-0 top-0 z-10 flex h-8 items-center">
+              <div
+                className={`absolute inset-x-0 top-0 z-10 flex h-8 items-center ${isChatPage ? "chat-top-actions-layer" : ""}`}
+              >
                 <TitlebarDragRegion />
                 <TopActions
                   isPanelOpen={isChatPage && Boolean(chatWindowStates[chatWindowKey]?.open)}
-                  onOpenCommandMenu={() => setIsCommandMenuOpen(true)}
                   onTogglePanel={() => {
                     if (!isChatPage) return;
                     setChatWindowStates((current) => {
@@ -501,8 +501,8 @@ function ChatServerStatusBanner() {
 
 function SidebarHeader() {
   return (
-    <header className="flex items-center px-3 pt-3 pb-2 max-md:justify-center max-md:px-2 max-sm:px-1.5">
-      <h1 className="truncate pl-2 font-semibold text-base text-primary max-md:hidden">
+    <header className="flex items-center px-4 pt-3 pb-2 max-md:justify-center max-md:px-2 max-sm:px-1.5">
+      <h1 className="truncate pl-2 font-semibold text-[15px] text-foreground max-md:hidden">
         m-dashboard
       </h1>
     </header>
@@ -515,16 +515,17 @@ function SidebarNavItem({ item }: { item: (typeof navItems)[number] }) {
   return (
     <NavLink
       className={({ isActive }) =>
-        `flex h-7 w-full items-center gap-2 rounded-md px-3 text-left text-[13px] font-medium transition-colors ${
-          isActive
-            ? "bg-primary/12 text-primary shadow-xs ring-1 ring-primary/25"
-            : "text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground"
-        } max-md:justify-center max-md:px-0 max-sm:h-8`
+        `sidebar-nav-item flex h-8 w-full items-center gap-2 px-3 text-left text-[13px] font-medium transition-colors max-md:justify-center max-md:px-0 max-sm:h-8 ${isActive ? "is-active" : ""}`
       }
       to={item.to}
     >
-      <Icon className="size-4 shrink-0" />
-      <span className="max-md:hidden">{item.label}</span>
+      {({ isActive }) => (
+        <>
+          <Icon className="size-4 shrink-0" />
+          <span className="max-md:hidden">{item.label}</span>
+          <span className="sr-only">{isActive ? "当前页面" : ""}</span>
+        </>
+      )}
     </NavLink>
   );
 }
@@ -1257,36 +1258,15 @@ function clamp(value: number, min: number, max: number) {
 
 function TopActions({
   isPanelOpen,
-  onOpenCommandMenu,
   onTogglePanel,
   showPanelToggle,
 }: {
   isPanelOpen: boolean;
-  onOpenCommandMenu: () => void;
   onTogglePanel: () => void;
   showPanelToggle: boolean;
 }) {
   return (
-    <div className="mt-1 flex items-center gap-1.5 px-3 text-muted-foreground max-sm:gap-0.5 max-sm:px-2">
-      <Button
-        aria-label="Open command menu"
-        className="hidden h-8 gap-1.5 px-2 text-xs sm:inline-flex"
-        onClick={onOpenCommandMenu}
-        type="button"
-        variant="ghost"
-      >
-        <Search className="size-3.5" />
-        <span aria-hidden="true">⌘ K</span>
-      </Button>
-      <Button
-        aria-label="Minimize panel"
-        className="size-8"
-        size="icon"
-        type="button"
-        variant="ghost"
-      >
-        <Monitor className="size-4" />
-      </Button>
+    <div className="top-actions flex items-center gap-1.5 pr-3 text-muted-foreground max-sm:gap-0.5 max-sm:px-2">
       {showPanelToggle ? (
         <Button
           aria-label={isPanelOpen ? "关闭 Chat 独立窗口" : "打开 Chat 独立窗口"}
