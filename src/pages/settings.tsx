@@ -4,10 +4,13 @@ import {
   Brain,
   ChartColumn,
   Check,
+  CircleAlert,
+  CircleCheck,
   ExternalLink,
   Eye,
   EyeOff,
   KeyRound,
+  LoaderCircle,
   Package,
   Palette,
   PanelTop,
@@ -78,6 +81,7 @@ import {
   loadChatServerPort,
   restartChatServer,
   saveChatServerConfig,
+  testChatServerModel,
   updateChatServerPort,
 } from "@/lib/chat-server";
 import {
@@ -1679,14 +1683,57 @@ function ModelDialog({
   const [showKey, setShowKey] = useState(false);
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
+  const [testState, setTestState] = useState<
+    { type: "success" | "error"; message: string } | undefined
+  >();
   const providerKey: ProviderKey =
     model.provider === providerPresets.deepseek.label ? "deepseek" : "custom";
-  const update = <K extends keyof ModelConfig>(key: K, value: ModelConfig[K]) =>
+  function update<K extends keyof ModelConfig>(key: K, value: ModelConfig[K]) {
+    setError("");
+    setTestState(undefined);
     setModel((current) => ({ ...current, [key]: value }));
+  }
+
+  function readConnectionFields() {
+    const name = model.name.trim();
+    const baseUrl = model.baseUrl.trim();
+    const apiKey = model.apiKey.trim();
+    if (!name || !baseUrl || !apiKey) {
+      setError("请填写模型名称、接口地址和 API Key。");
+      return null;
+    }
+    try {
+      const url = new URL(baseUrl);
+      if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error();
+    } catch {
+      setError("接口地址必须是合法的 http 或 https URL。");
+      return null;
+    }
+    return { name, baseUrl, apiKey };
+  }
+
+  async function testConnection() {
+    setError("");
+    setTestState(undefined);
+    const fields = readConnectionFields();
+    if (!fields) return;
+    setIsTesting(true);
+    try {
+      const result = await testChatServerModel({ ...fields, responsive: model.responsive });
+      setTestState({ type: "success", message: `API 可用，响应耗时 ${result.durationMs} ms` });
+    } catch (testError) {
+      setTestState({ type: "error", message: `API 不可用：${describeError(testError)}` });
+    } finally {
+      setIsTesting(false);
+    }
+  }
 
   function handleProviderChange(nextProvider: ProviderKey) {
     const preset = providerPresets[nextProvider];
     const firstModel = preset.models[0];
+    setError("");
+    setTestState(undefined);
     setModel((current) => ({
       ...current,
       provider: preset.label,
@@ -1708,6 +1755,8 @@ function ModelDialog({
   function handleDeepSeekModelChange(name: string) {
     const preset = providerPresets.deepseek.models.find((item) => item.name === name);
     if (!preset) return;
+    setError("");
+    setTestState(undefined);
     setModel((current) => ({
       ...current,
       name: preset.name,
@@ -1722,6 +1771,8 @@ function ModelDialog({
   }
 
   function handleResponsiveChange(responsive: boolean) {
+    setError("");
+    setTestState(undefined);
     setModel((current) => ({
       ...current,
       responsive,
@@ -1731,20 +1782,8 @@ function ModelDialog({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const name = model.name.trim();
-    const baseUrl = model.baseUrl.trim();
-    const apiKey = model.apiKey.trim();
-    if (!name || !baseUrl || !apiKey) {
-      setError("请填写模型名称、接口地址和 API Key。");
-      return;
-    }
-    try {
-      const url = new URL(baseUrl);
-      if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error();
-    } catch {
-      setError("接口地址必须是合法的 http 或 https URL。");
-      return;
-    }
+    const fields = readConnectionFields();
+    if (!fields) return;
     if (
       (model.inputContext !== undefined &&
         (!Number.isInteger(model.inputContext) || model.inputContext <= 0)) ||
@@ -1757,7 +1796,7 @@ function ModelDialog({
     setIsSaving(true);
     setError("");
     try {
-      await onSave({ ...model, name, baseUrl, apiKey });
+      await onSave({ ...model, ...fields });
     } catch {
       setError("保存失败，请重试。");
     } finally {
@@ -1993,13 +2032,41 @@ function ModelDialog({
           ) : null}
           {error ? <p className="text-destructive text-xs">{error}</p> : null}
         </div>
-        <div className="flex justify-end gap-2 border-border border-t px-6 py-4">
-          <Button onClick={onClose} type="button" variant="outline">
-            取消
-          </Button>
-          <Button disabled={isSaving} type="submit">
-            {isSaving ? "保存中…" : "保存"}
-          </Button>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-border border-t px-6 py-4">
+          <div className="min-h-5 text-xs" role={testState ? "status" : undefined}>
+            {testState?.type === "success" ? (
+              <p className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                <CircleCheck className="size-3.5" />
+                {testState.message}
+              </p>
+            ) : testState?.type === "error" ? (
+              <p className="flex items-center gap-1.5 text-destructive">
+                <CircleAlert className="size-3.5" />
+                {testState.message}
+              </p>
+            ) : null}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              disabled={isSaving || isTesting}
+              onClick={() => void testConnection()}
+              type="button"
+              variant="outline"
+            >
+              {isTesting ? (
+                <LoaderCircle className="size-3.5 animate-spin" />
+              ) : (
+                <PlugZap className="size-3.5" />
+              )}
+              {isTesting ? "测试中…" : "测试 API"}
+            </Button>
+            <Button onClick={onClose} type="button" variant="outline">
+              取消
+            </Button>
+            <Button disabled={isSaving || isTesting} type="submit">
+              {isSaving ? "保存中…" : "保存"}
+            </Button>
+          </div>
         </div>
       </form>
     </div>

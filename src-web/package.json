@@ -8,7 +8,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "node --experimental-strip-types src/server.ts",
+    "dev": "node --watch --experimental-strip-types src/server.ts",
     "start": "node --experimental-strip-types src/server.ts",
     "test": "node --experimental-strip-types --test src/*.test.ts",
     "typecheck": "tsc --noEmit"

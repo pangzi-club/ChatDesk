@@ -192,6 +192,17 @@ describe("chat server", () => {
     assert.equal((await removed.json()).approvalReviewerModelId, undefined);
   });
 
+  it("validates model test input before contacting the provider", async () => {
+    const server = await createTestServer();
+    const response = await server.app.request("http://localhost/v1/models/test", {
+      method: "POST",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "test-model", baseUrl: "ftp://example.com", apiKey: "key" }),
+    });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /http|https/);
+  });
+
   it("recovers interrupted runs as errored sessions", async () => {
     const dataDir = await mkdtemp(path.join(os.tmpdir(), "m-dashboard-recovery-"));
     temporaryDirectories.push(dataDir);

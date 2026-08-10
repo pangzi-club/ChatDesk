@@ -35,7 +35,7 @@ pnpm test
 pnpm typecheck
 ```
 
-`pnpm dev` 和 `pnpm start` 都会执行 `src/server.ts`。开发模式下服务默认监听 `http://127.0.0.1:14317`。
+`pnpm dev` 会以 Node.js watch 模式执行 `src/server.ts`，修改 `src-web/src` 下的服务端代码后会自动重启；`pnpm start` 用于不启用 watch 的运行方式。开发模式下服务默认监听 `http://127.0.0.1:14317`。
 
 ## 配置
 

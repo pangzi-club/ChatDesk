@@ -18,6 +18,7 @@ import { MemoryStore } from "./memory-store.ts";
 import { scanSkills } from "./skills-store.ts";
 import { McpRuntime } from "./mcp-runtime.ts";
 import { closeClientTools } from "./client-tools.ts";
+import { testModelConnection } from "./model-test.ts";
 
 const runInputSchema = z.object({
   messages: z.array(z.unknown()).optional(),
@@ -39,6 +40,18 @@ const runInputSchema = z.object({
   sandboxMode: z.enum(["ask", "auto", "full"]).optional(),
   title: z.string().optional(),
   toolNames: z.array(z.string()).max(100).optional(),
+});
+
+const modelTestSchema = z.object({
+  name: z.string().trim().min(1),
+  baseUrl: z
+    .string()
+    .url()
+    .refine((value) => ["http:", "https:"].includes(new URL(value).protocol), {
+      message: "接口地址必须是合法的 http 或 https URL",
+    }),
+  apiKey: z.string().min(1),
+  responsive: z.boolean().optional(),
 });
 
 const execFileAsync = promisify(execFile);
@@ -205,6 +218,20 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
       return c.json(await chatConfig.update(await c.req.json()));
     } catch (error) {
       return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+
+  app.post("/v1/models/test", async (c) => {
+    let model: z.infer<typeof modelTestSchema>;
+    try {
+      model = parseJson(await c.req.json(), modelTestSchema);
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+    try {
+      return c.json(await testModelConnection(model));
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error), 502);
     }
   });
 

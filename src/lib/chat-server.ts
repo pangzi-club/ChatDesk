@@ -285,6 +285,37 @@ export async function saveChatServerConfig(value: unknown, port?: number) {
   return (await response.json()) as ChatServerConfigData;
 }
 
+export async function testChatServerModel(
+  model: {
+    name: string;
+    baseUrl: string;
+    apiKey: string;
+    responsive?: boolean;
+  },
+  port?: number,
+) {
+  const response = await requestChatServerResponse(
+    "/v1/models/test",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(model),
+    },
+    port,
+  );
+  if (!response.ok) {
+    let message = `模型测试失败（${response.status}）`;
+    try {
+      const payload = (await response.json()) as { error?: unknown };
+      if (typeof payload.error === "string" && payload.error) message = payload.error;
+    } catch {
+      // Ignore malformed error responses and keep the status-based message.
+    }
+    throw new Error(message);
+  }
+  return (await response.json()) as { durationMs: number };
+}
+
 export async function loadChatServerReviewerLogs(sessionId?: string, port?: number) {
   const query = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
   const response = await chatServerRequest(`/v1/sandbox-reviews${query}`, undefined, port);
