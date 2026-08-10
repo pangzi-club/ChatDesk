@@ -26,7 +26,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Check formatting
-        run: pnpm exec biome format --check .
+        run: pnpm exec biome format .
       - name: Run static checks
         run: pnpm check
       - name: Run Chat Server tests
