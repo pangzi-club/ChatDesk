@@ -95,7 +95,7 @@ import {
   saveMcpServers,
   testMcpConnection,
 } from "@/lib/mcp";
-import { loadModels, type ModelConfig, saveModels } from "@/lib/models";
+import { formatModelLabel, loadModels, type ModelConfig, saveModels } from "@/lib/models";
 import {
   loadAvailableSkills,
   loadInstalledSkillIds,
@@ -1413,6 +1413,7 @@ function ModelsSettingsPage() {
   });
   const models = modelsQuery.data ?? [];
   const [notice, setNotice] = useState("");
+  const [reviewerNotice, setReviewerNotice] = useState("");
   const [editing, setEditing] = useState<ModelConfig | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modelToDelete, setModelToDelete] = useState<ModelConfig | null>(null);
@@ -1421,9 +1422,18 @@ function ModelsSettingsPage() {
       saveChatServerConfig({
         approvalReviewerModelId: modelId === "__none__" ? undefined : modelId,
       }),
-    onSuccess: (config) => {
+    onSuccess: (config, modelId) => {
       queryClient.setQueryData(["chat-server-chat-config"], config);
-      setNotice("权限 Reviewer 设置已保存。");
+      if (modelId === "__none__") {
+        setReviewerNotice(
+          "已关闭自动 Reviewer。之后所有越过 workspace 或 Seatbelt 的请求都会暂停，并等待你的人工确认。",
+        );
+        return;
+      }
+      const model = models.find((item) => item.id === modelId);
+      setReviewerNotice(
+        `已保存：${model ? `「${formatModelLabel(model)}」` : "选定模型"} 现在负责判断是否批准越过 workspace 或 Seatbelt 的一次性请求。Reviewer 不会执行工具或读取工作区；调用失败时仍会回退人工确认。`,
+      );
     },
   });
   const reviewerModelId = chatConfigQuery.data?.approvalReviewerModelId ?? "__none__";
@@ -1488,45 +1498,6 @@ function ModelsSettingsPage() {
         title="模型"
         description="管理可用的 OpenAI 兼容模型配置，以及用于自动审批边界请求的 Reviewer。"
       />
-      <section className="mb-5 rounded-lg border border-border bg-card p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h2 className="font-medium text-sm">权限 Reviewer</h2>
-            <p className="mt-1 max-w-lg text-muted-foreground text-xs leading-5">
-              Approve for me 遇到需要越过 workspace 或 Seatbelt
-              的请求时，由选定模型判断是否允许一次性执行。 未配置或调用失败时回退为人工确认。
-            </p>
-            <p className="mt-2 max-w-lg text-muted-foreground text-xs leading-5">
-              Reviewer 只接收精简的对话上下文、工具名称和参数摘要，不会执行工具或读取工作区内容。
-              每次批准只对当前 tool call 生效，不会修改全局沙箱权限。
-            </p>
-          </div>
-          <Select
-            disabled={
-              chatConfigQuery.isLoading || modelsQuery.isLoading || reviewerMutation.isPending
-            }
-            value={reviewerModelId}
-            onValueChange={(value) => reviewerMutation.mutate(value)}
-          >
-            <SelectTrigger aria-label="选择权限 Reviewer" className="w-56">
-              <SelectValue placeholder="未配置" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">未配置（人工确认）</SelectItem>
-              {models.map((model) => (
-                <SelectItem key={model.id} value={model.id}>
-                  {model.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        {reviewerMutation.isError ? (
-          <p className="mt-2 text-destructive text-xs">
-            Reviewer 设置保存失败：{describeError(reviewerMutation.error)}
-          </p>
-        ) : null}
-      </section>
       <section className="rounded-lg border border-border bg-card">
         <div className="flex items-center justify-between gap-4 border-border border-b px-5 py-4">
           <div>
@@ -1567,7 +1538,7 @@ function ModelsSettingsPage() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="truncate font-medium text-sm">{model.name}</h3>
+                    <h3 className="truncate font-medium text-sm">{formatModelLabel(model)}</h3>
                     {model.isDefault ? (
                       <Badge className="px-2 py-0.5 text-[10px]">默认</Badge>
                     ) : null}
@@ -1578,7 +1549,7 @@ function ModelsSettingsPage() {
                 </div>
                 {!model.isDefault ? (
                   <Button
-                    aria-label={`设为 ${model.name} 的默认模型`}
+                    aria-label={`设为 ${formatModelLabel(model)} 的默认模型`}
                     onClick={() => void handleSetDefault(model)}
                     size="icon"
                     type="button"
@@ -1588,7 +1559,7 @@ function ModelsSettingsPage() {
                   </Button>
                 ) : null}
                 <Button
-                  aria-label={`编辑 ${model.name}`}
+                  aria-label={`编辑 ${formatModelLabel(model)}`}
                   onClick={() => openEdit(model)}
                   size="icon"
                   type="button"
@@ -1597,7 +1568,7 @@ function ModelsSettingsPage() {
                   <Pencil className="size-4" />
                 </Button>
                 <Button
-                  aria-label={`删除 ${model.name}`}
+                  aria-label={`删除 ${formatModelLabel(model)}`}
                   className="text-destructive hover:text-destructive"
                   onClick={() => setModelToDelete(model)}
                   size="icon"
@@ -1610,6 +1581,54 @@ function ModelsSettingsPage() {
             ))}
           </div>
         )}
+      </section>
+      <section className="mt-5 rounded-lg border border-border bg-card p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="font-medium text-sm">权限 Reviewer</h2>
+            <p className="mt-1 max-w-lg text-muted-foreground text-xs leading-5">
+              Approve for me 遇到需要越过 workspace 或 Seatbelt
+              的请求时，由选定模型判断是否允许一次性执行。未配置或调用失败时回退为人工确认。
+            </p>
+            <p className="mt-2 max-w-lg text-muted-foreground text-xs leading-5">
+              Reviewer 只接收精简的对话上下文、工具名称和参数摘要，不会执行工具或读取工作区内容。
+              每次批准只对当前 tool call 生效，不会修改全局沙箱权限。
+            </p>
+          </div>
+          <div className="flex w-full shrink-0 flex-col gap-2 sm:w-80">
+            <Select
+              disabled={
+                chatConfigQuery.isLoading || modelsQuery.isLoading || reviewerMutation.isPending
+              }
+              value={reviewerModelId}
+              onValueChange={(value) => {
+                setReviewerNotice("");
+                reviewerMutation.mutate(value);
+              }}
+            >
+              <SelectTrigger aria-label="选择权限 Reviewer" className="w-full">
+                <SelectValue placeholder="未配置" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">未配置（人工确认）</SelectItem>
+                {models.map((model) => (
+                  <SelectItem key={model.id} value={model.id}>
+                    {formatModelLabel(model)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {reviewerMutation.isError ? (
+              <p className="text-destructive text-xs" role="alert">
+                Reviewer 设置保存失败：{describeError(reviewerMutation.error)}
+              </p>
+            ) : reviewerNotice ? (
+              <p className="text-emerald-600 text-xs dark:text-emerald-400" role="status">
+                {reviewerNotice}
+              </p>
+            ) : null}
+          </div>
+        </div>
       </section>
       {isModalOpen && editing ? (
         <ModelDialog
@@ -1631,7 +1650,8 @@ function ModelsSettingsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>删除模型？</AlertDialogTitle>
             <AlertDialogDescription>
-              确定要删除“{modelToDelete?.name ?? "这个模型"}”吗？删除后无法恢复。
+              确定要删除“{modelToDelete ? formatModelLabel(modelToDelete) : "这个模型"}
+              ”吗？删除后无法恢复。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -25,6 +25,10 @@ export type ModelConfig = {
   isDefault: boolean;
 };
 
+export function formatModelLabel(model: Pick<ModelConfig, "name" | "responsive">) {
+  return `${model.name} · ${model.responsive ? "Responses API" : "Chat Completions"}`;
+}
+
 export async function loadModels(): Promise<ModelConfig[]> {
   try {
     const config = await loadChatServerConfig();

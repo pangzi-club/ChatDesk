@@ -121,7 +121,7 @@ import {
 } from "@/lib/chat-tools";
 import { formatTokenUsage, getMessageUsage } from "@/lib/chat-usage";
 import { loadMcpServers, saveMcpServers } from "@/lib/mcp";
-import { loadModels, type ModelConfig } from "@/lib/models";
+import { formatModelLabel, loadModels, type ModelConfig } from "@/lib/models";
 import {
   formatSkillsSystemHint,
   loadAvailableSkills,
@@ -1337,10 +1337,6 @@ function formatGenerationElapsed(seconds: number) {
 
 function messageHasToolParts(message: UIMessage) {
   return message.parts.some(isToolUIPart);
-}
-
-function formatModelLabel(model: ModelConfig) {
-  return model.responsive ? `${model.name} · Responses` : model.name;
 }
 
 function createModelTransport(
