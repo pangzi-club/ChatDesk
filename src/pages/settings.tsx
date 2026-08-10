@@ -74,9 +74,11 @@ import {
   saveChatMemory,
 } from "@/lib/chat-memory";
 import { compactChatMemory } from "@/lib/chat-memory-ops";
+import type { ChatServerProviderModel } from "@/lib/chat-server";
 import {
   canRestartChatServer,
   checkChatServer,
+  listChatServerModels,
   loadChatServerConfig,
   loadChatServerPort,
   restartChatServer,
@@ -1371,6 +1373,7 @@ const emptyModel: Omit<ModelConfig, "id"> = {
 
 const DEEPSEEK_CHAT_BASE_URL = "https://api.deepseek.com/chat/completions";
 const DEEPSEEK_RESPONSES_BASE_URL = "https://api.deepseek.com";
+const KIMI_CHAT_BASE_URL = "https://api.moonshot.cn/v1";
 
 function deepseekBaseUrl(responsive: boolean) {
   return responsive ? DEEPSEEK_RESPONSES_BASE_URL : DEEPSEEK_CHAT_BASE_URL;
@@ -1404,9 +1407,49 @@ const providerPresets = {
       },
     ],
   },
+  kimi: {
+    label: "Kimi / Moonshot",
+    baseUrl: KIMI_CHAT_BASE_URL,
+    models: [
+      { name: "kimi-k3", supportsTools: true, supportsImages: true, supportsReasoning: true },
+      {
+        name: "kimi-k2.7-code",
+        supportsTools: true,
+        supportsImages: false,
+        supportsReasoning: true,
+      },
+      {
+        name: "kimi-k2.7-code-highspeed",
+        supportsTools: true,
+        supportsImages: false,
+        supportsReasoning: true,
+      },
+      { name: "kimi-k2.6", supportsTools: true, supportsImages: true, supportsReasoning: true },
+      { name: "kimi-k2.5", supportsTools: true, supportsImages: true, supportsReasoning: true },
+    ],
+  },
 } as const;
 
 type ProviderKey = keyof typeof providerPresets;
+type ProviderPresetModel = {
+  name: string;
+  supportsTools: boolean;
+  supportsImages: boolean;
+  supportsReasoning: boolean;
+  inputContext?: number;
+  outputContext?: number;
+};
+
+type ListedProviderModel = ChatServerProviderModel;
+
+function providerModelsCacheKey(baseUrl: string, apiKey: string) {
+  let hash = 2166136261;
+  for (const character of apiKey) {
+    hash ^= character.codePointAt(0) ?? 0;
+    hash = Math.imul(hash, 16777619);
+  }
+  return ["provider-models", baseUrl, (hash >>> 0).toString(16)] as const;
+}
 
 function ModelsSettingsPage() {
   const queryClient = useQueryClient();
@@ -1679,16 +1722,53 @@ function ModelDialog({
   onClose: () => void;
   onSave: (model: ModelConfig) => Promise<void>;
 }) {
+  const queryClient = useQueryClient();
   const [model, setModel] = useState(initialModel);
   const [showKey, setShowKey] = useState(false);
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
+  const [providerModels, setProviderModels] = useState<ProviderPresetModel[]>(() => {
+    const models: ProviderPresetModel[] = providerPresets.kimi.models.map((item) => ({ ...item }));
+    if (
+      initialModel.provider === providerPresets.kimi.label &&
+      initialModel.name &&
+      !models.some((item) => item.name === initialModel.name)
+    ) {
+      models.push({
+        name: initialModel.name,
+        supportsTools: initialModel.supportsTools,
+        supportsImages: initialModel.supportsImages,
+        supportsReasoning: initialModel.supportsReasoning,
+        inputContext: initialModel.inputContext,
+        outputContext: initialModel.outputContext,
+      });
+    }
+    return models;
+  });
   const [testState, setTestState] = useState<
     { type: "success" | "error"; message: string } | undefined
   >();
   const providerKey: ProviderKey =
-    model.provider === providerPresets.deepseek.label ? "deepseek" : "custom";
+    model.provider === providerPresets.deepseek.label
+      ? "deepseek"
+      : model.provider === providerPresets.kimi.label
+        ? "kimi"
+        : "custom";
+  const presetModels: ProviderPresetModel[] =
+    providerKey === "kimi"
+      ? providerModels
+      : providerPresets[providerKey].models.map((item) => ({ ...item }));
+  const providerBaseUrl = model.baseUrl.trim();
+  const providerApiKey = model.apiKey.trim();
+  const providerModelsQueryKey = providerModelsCacheKey(providerBaseUrl, providerApiKey);
+  const providerModelsQuery = useQuery({
+    queryKey: providerModelsQueryKey,
+    queryFn: () => listChatServerModels({ baseUrl: providerBaseUrl, apiKey: providerApiKey }),
+    enabled: false,
+    staleTime: 5 * 60 * 1000,
+  });
+  const isLoadingProviderModels = providerModelsQuery.isFetching;
   function update<K extends keyof ModelConfig>(key: K, value: ModelConfig[K]) {
     setError("");
     setTestState(undefined);
@@ -1713,6 +1793,40 @@ function ModelDialog({
     return { name, baseUrl, apiKey };
   }
 
+  async function refreshProviderModels() {
+    setError("");
+    setTestState(undefined);
+    const baseUrl = providerBaseUrl;
+    const apiKey = providerApiKey;
+    if (!baseUrl || !apiKey) {
+      setError("请填写接口地址和 API Key。");
+      return;
+    }
+    try {
+      const listed = await queryClient.ensureQueryData({
+        queryKey: providerModelsQueryKey,
+        queryFn: () => listChatServerModels({ baseUrl, apiKey }),
+        staleTime: 5 * 60 * 1000,
+      });
+      const nextModels: ProviderPresetModel[] = (listed as ListedProviderModel[])
+        .filter((item) => item.id.startsWith("kimi-") || item.id.startsWith("moonshot-"))
+        .map((item: ChatServerProviderModel) => ({
+          name: item.id,
+          supportsTools: true,
+          supportsImages: item.supportsImageIn === true,
+          supportsReasoning: item.supportsReasoning === true,
+          inputContext: item.contextLength,
+        }));
+      if (nextModels.length === 0) throw new Error("接口未返回可用的 Kimi 模型");
+      setProviderModels(nextModels);
+      const selected = nextModels.find((item) => item.name === model.name) ?? nextModels[0];
+      setModel((current) => ({ ...current, ...selected, baseUrl }));
+      setTestState({ type: "success", message: `已获取 ${nextModels.length} 个 Kimi 模型` });
+    } catch (refreshError) {
+      setTestState({ type: "error", message: `获取模型失败：${describeError(refreshError)}` });
+    }
+  }
+
   async function testConnection() {
     setError("");
     setTestState(undefined);
@@ -1731,14 +1845,20 @@ function ModelDialog({
 
   function handleProviderChange(nextProvider: ProviderKey) {
     const preset = providerPresets[nextProvider];
-    const firstModel = preset.models[0];
+    const firstModel = preset.models[0] as ProviderPresetModel | undefined;
     setError("");
     setTestState(undefined);
     setModel((current) => ({
       ...current,
       provider: preset.label,
-      baseUrl: nextProvider === "deepseek" ? deepseekBaseUrl(current.responsive) : "",
-      ...(nextProvider === "deepseek" && firstModel
+      baseUrl:
+        nextProvider === "deepseek"
+          ? deepseekBaseUrl(current.responsive)
+          : nextProvider === "kimi"
+            ? KIMI_CHAT_BASE_URL
+            : "",
+      responsive: nextProvider === "kimi" ? false : current.responsive,
+      ...(nextProvider !== "custom" && firstModel
         ? {
             name: firstModel.name,
             supportsTools: firstModel.supportsTools,
@@ -1752,15 +1872,16 @@ function ModelDialog({
     }));
   }
 
-  function handleDeepSeekModelChange(name: string) {
-    const preset = providerPresets.deepseek.models.find((item) => item.name === name);
+  function handlePresetModelChange(name: string) {
+    const preset = presetModels.find((item) => item.name === name);
     if (!preset) return;
     setError("");
     setTestState(undefined);
     setModel((current) => ({
       ...current,
       name: preset.name,
-      baseUrl: deepseekBaseUrl(current.responsive),
+      baseUrl:
+        providerKey === "deepseek" ? deepseekBaseUrl(current.responsive) : KIMI_CHAT_BASE_URL,
       supportsTools: preset.supportsTools,
       supportsImages: preset.supportsImages,
       supportsReasoning: preset.supportsReasoning,
@@ -1775,7 +1896,7 @@ function ModelDialog({
     setTestState(undefined);
     setModel((current) => ({
       ...current,
-      responsive,
+      responsive: providerKey === "kimi" ? false : responsive,
       ...(providerKey === "deepseek" ? { baseUrl: deepseekBaseUrl(responsive) } : {}),
     }));
   }
@@ -1841,14 +1962,20 @@ function ModelDialog({
                 </SelectContent>
               </Select>
             </div>
-            {providerKey === "deepseek" ? (
+            {providerKey === "deepseek" || providerKey === "kimi" ? (
               <a
                 className="mb-2 inline-flex shrink-0 items-center gap-1 text-sm text-sky-500 hover:text-sky-400"
-                href="https://platform.deepseek.com/api-docs"
+                href={
+                  providerKey === "kimi"
+                    ? "https://platform.kimi.com/docs"
+                    : "https://platform.deepseek.com/api-docs"
+                }
                 onClick={(event) => {
                   event.preventDefault();
                   window.open(
-                    "https://platform.deepseek.com/api-docs",
+                    providerKey === "kimi"
+                      ? "https://platform.kimi.com/docs"
+                      : "https://platform.deepseek.com/api-docs",
                     "_blank",
                     "noopener,noreferrer",
                   );
@@ -1860,7 +1987,7 @@ function ModelDialog({
               </a>
             ) : null}
           </div>
-          {providerKey === "custom" ? (
+          {providerKey === "custom" || providerKey === "kimi" ? (
             <div className="block text-sm">
               <label className="font-medium" htmlFor="model-base-url">
                 接口地址
@@ -1876,6 +2003,20 @@ function ModelDialog({
                 }
                 value={model.baseUrl}
               />
+              {providerKey === "kimi" ? (
+                <Button
+                  className="mt-2"
+                  disabled={isLoadingProviderModels || isTesting || isSaving}
+                  onClick={() => void refreshProviderModels()}
+                  type="button"
+                  variant="outline"
+                >
+                  <RefreshCw
+                    className={isLoadingProviderModels ? "size-3.5 animate-spin" : "size-3.5"}
+                  />
+                  {isLoadingProviderModels ? "获取中…" : "从 Kimi 获取模型"}
+                </Button>
+              ) : null}
             </div>
           ) : null}
           <fieldset>
@@ -1933,13 +2074,13 @@ function ModelDialog({
             <label className="font-medium" htmlFor="model-name">
               模型名称
             </label>
-            {providerKey === "deepseek" ? (
-              <Select value={model.name} onValueChange={handleDeepSeekModelChange}>
+            {providerKey === "deepseek" || providerKey === "kimi" ? (
+              <Select value={model.name} onValueChange={handlePresetModelChange}>
                 <SelectTrigger className="mt-2 h-10 w-full bg-background" id="model-name">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {providerPresets.deepseek.models.map((preset) => (
+                  {presetModels.map((preset) => (
                     <SelectItem key={preset.name} value={preset.name}>
                       {preset.name}
                     </SelectItem>
@@ -1956,7 +2097,7 @@ function ModelDialog({
               />
             )}
           </div>
-          {providerKey === "custom" ? (
+          {providerKey === "custom" || providerKey === "kimi" ? (
             <fieldset>
               <legend className="font-medium text-sm">高级配置</legend>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -1980,11 +2121,13 @@ function ModelDialog({
                   checked={model.customProtocol}
                   onChange={(value) => update("customProtocol", value)}
                 />
-                <Toggle
-                  label="Responses API"
-                  checked={model.responsive}
-                  onChange={handleResponsiveChange}
-                />
+                {providerKey !== "kimi" ? (
+                  <Toggle
+                    label="Responses API"
+                    checked={model.responsive}
+                    onChange={handleResponsiveChange}
+                  />
+                ) : null}
               </div>
             </fieldset>
           ) : (

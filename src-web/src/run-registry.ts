@@ -30,6 +30,7 @@ import {
 } from "./sandbox-boundary-reviewer.ts";
 import { SandboxReviewLogStore } from "./sandbox-review-log.ts";
 import { hasWorkspace, selectWorkspaceToolNames } from "./tool-selection.ts";
+import { createKimiFetch } from "./kimi.ts";
 
 type ActiveRun = {
   id: string;
@@ -151,7 +152,11 @@ export class RunRegistry {
     this.setStatus(sessionId, "submitted", runId);
 
     try {
-      const provider = createOpenAI({ apiKey: model.apiKey, baseURL: baseUrl(model.baseUrl) });
+      const provider = createOpenAI({
+        apiKey: model.apiKey,
+        baseURL: baseUrl(model.baseUrl),
+        fetch: createKimiFetch(model),
+      });
       const languageModel = model.responsive
         ? provider.responses(model.name.trim())
         : provider.chat(model.name.trim());

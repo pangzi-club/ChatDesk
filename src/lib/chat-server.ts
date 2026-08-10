@@ -316,6 +316,40 @@ export async function testChatServerModel(
   return (await response.json()) as { durationMs: number };
 }
 
+export type ChatServerProviderModel = {
+  id: string;
+  contextLength?: number;
+  supportsImageIn?: boolean;
+  supportsVideoIn?: boolean;
+  supportsReasoning?: boolean;
+};
+
+export async function listChatServerModels(
+  input: { baseUrl: string; apiKey: string },
+  port?: number,
+) {
+  const response = await requestChatServerResponse(
+    "/v1/models/list",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+    port,
+  );
+  if (!response.ok) {
+    let message = `模型列表请求失败（${response.status}）`;
+    try {
+      const payload = (await response.json()) as { error?: unknown };
+      if (typeof payload.error === "string" && payload.error) message = payload.error;
+    } catch {
+      // Keep the status-based message for malformed error responses.
+    }
+    throw new Error(message);
+  }
+  return (await response.json()) as ChatServerProviderModel[];
+}
+
 export async function loadChatServerReviewerLogs(sessionId?: string, port?: number) {
   const query = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
   const response = await chatServerRequest(`/v1/sandbox-reviews${query}`, undefined, port);

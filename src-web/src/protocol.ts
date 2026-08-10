@@ -20,6 +20,7 @@ export type ServerModelConfig = {
   apiKey?: string;
   responsive?: boolean;
   supportsTools?: boolean;
+  supportsReasoning?: boolean;
 };
 
 export type SandboxReviewerDecision = "approve" | "deny";

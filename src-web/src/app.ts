@@ -18,7 +18,7 @@ import { MemoryStore } from "./memory-store.ts";
 import { scanSkills } from "./skills-store.ts";
 import { McpRuntime } from "./mcp-runtime.ts";
 import { closeClientTools } from "./client-tools.ts";
-import { testModelConnection } from "./model-test.ts";
+import { listProviderModels, testModelConnection } from "./model-test.ts";
 
 const runInputSchema = z.object({
   messages: z.array(z.unknown()).optional(),
@@ -31,6 +31,7 @@ const runInputSchema = z.object({
     apiKey: z.string().min(1).optional(),
     responsive: z.boolean().optional(),
     supportsTools: z.boolean().optional(),
+    supportsReasoning: z.boolean().optional(),
   }).optional(),
   modelId: z.string().optional(),
   system: z.string().optional(),
@@ -52,6 +53,16 @@ const modelTestSchema = z.object({
     }),
   apiKey: z.string().min(1),
   responsive: z.boolean().optional(),
+});
+
+const modelListSchema = z.object({
+  baseUrl: z
+    .string()
+    .url()
+    .refine((value) => ["http:", "https:"].includes(new URL(value).protocol), {
+      message: "接口地址必须是合法的 http 或 https URL",
+    }),
+  apiKey: z.string().min(1),
 });
 
 const execFileAsync = promisify(execFile);
@@ -230,6 +241,20 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     }
     try {
       return c.json(await testModelConnection(model));
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error), 502);
+    }
+  });
+
+  app.post("/v1/models/list", async (c) => {
+    let input: z.infer<typeof modelListSchema>;
+    try {
+      input = parseJson(await c.req.json(), modelListSchema);
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+    try {
+      return c.json(await listProviderModels(input));
     } catch (error) {
       return jsonError(error instanceof Error ? error.message : String(error), 502);
     }

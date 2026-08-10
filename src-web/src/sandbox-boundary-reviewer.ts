@@ -2,6 +2,7 @@ import os from "node:os";
 import { existsSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { createOpenAI } from "@ai-sdk/openai";
+import { createKimiFetch } from "./kimi.ts";
 import { generateText, Output, type UIMessage } from "ai";
 import { z } from "zod";
 
@@ -162,7 +163,11 @@ export async function reviewSandboxBoundary(options: {
     throw new Error("Reviewer 模型配置不完整");
   }
 
-  const provider = createOpenAI({ apiKey: model.apiKey, baseURL: resolveBaseUrl(model.baseUrl) });
+  const provider = createOpenAI({
+    apiKey: model.apiKey,
+    baseURL: resolveBaseUrl(model.baseUrl),
+    fetch: createKimiFetch(model),
+  });
   const languageModel = model.responsive
     ? provider.responses(model.name.trim())
     : provider.chat(model.name.trim());
