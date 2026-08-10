@@ -1,8 +1,8 @@
 {
-  "name": "m-dashboard",
+  "name": "chatdesk-workbench",
   "private": true,
   "version": "0.2.0",
-  "description": "A local AI workbench built with Tauri, React, and TypeScript",
+  "description": "ChatDesk, a local AI workbench built with Tauri, React, and TypeScript",
   "license": "MIT",
   "repository": {
     "type": "git",

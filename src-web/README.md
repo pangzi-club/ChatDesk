@@ -1,6 +1,6 @@
 # Chat Server
 
-`src-web` 是 M Dashboard 的本地 Node.js 聊天服务。它使用 Hono 提供 HTTP API，负责会话持久化、多会话运行、流式事件、模型配置、记忆、Skills、MCP 和归档导入。桌面端由 Tauri 启动并管理该服务；开发时也可以单独运行它进行接口调试。
+`src-web` 是 ChatDesk 的本地 Node.js 聊天服务。它使用 Hono 提供 HTTP API，负责会话持久化、多会话运行、流式事件、模型配置、记忆、Skills、MCP 和归档导入。桌面端由 Tauri 启动并管理该服务；开发时也可以单独运行它进行接口调试。
 
 ## 环境要求
 

@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 
 import { classifySandboxBoundary } from "./sandbox-boundary-reviewer.ts";
 
-const workspace = "/tmp/m-dashboard-reviewer-workspace";
+const workspace = "/tmp/chatdesk-reviewer-workspace";
 
 describe("sandbox boundary classifier", () => {
   it("allows ordinary workspace file operations without reviewer", () => {

@@ -1,6 +1,6 @@
-# m-dashboard
+# ChatDesk
 
-m-dashboard 是一个基于 Tauri、React 和 TypeScript 的本地 AI 工作台。它把多模型聊天、会话历史、工作区工具、Skills、MCP、自动化、图片生成和沙箱审批集中在一个桌面应用中。
+ChatDesk 是一个基于 Tauri、React 和 TypeScript 的本地 AI 工作台。它把多模型聊天、会话历史、工作区工具、Skills、MCP、自动化、图片生成和沙箱审批集中在一个桌面应用中。
 
 项目默认在本机运行：前端由 Vite 提供，Node.js Chat Server 负责会话和模型运行，Tauri 负责桌面窗口、原生能力和 sidecar 生命周期管理。API key 和会话数据保存在本机，不会由本项目代为托管。
 

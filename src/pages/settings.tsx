@@ -224,7 +224,7 @@ function SettingsLayout() {
           <SettingsNavItem to="/settings/logs" icon={ScrollText} label="活动记录" />
         </nav>
         <div className="mt-3 border-border border-t py-3 text-[11px] text-muted-foreground max-sm:hidden">
-          m-dashboard
+          ChatDesk
           <span className="mt-1 block opacity-60">本地工作区设置</span>
         </div>
       </aside>
@@ -429,7 +429,7 @@ function ThemeSettingsPage() {
       <SettingsHeading
         eyebrow="Appearance"
         title="主题"
-        description="选择 m-dashboard 的显示方式，设置会在所有页面立即生效。"
+        description="选择 ChatDesk 的显示方式，设置会在所有页面立即生效。"
       />
       <section className="overflow-hidden rounded-lg border border-border bg-card">
         <div className="border-border border-b px-5 py-4">
@@ -1086,7 +1086,7 @@ function TraySettingsPage() {
       <SettingsHeading
         eyebrow="System"
         title="托盘"
-        description="控制 m-dashboard 是否显示在操作系统的菜单栏或系统托盘中。"
+        description="控制 ChatDesk 是否显示在操作系统的菜单栏或系统托盘中。"
       />
       <section className="overflow-hidden rounded-lg border border-border bg-card">
         <label
@@ -1096,7 +1096,7 @@ function TraySettingsPage() {
           <span className="min-w-0">
             <span className="block font-medium text-sm">显示托盘图标</span>
             <span className="mt-1 block text-muted-foreground text-xs">
-              关闭后仍可从应用窗口正常使用 m-dashboard。
+              关闭后仍可从应用窗口正常使用 ChatDesk。
             </span>
           </span>
           <Switch

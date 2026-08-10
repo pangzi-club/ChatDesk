@@ -15,7 +15,7 @@ afterEach(async () => {
 });
 
 async function createTestServer() {
-  const dataDir = await mkdtemp(path.join(os.tmpdir(), "m-dashboard-chat-server-"));
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), "chatdesk-chat-server-"));
   temporaryDirectories.push(dataDir);
   const config: ServerConfig = {
     host: "127.0.0.1",
@@ -146,7 +146,7 @@ describe("chat server", () => {
   });
 
   it("imports legacy sessions from both supported layouts", async () => {
-    const legacyDir = await mkdtemp(path.join(os.tmpdir(), "m-dashboard-legacy-chat-"));
+    const legacyDir = await mkdtemp(path.join(os.tmpdir(), "chatdesk-legacy-chat-"));
     temporaryDirectories.push(legacyDir);
     await mkdir(path.join(legacyDir, "sessions", "legacy-session"), { recursive: true });
     await writeFile(
@@ -251,7 +251,7 @@ describe("chat server", () => {
   });
 
   it("recovers interrupted runs as errored sessions", async () => {
-    const dataDir = await mkdtemp(path.join(os.tmpdir(), "m-dashboard-recovery-"));
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), "chatdesk-recovery-"));
     temporaryDirectories.push(dataDir);
     const store = new SessionStore(dataDir);
     await store.init();

@@ -92,7 +92,7 @@ function DevToolsLayout() {
           ))}
         </nav>
         <div className="mt-auto border-border border-t py-5 text-muted-foreground text-xs max-sm:hidden">
-          m-dashboard
+          ChatDesk
           <span className="mt-1 block opacity-60">本地开发工具</span>
         </div>
       </aside>

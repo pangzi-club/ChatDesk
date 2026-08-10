@@ -169,7 +169,7 @@ function ImageGenerationPage() {
   async function downloadImage(url: string, index: number) {
     setDownloadNotice("");
     try {
-      const filename = `m-dashboard-image-${index + 1}.png`;
+      const filename = `chatdesk-image-${index + 1}.png`;
       if (await saveImageFile(url, filename)) setDownloadNotice("图片已保存。");
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
@@ -425,7 +425,7 @@ function PhotoRecordCard({ record }: { record: ImageGenerationRecord }) {
   async function saveLibraryImage(url: string, index: number) {
     setActionNotice("");
     try {
-      const filename = `m-dashboard-${record.taskId}-${index + 1}.png`;
+      const filename = `chatdesk-${record.taskId}-${index + 1}.png`;
       if (await saveImageFile(url, filename)) setActionNotice("图片已保存。");
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;

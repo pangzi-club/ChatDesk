@@ -8,7 +8,7 @@ import { chromium } from "playwright";
 const sessions = new Map();
 const MAX_OUTPUT = 50_000;
 const DEFAULT_TIMEOUT = 15_000;
-const tempDir = path.join(os.tmpdir(), "m-dashboard-browser");
+const tempDir = path.join(os.tmpdir(), "chatdesk-browser");
 await mkdir(tempDir, { recursive: true });
 
 function result(request, payload) {

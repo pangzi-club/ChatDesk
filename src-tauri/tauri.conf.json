@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "m-dashboard",
+  "productName": "ChatDesk",
   "version": "0.2.0",
   "identifier": "org.bohao.mdashboard",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "m-dashboard",
+        "title": "ChatDesk",
         "visible": false,
         "hiddenTitle": true,
         "width": 1280,

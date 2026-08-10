@@ -166,7 +166,7 @@ function DashboardPage() {
     <div className="dashboard-home min-h-full overflow-y-auto">
       <main className="mx-auto flex min-h-full w-full max-w-5xl flex-col px-5 pt-16 pb-10 sm:px-10 sm:pt-20">
         <header className="max-w-2xl">
-          <p className="page-eyebrow">m-dashboard / workspace</p>
+          <p className="page-eyebrow">ChatDesk / workspace</p>
           <h1 className="mt-3 font-semibold text-[clamp(2rem,4vw,3.25rem)] leading-tight tracking-[-0.04em]">
             今天想从哪里开始？
           </h1>

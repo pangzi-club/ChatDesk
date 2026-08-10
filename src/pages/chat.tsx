@@ -1389,7 +1389,7 @@ function MessageBubble({
       </div>
       <div className="chat-message-body">
         <div className="chat-message-meta">
-          <strong>{isUser ? "你" : "m-dashboard"}</strong>
+          <strong>{isUser ? "你" : "ChatDesk"}</strong>
           <span>{isUser ? "刚刚" : isStreaming ? "生成中" : "已完成"}</span>
         </div>
         {!isUser && toolParts.length > 0 ? (

@@ -503,7 +503,7 @@ function SidebarHeader() {
   return (
     <header className="flex items-center px-4 pt-3 pb-2 max-md:justify-center max-md:px-2 max-sm:px-1.5">
       <h1 className="truncate pl-2 font-semibold text-[15px] text-foreground max-md:hidden">
-        m-dashboard
+        ChatDesk
       </h1>
     </header>
   );

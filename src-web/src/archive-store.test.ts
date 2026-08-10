@@ -6,7 +6,7 @@ import test from "node:test";
 import { ArchiveStore } from "./archive-store.ts";
 
 test("archive store rejects path traversal ids", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "m-dashboard-archive-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-archive-"));
   const store = new ArchiveStore(root);
 
   await assert.rejects(
@@ -18,8 +18,8 @@ test("archive store rejects path traversal ids", async () => {
 });
 
 test("archive store tolerates a corrupt legacy index", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "m-dashboard-archive-legacy-"));
-  const legacy = await mkdtemp(path.join(os.tmpdir(), "m-dashboard-archive-source-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-archive-legacy-"));
+  const legacy = await mkdtemp(path.join(os.tmpdir(), "chatdesk-archive-source-"));
   await writeFile(path.join(legacy, "index.json"), "not-json");
 
   const store = new ArchiveStore(root);

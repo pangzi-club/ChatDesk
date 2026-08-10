@@ -42,7 +42,7 @@ pub fn run_command(
 }
 
 fn default_workspace() -> Result<PathBuf, String> {
-    let path = env::temp_dir().join("m-dashboard-sandbox");
+    let path = env::temp_dir().join("chatdesk-sandbox");
     fs::create_dir_all(&path).map_err(|error| format!("无法创建演示工作区：{error}"))?;
     fs::canonicalize(&path).map_err(|error| format!("无法解析演示工作区：{error}"))
 }
