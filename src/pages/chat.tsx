@@ -15,19 +15,25 @@ import {
   ArrowUp,
   Bot,
   Brain,
+  Bug,
   Check,
   ChevronDown,
   CircleStop,
   ClipboardCheck,
   Copy,
   FilePlus2,
+  Folder,
   Gauge,
+  GitBranch,
+  Hammer,
   History,
+  Laptop,
   Mic,
   MoreHorizontal,
   Paperclip,
   Plus,
   RefreshCw,
+  SearchCode,
   Settings,
   Settings2,
   ShieldCheck,
@@ -112,12 +118,10 @@ import {
   loadChatSession,
   saveChatSession,
 } from "@/lib/chat-store";
-import { resolveActiveTools, resolveAvailablePacks } from "@/lib/chat-tool-defs";
+import { resolveActiveTools } from "@/lib/chat-tool-defs";
 import {
-  type ChatToolPackId,
   type ChatToolsSettings,
   DEFAULT_CHAT_TOOLS,
-  getPackMeta,
   loadChatToolsSettings,
   saveChatToolsSettings,
 } from "@/lib/chat-tools";
@@ -135,6 +139,34 @@ import {
 import { loadWorkspaceProjects } from "@/lib/workspaces";
 
 const EMPTY_STRING_ARRAY: string[] = [];
+const DEFAULT_WORKSPACE_LABEL = "Default";
+
+const EMPTY_CHAT_ACTIONS = [
+  {
+    label: "探索并理解代码",
+    prompt: "请帮我探索并理解这个代码库。",
+    icon: SearchCode,
+    accent: "blue",
+  },
+  {
+    label: "构建新功能、应用或工具",
+    prompt: "请帮我构建一个新功能、应用或工具。",
+    icon: Hammer,
+    accent: "violet",
+  },
+  {
+    label: "审查代码并提出修改建议",
+    prompt: "请审查这份代码并提出修改建议。",
+    icon: RefreshCw,
+    accent: "green",
+  },
+  {
+    label: "修复问题和失败",
+    prompt: "请帮我定位并修复这个问题。",
+    icon: Bug,
+    accent: "orange",
+  },
+] as const;
 
 type LiveDraft = {
   runId: string;
@@ -212,10 +244,15 @@ function ChatPage() {
   const models = configuredModels ?? [];
   const [selectedModelId, setSelectedModelId] = useState("");
   const [input, setInput] = useState("");
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const [sessionId, setSessionId] = useState(createSessionId);
   const [sessionTitle, setSessionTitle] = useState("新对话");
   const [workspaceKey, setWorkspaceKey] = useState("");
   const [sessionCwd, setSessionCwd] = useState("");
+  const localSessionTransitionRef = useRef<{
+    nextSessionId: string;
+    previousSessionId: string;
+  } | null>(null);
   const skillsSelectionInitializedRef = useRef(false);
   const sessionCreatedAtRef = useRef(new Date().toISOString());
   const sessionAttachmentsRef = useRef<ChatAttachment[]>([]);
@@ -237,13 +274,13 @@ function ChatPage() {
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [sandboxMode, setSandboxMode] = useState<ChatSandboxMode>(DEFAULT_CHAT_SANDBOX_MODE);
   const [chatDisplay, setChatDisplay] = useState<ChatDisplaySettings>(DEFAULT_CHAT_DISPLAY);
-  const [availablePacks, setAvailablePacks] = useState<ChatToolPackId[]>([]);
   const generationStartedAtRef = useRef<number | null>(null);
   const [generationElapsedSeconds, setGenerationElapsedSeconds] = useState(0);
   const workspaceRef = useRef("");
   const sandboxModeRef = useRef<ChatSandboxMode>(DEFAULT_CHAT_SANDBOX_MODE);
   const selectedCwd =
     workspaceProjects.find((project) => project.id === workspaceKey)?.path ?? sessionCwd;
+  const workspaceLabel = selectedCwd ? pathBasename(selectedCwd) : DEFAULT_WORKSPACE_LABEL;
   workspaceRef.current = selectedCwd;
   sandboxModeRef.current = sandboxMode;
   const selectedModel = models.find((model) => model.id === selectedModelId) ?? models[0];
@@ -286,19 +323,32 @@ function ChatPage() {
   const startNewSession = useCallback(
     (nextWorkspaceId = "", nextWorkspaceCwd = "") => {
       const nextSessionId = createSessionId();
+      const normalizedWorkspaceId = nextWorkspaceId === "default" ? "" : nextWorkspaceId;
+      localSessionTransitionRef.current = {
+        nextSessionId,
+        previousSessionId: activeSessionRef.current,
+      };
       setSessionId(nextSessionId);
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev);
           next.set("sessionId", nextSessionId);
-          next.delete("workspaceId");
-          next.delete("workspaceCwd");
+          if (normalizedWorkspaceId) {
+            next.set("workspaceId", normalizedWorkspaceId);
+          } else {
+            next.delete("workspaceId");
+          }
+          if (nextWorkspaceCwd) {
+            next.set("workspaceCwd", nextWorkspaceCwd);
+          } else {
+            next.delete("workspaceCwd");
+          }
           return next;
         },
         { replace: true },
       );
       workspaceSelectionInitializedRef.current = true;
-      setWorkspaceKey(nextWorkspaceId);
+      setWorkspaceKey(normalizedWorkspaceId);
       setSessionCwd(nextWorkspaceCwd);
       const installed = new Set(installedSkillIds);
       setSelectedSkillIds(savedChatSkillIds.filter((id) => installed.has(id)));
@@ -315,6 +365,26 @@ function ChatPage() {
     },
     [installedSkillIds, savedChatSkillIds, setMessages, setSearchParams],
   );
+
+  function selectWorkspace(nextWorkspaceValue: string) {
+    const nextWorkspaceId = nextWorkspaceValue === "default" ? "" : nextWorkspaceValue;
+    const nextWorkspace = workspaceProjects.find((project) => project.id === nextWorkspaceId);
+    const nextWorkspaceCwd = nextWorkspace?.path ?? "";
+    workspaceSelectionInitializedRef.current = true;
+    setWorkspaceKey(nextWorkspaceId);
+    setSessionCwd(nextWorkspaceCwd);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (nextWorkspaceId) next.set("workspaceId", nextWorkspaceId);
+        else next.delete("workspaceId");
+        if (nextWorkspaceCwd) next.set("workspaceCwd", nextWorkspaceCwd);
+        else next.delete("workspaceCwd");
+        return next;
+      },
+      { replace: true },
+    );
+  }
 
   useEffect(() => {
     if (sessionId) attachedStreamSessionRef.current = null;
@@ -480,28 +550,6 @@ function ChatPage() {
     lastMessage?.role === "assistant" &&
     (messageText(lastMessage).trim().length > 0 || messageHasToolParts(lastMessage));
   useEffect(() => {
-    let active = true;
-    if (!selectedCwd.trim()) {
-      setAvailablePacks([]);
-      return () => {
-        active = false;
-      };
-    }
-    void resolveAvailablePacks(
-      chatTools,
-      selectedModel
-        ? { supportsTools: selectedModel.supportsTools, responsive: selectedModel.responsive }
-        : undefined,
-      () => selectedCwd,
-    ).then((packs) => {
-      if (active) setAvailablePacks(packs);
-    });
-    return () => {
-      active = false;
-    };
-  }, [chatTools, selectedCwd, selectedModel]);
-
-  useEffect(() => {
     if (models.length > 0 && !models.some((model) => model.id === selectedModelId)) {
       setSelectedModelId(models.find((model) => model.isDefault)?.id ?? models[0].id);
     }
@@ -512,13 +560,32 @@ function ChatPage() {
     let active = true;
 
     if (requestedSessionId) {
+      const localTransition = localSessionTransitionRef.current;
+      if (localTransition) {
+        const isNewUrl = requestedSessionId === localTransition.nextSessionId;
+        const isOldUrlWithNewState =
+          requestedSessionId === localTransition.previousSessionId &&
+          sessionId === localTransition.nextSessionId;
+        if (isNewUrl || isOldUrlWithNewState) {
+          if (isNewUrl && sessionId === localTransition.nextSessionId) {
+            localSessionTransitionRef.current = null;
+          }
+          return;
+        }
+        if (sessionId === localTransition.nextSessionId) {
+          localSessionTransitionRef.current = null;
+        }
+      }
       if (requestedSessionId === sessionId) {
         return;
       }
       void loadChatSession(requestedSessionId).then((session) => {
         if (!active) return;
         if (!session) {
-          startNewSession();
+          startNewSession(
+            requestedWorkspaceId === "default" ? "" : (requestedWorkspaceId ?? ""),
+            requestedWorkspaceCwd,
+          );
           return;
         }
         savedFingerprintRef.current = "";
@@ -533,7 +600,14 @@ function ChatPage() {
     return () => {
       active = false;
     };
-  }, [isChatHistoryLoading, requestedSessionId, sessionId, startNewSession]);
+  }, [
+    isChatHistoryLoading,
+    requestedSessionId,
+    requestedWorkspaceCwd,
+    requestedWorkspaceId,
+    sessionId,
+    startNewSession,
+  ]);
 
   useEffect(() => {
     if (isChatHistoryLoading || requestedSessionId || requestedWorkspaceId === null) return;
@@ -780,6 +854,7 @@ function ChatPage() {
   return (
     <div
       className="chat-page"
+      data-chat-empty={messages.length === 0 ? "true" : "false"}
       data-chat-font-size={chatDisplay.fontSize}
       data-chat-spacing={chatDisplay.spacing}
     >
@@ -800,7 +875,7 @@ function ChatPage() {
             size="icon"
             variant="ghost"
             type="button"
-            onClick={() => startNewSession()}
+            onClick={() => startNewSession(workspaceKey, selectedCwd)}
           >
             <Plus className="size-4" />
           </Button>
@@ -907,35 +982,47 @@ function ChatPage() {
 
       <div className="chat-stage" ref={scrollRef}>
         <div className="chat-content">
-          <div className="chat-context-row">
-            <span className="chat-status-dot" />
-            <span>{selectedModel?.provider ?? "未配置模型"}</span>
-            <span className="chat-context-rule" />
-            <span className="truncate" title={selectedCwd || undefined}>
-              {selectedCwd ? pathBasename(selectedCwd) : "未选择 Workspace"}
-            </span>
-            <span className="chat-access-badge" title={CHAT_SANDBOX_MODE_DESCRIPTIONS[sandboxMode]}>
-              {CHAT_SANDBOX_MODE_LABELS[sandboxMode]}
-            </span>
-          </div>
+          {messages.length > 0 ? (
+            <div className="chat-context-row">
+              <span className="chat-status-dot" />
+              <span>{selectedModel?.provider ?? "未配置模型"}</span>
+              <span className="chat-context-rule" />
+              <span className="truncate" title={selectedCwd || undefined}>
+                {selectedCwd ? pathBasename(selectedCwd) : "未选择 Workspace"}
+              </span>
+              <span
+                className="chat-access-badge"
+                title={CHAT_SANDBOX_MODE_DESCRIPTIONS[sandboxMode]}
+              >
+                {CHAT_SANDBOX_MODE_LABELS[sandboxMode]}
+              </span>
+            </div>
+          ) : null}
           {messages.length === 0 ? (
-            <div className="chat-tools-hint">
-              {!isModelsLoading && models.length === 0 ? (
-                <p>
-                  尚未配置模型。请先到 <Link to="/settings/models">模型设置</Link> 添加 API。
-                </p>
-              ) : selectedModel && !selectedModel.supportsTools ? (
-                <p>
-                  当前模型未开启「支持 Tools」。可在 <Link to="/settings/models">模型设置</Link>{" "}
-                  中开启，或更换模型。
-                </p>
-              ) : availablePacks.length > 0 ? (
-                <p>
-                  已启用：
-                  {availablePacks.map((id) => getPackMeta(id).label).join(" · ")}
-                  。用自然语言提问即可自动调用工具。
-                </p>
-              ) : null}
+            <div className="chat-empty-state">
+              <div aria-hidden="true" className="chat-empty-mark">
+                <Sparkles className="size-8" strokeWidth={1.6} />
+              </div>
+              <h2>要在 {workspaceLabel} 内开发什么？</h2>
+              <div className="chat-suggestion-grid">
+                {EMPTY_CHAT_ACTIONS.map((action) => {
+                  const Icon = action.icon;
+                  return (
+                    <button
+                      className={`chat-suggestion-card is-${action.accent}`}
+                      key={action.label}
+                      onClick={() => {
+                        setInput(action.prompt);
+                        requestAnimationFrame(() => inputRef.current?.focus());
+                      }}
+                      type="button"
+                    >
+                      <Icon aria-hidden="true" className="size-[18px]" strokeWidth={1.8} />
+                      <span>{action.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           ) : null}
           {messages.map((message) => (
@@ -980,11 +1067,59 @@ function ChatPage() {
 
       <div className="chat-composer-wrap">
         {error && <p className="chat-error">{error.message}</p>}
+        <div className="chat-workspace-bar">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                aria-label="选择工作区"
+                className="chat-workspace-picker"
+                title="选择工作区"
+                type="button"
+              >
+                <Folder aria-hidden="true" className="size-3.5" />
+                <span>{workspaceLabel}</span>
+                <ChevronDown aria-hidden="true" className="size-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="start"
+              className="chat-select-menu chat-workspace-select-menu"
+              side="top"
+              sideOffset={8}
+            >
+              <DropdownMenuLabel>工作区</DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={workspaceKey || "default"}
+                onValueChange={selectWorkspace}
+              >
+                <DropdownMenuRadioItem value="default">
+                  <span className="chat-workspace-option-label">{DEFAULT_WORKSPACE_LABEL}</span>
+                </DropdownMenuRadioItem>
+                {workspaceProjects.map((project) => (
+                  <DropdownMenuRadioItem key={project.id} value={project.id}>
+                    <span className="chat-workspace-option-label">
+                      {pathBasename(project.path)}
+                    </span>
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <span>
+            <Laptop aria-hidden="true" className="size-3.5" />
+            本地
+          </span>
+          <span>
+            <GitBranch aria-hidden="true" className="size-3.5" />
+            main
+          </span>
+        </div>
         <div className="chat-composer">
           <textarea
             aria-label="输入消息"
             autoCapitalize="none"
             autoCorrect="off"
+            ref={inputRef}
             spellCheck={false}
             value={input}
             onChange={(event) => setInput(event.target.value)}

@@ -176,7 +176,7 @@ function DashboardPage() {
         </header>
 
         <form
-          className="dashboard-search mt-8 flex min-h-14 w-full max-w-3xl items-center gap-2 px-4 text-foreground sm:px-5"
+          className="dashboard-search mt-8 flex min-h-14 w-full items-center gap-2 px-4 text-foreground sm:px-5"
           onSubmit={searchGoogle}
         >
           <Search className="size-4 shrink-0 text-muted-foreground" />
