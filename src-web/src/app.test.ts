@@ -83,6 +83,24 @@ describe("chat server", () => {
     assert.equal((await server.store.get("session-test")), null);
   });
 
+  it("reports archive overwrites from the previous stored state", async () => {
+    const server = await createTestServer();
+    const request = () =>
+      server.app.request("http://localhost/v1/archive/archive-test", {
+        method: "PUT",
+        headers: { ...auth(), "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Archive" }),
+      });
+
+    const first = await request();
+    assert.equal(first.status, 200);
+    assert.deepEqual(await first.json(), { id: "archive-test", overwritten: false });
+
+    const second = await request();
+    assert.equal(second.status, 200);
+    assert.deepEqual(await second.json(), { id: "archive-test", overwritten: true });
+  });
+
   it("preserves persisted message metadata when a stale client save omits it", async () => {
     const server = await createTestServer();
     await server.store.save({

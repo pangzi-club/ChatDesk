@@ -2,6 +2,15 @@
   "name": "m-dashboard",
   "private": true,
   "version": "0.2.0",
+  "description": "A local AI workbench built with Tauri, React, and TypeScript",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pangzi-club/m-dashboard.git"
+  },
+  "bugs": {
+    "url": "https://github.com/pangzi-club/m-dashboard/issues"
+  },
   "packageManager": "pnpm@9.15.9",
   "type": "module",
   "scripts": {

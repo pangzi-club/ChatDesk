@@ -354,8 +354,10 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   app.put("/v1/archive/:id", async (c) => {
     try {
       const body = await c.req.json();
-      await archive.save({ ...body, id: c.req.param("id") });
-      return c.json({ id: c.req.param("id"), overwritten: Boolean(await archive.get(c.req.param("id"))) });
+      const id = c.req.param("id");
+      const overwritten = Boolean(await archive.get(id));
+      await archive.save({ ...body, id });
+      return c.json({ id, overwritten });
     } catch (error) {
       return jsonError(error instanceof Error ? error.message : String(error));
     }

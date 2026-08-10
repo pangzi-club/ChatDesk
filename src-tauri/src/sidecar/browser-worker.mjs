@@ -54,7 +54,8 @@ async function handle(request) {
     return fail(request, "unknown_session", "浏览器 session 不存在或已关闭");
   }
   if (request.method === "screenshot") {
-    const filename = path.join(tempDir, `${sessionId}-${Date.now()}.png`);
+    // Keep the session identifier out of the filesystem path; it is supplied by the caller.
+    const filename = path.join(tempDir, `${randomUUID()}-${Date.now()}.png`);
     await session.page.screenshot({ path: filename, fullPage: params.fullPage === true });
     const viewport = session.page.viewportSize();
     result(request, { ok: true, sessionId, data: { path: filename, mimeType: "image/png", width: viewport?.width ?? null, height: viewport?.height ?? null } });

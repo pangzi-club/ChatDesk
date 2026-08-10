@@ -31,7 +31,7 @@ export async function loadServerConfig(): Promise<ServerConfig> {
     port: parsePort(process.env.CHAT_SERVER_PORT || String(persisted.port ?? DEFAULT_PORT)),
     dataDir,
     token: process.env.CHAT_SERVER_TOKEN || randomUUID(),
-    version: "0.1.0",
+    version: "0.2.0",
   };
 }
 

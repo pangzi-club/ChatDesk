@@ -1,6 +1,10 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+function validId(id: unknown): id is string {
+  return typeof id === "string" && /^[a-zA-Z0-9-]{1,128}$/.test(id);
+}
+
 export class ArchiveStore {
   private readonly root: string;
   private readonly indexFile: string;
@@ -15,10 +19,20 @@ export class ArchiveStore {
     const current = await readFile(this.indexFile, "utf8").catch(() => undefined);
     if (!current && legacyRoot) {
       const legacyIndex = await readFile(path.join(legacyRoot, "index.json"), "utf8").catch(() => "[]");
-      await writeFile(this.indexFile, legacyIndex);
-      const entries = JSON.parse(legacyIndex) as Array<{ id?: unknown }>;
+      let entries: Array<{ id?: unknown }> = [];
+      try {
+        const parsed: unknown = JSON.parse(legacyIndex);
+        if (Array.isArray(parsed)) {
+          entries = parsed.filter(
+            (entry): entry is { id?: unknown } => Boolean(entry) && typeof entry === "object",
+          );
+        }
+      } catch {
+        // A corrupt legacy index should not prevent the Chat Server from starting.
+      }
+      await writeFile(this.indexFile, JSON.stringify(entries, null, 2));
       for (const entry of entries) {
-        if (typeof entry.id !== "string") continue;
+        if (!validId(entry.id)) continue;
         const source = path.join(legacyRoot, "sessions", entry.id, "session.json");
         const target = path.join(this.root, "sessions", entry.id, "session.json");
         const contents = await readFile(source, "utf8").catch(() => undefined);
@@ -32,13 +46,19 @@ export class ArchiveStore {
   async list() {
     try {
       const value = JSON.parse(await readFile(this.indexFile, "utf8")) as unknown;
-      return Array.isArray(value) ? value : [];
+      return Array.isArray(value)
+        ? value.filter(
+            (item): item is { id: string } =>
+              Boolean(item) && typeof item === "object" && validId((item as { id?: unknown }).id),
+          )
+        : [];
     } catch {
       return [];
     }
   }
 
   async get(id: string) {
+    if (!validId(id)) return null;
     try {
       return JSON.parse(
         await readFile(path.join(this.root, "sessions", id, "session.json"), "utf8"),
@@ -49,6 +69,7 @@ export class ArchiveStore {
   }
 
   async save(value: { id: string }) {
+    if (!validId(value.id)) throw new Error("invalid archive id");
     const directory = path.join(this.root, "sessions", value.id);
     await mkdir(directory, { recursive: true });
     await writeFile(path.join(directory, "session.json"), JSON.stringify(value, null, 2));
@@ -87,6 +108,7 @@ export class ArchiveStore {
   }
 
   async delete(id: string) {
+    if (!validId(id)) return;
     await rm(path.join(this.root, "sessions", id), { recursive: true, force: true });
     const index = (await this.list()).filter((item) => !item || typeof item !== "object" || (item as { id?: unknown }).id !== id);
     await writeFile(this.indexFile, JSON.stringify(index, null, 2));
