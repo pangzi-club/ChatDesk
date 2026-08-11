@@ -1,87 +1,44 @@
 {
-  "name": "chatdesk-workbench",
+  "name": "chatdesk-workspace",
   "private": true,
   "version": "0.2.0",
-  "description": "ChatDesk, a local AI workbench built with Tauri, React, and TypeScript",
+  "description": "ChatDesk workspace",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/pangzi-club/m-dashboard.git"
+    "url": "git+https://github.com/pangzi-club/ChatDesk.git"
   },
   "bugs": {
-    "url": "https://github.com/pangzi-club/m-dashboard/issues"
+    "url": "https://github.com/pangzi-club/ChatDesk/issues"
   },
   "packageManager": "pnpm@9.15.9",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev-all.mjs",
     "dev:all": "node scripts/dev-all.mjs",
+    "desktop:dev": "pnpm --filter chatdesk-desktop desktop:dev",
+    "dev:web": "pnpm --filter chatdesk-desktop dev",
+    "dev:server": "pnpm server:dev",
     "migrate:chatdesk": "node scripts/migrate-to-chatdesk.mjs",
     "migrate:test": "node --test scripts/migrate-to-chatdesk.test.mjs",
-    "server:dev": "node --watch --experimental-strip-types src-web/src/server.ts",
-    "server:test": "node --experimental-strip-types --test src-web/src/*.test.ts",
+    "server:dev": "node --watch --experimental-strip-types apps/server/src/server.ts",
+    "server:test": "node --experimental-strip-types --test apps/server/src/*.test.ts",
     "shared:test": "pnpm --filter @chatdesk/shared test",
     "shared:typecheck": "pnpm --filter @chatdesk/shared typecheck",
-    "build": "pnpm shared:typecheck && tsc && tsc -p tsconfig.server.json && vite build",
-    "build:sidecars": "node scripts/build-sidecars.mjs",
+    "build": "pnpm shared:typecheck && pnpm build:web && pnpm build:server",
+    "build:web": "pnpm --filter chatdesk-desktop build",
+    "build:server": "tsc -p tsconfig.server.json",
+    "desktop:sidecars": "pnpm --filter chatdesk-desktop desktop:sidecars",
+    "desktop:build": "pnpm --filter chatdesk-desktop desktop:build",
     "check": "biome check .",
     "check:write": "biome check --write .",
     "format": "biome format --write .",
     "lint": "biome lint .",
-    "preview": "vite preview",
-    "tauri": "tauri",
-    "tauri:build": "pnpm build:sidecars && pnpm tauri build"
-  },
-  "pkg": {
-    "assets": [
-      "node_modules/playwright/lib/**/*",
-      "node_modules/playwright-core/**/*"
-    ]
-  },
-  "dependencies": {
-    "@chatdesk/shared": "workspace:*",
-    "@ai-sdk/mcp": "^2.0.24",
-    "@ai-sdk/openai": "^4.0.31",
-    "@ai-sdk/react": "^4.0.54",
-    "@hono/node-server": "^1.19.11",
-    "@radix-ui/react-slot": "^1.3.3",
-    "@streamdown/code": "^1.1.1",
-    "@tanstack/react-query": "^5.101.0",
-    "@tanstack/react-virtual": "^3.14.9",
-    "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-http": "^2.5.9",
-    "@tauri-apps/plugin-log": "~2",
-    "@tauri-apps/plugin-opener": "^2",
-    "@tauri-apps/plugin-store": "^2",
-    "@tauri-apps/plugin-window-state": "^2.4.1",
-    "ai": "^7.0.51",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "hono": "^4.10.8",
-    "lucide-react": "^1.28.0",
-    "playwright": "^1.55.0",
-    "radix-ui": "^1.6.7",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "react-router-dom": "^7.18.2",
-    "streamdown": "^2.5.0",
-    "tailwind-merge": "^3.6.0",
-    "zod": "^4.4.3"
+    "preview": "pnpm --filter chatdesk-desktop preview"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",
-    "esbuild": "^0.28.1",
-    "@yao-pkg/pkg": "^6.21.0",
-    "playwright-core": "^1.62.1",
-    "@tailwindcss/vite": "^4.3.3",
-    "@tauri-apps/cli": "^2",
     "@types/node": "^26.1.2",
-    "@types/react": "^19.1.8",
-    "@types/react-dom": "^19.1.6",
-    "@vitejs/plugin-react": "^4.6.0",
-    "tailwindcss": "^4.3.3",
-    "typescript": "6.0.3",
-    "undici": "^7.29.0",
-    "vite": "^7.0.4"
+    "typescript": "6.0.3"
   }
 }

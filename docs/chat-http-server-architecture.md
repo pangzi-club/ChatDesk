@@ -138,10 +138,10 @@ Server 负责「何时调工具、如何把结果写回模型」；工具的真�
 
 现状关键位置（迁移时对照，不必一次搬完）：
 
-- `src/pages/chat.tsx`：单 `useChat`、切会话 `stop()`、transport / `streamText`
-- `src/lib/chat-store.ts`：`ChatSession` / `ChatIndexItem` 与落盘
-- `src/layouts/app-shell.tsx`：侧栏会话列表（尚无 status）
-- `src-tauri`：chat 落盘命令、workspace / MCP / seatbelt 等能力
+- `apps/desktop/src/pages/chat.tsx`：单 `useChat`、切会话 `stop()`、transport / `streamText`
+- `apps/desktop/src/lib/chat-store.ts`：`ChatSession` / `ChatIndexItem` 与落盘
+- `apps/desktop/src/layouts/app-shell.tsx`：侧栏会话列表（尚无 status）
+- `apps/desktop/src-tauri`：chat 落盘命令、workspace / MCP / seatbelt 等能力
 
 目标演进：
 

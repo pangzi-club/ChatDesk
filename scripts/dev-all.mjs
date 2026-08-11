@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const token = process.env.CHAT_SERVER_TOKEN || randomUUID();
@@ -14,7 +14,7 @@ const sharedEnv = {
 
 const children = [
   spawn(pnpm, ["server:dev"], { env: sharedEnv, stdio: "inherit" }),
-  spawn(pnpm, ["dev"], { env: sharedEnv, stdio: "inherit" }),
+  spawn(pnpm, ["desktop:dev"], { env: sharedEnv, stdio: "inherit" }),
 ];
 
 let shuttingDown = false;

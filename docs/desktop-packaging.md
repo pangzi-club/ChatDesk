@@ -8,10 +8,10 @@ Use Node.js 22 or newer, Rust, pnpm 9.15.9, and the platform's Tauri prerequisit
 
 ```sh
 pnpm install
-pnpm tauri:build
+pnpm desktop:build
 ```
 
-`pnpm build:sidecars` first bundles the TypeScript Chat Server into a single CommonJS file, then uses `@yao-pkg/pkg` with source fallback to create the target-specific binaries. It also downloads the Chromium headless shell into `src-tauri/resources/playwright-browsers`. The generated files are ignored by Git and must be rebuilt for every target platform.
+`pnpm desktop:sidecars` first bundles the TypeScript Chat Server into a single CommonJS file, then uses `@yao-pkg/pkg` with source fallback to create the target-specific binaries. It also downloads the Chromium headless shell into `apps/desktop/src-tauri/resources/playwright-browsers`. The generated files are ignored by Git and must be rebuilt for every target platform.
 
 The pkg base-runtime cache defaults to `.cache/pkg`; set `PKG_CACHE_PATH` to share it between CI jobs.
 

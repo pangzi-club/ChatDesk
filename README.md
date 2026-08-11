@@ -25,10 +25,10 @@ ChatDesk 是一个基于 Tauri、React 和 TypeScript 的本地 AI 工作台。�
 corepack enable
 corepack prepare pnpm@9.15.9 --activate
 pnpm install
-pnpm dev:all
+pnpm dev
 ```
 
-然后打开 Vite 输出的 `http://localhost:1420`。`pnpm dev:all` 会为前端和 Chat Server 生成同一个本地鉴权 token；如果需要固定端口或 token，可复制 `.env.example` 为 `.env.local`，在启动前导出其中的变量（例如 `set -a; source .env.local; set +a`）。
+`pnpm dev` 会启动 Tauri 桌面窗口、Vite 前端和 Chat Server，并为前后端生成同一个本地鉴权 token。若只需要浏览器预览，可使用 `pnpm dev:web` 并打开 `http://localhost:1420`。如果需要固定端口或 token，可复制 `.env.example` 为 `.env.local`，在启动前导出其中的变量（例如 `set -a; source .env.local; set +a`）。
 
 常用命令：
 
@@ -36,9 +36,13 @@ pnpm dev:all
 pnpm check       # Biome 格式和静态检查
 pnpm shared:typecheck # 检查 @chatdesk/shared 类型
 pnpm shared:test # 运行共享包测试
-pnpm build       # TypeScript + Vite 生产构建
+pnpm build       # 完整代码构建：shared + Web 前端 + Chat Server
+pnpm desktop:build # 构建 Tauri 桌面安装包
+pnpm desktop:sidecars # 仅构建桌面端 sidecar
+pnpm dev:web     # 仅启动 Vite 前端
+pnpm dev:server  # 仅启动 Chat Server
 pnpm server:test # Chat Server 测试
-pnpm tauri dev   # 启动桌面开发模式
+pnpm desktop:dev # 启动桌面开发模式
 ```
 
 不要把 `.env.local`、`.data/`、`~/.chatdesk/` 或包含 API key 的导出文件提交到版本库。
@@ -52,7 +56,7 @@ pnpm migrate:chatdesk -- --apply
 
 ## 配置
 
-Chat Server 支持的环境变量和 HTTP API 见 [`src-web/README.md`](src-web/README.md)。最常用的变量如下：
+Chat Server 支持的环境变量和 HTTP API 见 [`apps/server/README.md`](apps/server/README.md)。最常用的变量如下：
 
 | 变量 | 默认值 | 作用 |
 | --- | --- | --- |
@@ -66,16 +70,16 @@ API key 在应用设置中配置并保存在本机。使用 `CHAT_SERVER_HOST=0.
 ## 项目结构
 
 ```text
-src/                 React 页面、组件和浏览器端适配器（根 workspace 应用）
-src-web/src/         Hono Chat Server、存储、运行时和 Node 测试（workspace package）
+apps/desktop/src/    React 页面、组件和浏览器端适配器（桌面端 workspace package）
+apps/server/src/     Hono Chat Server、存储、运行时和 Node 测试（workspace package）
 packages/shared/     浏览器与服务端共用的运行时无关代码（`@chatdesk/shared`）
-src-tauri/src/       Tauri 命令、原生服务和 sidecar 管理
+apps/desktop/src-tauri/src/ Tauri 命令、原生服务和 sidecar 管理
 docs/                架构、沙箱和桌面打包说明
 ```
 
 ## 开源协作
 
-欢迎提交 issue 和 pull request。提交前请运行 `pnpm format`、`pnpm check`、`pnpm build` 和 `pnpm server:test`。涉及 Chat Server、Tauri 边界或数据格式的改动，也请同步更新对应的 `docs/` 或 `src-web/README.md`。
+欢迎提交 issue 和 pull request。提交前请运行 `pnpm format`、`pnpm check`、`pnpm build` 和 `pnpm server:test`。涉及 Chat Server、Tauri 边界或数据格式的改动，也请同步更新对应的 `docs/` 或 `apps/server/README.md`。
 
 ## 许可证
 

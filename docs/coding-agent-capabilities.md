@@ -1,8 +1,8 @@
-# 通用编码 Agent 能力清单（src-web 对照）
+# 通用编码 Agent 能力清单（apps/server 对照）
 
-> 目标：回答「src-web 现在做的事情是不是就是 Claude Code / Codex 做的事」，以及还差什么。
+> 目标：回答「apps/server 现在做的事情是不是就是 Claude Code / Codex 做的事」，以及还差什么。
 > 参照系：Claude Code、Codex CLI、Cursor 这类通用编码 agent。
-> 基于 `src-web/src/` 当前实现逐一对照（2025-08-08）。
+> 基于 `apps/server/src/` 当前实现逐一对照（2025-08-08）。
 
 ## 一、通用编码 Agent 的能力全景
 
@@ -32,9 +32,9 @@
 | | 用量统计 | token 计数、成本 |
 | | 会话归档 | 导入/导出历史 |
 
-## 二、src-web 已实现
+## 二、apps/server 已实现
 
-对照上面的全景，src-web 已经覆盖的部分：
+对照上面的全景，apps/server 已经覆盖的部分：
 
 ### ✅ 核心循环
 - **Agentic loop**：`run-registry.ts` 基于 Vercel AI SDK `streamText` + 工具调用 + `stopWhen(stepCountIs(20))`，支持多步工具调用直至完成。
@@ -65,7 +65,7 @@
 ### ✅ 会话归档
 - `archive-store.ts`：扫描并导入 `~/.codex`、`~/.claude` 的历史 jsonl 会话，含 index 与详情。
 
-## 三、src-web 部分实现
+## 三、apps/server 部分实现
 
 | 能力 | 现状 | 差距 |
 |---|---|---|
@@ -74,7 +74,7 @@
 | 并行工具调用 | 依赖模型单次返回多个 tool call（AI SDK 支持并行执行） | 无显式编排 |
 | 用量统计 | 归档 index 有 `usageTotal` 字段 | 无实时 token 计数展示/成本估算 |
 
-## 四、src-web 未实现（→ TODO）
+## 四、apps/server 未实现（→ TODO）
 
 按优先级从高到低：
 
@@ -129,7 +129,7 @@
 
 ## 五、结论
 
-src-web 已经是一个**结构完整的编码 agent 骨架**：核心循环、文件/终端/浏览器工具、MCP、Skills、记忆、崩溃恢复都有，且分层清晰（客户端工具走 Tauri 侧、服务端工具走 Node 侧、业务工具独立）。
+apps/server 已经是一个**结构完整的编码 agent 骨架**：核心循环、文件/终端/浏览器工具、MCP、Skills、记忆、崩溃恢复都有，且分层清晰（客户端工具走 Tauri 侧、服务端工具走 Node 侧、业务工具独立）。
 
 但目前更像「**能对话、能干活的工作台**」，离 Claude Code / Codex 的差距集中在**安全与任务编排**两个方向：
 

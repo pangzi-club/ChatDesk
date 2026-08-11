@@ -1,18 +1,19 @@
-import { mkdir } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import path from "node:path";
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const tauriRoot = path.join(root, "src-tauri");
+const desktopRoot = path.join(root, "apps/desktop");
+const tauriRoot = path.join(desktopRoot, "src-tauri");
 const binariesDir = path.join(tauriRoot, "binaries");
 const resourcesDir = path.join(tauriRoot, "resources");
 const browserPath = path.join(resourcesDir, "playwright-browsers");
 const serverBundlePath = path.join(root, ".cache/chat-server.cjs");
 const pkgCachePath = process.env.PKG_CACHE_PATH || path.join(root, ".cache/pkg");
 const localBinExtension = process.platform === "win32" ? ".cmd" : "";
-const localBinDir = path.join(root, "node_modules/.bin");
+const localBinDir = path.join(desktopRoot, "node_modules/.bin");
 
 const targetTriple = process.env.TAURI_TARGET_TRIPLE || (await readTargetTriple());
 const pkgTarget = toPkgTarget(targetTriple);
@@ -34,7 +35,7 @@ if (process.env.M_DASHBOARD_SKIP_BROWSER_DOWNLOAD !== "1") {
 }
 
 await runTool("esbuild", [
-  "src-web/src/server.ts",
+  "apps/server/src/server.ts",
   "--bundle",
   "--platform=node",
   "--format=cjs",
@@ -42,26 +43,34 @@ await runTool("esbuild", [
   `--outfile=${serverBundlePath}`,
 ]);
 
-await runTool("pkg", [
-  serverBundlePath,
-  "--target",
-  pkgTarget,
-  "--fallback-to-source",
-  "--output",
-  path.join(binariesDir, `chat-server-${targetTriple}${extension}`),
-], { PKG_CACHE_PATH: pkgCachePath });
+await runTool(
+  "pkg",
+  [
+    serverBundlePath,
+    "--target",
+    pkgTarget,
+    "--fallback-to-source",
+    "--output",
+    path.join(binariesDir, `chat-server-${targetTriple}${extension}`),
+  ],
+  { PKG_CACHE_PATH: pkgCachePath },
+);
 
-await runTool("pkg", [
-  "src-tauri/src/sidecar/browser-worker.mjs",
-  "--target",
-  pkgTarget,
-  "--fallback-to-source",
-  "--output",
-  path.join(resourcesDir, `browser-worker${extension}`),
-], {
-  PLAYWRIGHT_BROWSERS_PATH: browserPath,
-  PKG_CACHE_PATH: pkgCachePath,
-});
+await runTool(
+  "pkg",
+  [
+    "apps/desktop/src-tauri/src/sidecar/browser-worker.mjs",
+    "--target",
+    pkgTarget,
+    "--fallback-to-source",
+    "--output",
+    path.join(resourcesDir, `browser-worker${extension}`),
+  ],
+  {
+    PLAYWRIGHT_BROWSERS_PATH: browserPath,
+    PKG_CACHE_PATH: pkgCachePath,
+  },
+);
 
 console.log(`Built sidecars for ${targetTriple} (${pkgTarget})`);
 
@@ -86,7 +95,9 @@ function toPkgTarget(triple) {
 function assertTool(name) {
   const binary = path.join(localBinDir, `${name}${localBinExtension}`);
   if (!existsSync(binary)) {
-    throw new Error(`Missing ${name} executable. Install workspace dependencies before building sidecars.`);
+    throw new Error(
+      `Missing ${name} executable. Install workspace dependencies before building sidecars.`,
+    );
   }
 }
 

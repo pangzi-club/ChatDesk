@@ -8,8 +8,11 @@
   "files": {
     "ignoreUnknown": true,
     "includes": [
-      "src/**",
-      "!!src/components/ui",
+      "apps/desktop/**",
+      "!!apps/desktop/src/components/ui",
+      "apps/server/**",
+      "packages/**",
+      "scripts/**",
       "*.css",
       "*.html",
       "*.js",

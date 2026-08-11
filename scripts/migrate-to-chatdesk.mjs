@@ -1,12 +1,5 @@
 import { existsSync } from "node:fs";
-import {
-  copyFile,
-  mkdir,
-  readFile,
-  readdir,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -82,7 +75,9 @@ async function collectFiles(source, targetRoot) {
   } else if (
     sourceParentName === "Application Support" ||
     source === legacyAppData ||
-    ["chat", "chat-server", "chat-archive"].some((directory) => existsSync(path.join(source, directory)))
+    ["chat", "chat-server", "chat-archive"].some((directory) =>
+      existsSync(path.join(source, directory)),
+    )
   ) {
     for (const fileName of ["settings.json", "bookmarks.json", "system-logs.json"]) {
       await addIfFile(path.join(source, fileName), path.join(targetRoot, fileName), mappings);
@@ -106,7 +101,11 @@ async function collectFiles(source, targetRoot) {
 }
 
 async function collectChatDirectory(source, targetRoot, mappings) {
-  await addIfFile(path.join(source, "memory.json"), path.join(targetRoot, "chat-server", "memory.json"), mappings);
+  await addIfFile(
+    path.join(source, "memory.json"),
+    path.join(targetRoot, "chat-server", "memory.json"),
+    mappings,
+  );
   const sessions = path.join(source, "sessions");
   if (existsSync(sessions)) {
     await walk(sessions, sessions, path.join(targetRoot, "chat-server", "sessions"), mappings);
@@ -116,7 +115,12 @@ async function collectChatDirectory(source, targetRoot, mappings) {
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name === "attachments") continue;
     const directory = path.join(source, entry.name);
-    await walk(directory, directory, path.join(targetRoot, "chat-server", "sessions", entry.name), mappings);
+    await walk(
+      directory,
+      directory,
+      path.join(targetRoot, "chat-server", "sessions", entry.name),
+      mappings,
+    );
   }
 }
 
@@ -131,7 +135,10 @@ async function collectArchiveDirectory(source, targetRoot, mappings) {
   for (const entry of entries) {
     if (!entry.isDirectory()) {
       if (entry.isFile() && entry.name === "index.json") {
-        mappings.push({ source: path.join(source, entry.name), target: path.join(archiveRoot, entry.name) });
+        mappings.push({
+          source: path.join(source, entry.name),
+          target: path.join(archiveRoot, entry.name),
+        });
       }
       continue;
     }
@@ -199,7 +206,9 @@ async function main() {
     try {
       mappings.push(...(await collectFiles(source, options.target)));
     } catch (error) {
-      console.error(`读取旧目录失败：${source}\n${error instanceof Error ? error.message : String(error)}`);
+      console.error(
+        `读取旧目录失败：${source}\n${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -211,7 +220,9 @@ async function main() {
       console.log(`${result.padEnd(8)} ${mapping.source} -> ${mapping.target}`);
     } catch (error) {
       summary.failed += 1;
-      console.error(`failed   ${mapping.source}: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(
+        `failed   ${mapping.source}: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -221,14 +232,22 @@ async function main() {
     await writeFile(
       path.join(options.target, ".migration-v1.json"),
       JSON.stringify(
-        { version: 1, sources, target: options.target, migratedAt: new Date().toISOString(), summary },
+        {
+          version: 1,
+          sources,
+          target: options.target,
+          migratedAt: new Date().toISOString(),
+          summary,
+        },
         null,
         2,
       ),
     );
   }
 
-  console.log(`\n${options.apply ? "迁移完成" : "预览完成（未写入文件）"}：${JSON.stringify(summary)}`);
+  console.log(
+    `\n${options.apply ? "迁移完成" : "预览完成（未写入文件）"}：${JSON.stringify(summary)}`,
+  );
   if (summary.conflict > 0) {
     console.log("目标目录已有不同内容的文件，已跳过冲突；脚本不会覆盖目标数据。");
   }

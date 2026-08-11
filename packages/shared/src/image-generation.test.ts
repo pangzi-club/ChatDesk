@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import {
-  generateImageWithApiKey,
-  type ImageGenerationInput,
-} from "./image-generation.ts";
+import { generateImageWithApiKey, type ImageGenerationInput } from "./image-generation.ts";
 
 const input: ImageGenerationInput = {
   model: "gpt-image-2-text-to-image",
@@ -31,7 +28,10 @@ describe("shared image generation client", () => {
         return new Response(
           JSON.stringify({
             code: 200,
-            data: { state: "success", resultJson: JSON.stringify({ resultUrls: ["https://example.com/image.png"] }) },
+            data: {
+              state: "success",
+              resultJson: JSON.stringify({ resultUrls: ["https://example.com/image.png"] }),
+            },
           }),
           { status: 200, headers: { "content-type": "application/json" } },
         );
