@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import { test } from "vitest";
 import { ArchiveStore } from "./archive-store.ts";
 
 test("archive store rejects path traversal ids", async () => {

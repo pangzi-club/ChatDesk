@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import { test } from "vitest";
 import { NodePlatformAdapter } from "./node.ts";
 
 test("NodePlatformAdapter keeps file operations inside the workspace", async () => {

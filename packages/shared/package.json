@@ -13,7 +13,7 @@
     "ai": "^7.0.51"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --test src/*.test.ts",
+    "test": "vitest run --root ../.. packages/shared/src",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

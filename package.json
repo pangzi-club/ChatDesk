@@ -23,10 +23,11 @@
     "chat:sessions:dedupe": "node scripts/dedupe-chat-sessions.mjs",
     "migrate:test": "node --test scripts/migrate-to-chatdesk.test.mjs",
     "server:dev": "node --watch --experimental-strip-types apps/server/src/server.ts",
-    "server:test": "node --experimental-strip-types --test apps/server/src/*.test.ts",
-    "shared:test": "pnpm --filter @chatdesk/shared test",
+    "test": "vitest run",
+    "server:test": "vitest run apps/server/src",
+    "shared:test": "vitest run packages/shared/src",
     "shared:typecheck": "pnpm --filter @chatdesk/shared typecheck",
-    "chat-client:test": "pnpm --filter @chatdesk/chat-client test",
+    "chat-client:test": "vitest run packages/chat-client/src",
     "chat-client:typecheck": "pnpm --filter @chatdesk/chat-client typecheck",
     "build": "pnpm shared:typecheck && pnpm chat-client:typecheck && pnpm build:web && pnpm build:server",
     "build:web": "pnpm --filter chatdesk-desktop build",
@@ -42,6 +43,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",
     "@types/node": "^26.1.2",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "vitest": "^4.1.10"
   }
 }

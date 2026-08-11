@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 import type { UIMessage } from "ai";
+import { test } from "vitest";
 import { mergeLatestMessageMetadata, normalizeCompletedMessages } from "./run-registry.ts";
 
 test("mergeLatestMessageMetadata persists usage on the latest assistant message", () => {

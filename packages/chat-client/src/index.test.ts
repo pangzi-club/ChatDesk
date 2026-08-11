@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, it } from "vitest";
 import { ChatServerClient, ChatServerError, type EventSourceLike } from "./index.ts";
 
 describe("ChatServerClient", () => {

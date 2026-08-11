@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, it } from "node:test";
+import { afterEach, describe, it } from "vitest";
 import { createChatServer } from "./app.ts";
 import type { ServerConfig } from "./config.ts";
 import type { ChatSession } from "./protocol.ts";
