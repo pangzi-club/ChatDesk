@@ -201,6 +201,8 @@ export class RunRegistry {
       workspaceId: input.workspaceId ?? current.workspaceId,
       cwd: effectiveCwd,
       sandboxMode,
+      mcpServerIds: input.mcpServerIds ?? current.mcpServerIds,
+      skillIds: input.skillIds ?? current.skillIds,
       messages,
     };
     await this.store.save(session);

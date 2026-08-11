@@ -193,6 +193,55 @@ describe("chat server", () => {
     );
   });
 
+  it("merges stable assistant ids when execution metadata proves they are the same run", async () => {
+    const server = await createTestServer();
+    const baseMessage = {
+      role: "assistant",
+      metadata: { usage: { totalTokens: 3 } },
+      parts: [
+        {
+          type: "text",
+          text: "same reply",
+          providerMetadata: { openai: { itemId: "provider-item-1" } },
+        },
+      ],
+    };
+    await server.store.save({
+      schemaVersion: 2,
+      id: "stable-duplicate-session",
+      title: "Duplicate",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      messages: [
+        { id: "user-1", role: "user", parts: [{ type: "text", text: "hello" }] },
+        { id: "server-assistant", ...baseMessage } as ChatSession["messages"][number],
+      ],
+      attachments: [],
+    });
+
+    const response = await server.app.request(
+      "http://localhost/v1/sessions/stable-duplicate-session",
+      {
+        method: "PATCH",
+        headers: { ...auth(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [
+            { id: "user-1", role: "user", parts: [{ type: "text", text: "hello" }] },
+            { id: "server-assistant", ...baseMessage },
+            { id: "client-assistant", ...baseMessage },
+          ],
+        }),
+      },
+    );
+
+    assert.equal(response.status, 200);
+    const saved = await response.json();
+    assert.deepEqual(
+      saved.messages.map((message: { id: string }) => message.id),
+      ["user-1", "server-assistant"],
+    );
+  });
+
   it("persists a pending port change for the next restart", async () => {
     const server = await createTestServer();
     const response = await server.app.request("http://localhost/v1/config", {

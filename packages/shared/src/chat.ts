@@ -72,6 +72,8 @@ export type RunStartInput = {
   cwd?: string;
   workspaceId?: string;
   sandboxMode?: SandboxMode;
+  mcpServerIds?: string[];
+  skillIds?: string[];
   title?: string;
   toolNames?: string[];
 };

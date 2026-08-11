@@ -68,6 +68,22 @@ function mergeDuplicateMessages(left, right) {
   return merged;
 }
 
+function executionFingerprint(message) {
+  const usage =
+    message.metadata && typeof message.metadata === "object" ? message.metadata.usage : undefined;
+  const providerMetadata = (message.parts || []).map((part) => part?.providerMetadata ?? null);
+  if (usage === undefined && providerMetadata.every((value) => value === null)) return "";
+  return JSON.stringify({ usage: usage ?? null, providerMetadata });
+}
+
+function isDuplicateAssistant(left, right) {
+  if (left?.role !== "assistant" || right?.role !== "assistant") return false;
+  if (messageFingerprint(left) !== messageFingerprint(right)) return false;
+  if (isUnstableId(left.id) || isUnstableId(right.id)) return true;
+  const leftExecution = executionFingerprint(left);
+  return leftExecution !== "" && leftExecution === executionFingerprint(right);
+}
+
 export function dedupeSessionMessages(messages) {
   if (!Array.isArray(messages)) return { messages, removed: 0, assigned: 0 };
   const result = [];
@@ -80,14 +96,8 @@ export function dedupeSessionMessages(messages) {
       continue;
     }
     const message = structuredClone(source);
-    const originalId = typeof message.id === "string" ? message.id : "";
-
     const previous = result.at(-1);
-    const duplicate =
-      message.role === "assistant" &&
-      previous?.role === "assistant" &&
-      messageFingerprint(previous) === messageFingerprint(message) &&
-      (isUnstableId(originalId) || isUnstableId(previous.id));
+    const duplicate = previous && isDuplicateAssistant(previous, message);
     if (duplicate) {
       result[result.length - 1] = mergeDuplicateMessages(previous, message);
       removed += 1;

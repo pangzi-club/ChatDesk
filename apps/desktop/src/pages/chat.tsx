@@ -302,8 +302,9 @@ function ChatPage() {
         () => workspaceKey,
         () => sandboxModeRef.current,
         () => skillsRef.current.filter((skill) => selectedSkillIds.includes(skill.id)),
+        () => selectedMcpIds,
       ),
-    [selectedModel, selectedSkillIds, sessionId, workspaceKey],
+    [selectedMcpIds, selectedModel, selectedSkillIds, sessionId, workspaceKey],
   );
   const { addToolApprovalResponse, messages, setMessages, sendMessage, stop, status, error } =
     useChat({
@@ -720,42 +721,49 @@ function ChatPage() {
     setSessionTitle(title);
     void (async () => {
       try {
+        const canonicalSession = await waitForCanonicalSession(sessionId, messageText(lastMessage));
+        if (!canonicalSession) throw new Error("Chat Server 未返回 canonical 会话");
+        const canonicalMessages = canonicalSession.messages;
+        sessionAttachmentsRef.current = canonicalSession.attachments;
         const materialized = await materializeGeneratedImages(
           sessionId,
-          messages,
-          sessionAttachmentsRef.current,
+          canonicalMessages,
+          canonicalSession.attachments,
         );
         sessionAttachmentsRef.current = materialized.attachments;
-        await saveChatSession({
-          schemaVersion: 2,
-          id: sessionId,
-          title,
-          createdAt: sessionCreatedAtRef.current,
-          updatedAt: now,
-          modelId: selectedModel?.id,
-          workspaceId: workspaceKey || undefined,
-          cwd: selectedCwd || undefined,
-          sandboxMode,
-          mcpServerIds: selectedMcpIds,
-          skillIds: selectedSkillIds,
-          messages: materialized.messages,
-          attachments: materialized.attachments,
-        });
         if (materialized.changed) {
+          await saveChatSession({
+            ...canonicalSession,
+            title: deriveChatTitle(materialized.messages),
+            updatedAt: now,
+            messages: materialized.messages,
+            attachments: materialized.attachments,
+          });
           suppressSaveRef.current = true;
           setMessages(materialized.messages);
+        } else if (
+          messages.length !== canonicalMessages.length ||
+          messages.some((message, index) => message.id !== canonicalMessages[index]?.id)
+        ) {
+          suppressSaveRef.current = true;
+          setMessages(canonicalMessages);
         }
         void queryClient.invalidateQueries({ queryKey: ["chat-index"] });
         if (extractedFingerprintRef.current === fingerprint) return;
         extractedFingerprintRef.current = fingerprint;
-        const lastUser = [...messages].reverse().find((message) => message.role === "user");
+        const lastUser = [...canonicalMessages]
+          .reverse()
+          .find((message) => message.role === "user");
+        const canonicalLastMessage = [...canonicalMessages]
+          .reverse()
+          .find((message) => message.role === "assistant");
         scheduleMemoryUpdateFromTurn({
           model: selectedModel,
           sessionId,
           userText: lastUser ? messageText(lastUser) : "",
-          assistantText: messageText(lastMessage),
+          assistantText: canonicalLastMessage ? messageText(canonicalLastMessage) : "",
           workspacePath: selectedCwd,
-          toolNames: lastMessage.parts
+          toolNames: (canonicalLastMessage?.parts ?? [])
             .filter(isToolUIPart)
             .map((part) => getToolName(part))
             .filter(isWorkspaceMemoryExcludedTool),
@@ -767,19 +775,7 @@ function ChatPage() {
         console.error("Failed to save chat session", saveError);
       }
     })();
-  }, [
-    messages,
-    queryClient,
-    selectedCwd,
-    selectedModel,
-    selectedMcpIds,
-    sandboxMode,
-    selectedSkillIds,
-    sessionId,
-    status,
-    setMessages,
-    workspaceKey,
-  ]);
+  }, [messages, queryClient, selectedCwd, selectedModel, sessionId, status, setMessages]);
 
   // Scroll when a message arrives or the local response indicator changes.
   // biome-ignore lint/correctness/useExhaustiveDependencies: these values intentionally trigger the scroll effect.
@@ -1497,6 +1493,24 @@ function messageHasToolParts(message: UIMessage) {
   return message.parts.some(isToolUIPart);
 }
 
+async function waitForCanonicalSession(sessionId: string, expectedAssistantText: string) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const session = await loadChatSession(sessionId);
+    if (!session) return null;
+    const lastAssistant = [...session.messages]
+      .reverse()
+      .find((message) => message.role === "assistant");
+    if (
+      !expectedAssistantText ||
+      (lastAssistant && messageText(lastAssistant) === expectedAssistantText)
+    ) {
+      return session;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return loadChatSession(sessionId);
+}
+
 function createModelTransport(
   sessionId: string,
   model: ModelConfig | undefined,
@@ -1506,6 +1520,7 @@ function createModelTransport(
   getWorkspaceId: () => string,
   getSandboxMode: () => ChatSandboxMode,
   getSkills: () => SkillDefinition[],
+  getMcpServerIds: () => string[],
 ): ChatTransport<UIMessage> {
   return new DefaultChatTransport<UIMessage>({
     api: `${chatServerUrl()}/v1/sessions/${sessionId}/runs`,
@@ -1559,6 +1574,8 @@ function createModelTransport(
           cwd: cwd || undefined,
           workspaceId: workspaceId || undefined,
           sandboxMode,
+          mcpServerIds: getMcpServerIds(),
+          skillIds: getSkills().map((skill) => skill.id),
           toolNames: activeTools.toolNames,
           title: undefined,
         },

@@ -66,6 +66,30 @@ test("dedupeSessionMessages is idempotent and does not remove a repeated reply a
   assert.equal(second.removed, 0);
 });
 
+test("dedupeSessionMessages removes stable ids when execution metadata matches", () => {
+  const base = {
+    role: "assistant",
+    metadata: { usage: { totalTokens: 12 } },
+    parts: [
+      {
+        type: "text",
+        text: "same",
+        providerMetadata: { openai: { itemId: "provider-item-1" } },
+      },
+    ],
+  };
+  const result = dedupeSessionMessages([
+    { id: "server-id", ...base },
+    { id: "client-id", ...base },
+  ]);
+
+  assert.equal(result.removed, 1);
+  assert.deepEqual(
+    result.messages.map((message) => message.id),
+    ["server-id"],
+  );
+});
+
 test("dedupe script applies changes and keeps a backup", async () => {
   const target = await mkdtemp(path.join(os.tmpdir(), "chatdesk-dedupe-target-"));
   const sessionDir = path.join(target, "sessions", "session-1");

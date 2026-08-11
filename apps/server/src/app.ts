@@ -46,6 +46,8 @@ const runInputSchema = z.object({
   cwd: z.string().optional(),
   workspaceId: z.string().optional(),
   sandboxMode: z.enum(["ask", "auto", "full"]).optional(),
+  mcpServerIds: z.array(z.string()).max(100).optional(),
+  skillIds: z.array(z.string()).max(100).optional(),
   title: z.string().optional(),
   toolNames: z.array(z.string()).max(100).optional(),
 });
@@ -99,6 +101,43 @@ function mergeSessionMessages(current: ChatSession["messages"], incoming: unknow
     return JSON.stringify(copy);
   };
   const isUnstableId = (id: string | undefined) => !id?.trim() || id.startsWith("legacy-message-");
+  const executionFingerprint = (message: ChatSession["messages"][number]) => {
+    const usage =
+      message.metadata && typeof message.metadata === "object" && "usage" in message.metadata
+        ? message.metadata.usage
+        : undefined;
+    const providerMetadata = message.parts.map((part) =>
+      "providerMetadata" in part ? (part.providerMetadata ?? null) : null,
+    );
+    if (usage === undefined && providerMetadata.every((value) => value === null)) return "";
+    return JSON.stringify({ usage: usage ?? null, providerMetadata });
+  };
+  const isDuplicateAssistant = (
+    left: ChatSession["messages"][number],
+    right: ChatSession["messages"][number],
+  ) => {
+    if (left.role !== "assistant" || right.role !== "assistant") return false;
+    if (fingerprint(left) !== fingerprint(right)) return false;
+    if (isUnstableId(left.id) || isUnstableId(right.id)) return true;
+    const leftExecution = executionFingerprint(left);
+    return leftExecution !== "" && leftExecution === executionFingerprint(right);
+  };
+  const mergeMessages = (
+    left: ChatSession["messages"][number],
+    right: ChatSession["messages"][number],
+  ) => {
+    const preferred =
+      isUnstableId(left.id) && !isUnstableId(right.id)
+        ? right
+        : right.parts.length > left.parts.length
+          ? right
+          : left;
+    const merged =
+      right.metadata === undefined && left.metadata !== undefined
+        ? { ...preferred, metadata: left.metadata }
+        : preferred;
+    return merged;
+  };
 
   const merged = current.map((message) => {
     let next = incomingById.get(message.id);
@@ -107,16 +146,19 @@ function mergeSessionMessages(current: ChatSession["messages"], incoming: unknow
       next = incomingMessages.find(
         (candidate) =>
           !consumedIds.has(candidate.id) &&
-          !isUnstableId(candidate.id) &&
           candidate.role === message.role &&
           fingerprint(candidate) === fingerprint(message),
       );
       if (next) consumedIds.add(next.id);
     }
+    if (!next) {
+      next = incomingMessages.find(
+        (candidate) => !consumedIds.has(candidate.id) && isDuplicateAssistant(message, candidate),
+      );
+      if (next) consumedIds.add(next.id);
+    }
     if (!next) return message;
-    return next.metadata === undefined && message.metadata !== undefined
-      ? { ...next, metadata: message.metadata }
-      : next;
+    return mergeMessages(message, next);
   });
   for (const message of incomingMessages) {
     if (!message.id || consumedIds.has(message.id)) continue;
@@ -127,6 +169,12 @@ function mergeSessionMessages(current: ChatSession["messages"], incoming: unknow
         fingerprint(candidate) === fingerprint(message),
     );
     if (existingUnstable) continue;
+    const existingDuplicate = merged.find((candidate) => isDuplicateAssistant(candidate, message));
+    if (existingDuplicate) {
+      const index = merged.indexOf(existingDuplicate);
+      merged[index] = mergeMessages(existingDuplicate, message);
+      continue;
+    }
     merged.push(message);
   }
   return merged;
