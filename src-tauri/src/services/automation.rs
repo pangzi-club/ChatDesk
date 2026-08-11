@@ -8,9 +8,9 @@ use std::{
 use chrono::Local;
 use serde::Deserialize;
 use tauri::AppHandle;
-use tauri_plugin_store::StoreExt;
 
 use crate::commands::system_log::append_system_log;
+use crate::services::user_data::read_user_file;
 
 const AUTOMATION_TASKS_STORE_KEY: &str = "automation-tasks";
 
@@ -54,13 +54,15 @@ impl AutomationScheduler {
 }
 
 fn load_tasks(app: &AppHandle) -> Result<Vec<AutomationTask>, String> {
-    let store = app
-        .store("settings.json")
-        .map_err(|error| error.to_string())?;
-    let Some(value) = store.get(AUTOMATION_TASKS_STORE_KEY) else {
+    let Some(contents) = read_user_file(app, "settings.json")? else {
         return Ok(Vec::new());
     };
-    serde_json::from_value(value).map_err(|error| error.to_string())
+    let value: serde_json::Value =
+        serde_json::from_str(&contents).map_err(|error| error.to_string())?;
+    let Some(tasks) = value.get(AUTOMATION_TASKS_STORE_KEY) else {
+        return Ok(Vec::new());
+    };
+    serde_json::from_value(tasks.clone()).map_err(|error| error.to_string())
 }
 
 fn run_scheduler(app: AppHandle, tasks: Arc<Mutex<Vec<AutomationTask>>>) {

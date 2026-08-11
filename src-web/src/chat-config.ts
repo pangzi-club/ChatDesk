@@ -81,27 +81,11 @@ export class ChatConfigStore {
     this.file = path.join(dataDir, "settings.json");
   }
 
-  async init(legacyFile?: string) {
+  async init() {
     await mkdir(path.dirname(this.file), { recursive: true });
     const current = await readJson(this.file, null);
     if (current) {
       this.value = normalize(current);
-      return;
-    }
-    const legacy = await readJson(legacyFile || "", null);
-    if (legacy && typeof legacy === "object") {
-      const value = legacy as Record<string, unknown>;
-      this.value = normalize({
-        models: value.models,
-        chatTools: value.chatTools,
-        mcpServers: value.mcpServers,
-        installedSkillIds: value.skills,
-        selectedSkillIds: value.chatSkills,
-        apiKeys: {
-          kie: value.kieApiKey,
-        },
-      });
-      await this.update(this.value);
       return;
     }
     this.value = structuredClone(DEFAULT_CONFIG);

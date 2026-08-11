@@ -181,21 +181,14 @@ export type ChatServer = {
 export async function createChatServer(config: ServerConfig): Promise<ChatServer> {
   const store = new SessionStore(config.dataDir);
   await store.init();
-  const legacyDirs = [
-    process.env.CHAT_SERVER_LEGACY_DIR,
-    ...(process.env.CHAT_SERVER_LEGACY_DIRS?.split(path.delimiter) ?? []),
-  ].filter((directory): directory is string => Boolean(directory?.trim()));
-  for (const legacyDir of [...new Set(legacyDirs)]) {
-    await store.importDirectory(legacyDir);
-  }
   const events = new EventHub();
   const chatConfig = new ChatConfigStore(config.dataDir);
-  await chatConfig.init(process.env.CHAT_SERVER_LEGACY_SETTINGS_FILE);
+  await chatConfig.init();
   const runs = new RunRegistry(store, events, chatConfig);
   const memory = new MemoryStore(config.dataDir);
-  await memory.init(process.env.CHAT_SERVER_LEGACY_MEMORY_FILE);
+  await memory.init();
   const archive = new ArchiveStore(config.dataDir);
-  await archive.init(process.env.CHAT_SERVER_LEGACY_ARCHIVE_DIR);
+  await archive.init();
   const mcp = new McpRuntime();
   await runs.initialize();
   const app = new Hono();

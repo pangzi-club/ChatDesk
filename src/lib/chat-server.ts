@@ -75,6 +75,7 @@ export async function saveChatServerPort(port: number) {
   if (isTauri()) {
     await settingsStore.set(CHAT_SERVER_PORT_KEY, next);
     await settingsStore.save();
+    return next;
   }
   window.localStorage.setItem(CHAT_SERVER_PORT_STORAGE_KEY, String(next));
   return next;
@@ -98,10 +99,9 @@ export async function restartChatServer() {
 }
 
 export function chatServerUrl(port = CHAT_SERVER_DEFAULT_PORT) {
-  const stored =
-    typeof window !== "undefined"
-      ? normalizePort(window.localStorage.getItem(CHAT_SERVER_PORT_STORAGE_KEY))
-      : CHAT_SERVER_DEFAULT_PORT;
+  const stored = isTauri()
+    ? CHAT_SERVER_DEFAULT_PORT
+    : normalizePort(window.localStorage.getItem(CHAT_SERVER_PORT_STORAGE_KEY));
   const selectedPort =
     port === CHAT_SERVER_DEFAULT_PORT ? (runtimePortKnown ? runtimeConfig.port : stored) : port;
   return `http://127.0.0.1:${selectedPort}`;

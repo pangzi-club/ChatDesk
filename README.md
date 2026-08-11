@@ -39,7 +39,14 @@ pnpm server:test # Chat Server 测试
 pnpm tauri dev   # 启动桌面开发模式
 ```
 
-不要把 `.env.local`、`.data/` 或包含 API key 的导出文件提交到版本库。
+不要把 `.env.local`、`.data/`、`~/.chatdesk/` 或包含 API key 的导出文件提交到版本库。
+
+旧版本数据迁移使用独立脚本，不会由新 App 自动执行：
+
+```sh
+pnpm migrate:chatdesk
+pnpm migrate:chatdesk -- --apply
+```
 
 ## 配置
 
@@ -50,7 +57,7 @@ Chat Server 支持的环境变量和 HTTP API 见 [`src-web/README.md`](src-web/
 | `CHAT_SERVER_HOST` | `127.0.0.1` | Chat Server 监听地址，建议保持回环地址 |
 | `CHAT_SERVER_PORT` | `14317` | Chat Server 监听端口 |
 | `CHAT_SERVER_TOKEN` | 每次启动随机生成 | API 鉴权 token |
-| `CHAT_SERVER_DATA_DIR` | `.data/chat-server` | 本地会话、设置和记忆目录 |
+| `CHAT_SERVER_DATA_DIR` | macOS: `~/.chatdesk/chat-server`；其他平台: `.data/chat-server` | 本地会话、设置和记忆目录 |
 
 API key 在应用设置中配置并保存在本机。使用 `CHAT_SERVER_HOST=0.0.0.0` 对外暴露服务前，请自行配置网络层访问控制和长期 token；本项目默认只面向本机使用。
 

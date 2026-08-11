@@ -46,13 +46,8 @@ pnpm typecheck
 | `CHAT_SERVER_HOST` | `127.0.0.1` | 监听地址，建议仅使用回环地址 |
 | `CHAT_SERVER_PORT` | `14317` | 监听端口，允许范围为 `1024-65535` |
 | `CHAT_SERVER_TOKEN` | 启动时随机生成 | API 鉴权 token |
-| `CHAT_SERVER_DATA_DIR` | `.data/chat-server` | 会话、设置、记忆和归档数据目录（相对于进程当前工作目录） |
+| `CHAT_SERVER_DATA_DIR` | macOS: `~/.chatdesk/chat-server`；其他平台: `.data/chat-server` | 会话、设置、记忆和归档数据目录 |
 | `CHAT_SERVER_PRODUCTION` | 未设置 | 设为 `1` 后启用致命错误处理和关闭时的运行清理 |
-| `CHAT_SERVER_LEGACY_DIR` | 未设置 | 要导入的单个旧会话目录 |
-| `CHAT_SERVER_LEGACY_DIRS` | 未设置 | 要导入的多个旧会话目录，使用系统路径分隔符分隔 |
-| `CHAT_SERVER_LEGACY_SETTINGS_FILE` | 未设置 | 旧版设置文件路径 |
-| `CHAT_SERVER_LEGACY_MEMORY_FILE` | 未设置 | 旧版记忆文件路径 |
-| `CHAT_SERVER_LEGACY_ARCHIVE_DIR` | 未设置 | 旧版归档目录路径 |
 | `CHAT_SERVER_BROWSER_WORKER` | 未设置 | 浏览器 worker 可执行文件或脚本路径 |
 | `CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH` | 未设置 | Playwright 浏览器资源目录 |
 
@@ -114,10 +109,10 @@ Authorization: Bearer local-dev-token
 
 ## 数据目录
 
-默认数据目录为 `.data/chat-server`，主要内容包括：
+macOS 默认数据目录为 `~/.chatdesk/chat-server`，其他平台默认使用 `.data/chat-server`，主要内容包括：
 
 ```text
-.data/chat-server/
+chat-server/
 ├── sessions/<session-id>/session.json
 ├── sessions/<session-id>/attachments/*
 ├── settings.json
@@ -125,7 +120,7 @@ Authorization: Bearer local-dev-token
 └── server-config.json
 ```
 
-服务启动时会初始化目录，并在配置了旧版路径时导入旧会话、设置、记忆和归档。请勿将包含 API key 的数据目录提交到版本库。
+服务启动时只初始化当前数据目录，不会扫描或迁移旧版本目录。旧版本数据请使用根目录的 `pnpm migrate:chatdesk -- --apply` 迁移。请勿将包含 API key 的数据目录提交到版本库。
 
 ## 与桌面端的关系
 

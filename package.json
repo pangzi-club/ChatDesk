@@ -16,6 +16,8 @@
   "scripts": {
     "dev": "vite",
     "dev:all": "node scripts/dev-all.mjs",
+    "migrate:chatdesk": "node scripts/migrate-to-chatdesk.mjs",
+    "migrate:test": "node --test scripts/migrate-to-chatdesk.test.mjs",
     "server:dev": "node --watch --experimental-strip-types src-web/src/server.ts",
     "server:test": "node --experimental-strip-types --test src-web/src/*.test.ts",
     "build": "tsc && tsc -p tsconfig.server.json && vite build",

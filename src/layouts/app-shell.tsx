@@ -78,6 +78,7 @@ import {
   subscribeChatServerEvents,
 } from "@/lib/chat-server";
 import { type ChatIndexItem, deleteChatSession, loadChatIndex } from "@/lib/chat-store";
+import { settingsStore } from "@/lib/settings-store";
 import { appendSystemLog } from "@/lib/system-log";
 import { applyTrayEnabled, loadTrayEnabled } from "@/lib/tray";
 import {
@@ -190,6 +191,12 @@ type CommandItem = (typeof commandItems)[number];
 
 const CHAT_UNREAD_STORAGE_KEY = "m-dashboard-chat-unread-v1";
 const WORKSPACE_COLLAPSE_STORAGE_KEY = "m-dashboard-workspace-collapse-v1";
+const CHAT_UNREAD_STORE_KEY = "chatUnreadSessionIds";
+const WORKSPACE_COLLAPSE_STORE_KEY = "workspaceCollapseState";
+
+function isTauri() {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
 
 function loadUnreadChatIds() {
   if (typeof window === "undefined") return new Set<string>();
@@ -203,10 +210,13 @@ function loadUnreadChatIds() {
   }
 }
 
-function saveUnreadChatIds(ids: Set<string>) {
-  if (typeof window !== "undefined") {
-    window.localStorage.setItem(CHAT_UNREAD_STORAGE_KEY, JSON.stringify([...ids]));
+async function saveUnreadChatIds(ids: Set<string>) {
+  if (isTauri()) {
+    await settingsStore.set(CHAT_UNREAD_STORE_KEY, [...ids]);
+    await settingsStore.save();
+    return;
   }
+  window.localStorage.setItem(CHAT_UNREAD_STORAGE_KEY, JSON.stringify([...ids]));
 }
 
 function loadWorkspaceCollapseState() {
@@ -225,10 +235,13 @@ function loadWorkspaceCollapseState() {
   }
 }
 
-function saveWorkspaceCollapseState(state: Record<string, boolean>) {
-  if (typeof window !== "undefined") {
-    window.localStorage.setItem(WORKSPACE_COLLAPSE_STORAGE_KEY, JSON.stringify(state));
+async function saveWorkspaceCollapseState(state: Record<string, boolean>) {
+  if (isTauri()) {
+    await settingsStore.set(WORKSPACE_COLLAPSE_STORE_KEY, state);
+    await settingsStore.save();
+    return;
   }
+  window.localStorage.setItem(WORKSPACE_COLLAPSE_STORAGE_KEY, JSON.stringify(state));
 }
 
 function AppShell() {
@@ -587,7 +600,9 @@ function WorkspaceConversationGroups() {
         if (!current.has(item.id)) return current;
         const next = new Set(current);
         next.delete(item.id);
-        saveUnreadChatIds(next);
+        void saveUnreadChatIds(next).catch((error) =>
+          console.error("Failed to save unread chat state", error),
+        );
         return next;
       });
       await queryClient.invalidateQueries({ queryKey: ["chat-index"] });
@@ -622,6 +637,29 @@ function WorkspaceConversationGroups() {
   }, []);
 
   useEffect(() => {
+    if (!isTauri()) return;
+    void Promise.all([
+      settingsStore.get<unknown>(CHAT_UNREAD_STORE_KEY),
+      settingsStore.get<unknown>(WORKSPACE_COLLAPSE_STORE_KEY),
+    ])
+      .then(([unread, collapse]) => {
+        if (Array.isArray(unread)) {
+          setUnreadSessionIds(new Set(unread.filter((id): id is string => typeof id === "string")));
+        }
+        if (collapse && typeof collapse === "object" && !Array.isArray(collapse)) {
+          setCollapseOverride(
+            Object.fromEntries(
+              Object.entries(collapse).filter(
+                (entry): entry is [string, boolean] => typeof entry[1] === "boolean",
+              ),
+            ),
+          );
+        }
+      })
+      .catch((error) => console.error("Failed to load desktop navigation state", error));
+  }, []);
+
+  useEffect(() => {
     const cleanup = subscribeChatServerEvents(serverPort, {
       onSnapshot: (sessions) => {
         setServerStatuses(
@@ -636,7 +674,9 @@ function WorkspaceConversationGroups() {
             const next = new Set(current);
             if (activeSessionIdRef.current === sessionId) next.delete(sessionId);
             else next.add(sessionId);
-            saveUnreadChatIds(next);
+            void saveUnreadChatIds(next).catch((error) =>
+              console.error("Failed to save unread chat state", error),
+            );
             return next;
           });
         }
@@ -655,7 +695,9 @@ function WorkspaceConversationGroups() {
     const nextCollapsed = !isGroupCollapsed(group);
     setCollapseOverride((current) => {
       const next = { ...current, [group.key]: nextCollapsed };
-      saveWorkspaceCollapseState(next);
+      void saveWorkspaceCollapseState(next).catch((error) =>
+        console.error("Failed to save workspace collapse state", error),
+      );
       return next;
     });
   }
@@ -684,7 +726,9 @@ function WorkspaceConversationGroups() {
       if (!current.has(sessionId)) return current;
       const next = new Set(current);
       next.delete(sessionId);
-      saveUnreadChatIds(next);
+      void saveUnreadChatIds(next).catch((error) =>
+        console.error("Failed to save unread chat state", error),
+      );
       return next;
     });
     navigate(`/chat?sessionId=${encodeURIComponent(sessionId)}`);

@@ -145,7 +145,7 @@ describe("chat server", () => {
     });
   });
 
-  it("imports legacy sessions from both supported layouts", async () => {
+  it("does not import legacy sessions during server startup", async () => {
     const legacyDir = await mkdtemp(path.join(os.tmpdir(), "chatdesk-legacy-chat-"));
     temporaryDirectories.push(legacyDir);
     await mkdir(path.join(legacyDir, "sessions", "legacy-session"), { recursive: true });
@@ -161,15 +161,8 @@ describe("chat server", () => {
         attachments: [],
       }),
     );
-    const previous = process.env.CHAT_SERVER_LEGACY_DIRS;
-    process.env.CHAT_SERVER_LEGACY_DIRS = legacyDir;
-    try {
-      const server = await createTestServer();
-      assert.equal((await server.store.get("legacy-session"))?.title, "Legacy");
-    } finally {
-      if (previous === undefined) delete process.env.CHAT_SERVER_LEGACY_DIRS;
-      else process.env.CHAT_SERVER_LEGACY_DIRS = previous;
-    }
+    const server = await createTestServer();
+    assert.equal(await server.store.get("legacy-session"), null);
   });
 
   it("owns chat config, memory and attachments", async () => {

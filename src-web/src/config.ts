@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 export type ServerConfig = {
@@ -18,7 +19,10 @@ function parsePort(value: string | undefined) {
 }
 
 export async function loadServerConfig(): Promise<ServerConfig> {
-  const dataDir = path.resolve(process.env.CHAT_SERVER_DATA_DIR || ".data/chat-server");
+  const defaultDataDir = process.platform === "darwin"
+    ? path.join(os.homedir(), ".chatdesk", "chat-server")
+    : path.join(".data", "chat-server");
+  const dataDir = path.resolve(process.env.CHAT_SERVER_DATA_DIR || defaultDataDir);
   await mkdir(dataDir, { recursive: true });
   const persisted: { port?: unknown } = await readFile(
     path.join(dataDir, "server-config.json"),

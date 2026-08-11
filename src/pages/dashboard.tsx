@@ -1,5 +1,4 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { LazyStore } from "@tauri-apps/plugin-store";
 import {
   Camera,
   Check,
@@ -19,6 +18,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
+import { createUserDataStore } from "@/lib/settings-store";
 
 type Bookmark = {
   color: string;
@@ -31,7 +31,7 @@ type BookmarkDraft = Pick<Bookmark, "title" | "url">;
 
 const BOOKMARK_STORAGE_KEY = "m-dashboard-bookmarks-v1";
 const BOOKMARK_STORE_KEY = "bookmarks";
-const bookmarkStore = new LazyStore("bookmarks.json");
+const bookmarkStore = createUserDataStore("bookmarks.json");
 
 const DEFAULT_BOOKMARKS: Bookmark[] = [
   {

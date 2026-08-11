@@ -14,33 +14,8 @@ export class ArchiveStore {
     this.indexFile = path.join(this.root, "index.json");
   }
 
-  async init(legacyRoot?: string) {
+  async init(_legacyRoot?: string) {
     await mkdir(path.join(this.root, "sessions"), { recursive: true });
-    const current = await readFile(this.indexFile, "utf8").catch(() => undefined);
-    if (!current && legacyRoot) {
-      const legacyIndex = await readFile(path.join(legacyRoot, "index.json"), "utf8").catch(() => "[]");
-      let entries: Array<{ id?: unknown }> = [];
-      try {
-        const parsed: unknown = JSON.parse(legacyIndex);
-        if (Array.isArray(parsed)) {
-          entries = parsed.filter(
-            (entry): entry is { id?: unknown } => Boolean(entry) && typeof entry === "object",
-          );
-        }
-      } catch {
-        // A corrupt legacy index should not prevent the Chat Server from starting.
-      }
-      await writeFile(this.indexFile, JSON.stringify(entries, null, 2));
-      for (const entry of entries) {
-        if (!validId(entry.id)) continue;
-        const source = path.join(legacyRoot, "sessions", entry.id, "session.json");
-        const target = path.join(this.root, "sessions", entry.id, "session.json");
-        const contents = await readFile(source, "utf8").catch(() => undefined);
-        if (!contents) continue;
-        await mkdir(path.dirname(target), { recursive: true });
-        await writeFile(target, contents);
-      }
-    }
   }
 
   async list() {

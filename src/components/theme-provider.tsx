@@ -68,6 +68,10 @@ function getSystemTheme(): "light" | "dark" {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
+function isTauri() {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
 export function ThemeProvider({
   children,
   defaultTheme = "system",
@@ -79,17 +83,17 @@ export function ThemeProvider({
       return defaultTheme;
     }
 
-    const stored = window.localStorage.getItem(storageKey);
+    const stored = isTauri() ? null : window.localStorage.getItem(storageKey);
     return isTheme(stored) ? stored : defaultTheme;
   });
   const [themeColor, setThemeColorState] = useState<ThemeColor>(() => {
     if (typeof window === "undefined") return "ocean";
-    const stored = window.localStorage.getItem("vite-ui-theme-color");
+    const stored = isTauri() ? null : window.localStorage.getItem("vite-ui-theme-color");
     return isThemeColor(stored) ? stored : "ocean";
   });
   const [primaryColor, setPrimaryColorState] = useState<PrimaryColor>(() => {
     if (typeof window === "undefined") return "blue";
-    const stored = window.localStorage.getItem("vite-ui-primary-color");
+    const stored = isTauri() ? null : window.localStorage.getItem("vite-ui-primary-color");
     return isPrimaryColor(stored) ? stored : "blue";
   });
 
@@ -104,11 +108,7 @@ export function ThemeProvider({
           return;
         }
 
-        const localTheme = window.localStorage.getItem(storageKey);
-        if (savedTheme !== localTheme) {
-          setTheme(savedTheme);
-          window.localStorage.setItem(storageKey, savedTheme);
-        }
+        setTheme(savedTheme);
       })
       .catch(() => {
         // Not running in Tauri, ignore
@@ -117,7 +117,7 @@ export function ThemeProvider({
     return () => {
       isActive = false;
     };
-  }, [storageKey]);
+  }, []);
 
   useEffect(() => {
     let isActive = true;
@@ -127,7 +127,6 @@ export function ThemeProvider({
       .then((savedColor) => {
         if (!isActive || !isThemeColor(savedColor)) return;
         setThemeColorState(savedColor);
-        window.localStorage.setItem("vite-ui-theme-color", savedColor);
       })
       .catch(() => {
         // Not running in Tauri, ignore
@@ -145,7 +144,6 @@ export function ThemeProvider({
       .then((savedColor) => {
         if (!isActive || !isPrimaryColor(savedColor)) return;
         setPrimaryColorState(savedColor);
-        window.localStorage.setItem("vite-ui-primary-color", savedColor);
       })
       .catch(() => {
         // Not running in Tauri, ignore
@@ -198,7 +196,7 @@ export function ThemeProvider({
     themeColor,
     primaryColor,
     setTheme: (theme: Theme) => {
-      window.localStorage.setItem(storageKey, theme);
+      if (!isTauri()) window.localStorage.setItem(storageKey, theme);
       setTheme(theme);
       void appendSystemLog({
         level: "success",
@@ -217,7 +215,7 @@ export function ThemeProvider({
         });
     },
     setThemeColor: (nextColor: ThemeColor) => {
-      window.localStorage.setItem("vite-ui-theme-color", nextColor);
+      if (!isTauri()) window.localStorage.setItem("vite-ui-theme-color", nextColor);
       setThemeColorState(nextColor);
       void appendSystemLog({
         level: "success",
@@ -234,7 +232,7 @@ export function ThemeProvider({
         });
     },
     setPrimaryColor: (nextColor: PrimaryColor) => {
-      window.localStorage.setItem("vite-ui-primary-color", nextColor);
+      if (!isTauri()) window.localStorage.setItem("vite-ui-primary-color", nextColor);
       setPrimaryColorState(nextColor);
       void appendSystemLog({
         level: "success",

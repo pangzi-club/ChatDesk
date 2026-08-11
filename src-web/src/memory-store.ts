@@ -11,20 +11,15 @@ export class MemoryStore {
     this.file = path.join(dataDir, "memory.json");
   }
 
-  async init(legacyFile?: string) {
+  async init() {
     await mkdir(path.dirname(this.file), { recursive: true });
-    let raw: string | undefined;
-    if (legacyFile) raw = await readFile(legacyFile, "utf8").catch(() => undefined);
-    if (!raw) raw = await readFile(this.file, "utf8").catch(() => undefined);
+    const raw = await readFile(this.file, "utf8").catch(() => undefined);
     if (raw) {
       try {
         this.value = JSON.parse(raw);
       } catch {
         this.value = structuredClone(DEFAULT_MEMORY);
       }
-    }
-    if (raw && legacyFile && !(await readFile(this.file, "utf8").catch(() => undefined))) {
-      await this.save(this.value);
     }
   }
 
@@ -40,4 +35,3 @@ export class MemoryStore {
     return this.get();
   }
 }
-

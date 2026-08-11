@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
@@ -17,12 +17,10 @@ test("archive store rejects path traversal ids", async () => {
   await store.delete("../outside");
 });
 
-test("archive store tolerates a corrupt legacy index", async () => {
+test("archive store initializes without legacy imports", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-archive-legacy-"));
-  const legacy = await mkdtemp(path.join(os.tmpdir(), "chatdesk-archive-source-"));
-  await writeFile(path.join(legacy, "index.json"), "not-json");
 
   const store = new ArchiveStore(root);
-  await assert.doesNotReject(store.init(legacy));
+  await assert.doesNotReject(store.init());
   assert.deepEqual(await store.list(), []);
 });

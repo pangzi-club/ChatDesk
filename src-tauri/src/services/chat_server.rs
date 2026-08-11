@@ -10,6 +10,8 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
+use crate::services::user_data::user_data_dir;
+
 pub const DEFAULT_PORT: u16 = 14317;
 const MONITOR_INTERVAL: Duration = Duration::from_secs(5);
 const STABLE_RUNTIME: Duration = Duration::from_secs(60);
@@ -392,11 +394,7 @@ fn request_graceful_exit(child: &Child) -> bool {
 }
 
 fn spawn_server(app: &AppHandle) -> Result<(Child, ChatServerInfo), String> {
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| format!("无法定位 Chat Server 数据目录：{error}"))?
-        .join("chat-server");
+    let data_dir = user_data_dir(app)?.join("chat-server");
     fs::create_dir_all(&data_dir)
         .map_err(|error| format!("无法创建 Chat Server 数据目录：{error}"))?;
     let port = read_persisted_port(&data_dir);
@@ -412,21 +410,6 @@ fn spawn_server(app: &AppHandle) -> Result<(Child, ChatServerInfo), String> {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    if let Ok(app_data_dir) = app.path().app_data_dir() {
-        command
-            .env(
-                "CHAT_SERVER_LEGACY_MEMORY_FILE",
-                app_data_dir.join("chat/memory.json"),
-            )
-            .env(
-                "CHAT_SERVER_LEGACY_ARCHIVE_DIR",
-                app_data_dir.join("chat-archive"),
-            )
-            .env(
-                "CHAT_SERVER_LEGACY_SETTINGS_FILE",
-                app_data_dir.join("settings.json"),
-            );
-    }
     if let Ok(resource_dir) = app.path().resource_dir() {
         for candidate in [
             resource_dir.join("browser-worker"),
@@ -446,18 +429,6 @@ fn spawn_server(app: &AppHandle) -> Result<(Child, ChatServerInfo), String> {
                 break;
             }
         }
-    }
-    let legacy_dirs = find_legacy_dirs(app, &data_dir);
-    if !legacy_dirs.is_empty() {
-        let delimiter = if cfg!(windows) { ';' } else { ':' };
-        command.env(
-            "CHAT_SERVER_LEGACY_DIRS",
-            legacy_dirs
-                .iter()
-                .map(|path| path.to_string_lossy().into_owned())
-                .collect::<Vec<_>>()
-                .join(&delimiter.to_string()),
-        );
     }
     let mut child = command
         .spawn()
@@ -541,33 +512,6 @@ fn read_persisted_port(data_dir: &Path) -> u16 {
     } else {
         DEFAULT_PORT
     }
-}
-
-fn find_legacy_dirs(app: &AppHandle, data_dir: &Path) -> Vec<std::path::PathBuf> {
-    let mut candidates = Vec::new();
-    if let Ok(directory) = std::env::var("M_DASHBOARD_LEGACY_CHAT_DIR") {
-        candidates.push(std::path::PathBuf::from(directory));
-    }
-    if let Ok(app_data_dir) = app.path().app_data_dir() {
-        candidates.push(app_data_dir.join("chat"));
-    }
-    if let Ok(current_dir) = std::env::current_dir() {
-        candidates.push(current_dir.join(".data/chat-server"));
-        candidates.push(current_dir.join(".data/chat"));
-    }
-    if let Ok(current_exe) = std::env::current_exe() {
-        for ancestor in current_exe.ancestors() {
-            candidates.push(ancestor.join(".data/chat-server"));
-            candidates.push(ancestor.join(".data/chat"));
-        }
-    }
-    candidates
-        .into_iter()
-        .filter(|candidate| {
-            candidate != data_dir
-                && (candidate.join("index.json").is_file() || candidate.join("sessions").is_dir())
-        })
-        .collect()
 }
 
 fn find_sidecar(app: &AppHandle) -> Result<std::path::PathBuf, String> {

@@ -35,10 +35,13 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_window_state::Builder::default().build())
-        .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
         .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
             let scheduler = AutomationScheduler::start(app.handle())?;
             app.manage(scheduler);
             let chat_server = if cfg!(debug_assertions) {
@@ -78,6 +81,8 @@ pub fn run() {
             commands::image::save_image_file,
             commands::system_log::read_system_logs,
             commands::system_log::write_system_logs,
+            services::user_data::read_user_store,
+            services::user_data::write_user_store,
             commands::vite::list_vite_processes,
             commands::vite::kill_vite_process,
             commands::sandbox::get_sandbox_info,
