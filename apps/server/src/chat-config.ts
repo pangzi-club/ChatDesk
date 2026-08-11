@@ -1,17 +1,8 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { SandboxMode } from "./protocol.ts";
+import type { ChatServerConfigData } from "@chatdesk/shared";
 
-export type ChatServerConfigData = {
-  models: unknown[];
-  chatTools: Record<string, boolean>;
-  sandboxMode: SandboxMode;
-  approvalReviewerModelId?: string;
-  mcpServers: unknown[];
-  installedSkillIds: string[];
-  selectedSkillIds: string[];
-  apiKeys: Record<string, string>;
-};
+export type { ChatServerConfigData } from "@chatdesk/shared";
 
 const DEFAULT_CONFIG: ChatServerConfigData = {
   models: [],

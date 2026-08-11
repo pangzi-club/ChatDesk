@@ -91,6 +91,7 @@ import {
   saveChatSandboxMode,
 } from "@/lib/chat-sandbox";
 import {
+  chatServerFetch,
   chatServerHeaders,
   chatServerUrl,
   ensureChatServerSession,
@@ -1508,6 +1509,7 @@ function createModelTransport(
 ): ChatTransport<UIMessage> {
   return new DefaultChatTransport<UIMessage>({
     api: `${chatServerUrl()}/v1/sessions/${sessionId}/runs`,
+    fetch: (input, init) => chatServerFetch(input, init),
     headers: async () => {
       await initializeChatServer();
       return chatServerHeaders();

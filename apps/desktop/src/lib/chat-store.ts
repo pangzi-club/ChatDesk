@@ -1,5 +1,13 @@
+import type {
+  ChatAttachment,
+  ChatAttachmentKind,
+  ChatAttachmentSource,
+  ChatIndexItem,
+  ChatSession,
+  SandboxMode,
+} from "@chatdesk/shared";
+import { CHAT_SCHEMA_VERSION, deriveTitle } from "@chatdesk/shared";
 import type { UIMessage } from "ai";
-import type { ChatSandboxMode } from "@/lib/chat-sandbox";
 import {
   deleteChatServerSession,
   initializeChatServer,
@@ -9,47 +17,15 @@ import {
   uploadChatServerAttachment,
 } from "@/lib/chat-server";
 
-export const CHAT_SCHEMA_VERSION = 2;
-
-export type ChatAttachmentKind = "image" | "video" | "audio" | "file";
-export type ChatAttachmentSource = "upload" | "generated" | "remote";
-
-export type ChatAttachment = {
-  id: string;
-  kind: ChatAttachmentKind;
-  mediaType: string;
-  fileName?: string;
-  size?: number;
-  width?: number;
-  height?: number;
-  durationMs?: number;
-  path: string;
-  source: ChatAttachmentSource;
-  createdAt: string;
+export type {
+  ChatAttachment,
+  ChatAttachmentKind,
+  ChatAttachmentSource,
+  ChatIndexItem,
+  ChatSession,
 };
-
-export type ChatSession = {
-  schemaVersion: typeof CHAT_SCHEMA_VERSION;
-  id: string;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
-  modelId?: string;
-  workspaceId?: string;
-  cwd?: string;
-  sandboxMode?: ChatSandboxMode;
-  mcpServerIds?: string[];
-  skillIds?: string[];
-  messages: UIMessage[];
-  attachments: ChatAttachment[];
-};
-
-export type ChatIndexItem = Pick<ChatSession, "id" | "title" | "createdAt" | "updatedAt"> & {
-  messageCount: number;
-  attachmentCount: number;
-  workspaceId?: string;
-  cwd?: string;
-};
+export { CHAT_SCHEMA_VERSION };
+export type ChatSandboxMode = SandboxMode;
 
 function sortIndex(items: ChatIndexItem[]) {
   return [...items].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -126,17 +102,7 @@ export function createSessionId() {
   return crypto.randomUUID() as string;
 }
 
-export function deriveChatTitle(messages: UIMessage[]) {
-  const firstUserMessage = messages.find((message) => message.role === "user");
-  const text = firstUserMessage?.parts
-    .filter((part) => part.type === "text")
-    .map((part) => part.text)
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!text) return "新对话";
-  return Array.from(text).slice(0, 40).join("") + (Array.from(text).length > 40 ? "…" : "");
-}
+export const deriveChatTitle = deriveTitle;
 
 export async function loadChatIndex(): Promise<ChatIndexItem[]> {
   await initializeChatServer();

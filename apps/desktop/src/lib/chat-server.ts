@@ -1,6 +1,15 @@
+import { ChatServerClient, ChatServerError } from "@chatdesk/chat-client";
+import type {
+  ChatIndexItem,
+  ChatServerConfigData,
+  ChatServerProviderModel,
+  ChatServerReviewerLog,
+  ChatSession,
+  HealthResponse,
+  SessionIndexItem,
+} from "@chatdesk/shared";
 import { invoke, isTauri as tauriIsTauri } from "@tauri-apps/api/core";
 import type { UIMessage } from "ai";
-import type { ChatSandboxMode } from "@/lib/chat-sandbox";
 import { settingsStore } from "@/lib/settings-store";
 
 export const CHAT_SERVER_DEFAULT_PORT = 14317;
@@ -25,28 +34,62 @@ export type ChatServerRuntimeInfo = {
   lastExit?: string | null;
 };
 
-export type ChatServerHealth = {
-  ok: true;
-  host: string;
-  port: number;
-  activeRuns: number;
-};
-
+export type ChatServerHealth = HealthResponse;
 export type ChatServerConnectionStatus = {
   state: ChatServerState;
   info: ChatServerRuntimeInfo | null;
   health: ChatServerHealth | null;
 };
+export type ChatServerSession = SessionIndexItem;
+
+export type {
+  ChatIndexItem,
+  ChatServerConfigData,
+  ChatServerProviderModel,
+  ChatServerReviewerLog,
+  ChatSession,
+};
 
 function isTauri() {
-  // `isTauri()` relies on the injected global, while older packaged webviews
-  // only expose the IPC internals object.
   return tauriIsTauri() || (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window);
 }
 
 function normalizePort(value: unknown) {
   const port = typeof value === "number" ? value : Number(value);
   return Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : CHAT_SERVER_DEFAULT_PORT;
+}
+
+async function runtimeFetch(input: RequestInfo | URL, init: RequestInit | undefined) {
+  const method = (init?.method ?? "GET").toUpperCase();
+  const retryable = method === "GET" || method === "HEAD" || method === "OPTIONS";
+  const request = () => {
+    const headers = new Headers(init?.headers);
+    if (runtimeConfig.token) headers.set("Authorization", `Bearer ${runtimeConfig.token}`);
+    else headers.delete("Authorization");
+    return fetch(input, { ...init, headers });
+  };
+
+  let response: Response;
+  try {
+    response = await request();
+  } catch (error) {
+    if (!isTauri() || !retryable) throw error;
+    await refreshChatServerRuntime();
+    response = await request();
+  }
+  if (response.status === 401 && isTauri()) {
+    await refreshChatServerRuntime();
+    response = await request();
+  }
+  return response;
+}
+
+function createClient(port = CHAT_SERVER_DEFAULT_PORT) {
+  return new ChatServerClient({
+    baseUrl: chatServerUrl(port),
+    token: runtimeConfig.token,
+    fetchImpl: (input, init) => runtimeFetch(input, init),
+  });
 }
 
 export function initializeChatServer() {
@@ -108,9 +151,8 @@ export function chatServerUrl(port = CHAT_SERVER_DEFAULT_PORT) {
 }
 
 export function chatServerHeaders() {
-  const token = getChatServerToken();
   const headers: Record<string, string> = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
+  if (runtimeConfig.token) headers.Authorization = `Bearer ${runtimeConfig.token}`;
   return headers;
 }
 
@@ -158,30 +200,7 @@ async function requestChatServerResponse(
   port = CHAT_SERVER_DEFAULT_PORT,
 ) {
   await initializeChatServer();
-  const request = () => {
-    const headers = new Headers(init?.headers);
-    const auth = chatServerHeaders().Authorization;
-    if (auth) headers.set("Authorization", auth);
-    else headers.delete("Authorization");
-    const url = `${chatServerUrl(port)}${pathname}`;
-    return fetch(url, { ...init, headers });
-  };
-
-  const method = (init?.method ?? "GET").toUpperCase();
-  const retryable = method === "GET" || method === "HEAD" || method === "OPTIONS";
-  let response: Response;
-  try {
-    response = await request();
-  } catch (error) {
-    if (!isTauri() || !retryable) throw error;
-    await refreshChatServerRuntime();
-    response = await request();
-  }
-  if (response.status === 401 && isTauri()) {
-    await refreshChatServerRuntime();
-    response = await request();
-  }
-  return response;
+  return createClient(port).request(pathname, init);
 }
 
 export async function updateChatServerPort(port: number) {
@@ -204,57 +223,18 @@ export async function updateChatServerPort(port: number) {
 
 export async function checkChatServer(port = CHAT_SERVER_DEFAULT_PORT) {
   await initializeChatServer();
-  const response = await fetch(`${chatServerUrl(port)}/health`, {
-    signal: AbortSignal.timeout(1500),
-  });
+  const response = await requestChatServerResponse(
+    "/health",
+    { signal: AbortSignal.timeout(1500) },
+    port,
+  );
   if (!response.ok) throw new Error(`Chat Server 返回 ${response.status}`);
   return (await response.json()) as ChatServerHealth;
 }
 
-export type ChatServerSession = {
-  id: string;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
-  messageCount: number;
-  attachmentCount: number;
-  workspaceId?: string;
-  cwd?: string;
-  status: "idle" | "submitted" | "streaming" | "error" | "ready";
-};
-
 export async function loadChatServerSessions(port = CHAT_SERVER_DEFAULT_PORT) {
-  const response = await requestChatServerResponse("/v1/sessions", undefined, port);
-  if (!response.ok) throw new Error((await response.text()) || "Chat Server 会话加载失败");
-  return (await response.json()) as ChatServerSession[];
+  return (await createClient(port).listSessions()) as ChatServerSession[];
 }
-
-export type ChatServerConfigData = {
-  models: unknown[];
-  chatTools: Record<string, boolean>;
-  sandboxMode?: ChatSandboxMode;
-  approvalReviewerModelId?: string;
-  mcpServers: unknown[];
-  installedSkillIds: string[];
-  selectedSkillIds: string[];
-  apiKeys: Record<string, string>;
-};
-
-export type ChatServerReviewerLog = {
-  id: string;
-  timestamp: string;
-  sessionId?: string;
-  runId?: string;
-  toolCallId?: string;
-  toolName?: string;
-  reasons: string[];
-  decision: "approve" | "deny" | "user-approval";
-  rationale?: string;
-  reason?: string;
-  modelId?: string;
-  durationMs?: number;
-  error?: string;
-};
 
 export async function chatServerRequest(
   pathname: string,
@@ -262,175 +242,89 @@ export async function chatServerRequest(
   port = CHAT_SERVER_DEFAULT_PORT,
 ) {
   const response = await requestChatServerResponse(pathname, init, port);
-  if (!response.ok)
-    throw new Error((await response.text()) || `Chat Server 请求失败 (${response.status})`);
+  if (!response.ok) {
+    throw new ChatServerError(
+      (await response.text()) || `Chat Server 请求失败 (${response.status})`,
+      response.status,
+    );
+  }
   return response;
 }
 
-export async function loadChatServerConfig(port?: number) {
-  const response = await chatServerRequest("/v1/chat-config", undefined, port);
-  return (await response.json()) as ChatServerConfigData;
+export async function loadChatServerConfig(port = CHAT_SERVER_DEFAULT_PORT) {
+  return createClient(port).getConfig();
 }
 
-export async function saveChatServerConfig(value: unknown, port?: number) {
-  const response = await chatServerRequest(
-    "/v1/chat-config",
-    {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(value),
-    },
-    port,
-  );
-  return (await response.json()) as ChatServerConfigData;
+export async function saveChatServerConfig(value: unknown, port = CHAT_SERVER_DEFAULT_PORT) {
+  return createClient(port).saveConfig(value);
 }
 
 export async function testChatServerModel(
-  model: {
-    name: string;
-    baseUrl: string;
-    apiKey: string;
-    responsive?: boolean;
-  },
-  port?: number,
+  model: { name: string; baseUrl: string; apiKey: string; responsive?: boolean },
+  port = CHAT_SERVER_DEFAULT_PORT,
 ) {
-  const response = await requestChatServerResponse(
-    "/v1/models/test",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(model),
-    },
-    port,
-  );
-  if (!response.ok) {
-    let message = `模型测试失败（${response.status}）`;
-    try {
-      const payload = (await response.json()) as { error?: unknown };
-      if (typeof payload.error === "string" && payload.error) message = payload.error;
-    } catch {
-      // Ignore malformed error responses and keep the status-based message.
-    }
-    throw new Error(message);
-  }
-  return (await response.json()) as { durationMs: number };
+  return createClient(port).testModel(model);
 }
-
-export type ChatServerProviderModel = {
-  id: string;
-  contextLength?: number;
-  supportsImageIn?: boolean;
-  supportsVideoIn?: boolean;
-  supportsReasoning?: boolean;
-};
 
 export async function listChatServerModels(
   input: { baseUrl: string; apiKey: string },
-  port?: number,
+  port = CHAT_SERVER_DEFAULT_PORT,
 ) {
-  const response = await requestChatServerResponse(
-    "/v1/models/list",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
-    },
-    port,
-  );
-  if (!response.ok) {
-    let message = `模型列表请求失败（${response.status}）`;
-    try {
-      const payload = (await response.json()) as { error?: unknown };
-      if (typeof payload.error === "string" && payload.error) message = payload.error;
-    } catch {
-      // Keep the status-based message for malformed error responses.
-    }
-    throw new Error(message);
-  }
-  return (await response.json()) as ChatServerProviderModel[];
+  return createClient(port).listModels(input);
 }
 
-export async function loadChatServerReviewerLogs(sessionId?: string, port?: number) {
-  const query = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
-  const response = await chatServerRequest(`/v1/sandbox-reviews${query}`, undefined, port);
-  return (await response.json()) as ChatServerReviewerLog[];
+export async function loadChatServerReviewerLogs(
+  sessionId?: string,
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  return createClient(port).getReviewerLogs(sessionId);
 }
 
-export async function loadChatServerMemory(port?: number) {
-  const response = await chatServerRequest("/v1/memory", undefined, port);
-  return response.json();
+export async function loadChatServerMemory(port = CHAT_SERVER_DEFAULT_PORT) {
+  return createClient(port).getMemory();
 }
 
-export async function saveChatServerMemory(value: unknown, port?: number) {
-  const response = await chatServerRequest(
-    "/v1/memory",
-    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value) },
-    port,
-  );
-  return response.json();
+export async function saveChatServerMemory(value: unknown, port = CHAT_SERVER_DEFAULT_PORT) {
+  return createClient(port).saveMemory(value);
 }
 
-export async function loadChatServerSkills(port?: number) {
-  const response = await chatServerRequest("/v1/skills", undefined, port);
-  return response.json();
+export async function loadChatServerSkills(port = CHAT_SERVER_DEFAULT_PORT) {
+  return createClient(port).getSkills();
 }
 
-export async function loadChatServerSkillSelection(port?: number) {
-  const response = await chatServerRequest("/v1/skills/selection", undefined, port);
-  return (await response.json()) as string[];
+export async function loadChatServerSkillSelection(port = CHAT_SERVER_DEFAULT_PORT) {
+  return createClient(port).getSkillSelection();
 }
 
-export async function saveChatServerSkillSelection(ids: string[], port?: number) {
-  const response = await chatServerRequest(
-    "/v1/skills/selection",
-    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ids) },
-    port,
-  );
-  return response.json();
+export async function saveChatServerSkillSelection(ids: string[], port = CHAT_SERVER_DEFAULT_PORT) {
+  return createClient(port).saveSkillSelection(ids);
 }
 
-export async function loadChatServerMcp(port?: number) {
-  const response = await chatServerRequest("/v1/mcp", undefined, port);
-  return response.json();
+export async function loadChatServerMcp(port = CHAT_SERVER_DEFAULT_PORT) {
+  return createClient(port).getMcp();
 }
 
-export async function saveChatServerMcp(value: unknown, port?: number) {
-  const response = await chatServerRequest(
-    "/v1/mcp",
-    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value) },
-    port,
-  );
-  return response.json();
+export async function saveChatServerMcp(value: unknown, port = CHAT_SERVER_DEFAULT_PORT) {
+  return createClient(port).saveMcp(value);
 }
 
-export async function loadChatServerArchiveIndex(port?: number) {
-  const response = await chatServerRequest("/v1/archive", undefined, port);
-  return response.json();
+export async function loadChatServerArchiveIndex(port = CHAT_SERVER_DEFAULT_PORT) {
+  return createClient(port).getArchiveIndex();
 }
 
-export async function loadChatServerArchive<T>(id: string, port?: number) {
-  const response = await chatServerRequest(
-    `/v1/archive/${encodeURIComponent(id)}`,
-    undefined,
-    port,
-  ).catch((error) => {
-    if (String(error).includes("归档不存在") || String(error).includes("(404)")) return null;
-    throw error;
-  });
-  return response ? ((await response.json()) as T) : null;
+export async function loadChatServerArchive<T>(id: string, port = CHAT_SERVER_DEFAULT_PORT) {
+  return createClient(port).getArchive<T>(id);
 }
 
-export async function saveChatServerArchive(value: { id: string }, port?: number) {
-  const response = await chatServerRequest(
-    `/v1/archive/${encodeURIComponent(value.id)}`,
-    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value) },
-    port,
-  );
-  return response.json();
+export async function saveChatServerArchive(
+  value: { id: string },
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  return createClient(port).saveArchive(value);
 }
 
-export async function deleteChatServerArchive(id: string, port?: number) {
-  await chatServerRequest(`/v1/archive/${encodeURIComponent(id)}`, { method: "DELETE" }, port);
+export async function deleteChatServerArchive(id: string, port = CHAT_SERVER_DEFAULT_PORT) {
+  await createClient(port).deleteArchive(id);
 }
 
 export async function uploadChatServerAttachment(
@@ -438,20 +332,9 @@ export async function uploadChatServerAttachment(
   attachmentId: string,
   fileName: string,
   bytes: Uint8Array,
-  port?: number,
+  port = CHAT_SERVER_DEFAULT_PORT,
 ) {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  const response = await chatServerRequest(
-    `/v1/sessions/${encodeURIComponent(sessionId)}/attachments`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: attachmentId, fileName, base64: btoa(binary) }),
-    },
-    port,
-  );
-  return (await response.json()) as { path: string };
+  return createClient(port).uploadAttachment(sessionId, attachmentId, fileName, bytes);
 }
 
 export async function ensureChatServerSession(
@@ -459,72 +342,34 @@ export async function ensureChatServerSession(
   options?: { title?: string; workspaceId?: string; cwd?: string },
   port = CHAT_SERVER_DEFAULT_PORT,
 ) {
-  const response = await requestChatServerResponse(
-    `/v1/sessions/${encodeURIComponent(sessionId)}`,
-    undefined,
-    port,
-  );
-  if (response.ok) return;
-  if (response.status !== 404) {
-    throw new Error((await response.text()) || "Chat Server 会话检查失败");
-  }
-  const created = await requestChatServerResponse(
-    "/v1/sessions",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: sessionId, ...options }),
-    },
-    port,
-  );
-  if (!created.ok) throw new Error((await created.text()) || "Chat Server 会话创建失败");
+  await createClient(port).ensureSession(sessionId, options);
 }
 
-export async function loadChatServerSession<T>(sessionId: string, port?: number) {
-  const response = await requestChatServerResponse(
-    `/v1/sessions/${encodeURIComponent(sessionId)}`,
-    undefined,
-    port,
-  );
-  if (response.status === 404) return null;
-  if (!response.ok) throw new Error((await response.text()) || "Chat Server 会话读取失败");
-  return (await response.json()) as T;
+export async function loadChatServerSession<T extends ChatSession>(
+  sessionId: string,
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  return createClient(port).loadSession<T>(sessionId);
 }
 
-export async function saveChatServerSession(session: unknown, port?: number) {
+export async function saveChatServerSession(session: unknown, port = CHAT_SERVER_DEFAULT_PORT) {
   const value = session as { id?: unknown };
   if (typeof value.id !== "string") throw new Error("invalid chat session id");
-  const response = await requestChatServerResponse(
-    `/v1/sessions/${encodeURIComponent(value.id)}`,
-    {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(session),
-    },
-    port,
-  );
-  if (!response.ok) throw new Error((await response.text()) || "Chat Server 会话保存失败");
+  await createClient(port).saveSession(session as ChatSession);
 }
 
-export async function deleteChatServerSession(sessionId: string, port?: number) {
-  const response = await requestChatServerResponse(
-    `/v1/sessions/${encodeURIComponent(sessionId)}`,
-    { method: "DELETE" },
-    port,
-  );
-  if (!response.ok && response.status !== 404) {
-    throw new Error((await response.text()) || "Chat Server 会话删除失败");
-  }
+export async function deleteChatServerSession(sessionId: string, port = CHAT_SERVER_DEFAULT_PORT) {
+  await createClient(port).deleteSession(sessionId);
 }
 
-export async function stopChatServerRun(sessionId: string, port?: number) {
-  const response = await requestChatServerResponse(
-    `/v1/sessions/${encodeURIComponent(sessionId)}/runs/stop`,
-    { method: "POST" },
-    port,
-  );
-  if (!response.ok) throw new Error((await response.text()) || "Chat Server 停止任务失败");
-  return (await response.json()) as { stopped: boolean };
+export async function stopChatServerRun(sessionId: string, port = CHAT_SERVER_DEFAULT_PORT) {
+  return createClient(port).stopRun(sessionId);
+}
+
+export async function chatServerFetch(input: RequestInfo | URL, init?: RequestInit, port?: number) {
+  const url = new URL(input instanceof Request ? input.url : String(input));
+  const selectedPort = port ?? normalizePort(new URL(chatServerUrl()).port);
+  return requestChatServerResponse(`${url.pathname}${url.search}`, init, selectedPort);
 }
 
 export function subscribeChatServerEvents(
@@ -536,102 +381,39 @@ export function subscribeChatServerEvents(
     onMessageUpdated?: (event: { sessionId: string; runId?: string; message?: UIMessage }) => void;
   },
 ) {
-  let source: EventSource | undefined;
-  let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   let closed = false;
-  let retryAttempt = 0;
-
-  function scheduleReconnect() {
-    if (closed || reconnectTimer) return;
-    const delay = [1000, 2000, 5000][Math.min(retryAttempt, 2)];
-    retryAttempt += 1;
-    reconnectTimer = setTimeout(() => {
-      reconnectTimer = undefined;
-      void connect();
-    }, delay);
-  }
-
-  async function connect() {
+  let cleanup: (() => void) | undefined;
+  void initializeChatServer().then(() => {
     if (closed) return;
-    if (isTauri()) await refreshChatServerRuntime();
-    if (closed) return;
-    const token = getChatServerToken();
-    const query = token ? `?token=${encodeURIComponent(token)}` : "";
-    const next = new EventSource(`${chatServerUrl(port)}/v1/events${query}`);
-    source = next;
-    if (isTauri()) {
-      next.onopen = () => {
-        retryAttempt = 0;
-      };
-      next.onerror = () => {
-        next.close();
-        if (source === next) source = undefined;
-        scheduleReconnect();
-      };
-    }
-    next.addEventListener("snapshot", (event) => {
-      try {
-        handlers.onSnapshot?.(JSON.parse((event as MessageEvent).data) as ChatServerSession[]);
-      } catch {
-        // Ignore malformed reconnect snapshots.
-      }
-    });
-    next.addEventListener("session.status", (event) => {
-      try {
-        const payload = JSON.parse((event as MessageEvent).data) as {
-          sessionId?: string;
-          status?: ChatServerSession["status"];
-        };
-        if (payload.sessionId && payload.status) {
-          handlers.onStatus?.({ sessionId: payload.sessionId, status: payload.status });
+    cleanup = createClient(port).subscribeEvents({
+      onSnapshot: handlers.onSnapshot,
+      onStatus: (event) => {
+        if (event.sessionId && event.status) {
+          handlers.onStatus?.({ sessionId: event.sessionId, status: event.status });
         }
-      } catch {
-        // Ignore malformed event payloads.
-      }
-    });
-    next.addEventListener("message.delta", (event) => {
-      try {
-        const payload = JSON.parse((event as MessageEvent).data) as {
-          sessionId?: string;
-          runId?: string;
-          delta?: string;
-        };
-        if (payload.sessionId && typeof payload.delta === "string") {
+      },
+      onDelta: (event) => {
+        if (event.sessionId && typeof event.delta === "string") {
           handlers.onDelta?.({
-            sessionId: payload.sessionId,
-            runId: payload.runId,
-            delta: payload.delta,
+            sessionId: event.sessionId,
+            runId: event.runId,
+            delta: event.delta,
           });
         }
-      } catch {
-        // Ignore malformed event payloads.
-      }
-    });
-    next.addEventListener("message.updated", (event) => {
-      try {
-        const payload = JSON.parse((event as MessageEvent).data) as {
-          sessionId?: string;
-          runId?: string;
-          message?: UIMessage;
-        };
-        if (payload.sessionId) {
+      },
+      onMessageUpdated: (event) => {
+        if (event.sessionId) {
           handlers.onMessageUpdated?.({
-            sessionId: payload.sessionId,
-            runId: payload.runId,
-            message: payload.message,
+            sessionId: event.sessionId,
+            runId: event.runId,
+            message: event.message,
           });
         }
-      } catch {
-        // Ignore malformed event payloads.
-      }
+      },
     });
-  }
-
-  void connect();
+  });
   return () => {
     closed = true;
-    if (reconnectTimer) clearTimeout(reconnectTimer);
-    source?.close();
-    source = undefined;
+    cleanup?.();
   };
 }

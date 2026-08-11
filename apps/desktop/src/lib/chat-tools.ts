@@ -1,18 +1,12 @@
+import type {
+  ChatToolPackId,
+  ChatToolsSettings as SharedChatToolsSettings,
+} from "@chatdesk/shared";
 import { loadChatServerConfig, saveChatServerConfig } from "@/lib/chat-server";
 import { settingsStore } from "@/lib/settings-store";
 
-export type ChatToolPackId =
-  | "list_dir"
-  | "search_files"
-  | "read_file"
-  | "write_file"
-  | "edit_file"
-  | "terminal"
-  | "web_search"
-  | "image_generation"
-  | "browser";
-
-export type ChatToolsSettings = Record<ChatToolPackId, boolean>;
+export type { ChatToolPackId } from "@chatdesk/shared";
+export type ChatToolsSettings = SharedChatToolsSettings;
 
 export const WORKSPACE_FILE_TOOL_META: Array<{
   id: "list_dir" | "search_files" | "read_file" | "write_file" | "edit_file";

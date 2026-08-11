@@ -1,8 +1,9 @@
+import type { SandboxMode } from "@chatdesk/shared";
 import { loadChatServerConfig, saveChatServerConfig } from "@/lib/chat-server";
 
 export const CHAT_SANDBOX_MODES = ["ask", "auto", "full"] as const;
 
-export type ChatSandboxMode = (typeof CHAT_SANDBOX_MODES)[number];
+export type ChatSandboxMode = SandboxMode;
 
 export const DEFAULT_CHAT_SANDBOX_MODE: ChatSandboxMode = "ask";
 

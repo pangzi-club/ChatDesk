@@ -29,6 +29,9 @@ importers:
       '@ai-sdk/react':
         specifier: ^4.0.54
         version: 4.0.54(react@19.2.8)(zod@4.4.3)
+      '@chatdesk/chat-client':
+        specifier: workspace:*
+        version: link:../../packages/chat-client
       '@chatdesk/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -168,6 +171,23 @@ importers:
         version: 6.0.3
 
   packages/shared:
+    dependencies:
+      ai:
+        specifier: ^7.0.51
+        version: 7.0.51(zod@4.4.3)
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.1.2
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+
+  packages/chat-client:
+    dependencies:
+      '@chatdesk/shared':
+        specifier: workspace:*
+        version: link:../shared
     devDependencies:
       '@types/node':
         specifier: ^26.1.2

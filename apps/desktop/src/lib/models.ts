@@ -1,3 +1,4 @@
+import type { ModelConfig } from "@chatdesk/shared";
 import { loadChatServerConfig, saveChatServerConfig } from "@/lib/chat-server";
 import { settingsStore } from "@/lib/settings-store";
 
@@ -16,27 +17,7 @@ const KNOWN_MODEL_CONTEXT_WINDOWS: Record<string, number> = {
   "minimax-m2.5": 204_800,
 };
 
-export type ModelConfig = {
-  id: string;
-  name: string;
-  provider: string;
-  baseUrl: string;
-  apiKey: string;
-  supportsTools: boolean;
-  supportsImages: boolean;
-  supportsReasoning: boolean;
-  customProtocol: boolean;
-  /** Use OpenAI Responses API via AI SDK (`openai.responses`). */
-  responsive: boolean;
-  inputContext?: number;
-  outputContext?: number;
-  /** Estimated USD price per 1M tokens. */
-  inputPricePerMillion?: number;
-  outputPricePerMillion?: number;
-  cacheReadPricePerMillion?: number;
-  cacheWritePricePerMillion?: number;
-  isDefault: boolean;
-};
+export type { ModelConfig } from "@chatdesk/shared";
 
 export function formatModelLabel(model: Pick<ModelConfig, "name" | "responsive">) {
   return `${model.name} · ${model.responsive ? "Responses API" : "Chat Completions"}`;

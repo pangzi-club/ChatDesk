@@ -1,8 +1,8 @@
 {
-  "name": "@chatdesk/shared",
+  "name": "@chatdesk/chat-client",
   "private": true,
   "version": "0.2.0",
-  "description": "Runtime-neutral contracts and algorithms shared by ChatDesk runtimes",
+  "description": "Runtime-neutral Chat Server HTTP and SSE client",
   "license": "MIT",
   "packageManager": "pnpm@9.15.9",
   "type": "module",
@@ -10,14 +10,14 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "ai": "^7.0.51"
-  },
-  "scripts": {
-    "test": "node --experimental-strip-types --test src/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "@chatdesk/shared": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
     "typescript": "6.0.3"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test src/*.test.ts",
+    "typecheck": "tsc --noEmit"
   }
 }
