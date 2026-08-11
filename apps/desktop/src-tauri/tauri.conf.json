@@ -4,7 +4,7 @@
   "version": "0.2.0",
   "identifier": "org.bohao.mdashboard",
   "build": {
-    "beforeDevCommand": "pnpm --dir ../.. dev:web",
+    "beforeDevCommand": "pnpm --dir ../.. --filter chatdesk-desktop exec vite",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "pnpm --dir ../.. build",
     "frontendDist": "../dist"

@@ -14,23 +14,26 @@ const sharedEnv = {
 
 const children = [
   spawn(pnpm, ["server:dev"], { env: sharedEnv, stdio: "inherit" }),
-  spawn(pnpm, ["desktop:dev"], { env: sharedEnv, stdio: "inherit" }),
+  spawn(pnpm, ["--filter", "chatdesk-desktop", "exec", "tauri", "dev"], {
+    env: sharedEnv,
+    stdio: "inherit",
+  }),
 ];
 
 let shuttingDown = false;
-function shutdown(code = 0) {
+function shutdown(code = 0, signal = "SIGINT") {
   if (shuttingDown) return;
   shuttingDown = true;
-  for (const child of children) child.kill("SIGTERM");
+  for (const child of children) child.kill(signal);
   setTimeout(() => process.exit(code), 500);
 }
 
 for (const child of children) {
   child.once("exit", (code, signal) => {
-    if (!shuttingDown) shutdown(code ?? (signal ? 1 : 0));
+    if (!shuttingDown) shutdown(code ?? (signal && signal !== "SIGINT" ? 1 : 0));
   });
   child.once("error", () => shutdown(1));
 }
 
-process.once("SIGINT", () => shutdown(0));
-process.once("SIGTERM", () => shutdown(0));
+process.once("SIGINT", () => shutdown(0, "SIGINT"));
+process.once("SIGTERM", () => shutdown(0, "SIGINT"));
