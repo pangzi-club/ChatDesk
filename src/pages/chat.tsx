@@ -139,7 +139,7 @@ import {
 import { loadWorkspaceProjects } from "@/lib/workspaces";
 
 const EMPTY_STRING_ARRAY: string[] = [];
-const DEFAULT_WORKSPACE_LABEL = "Default";
+const DEFAULT_WORKSPACE_LABEL = "Default Workspace";
 
 const EMPTY_CHAT_ACTIONS = [
   {
@@ -988,7 +988,7 @@ function ChatPage() {
               <span>{selectedModel?.provider ?? "未配置模型"}</span>
               <span className="chat-context-rule" />
               <span className="truncate" title={selectedCwd || undefined}>
-                {selectedCwd ? pathBasename(selectedCwd) : "未选择 Workspace"}
+                {selectedCwd ? pathBasename(selectedCwd) : DEFAULT_WORKSPACE_LABEL}
               </span>
               <span
                 className="chat-access-badge"
