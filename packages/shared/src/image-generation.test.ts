@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import {
   generateImageWithApiKey,
   type ImageGenerationInput,
-} from "../../src/shared/image-generation.ts";
+} from "./image-generation.ts";
 
 const input: ImageGenerationInput = {
   model: "gpt-image-2-text-to-image",

@@ -47,11 +47,11 @@ Put new code in the narrowest directory that matches its runtime and responsibil
 - `src/router/`: route declarations, redirects, route-level layout wiring, and URL parameter mapping only. Keep data fetching and page UI in the page or library that owns it.
 - `src/lib/`: browser-side domain logic, API clients, persistence adapters, query helpers, parsers, and integrations. Keep this directory free of JSX; wrappers for Chat Server requests and Tauri `invoke` calls belong here so pages and components do not call platform APIs directly.
 - `src/lib/importers/`: browser-side parsers for imported archive formats. Add a new source-specific importer here and keep the shared archive orchestration in `src/lib/chat-archive.ts`.
-- `src/shared/`: runtime-neutral TypeScript contracts, constants, and algorithms imported by both the browser and `src-web`. Do not import React, DOM, Node.js, Tauri, or filesystem APIs from this directory.
+- `packages/shared/`: runtime-neutral TypeScript contracts, constants, and algorithms imported by both the browser and `src-web`. Keep it private to the workspace until a package publishing boundary is intentionally introduced. Do not import React, DOM, Node.js, Tauri, or filesystem APIs from this directory.
 - `src/assets/`: assets imported by Vite from TypeScript/CSS. Put files that must be served at a stable public URL in `public/` instead.
 - `src/App.tsx` and `src/main.tsx`: application bootstrap, providers, and startup initialization only. `src/App.css` is for global application styles; keep component/page styles close to their owning UI when the existing styling approach permits it.
 
-For browser code, use this decision order: JSX that defines a URL screen belongs in `src/pages/`; reusable JSX belongs in `src/components/`; browser-only non-visual behavior belongs in `src/lib/`; code needed by both browser and server belongs in `src/shared/`.
+For browser code, use this decision order: JSX that defines a URL screen belongs in `src/pages/`; reusable JSX belongs in `src/components/`; browser-only non-visual behavior belongs in `src/lib/`; code needed by both browser and server belongs in `packages/shared/`.
 
 ### Local Node Service (`src-web`)
 
@@ -60,7 +60,7 @@ For browser code, use this decision order: JSX that defines a URL screen belongs
 - `src-web/src/*.ts`: server-side domain modules, stores, runtimes, providers, protocol helpers, and tools. Use a focused module for each responsibility (for example, persistence in `*-store.ts` and execution coordination in `run-registry.ts`).
 - `src-web/src/*.test.ts`: Node tests colocated with the service source. Keep tests in `src-web` when they exercise HTTP handlers, server persistence, providers, sandboxing, or other Node-only behavior.
 
-The Node service may import runtime-neutral code from `src/shared/`, but must not import React components, browser pages, `src/lib/` browser adapters, or Tauri code. Browser callers should reach this service through the client boundary in `src/lib/chat-server.ts`.
+The Node service may import runtime-neutral code from `packages/shared/`, but must not import React components, browser pages, `src/lib/` browser adapters, or Tauri code. Browser callers should reach this service through the client boundary in `src/lib/chat-server.ts`.
 
 ### Native Desktop Layer (`src-tauri`)
 
@@ -82,6 +82,6 @@ Frontend code should call native functionality through a small adapter in `src/l
 
 ### Dependencies and Tests
 
-- Keep the dependency direction explicit: pages/layouts/components may use `src/lib/`, `src/shared/`, and `src/components/ui/`; `src/lib/` may use `src/shared/`; `src/shared/` stays platform-neutral; `src-web` may use only `src/shared/` across runtimes; `src-tauri` remains a separate native boundary.
+- Keep the dependency direction explicit: pages/layouts/components may use `src/lib/`, `packages/shared/`, and `src/components/ui/`; `src/lib/` may use `packages/shared/`; `packages/shared/` stays platform-neutral; `src-web` may use only `packages/shared/` across runtimes; `src-tauri` remains a separate native boundary.
 - Put a test beside the implementation it exercises (`*.test.ts` or `*.test.tsx`) and use the test runner for that runtime. Do not introduce a second test framework or a frontend test setup in an unrelated directory without documenting the choice.
 - When a change crosses a boundary, update the adapter and its contract at that boundary instead of reaching through it. For example, add a Chat Server endpoint in `src-web`, its browser request wrapper in `src/lib/chat-server.ts`, and the consuming query/mutation in the owning page or component.

@@ -25,14 +25,12 @@ pnpm server:dev
 pnpm server:test
 ```
 
-如果要将 `src-web` 作为独立 package 使用，请先在本目录安装依赖，再执行同等脚本：
+`src-web` 现在是仓库 pnpm workspace 中的一个独立 package。推荐从仓库根目录安装依赖并运行脚本：
 
 ```sh
-cd src-web
-pnpm install
-pnpm dev
-pnpm test
-pnpm typecheck
+pnpm --filter chatdesk-chat-server dev
+pnpm --filter chatdesk-chat-server test
+pnpm --filter chatdesk-chat-server typecheck
 ```
 
 `pnpm dev` 会以 Node.js watch 模式执行 `src/server.ts`，修改 `src-web/src` 下的服务端代码后会自动重启；`pnpm start` 用于不启用 watch 的运行方式。开发模式下服务默认监听 `http://127.0.0.1:14317`。

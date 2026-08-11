@@ -6,7 +6,7 @@ import {
   IMAGE_RESOLUTIONS,
   type ImageAspectRatio,
   type ImageResolution,
-} from "../../src/shared/image-generation.ts";
+} from "@chatdesk/shared";
 
 const ASPECT_RATIO_SCHEMA = z.enum(IMAGE_ASPECT_RATIOS);
 const RESOLUTION_SCHEMA = z.enum(IMAGE_RESOLUTIONS);

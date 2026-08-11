@@ -12,7 +12,7 @@ import {
   type ImageResolution,
   KIE_API_BASE_URL,
   KieApiError,
-} from "@/shared/image-generation";
+} from "@chatdesk/shared";
 
 export type {
   GenerateImageResult,

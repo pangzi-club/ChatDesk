@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@chatdesk/shared": "workspace:*",
     "@ai-sdk/mcp": "^2.0.24",
     "@ai-sdk/openai": "^4.0.31",
     "@hono/node-server": "^1.19.11",

@@ -20,7 +20,9 @@
     "migrate:test": "node --test scripts/migrate-to-chatdesk.test.mjs",
     "server:dev": "node --watch --experimental-strip-types src-web/src/server.ts",
     "server:test": "node --experimental-strip-types --test src-web/src/*.test.ts",
-    "build": "tsc && tsc -p tsconfig.server.json && vite build",
+    "shared:test": "pnpm --filter @chatdesk/shared test",
+    "shared:typecheck": "pnpm --filter @chatdesk/shared typecheck",
+    "build": "pnpm shared:typecheck && tsc && tsc -p tsconfig.server.json && vite build",
     "build:sidecars": "node scripts/build-sidecars.mjs",
     "check": "biome check .",
     "check:write": "biome check --write .",
@@ -37,6 +39,7 @@
     ]
   },
   "dependencies": {
+    "@chatdesk/shared": "workspace:*",
     "@ai-sdk/mcp": "^2.0.24",
     "@ai-sdk/openai": "^4.0.31",
     "@ai-sdk/react": "^4.0.54",

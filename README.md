@@ -34,6 +34,8 @@ pnpm dev:all
 
 ```sh
 pnpm check       # Biome 格式和静态检查
+pnpm shared:typecheck # 检查 @chatdesk/shared 类型
+pnpm shared:test # 运行共享包测试
 pnpm build       # TypeScript + Vite 生产构建
 pnpm server:test # Chat Server 测试
 pnpm tauri dev   # 启动桌面开发模式
@@ -64,10 +66,10 @@ API key 在应用设置中配置并保存在本机。使用 `CHAT_SERVER_HOST=0.
 ## 项目结构
 
 ```text
-src/                 React 页面、组件和浏览器端适配器
-src-web/src/         Hono Chat Server、存储、运行时和 Node 测试
+src/                 React 页面、组件和浏览器端适配器（根 workspace 应用）
+src-web/src/         Hono Chat Server、存储、运行时和 Node 测试（workspace package）
+packages/shared/     浏览器与服务端共用的运行时无关代码（`@chatdesk/shared`）
 src-tauri/src/       Tauri 命令、原生服务和 sidecar 管理
-src/shared/          浏览器与服务端共用的运行时无关代码
 docs/                架构、沙箱和桌面打包说明
 ```
 
