@@ -29,10 +29,8 @@ jobs:
         run: pnpm exec biome format .
       - name: Run static checks
         run: pnpm check
-      - name: Run Chat Server tests
-        run: pnpm server:test
-      - name: Run shared package tests
-        run: pnpm shared:test
+      - name: Run tests
+        run: pnpm test
       - name: Check shared package types
         run: pnpm shared:typecheck
       - name: Build web application
