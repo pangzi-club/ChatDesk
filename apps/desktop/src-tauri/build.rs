@@ -21,5 +21,26 @@ fn main() {
             panic!("missing {sidecar:?}; run `pnpm desktop:sidecars` before a release build");
         }
     }
+    if std::env::var("PROFILE").as_deref() == Ok("debug") {
+        ensure_debug_resources(&manifest_dir);
+    }
     tauri_build::build()
+}
+
+fn ensure_debug_resources(manifest_dir: &str) {
+    let resources_dir = std::path::Path::new(manifest_dir).join("resources");
+    let browser_worker = resources_dir.join("browser-worker");
+    if !browser_worker.exists() {
+        std::fs::create_dir_all(&resources_dir).expect("create development resources directory");
+        std::fs::write(browser_worker, b"development resource placeholder\n")
+            .expect("write development browser worker placeholder");
+    }
+
+    let playwright_placeholder = resources_dir.join("playwright-browsers/placeholder.txt");
+    if !playwright_placeholder.exists() {
+        std::fs::create_dir_all(playwright_placeholder.parent().expect("placeholder has a parent"))
+            .expect("create development Playwright resources directory");
+        std::fs::write(playwright_placeholder, b"development resource placeholder\n")
+            .expect("write development Playwright resource placeholder");
+    }
 }
