@@ -4,6 +4,7 @@ import {
   loadChatServerArchive,
   loadChatServerArchiveIndex,
   saveChatServerArchive,
+  uploadChatServerArchive,
 } from "@/lib/chat-server";
 
 export const ARCHIVE_SCHEMA_VERSION = 1;
@@ -329,6 +330,10 @@ export async function readImportTextFile(
   );
   if (!response.ok) throw new Error((await response.text()) || "无法读取导入文件");
   return response.text();
+}
+
+export async function uploadImportFile(source: ImportedArchiveSource, file: File) {
+  return uploadChatServerArchive(source, file);
 }
 
 export async function pathExists(path: string): Promise<boolean> {

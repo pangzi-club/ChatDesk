@@ -1,6 +1,5 @@
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { chatServerRequest, loadChatServerMcp, saveChatServerMcp } from "@/lib/chat-server";
-import { settingsStore } from "@/lib/settings-store";
 
 export type McpTransport = "npx" | "remote";
 export type McpStatus = "unknown" | "ready" | "error";
@@ -26,8 +25,6 @@ export type McpServerConfig = {
 
 export type McpRegistryEntry = McpServerConfig & { installed: boolean; popularity: number };
 
-const STORE_KEY = "mcpServers";
-const LEGACY_KEY = "m-dashboard-mcp-servers-v1";
 const REGISTRY_URL = "https://registry.modelcontextprotocol.io/v0/servers";
 
 function isTauri() {
@@ -113,29 +110,11 @@ export async function loadMcpServers(): Promise<McpServerConfig[]> {
   } catch (error) {
     console.error("Failed to load MCP settings from Chat Server", error);
   }
-  try {
-    const stored = await settingsStore.get<unknown>(STORE_KEY);
-    if (Array.isArray(stored))
-      return stored.map(normalizeEntry).filter((item): item is McpServerConfig => Boolean(item));
-  } catch (error) {
-    console.error("Failed to load MCP settings", error);
-  }
-  const fallback = window.localStorage.getItem(LEGACY_KEY);
-  try {
-    const parsed = fallback ? JSON.parse(fallback) : [];
-    return Array.isArray(parsed)
-      ? parsed.map(normalizeEntry).filter((item): item is McpServerConfig => Boolean(item))
-      : [];
-  } catch {
-    return [];
-  }
+  return [];
 }
 
 export async function saveMcpServers(servers: McpServerConfig[]) {
   await saveChatServerMcp(servers);
-  await settingsStore.set(STORE_KEY, servers);
-  await settingsStore.save();
-  window.localStorage.removeItem(LEGACY_KEY);
 }
 
 export async function fetchMcpRegistry(query = ""): Promise<McpRegistryEntry[]> {

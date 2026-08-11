@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   ArrowDown,
   ArrowUp,
@@ -78,6 +77,7 @@ import {
   subscribeChatServerEvents,
 } from "@/lib/chat-server";
 import { type ChatIndexItem, deleteChatSession, loadChatIndex } from "@/lib/chat-store";
+import { openExternal } from "@/lib/platform";
 import { settingsStore } from "@/lib/settings-store";
 import { appendSystemLog } from "@/lib/system-log";
 import { applyTrayEnabled, loadTrayEnabled } from "@/lib/tray";
@@ -1352,15 +1352,7 @@ function CommandMenu({ onClose }: { onClose: () => void }) {
   async function selectItem(item: CommandItem | "google") {
     if (item === "google") {
       const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query.trim())}`;
-      try {
-        if ("__TAURI_INTERNALS__" in window) {
-          await openUrl(searchUrl);
-        } else {
-          window.open(searchUrl, "_blank", "noopener,noreferrer");
-        }
-      } catch {
-        window.open(searchUrl, "_blank", "noopener,noreferrer");
-      }
+      await openExternal(searchUrl);
     } else {
       navigate(item.to);
     }

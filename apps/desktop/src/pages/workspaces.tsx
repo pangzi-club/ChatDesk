@@ -216,8 +216,8 @@ function WorkspaceDetailPage() {
   });
   const project = projectsQuery.data?.find((item) => item.id === projectId);
   const gitQuery = useQuery({
-    queryKey: ["workspace-git", project?.path],
-    queryFn: () => loadWorkspaceGitInfo(project?.path ?? ""),
+    queryKey: ["workspace-git", project?.id],
+    queryFn: () => loadWorkspaceGitInfo(project?.id ?? ""),
     enabled: Boolean(project),
   });
   if (projectsQuery.isPending)

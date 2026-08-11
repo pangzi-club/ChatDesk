@@ -3,7 +3,6 @@ import type {
   ChatToolsSettings as SharedChatToolsSettings,
 } from "@chatdesk/shared";
 import { loadChatServerConfig, saveChatServerConfig } from "@/lib/chat-server";
-import { settingsStore } from "@/lib/settings-store";
 
 export type { ChatToolPackId } from "@chatdesk/shared";
 export type ChatToolsSettings = SharedChatToolsSettings;
@@ -117,9 +116,6 @@ export const CHAT_TOOL_PACKS: ChatToolPackMeta[] = [
   },
 ];
 
-const CHAT_TOOLS_STORE_KEY = "chatTools";
-const CHAT_TOOLS_STORAGE_KEY = "m-dashboard-chat-tools-v1";
-
 function isChatToolPackId(value: unknown): value is ChatToolPackId {
   return (
     value === "list_dir" ||
@@ -161,10 +157,6 @@ function normalizeChatTools(value: unknown): ChatToolsSettings {
   };
 }
 
-function isTauri() {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
-
 export async function loadChatToolsSettings(): Promise<ChatToolsSettings> {
   try {
     const config = await loadChatServerConfig();
@@ -172,44 +164,12 @@ export async function loadChatToolsSettings(): Promise<ChatToolsSettings> {
   } catch (error) {
     console.error("Failed to load Chat Server tools settings", error);
   }
-  if (isTauri()) {
-    try {
-      const stored = await settingsStore.get<unknown>(CHAT_TOOLS_STORE_KEY);
-      if (stored) {
-        return normalizeChatTools(stored);
-      }
-    } catch (error) {
-      console.error("Failed to load chat tools settings from Tauri Store", error);
-    }
-  }
-
-  try {
-    const raw = window.localStorage.getItem(CHAT_TOOLS_STORAGE_KEY);
-    if (raw) {
-      return normalizeChatTools(JSON.parse(raw));
-    }
-  } catch (error) {
-    console.error("Failed to load chat tools settings from localStorage", error);
-  }
-
   return { ...DEFAULT_CHAT_TOOLS };
 }
 
 export async function saveChatToolsSettings(settings: ChatToolsSettings) {
   const next = normalizeChatTools(settings);
   await saveChatServerConfig({ chatTools: next });
-  if (isTauri()) {
-    try {
-      await settingsStore.set(CHAT_TOOLS_STORE_KEY, next);
-      await settingsStore.save();
-      window.localStorage.removeItem(CHAT_TOOLS_STORAGE_KEY);
-      return;
-    } catch (error) {
-      console.error("Failed to save chat tools settings to Tauri Store", error);
-    }
-  }
-
-  window.localStorage.setItem(CHAT_TOOLS_STORAGE_KEY, JSON.stringify(next));
 }
 
 export function getEnabledPackIds(settings: ChatToolsSettings): ChatToolPackId[] {

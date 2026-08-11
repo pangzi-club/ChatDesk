@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
 import { BookImage, Check, Copy, Download, Image, Library, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
@@ -39,46 +38,12 @@ import {
   IMAGE_GENERATION_TEMPLATES,
   type ImageGenerationTemplate,
 } from "@/lib/image-generation-templates";
+import { saveBlob } from "@/lib/platform";
 import { appendSystemLog } from "@/lib/system-log";
 
 async function saveImageFile(url: string, filename: string) {
-  if ("__TAURI_INTERNALS__" in window) {
-    const blob = await downloadGeneratedImage(url);
-    const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
-    return invoke<boolean>("save_image_file", { bytes, fileName: filename });
-  }
-  const picker = (
-    window as Window & {
-      showSaveFilePicker?: (options?: {
-        suggestedName?: string;
-        types?: Array<{ description: string; accept: Record<string, string[]> }>;
-      }) => Promise<{
-        createWritable: () => Promise<{
-          write: (data: Blob) => Promise<void>;
-          close: () => Promise<void>;
-        }>;
-      }>;
-    }
-  ).showSaveFilePicker;
-  if (picker) {
-    const handle = await picker({
-      suggestedName: filename,
-      types: [{ description: "PNG image", accept: { "image/png": [".png"] } }],
-    });
-    const blob = await downloadGeneratedImage(url);
-    const writable = await handle.createWritable();
-    await writable.write(blob);
-    await writable.close();
-  } else {
-    const blob = await downloadGeneratedImage(url);
-    const objectUrl = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = objectUrl;
-    anchor.download = filename;
-    anchor.click();
-    URL.revokeObjectURL(objectUrl);
-  }
-  return true;
+  const blob = await downloadGeneratedImage(url);
+  return saveBlob(blob, filename);
 }
 
 function ImageGenerationPage() {

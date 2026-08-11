@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
 import { RefreshCw, Server, SquareTerminal, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { loadServerViteProcesses, terminateServerViteProcess } from "@/lib/chat-server";
 
 interface ViteProcess {
   pid: number;
@@ -15,11 +15,11 @@ function VitePortsPage() {
   const queryClient = useQueryClient();
   const processesQuery = useQuery({
     queryKey: ["vite-processes"],
-    queryFn: () => invoke<ViteProcess[]>("list_vite_processes"),
+    queryFn: () => loadServerViteProcesses() as Promise<ViteProcess[]>,
     staleTime: 0,
   });
   const killMutation = useMutation({
-    mutationFn: (pid: number) => invoke<void>("kill_vite_process", { pid }),
+    mutationFn: (pid: number) => terminateServerViteProcess(pid),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["vite-processes"] }),
   });
   const processes = processesQuery.data ?? [];

@@ -1,24 +1,29 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { readdir, stat } from "node:fs/promises";
+import { mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
+import { ActivityLogStore } from "./activity-log-store.ts";
 import { ArchiveStore } from "./archive-store.ts";
+import { AutomationScheduler, AutomationStore } from "./automation-store.ts";
 import { ChatConfigStore } from "./chat-config.ts";
 import { closeClientTools } from "./client-tools.ts";
 import type { ServerConfig } from "./config.ts";
 import { EventHub } from "./events.ts";
+import { ImageGenerationStore } from "./image-generation-store.ts";
 import { McpRuntime } from "./mcp-runtime.ts";
 import { MemoryStore } from "./memory-store.ts";
 import { listProviderModels, testModelConnection } from "./model-test.ts";
+import { nodePlatform } from "./platform/index.ts";
 import type { ChatSession, RunStartInput } from "./protocol.ts";
 import { RunRegistry } from "./run-registry.ts";
 import { scanSkills } from "./skills-store.ts";
 import { SessionStore } from "./store.ts";
+import { WorkspaceStore } from "./workspace-store.ts";
 
 const runInputSchema = z.object({
   messages: z.array(z.unknown()).optional(),
@@ -72,25 +77,57 @@ const execFileAsync = promisify(execFile);
 type ArchiveImportSource = "codex" | "claude-code" | "cursor" | "kimi";
 
 function mergeSessionMessages(current: ChatSession["messages"], incoming: unknown[]) {
-  const incomingById = new Map<string, ChatSession["messages"][number]>();
+  const incomingMessages: ChatSession["messages"] = [];
   for (const value of incoming) {
     if (!value || typeof value !== "object") continue;
-    const id = (value as { id?: unknown }).id;
-    if (typeof id === "string" && id) {
-      incomingById.set(id, value as ChatSession["messages"][number]);
-    }
+    incomingMessages.push(value as ChatSession["messages"][number]);
   }
+  const incomingById = new Map(
+    incomingMessages
+      .filter((message) => typeof message.id === "string" && message.id)
+      .map((message) => [message.id, message] as const),
+  );
+  const consumedIds = new Set<string>();
+  const fingerprint = (message: ChatSession["messages"][number]) => {
+    const text = message.parts
+      .filter((part) => part.type === "text")
+      .map((part) => ("text" in part && typeof part.text === "string" ? part.text : ""))
+      .join("");
+    if (text) return `${message.role}:${text}`;
+    const copy = { ...message } as Record<string, unknown>;
+    delete copy.id;
+    return JSON.stringify(copy);
+  };
+  const isUnstableId = (id: string | undefined) => !id?.trim() || id.startsWith("legacy-message-");
 
   const merged = current.map((message) => {
-    const next = incomingById.get(message.id);
+    let next = incomingById.get(message.id);
+    if (next) consumedIds.add(next.id);
+    if (!next && isUnstableId(message.id)) {
+      next = incomingMessages.find(
+        (candidate) =>
+          !consumedIds.has(candidate.id) &&
+          !isUnstableId(candidate.id) &&
+          candidate.role === message.role &&
+          fingerprint(candidate) === fingerprint(message),
+      );
+      if (next) consumedIds.add(next.id);
+    }
     if (!next) return message;
     return next.metadata === undefined && message.metadata !== undefined
       ? { ...next, metadata: message.metadata }
       : next;
   });
-  const currentIds = new Set(current.map((message) => message.id));
-  for (const [id, message] of incomingById) {
-    if (!currentIds.has(id)) merged.push(message);
+  for (const message of incomingMessages) {
+    if (!message.id || consumedIds.has(message.id)) continue;
+    const existingUnstable = merged.find(
+      (candidate) =>
+        isUnstableId(candidate.id) &&
+        candidate.role === message.role &&
+        fingerprint(candidate) === fingerprint(message),
+    );
+    if (existingUnstable) continue;
+    merged.push(message);
   }
   return merged;
 }
@@ -110,6 +147,10 @@ function archiveRoots(source: ArchiveImportSource): string[] {
     process.env.KIMI_CODE_HOME || path.join(home, ".kimi-code"),
     process.env.KIMI_SHARE_DIR || path.join(home, ".kimi"),
   ];
+}
+
+function archiveUploadRoot(dataDir: string) {
+  return path.join(dataDir, "archive-uploads");
 }
 
 function sourceFileMatches(source: ArchiveImportSource, fileName: string) {
@@ -187,11 +228,34 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   const events = new EventHub();
   const chatConfig = new ChatConfigStore(config.dataDir);
   await chatConfig.init();
-  const runs = new RunRegistry(store, events, chatConfig);
   const memory = new MemoryStore(config.dataDir);
   await memory.init();
   const archive = new ArchiveStore(config.dataDir);
   await archive.init();
+  const activityLogs = new ActivityLogStore(config.dataDir);
+  await activityLogs.init();
+  await activityLogs.append({
+    level: "info",
+    source: "Chat Server",
+    message: "Chat Server 已启动",
+  });
+  const imageGeneration = new ImageGenerationStore(config.dataDir);
+  await imageGeneration.init();
+  const workspaces = new WorkspaceStore(config.dataDir);
+  await workspaces.init();
+  const runs = new RunRegistry(store, events, chatConfig, (id) => workspaces.get(id)?.path);
+  const automations = new AutomationStore(config.dataDir);
+  await automations.init();
+  const automationScheduler = new AutomationScheduler(automations, (task, message) =>
+    activityLogs
+      .append({
+        level: "info",
+        source: `自动化 · ${task.name}`,
+        message,
+      })
+      .then(() => undefined),
+  );
+  automationScheduler.start();
   const mcp = new McpRuntime();
   await runs.initialize();
   const app = new Hono();
@@ -228,6 +292,216 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
       activeRuns: runs.activeCount(),
     }),
   );
+
+  app.get("/v1/platform/capabilities", (c) => c.json(nodePlatform.capabilities()));
+  app.get("/v1/platform/file", async (c) => {
+    const requested = c.req.query("path") || "";
+    try {
+      const resolved = await realpath(path.resolve(requested));
+      const allowedRoots = await Promise.all(
+        [config.dataDir, ...workspaces.list().map((item) => item.path)].map((root) =>
+          realpath(root),
+        ),
+      );
+      if (
+        !allowedRoots.some((root) => resolved === root || resolved.startsWith(`${root}${path.sep}`))
+      ) {
+        return jsonError("文件路径不在允许范围内", 403);
+      }
+      const bytes = await readFile(resolved);
+      const mediaType = resolved.toLowerCase().endsWith(".png")
+        ? "image/png"
+        : resolved.toLowerCase().endsWith(".jpg") || resolved.toLowerCase().endsWith(".jpeg")
+          ? "image/jpeg"
+          : resolved.toLowerCase().endsWith(".webp")
+            ? "image/webp"
+            : "application/octet-stream";
+      return new Response(bytes, {
+        headers: { "Content-Type": mediaType, "Cache-Control": "private, max-age=60" },
+      });
+    } catch {
+      return jsonError("文件不存在", 404);
+    }
+  });
+
+  app.get("/v1/workspaces", (c) => c.json(workspaces.list()));
+  app.post("/v1/workspaces", async (c) => {
+    try {
+      const body = await c.req.json();
+      const rawPath = typeof body.path === "string" ? body.path : "";
+      const resolvedPath = nodePlatform.resolveWorkspace(rawPath);
+      const workspace = await workspaces.add({
+        path: resolvedPath,
+        name: typeof body.name === "string" ? body.name : undefined,
+      });
+      await activityLogs.append({
+        level: "info",
+        source: "Workspace",
+        message: `已添加 ${workspace.name}`,
+      });
+      return c.json(workspace, 201);
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+  app.delete("/v1/workspaces/:id", async (c) => {
+    const workspace = workspaces.get(c.req.param("id"));
+    if (!workspace) return jsonError("workspace 不存在", 404);
+    await workspaces.remove(workspace.id);
+    await activityLogs.append({
+      level: "info",
+      source: "Workspace",
+      message: `已移除 ${workspace.name}`,
+    });
+    return c.body(null, 204);
+  });
+  app.get("/v1/workspaces/:id/git", async (c) => {
+    const workspace = workspaces.get(c.req.param("id"));
+    if (!workspace) return jsonError("workspace 不存在", 404);
+    try {
+      return c.json(await nodePlatform.inspectGit(workspace.path));
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+  app.get("/v1/workspaces/:id/files", async (c) => {
+    const workspace = workspaces.get(c.req.param("id"));
+    if (!workspace) return jsonError("workspace 不存在", 404);
+    try {
+      return c.json(await nodePlatform.listDir(workspace.path, c.req.query("path") || "."));
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+  app.post("/v1/workspaces/:id/file", async (c) => {
+    const workspace = workspaces.get(c.req.param("id"));
+    if (!workspace) return jsonError("workspace 不存在", 404);
+    try {
+      const body = await c.req.json();
+      const action = typeof body.action === "string" ? body.action : "read";
+      const filePath = typeof body.path === "string" ? body.path : "";
+      if (action === "read") return c.json(await nodePlatform.readFile(workspace.path, filePath));
+      if (action === "write") {
+        const result = await nodePlatform.writeFile(
+          workspace.path,
+          filePath,
+          String(body.content ?? ""),
+        );
+        return c.json(result);
+      }
+      if (action === "edit") {
+        return c.json(
+          await nodePlatform.editFile(
+            workspace.path,
+            filePath,
+            String(body.oldText ?? ""),
+            String(body.newText ?? ""),
+          ),
+        );
+      }
+      return jsonError("不支持的文件操作", 400);
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+  app.post("/v1/workspaces/:id/search", async (c) => {
+    const workspace = workspaces.get(c.req.param("id"));
+    if (!workspace) return jsonError("workspace 不存在", 404);
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      return c.json(await nodePlatform.searchFiles(workspace.path, body));
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+  app.post("/v1/workspaces/:id/shell", async (c) => {
+    const workspace = workspaces.get(c.req.param("id"));
+    if (!workspace) return jsonError("workspace 不存在", 404);
+    try {
+      const body = await c.req.json();
+      const mode = body.mode === "full" || body.mode === "auto" ? body.mode : "ask";
+      return c.json(
+        await nodePlatform.runShell(
+          workspace.path,
+          String(body.command ?? ""),
+          mode,
+          typeof body.cwd === "string" ? body.cwd : undefined,
+          body.allowOutside === true,
+        ),
+      );
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+
+  app.get("/v1/processes/vite", async (c) => {
+    try {
+      return c.json(await nodePlatform.listViteProcesses());
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+  app.post("/v1/processes/vite/:pid/terminate", async (c) => {
+    try {
+      await nodePlatform.killViteProcess(Number(c.req.param("pid")));
+      return c.body(null, 204);
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+
+  app.get("/v1/automations", (c) => c.json(automations.list()));
+  app.put("/v1/automations", async (c) => {
+    try {
+      const next = await automations.replace(await c.req.json());
+      return c.json(next);
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+  app.post("/v1/automations/:id/run", async (c) => {
+    try {
+      await automationScheduler.runNow(c.req.param("id"));
+      return c.body(null, 204);
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+  app.delete("/v1/automations/:id", async (c) => {
+    return c.json(await automations.remove(c.req.param("id")));
+  });
+
+  app.get("/v1/activity-logs", (c) => c.json(activityLogs.list()));
+  app.post("/v1/activity-logs", async (c) => {
+    try {
+      const body = await c.req.json();
+      return c.json(await activityLogs.append(body), 201);
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+  app.delete("/v1/activity-logs", async (c) => {
+    await activityLogs.clear();
+    return c.body(null, 204);
+  });
+  app.get("/v1/image-generation", (c) => c.json(imageGeneration.list()));
+  app.post("/v1/image-generation", async (c) => {
+    try {
+      const result = await imageGeneration.save(await c.req.json());
+      await activityLogs.append({
+        level: "success",
+        source: "图片生成",
+        message: "图片生成记录已保存",
+      });
+      return c.json(result, 201);
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+  app.delete("/v1/image-generation", async (c) => {
+    await imageGeneration.clear();
+    return c.body(null, 204);
+  });
 
   app.get("/v1/config", (c) =>
     c.json({ host: config.host, port: config.port, restartRequired: false }),
@@ -311,7 +585,9 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   });
   app.post("/v1/mcp/start", async (c) => {
     try {
-      await mcp.start(await c.req.json());
+      const input = await c.req.json();
+      await mcp.start(input);
+      await activityLogs.append({ level: "info", source: "MCP", message: "MCP 服务已启动" });
       return c.body(null, 204);
     } catch (error) {
       return jsonError(error instanceof Error ? error.message : String(error));
@@ -319,7 +595,9 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   });
   app.post("/v1/mcp/test", async (c) => {
     try {
-      return c.json(await mcp.test(await c.req.json()));
+      const result = await mcp.test(await c.req.json());
+      await activityLogs.append({ level: "success", source: "MCP", message: "MCP 测试完成" });
+      return c.json(result);
     } catch (error) {
       return jsonError(error instanceof Error ? error.message : String(error));
     }
@@ -334,13 +612,20 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   app.post("/v1/mcp/:id/call", async (c) => {
     try {
       const body = await c.req.json();
-      return c.json(await mcp.callTool(c.req.param("id"), body.toolName, body.arguments));
+      const result = await mcp.callTool(c.req.param("id"), body.toolName, body.arguments);
+      await activityLogs.append({
+        level: "info",
+        source: "MCP",
+        message: `已调用工具 ${String(body.toolName || "unknown")}`,
+      });
+      return c.json(result);
     } catch (error) {
       return jsonError(error instanceof Error ? error.message : String(error));
     }
   });
   app.post("/v1/mcp/:id/stop", async (c) => {
     await mcp.stop(c.req.param("id"));
+    await activityLogs.append({ level: "info", source: "MCP", message: "MCP 服务已停止" });
     return c.body(null, 204);
   });
 
@@ -371,6 +656,29 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     }
     return c.json(await scanArchiveSource(source));
   });
+  app.post("/v1/archive/upload", async (c) => {
+    try {
+      const form = await c.req.formData();
+      const source = form.get("source");
+      const file = form.get("file");
+      if (
+        typeof source !== "string" ||
+        !["codex", "claude-code", "cursor", "kimi"].includes(source) ||
+        !(file instanceof File)
+      ) {
+        return jsonError("归档来源或文件无效");
+      }
+      if (file.size > 50 * 1024 * 1024) return jsonError("归档文件不能超过 50 MB");
+      const safeName = path.basename(file.name || "archive").replace(/[^\w.-]+/g, "_");
+      const directory = path.join(archiveUploadRoot(config.dataDir), source);
+      await mkdir(directory, { recursive: true });
+      const target = path.join(directory, `${randomUUID()}-${safeName || "archive"}`);
+      await writeFile(target, new Uint8Array(await file.arrayBuffer()));
+      return c.json({ source, sourcePath: target, size: file.size, fileName: safeName }, 201);
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
   app.post("/v1/archive/read-file", async (c) => {
     try {
       const body = await c.req.json();
@@ -380,6 +688,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
           ...archiveRoots("codex"),
           ...archiveRoots("claude-code"),
           ...archiveRoots("kimi"),
+          archiveUploadRoot(config.dataDir),
         ]),
       ];
       const resolved = path.resolve(requested);
@@ -396,7 +705,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     try {
       const body = await c.req.json();
       const requested = typeof body.path === "string" ? body.path : "";
-      const roots = archiveRoots("cursor");
+      const roots = [...archiveRoots("cursor"), archiveUploadRoot(config.dataDir)];
       const resolved = path.resolve(requested);
       if (!roots.some((root) => resolved === root || resolved.startsWith(`${root}${path.sep}`))) {
         return jsonError("path is outside allowed import roots", 403);
@@ -450,13 +759,15 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   app.post("/v1/sessions", async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
+      const workspaceId = typeof body.workspaceId === "string" ? body.workspaceId : undefined;
+      if (workspaceId && !workspaces.get(workspaceId)) return jsonError("workspace 不存在", 400);
       const session = emptySession(typeof body.id === "string" ? body.id : undefined);
       const next: ChatSession = {
         ...session,
         title:
           typeof body.title === "string" && body.title.trim() ? body.title.trim() : session.title,
-        workspaceId: typeof body.workspaceId === "string" ? body.workspaceId : undefined,
-        cwd: typeof body.cwd === "string" ? body.cwd : undefined,
+        workspaceId,
+        cwd: workspaceId ? workspaces.get(workspaceId)?.path : undefined,
       };
       await store.save(next);
       events.publish({ type: "session.status", sessionId: next.id, status: "idle" });
@@ -572,6 +883,11 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   app.post("/v1/sessions/:id/runs", async (c) => {
     try {
       const body = parseJson(await c.req.json(), runInputSchema) as RunStartInput;
+      await activityLogs.append({
+        level: "info",
+        source: "模型调用",
+        message: `开始运行会话 ${c.req.param("id")}`,
+      });
       return await runs.start(c.req.param("id"), body);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -610,6 +926,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     runs,
     config,
     shutdown: async () => {
+      automationScheduler.stop();
       await runs.shutdown();
       await mcp.close();
       closeClientTools();

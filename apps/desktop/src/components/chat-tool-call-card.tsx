@@ -1,4 +1,3 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   ChevronDown,
   Code2,
@@ -24,6 +23,7 @@ import {
 } from "@/lib/chat-image-generation";
 import { CHAT_TOOL_DISPLAY_NAMES } from "@/lib/chat-tool-defs";
 import { CHAT_WORKSPACE_TOOL_DISPLAY_NAMES } from "@/lib/chat-workspace-tools";
+import { assetUrl } from "@/lib/platform";
 
 export type ChatToolCallCardProps = {
   id?: string;
@@ -197,11 +197,7 @@ function resolveImagePreviewSrc(output: unknown): string | null {
   const { rawBase64, remoteUrl, materialized } = readImageGenerationOutput(output);
   if (materialized?.url) return materialized.url;
   if (materialized?.path) {
-    try {
-      return convertFileSrc(materialized.path);
-    } catch {
-      return null;
-    }
+    return assetUrl(materialized.path);
   }
   if (remoteUrl) return remoteUrl;
   if (rawBase64) {
@@ -218,11 +214,7 @@ function resolveBrowserScreenshotSrc(output: unknown): string | null {
     data?: { path?: unknown; mimeType?: unknown };
   };
   if (result.ok !== true || typeof result.data?.path !== "string") return null;
-  try {
-    return convertFileSrc(result.data.path);
-  } catch {
-    return null;
-  }
+  return assetUrl(result.data.path);
 }
 
 function statusLabel(options: {

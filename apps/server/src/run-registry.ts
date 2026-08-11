@@ -54,6 +54,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
+function isMissingMessageId(id: string | undefined) {
+  return !id?.trim() || id.startsWith("legacy-message-");
+}
+
+export function normalizeCompletedMessages(messages: UIMessage[], runId: string) {
+  let lastAssistantIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === "assistant") {
+      lastAssistantIndex = index;
+      break;
+    }
+  }
+  if (lastAssistantIndex < 0) return messages;
+  return messages.map((message, index) =>
+    index === lastAssistantIndex && isMissingMessageId(message.id)
+      ? { ...message, id: runId }
+      : message,
+  );
+}
+
 export function mergeLatestMessageMetadata(messages: UIMessage[], metadata: unknown) {
   if (metadata === undefined) return messages;
   let lastAssistantIndex = -1;
@@ -94,11 +114,18 @@ export class RunRegistry {
   private readonly journal: RunJournal;
   private readonly reviewLog: SandboxReviewLogStore;
   private readonly toolApprovalSecret = randomUUID();
+  private readonly resolveWorkspace: (id: string) => string | undefined;
 
-  constructor(store: SessionStore, events: EventHub, chatConfig: ChatConfigStore) {
+  constructor(
+    store: SessionStore,
+    events: EventHub,
+    chatConfig: ChatConfigStore,
+    resolveWorkspace: (id: string) => string | undefined = () => undefined,
+  ) {
     this.store = store;
     this.events = events;
     this.chatConfig = chatConfig;
+    this.resolveWorkspace = resolveWorkspace;
     this.journal = new RunJournal(store.root);
     this.reviewLog = new SandboxReviewLogStore(store.root);
   }
@@ -160,13 +187,19 @@ export class RunRegistry {
         ? [...current.messages, input.message]
         : current.messages;
     const now = new Date().toISOString();
+    const resolvedWorkspace = input.workspaceId
+      ? this.resolveWorkspace(input.workspaceId)
+      : undefined;
+    if (input.workspaceId && !resolvedWorkspace) throw new Error("workspace 不存在");
+    if (input.cwd && !input.workspaceId) throw new Error("请先选择已注册的 workspace");
+    const effectiveCwd = resolvedWorkspace ?? current.cwd;
     const session: ChatSession = {
       ...current,
       title: input.title?.trim() || deriveTitle(messages),
       updatedAt: now,
       modelId: model.id || model.name,
       workspaceId: input.workspaceId ?? current.workspaceId,
-      cwd: input.cwd ?? current.cwd,
+      cwd: effectiveCwd,
       sandboxMode,
       messages,
     };
@@ -189,14 +222,14 @@ export class RunRegistry {
         ? provider.responses(model.name.trim())
         : provider.chat(model.name.trim());
       const modelMessages = await convertToModelMessages(messages);
-      const workspaceToolInstructions = input.cwd
+      const workspaceToolInstructions = effectiveCwd
         ? "本地源码检索规则：按文件名或关键词查找时必须使用 search_files，它支持 query 关键词并遵循 workspace 的 Git 排除规则；不要通过 bash 执行递归 grep、find 或 rg，尤其不要扫描 node_modules、.git、dist、target。"
         : "";
       const system = [
         workspaceToolInstructions,
         input.system,
         input.memory,
-        input.cwd ? `当前 workspace：${input.cwd}` : "",
+        effectiveCwd ? `当前 workspace：${effectiveCwd}` : "",
       ]
         .filter(Boolean)
         .join("\n\n");
@@ -209,6 +242,7 @@ export class RunRegistry {
               ...(createClientTools(input.toolNames) ?? {}),
               ...createWorkspaceToolsForInput({
                 ...input,
+                cwd: effectiveCwd,
                 model,
                 sandboxMode,
                 approvedEscalationToolCallIds,
@@ -296,11 +330,11 @@ export class RunRegistry {
         }
       }
       const completedMessages = getCompletedMessages();
-      const persistedMessages =
-        completedMessages ??
-        (assistantText
+      const persistedMessages = completedMessages
+        ? normalizeCompletedMessages(completedMessages, runId)
+        : assistantText
           ? [...session.messages, assistantMessage(runId, assistantText)]
-          : session.messages);
+          : session.messages;
       const nextMessages = mergeLatestMessageMetadata(persistedMessages, latestMessageMetadata);
       const updated: ChatSession = {
         ...session,

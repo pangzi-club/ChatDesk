@@ -1,8 +1,6 @@
-import { invoke } from "@tauri-apps/api/core";
-import { settingsStore } from "@/lib/settings-store";
+import { loadServerAutomations, saveServerAutomations } from "@/lib/chat-server";
 
 export const AUTOMATION_TASKS_STORE_KEY = "automation-tasks";
-const AUTOMATION_TASKS_LOCAL_STORAGE_KEY = "m-dashboard-automation-tasks-v1";
 
 export type AutomationTaskType = "log-current-time";
 
@@ -21,36 +19,12 @@ export const automationTaskTypeLabels: Record<AutomationTaskType, string> = {
 };
 
 export async function loadAutomationTasks(): Promise<AutomationTask[]> {
-  try {
-    const stored = await settingsStore.get<unknown>(AUTOMATION_TASKS_STORE_KEY);
-    return Array.isArray(stored) ? stored.filter(isAutomationTask) : [];
-  } catch {
-    try {
-      const stored = window.localStorage.getItem(AUTOMATION_TASKS_LOCAL_STORAGE_KEY);
-      const parsed: unknown = stored ? JSON.parse(stored) : [];
-      return Array.isArray(parsed) ? parsed.filter(isAutomationTask) : [];
-    } catch {
-      return [];
-    }
-  }
+  const stored = await loadServerAutomations();
+  return Array.isArray(stored) ? stored.filter(isAutomationTask) : [];
 }
 
 export async function saveAutomationTasks(tasks: AutomationTask[]) {
-  try {
-    await settingsStore.set(AUTOMATION_TASKS_STORE_KEY, tasks);
-    await settingsStore.save();
-  } catch {
-    window.localStorage.setItem(AUTOMATION_TASKS_LOCAL_STORAGE_KEY, JSON.stringify(tasks));
-  }
-  await syncAutomationTasks(tasks);
-}
-
-async function syncAutomationTasks(tasks: AutomationTask[]) {
-  try {
-    await invoke("sync_automation_tasks", { tasks });
-  } catch {
-    // The web preview has no Rust scheduler.
-  }
+  await saveServerAutomations(tasks);
 }
 
 function isAutomationTask(value: unknown): value is AutomationTask {

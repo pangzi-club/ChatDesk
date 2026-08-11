@@ -1,8 +1,6 @@
+import { loadServerImageGeneration, saveServerImageGeneration } from "@/lib/chat-server";
 import type { ImageAspectRatio, ImageModel, ImageResolution } from "@/lib/image-generation";
-import { settingsStore } from "@/lib/settings-store";
 
-const STORE_KEY = "imageGenerationLibrary";
-const STORAGE_KEY = "m-dashboard-image-generation-library-v1";
 const MAX_RECORDS = 50;
 
 export type ImageGenerationRecord = {
@@ -15,10 +13,6 @@ export type ImageGenerationRecord = {
   aspectRatio: ImageAspectRatio;
   resolution: ImageResolution;
 };
-
-function isTauri() {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object";
@@ -57,35 +51,9 @@ function normalizeRecords(value: unknown): ImageGenerationRecord[] {
 }
 
 export async function loadImageGenerationLibrary(): Promise<ImageGenerationRecord[]> {
-  if (isTauri()) {
-    try {
-      return normalizeRecords(await settingsStore.get<unknown>(STORE_KEY));
-    } catch (error) {
-      console.error("Failed to load image generation library", error);
-    }
-  }
-  try {
-    return normalizeRecords(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "[]"));
-  } catch {
-    return [];
-  }
+  return normalizeRecords(await loadServerImageGeneration());
 }
 
 export async function saveImageGenerationRecord(record: ImageGenerationRecord) {
-  const records = [
-    record,
-    ...(await loadImageGenerationLibrary()).filter((item) => item.id !== record.id),
-  ].slice(0, MAX_RECORDS);
-  if (isTauri()) {
-    try {
-      await settingsStore.set(STORE_KEY, records);
-      await settingsStore.save();
-      window.localStorage.removeItem(STORAGE_KEY);
-      return records;
-    } catch (error) {
-      console.error("Failed to save image generation library", error);
-    }
-  }
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
-  return records;
+  return (await saveServerImageGeneration(record)) as ImageGenerationRecord[];
 }

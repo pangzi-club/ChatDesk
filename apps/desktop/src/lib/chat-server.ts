@@ -41,6 +41,20 @@ export type ChatServerConnectionStatus = {
   health: ChatServerHealth | null;
 };
 export type ChatServerSession = SessionIndexItem;
+export type PlatformCapabilities = {
+  platform: string;
+  git: boolean;
+  shell: boolean;
+  restrictedShell: boolean;
+  processManagement: boolean;
+};
+export type ServerWorkspaceProject = {
+  id: string;
+  path: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+};
 
 export type {
   ChatIndexItem,
@@ -251,6 +265,111 @@ export async function chatServerRequest(
   return response;
 }
 
+export async function loadPlatformCapabilities(port = CHAT_SERVER_DEFAULT_PORT) {
+  const response = await chatServerRequest("/v1/platform/capabilities", undefined, port);
+  return (await response.json()) as PlatformCapabilities;
+}
+
+export async function loadServerWorkspaces(port = CHAT_SERVER_DEFAULT_PORT) {
+  const response = await chatServerRequest("/v1/workspaces", undefined, port);
+  return (await response.json()) as ServerWorkspaceProject[];
+}
+
+export async function registerServerWorkspace(
+  value: { path: string; name?: string },
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  const response = await chatServerRequest(
+    "/v1/workspaces",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(value),
+    },
+    port,
+  );
+  return (await response.json()) as ServerWorkspaceProject;
+}
+
+export async function removeServerWorkspace(id: string, port = CHAT_SERVER_DEFAULT_PORT) {
+  await chatServerRequest(`/v1/workspaces/${encodeURIComponent(id)}`, { method: "DELETE" }, port);
+}
+
+export async function loadServerWorkspaceGit(id: string, port = CHAT_SERVER_DEFAULT_PORT) {
+  const response = await chatServerRequest(
+    `/v1/workspaces/${encodeURIComponent(id)}/git`,
+    undefined,
+    port,
+  );
+  return response.json();
+}
+
+export async function loadServerAutomations(port = CHAT_SERVER_DEFAULT_PORT) {
+  const response = await chatServerRequest("/v1/automations", undefined, port);
+  return response.json();
+}
+
+export async function saveServerAutomations(value: unknown, port = CHAT_SERVER_DEFAULT_PORT) {
+  const response = await chatServerRequest(
+    "/v1/automations",
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(value),
+    },
+    port,
+  );
+  return response.json();
+}
+
+export async function loadServerActivityLogs(port = CHAT_SERVER_DEFAULT_PORT) {
+  const response = await chatServerRequest("/v1/activity-logs", undefined, port);
+  return response.json();
+}
+
+export async function clearServerActivityLogs(port = CHAT_SERVER_DEFAULT_PORT) {
+  await chatServerRequest("/v1/activity-logs", { method: "DELETE" }, port);
+}
+
+export async function appendServerActivityLog(value: unknown, port = CHAT_SERVER_DEFAULT_PORT) {
+  await chatServerRequest(
+    "/v1/activity-logs",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(value),
+    },
+    port,
+  );
+}
+
+export async function loadServerViteProcesses(port = CHAT_SERVER_DEFAULT_PORT) {
+  const response = await chatServerRequest("/v1/processes/vite", undefined, port);
+  return response.json();
+}
+
+export async function terminateServerViteProcess(pid: number, port = CHAT_SERVER_DEFAULT_PORT) {
+  await chatServerRequest(`/v1/processes/vite/${pid}/terminate`, { method: "POST" }, port);
+}
+
+export async function loadServerImageGeneration(port = CHAT_SERVER_DEFAULT_PORT) {
+  const response = await chatServerRequest("/v1/image-generation", undefined, port);
+  return response.json();
+}
+
+export async function saveServerImageGeneration(value: unknown, port = CHAT_SERVER_DEFAULT_PORT) {
+  const response = await chatServerRequest(
+    "/v1/image-generation",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(value),
+    },
+    port,
+  );
+  return response.json();
+}
+
 export async function loadChatServerConfig(port = CHAT_SERVER_DEFAULT_PORT) {
   return createClient(port).getConfig();
 }
@@ -325,6 +444,28 @@ export async function saveChatServerArchive(
 
 export async function deleteChatServerArchive(id: string, port = CHAT_SERVER_DEFAULT_PORT) {
   await createClient(port).deleteArchive(id);
+}
+
+export async function uploadChatServerArchive(
+  source: "codex" | "claude-code" | "cursor" | "kimi",
+  file: File,
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  const form = new FormData();
+  form.set("source", source);
+  form.set("file", file);
+  const response = await chatServerRequest(
+    "/v1/archive/upload",
+    { method: "POST", body: form },
+    port,
+  );
+  if (!response.ok) throw new Error((await response.text()) || "归档文件上传失败");
+  return (await response.json()) as {
+    source: typeof source;
+    sourcePath: string;
+    size: number;
+    fileName: string;
+  };
 }
 
 export async function uploadChatServerAttachment(

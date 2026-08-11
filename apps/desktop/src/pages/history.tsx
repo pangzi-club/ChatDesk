@@ -1,7 +1,6 @@
 import { code } from "@streamdown/code";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { getToolName, isToolUIPart, type UIMessage } from "ai";
 import {
   ArrowLeft,
@@ -54,6 +53,7 @@ import {
   loadChatIndex,
   loadChatSession,
 } from "@/lib/chat-store";
+import { assetUrl } from "@/lib/platform";
 
 const MESSAGE_COLLAPSE_CHARS = 700;
 const MESSAGE_COLLAPSE_LINES = 12;
@@ -887,12 +887,7 @@ function ArchiveAssetView({ asset }: { asset: ArchiveAsset }) {
   }
 
   if (asset.kind === "image" && asset.path && existsQuery.data) {
-    let src = "";
-    try {
-      src = convertFileSrc(asset.path);
-    } catch {
-      src = "";
-    }
+    const src = assetUrl(asset.path);
     if (src) {
       return (
         <div className="overflow-hidden rounded-lg">

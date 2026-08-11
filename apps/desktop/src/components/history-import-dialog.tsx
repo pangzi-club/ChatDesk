@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Import, LoaderCircle } from "lucide-react";
+import { Import, LoaderCircle, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,13 @@ import {
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   type ArchiveIndexItem,
   archiveKey,
   type ImportedArchiveSource,
@@ -25,6 +32,7 @@ import {
   scanCursorSessions,
   scanKimiSessions,
   sourceLabel,
+  uploadImportFile,
 } from "@/lib/chat-archive";
 import { parseClaudeCodeSession } from "@/lib/importers/claude-code";
 import { parseCodexRollout } from "@/lib/importers/codex";
@@ -75,6 +83,11 @@ function HistoryImportDialog({
   const [importing, setImporting] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0, current: "" });
   const [summary, setSummary] = useState<ImportSummary | null>(null);
+  const [uploaded, setUploaded] = useState<ScannedSession[]>([]);
+  const [uploadSource, setUploadSource] = useState<ImportedArchiveSource>("codex");
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const cancelRef = useRef(false);
 
   const scanQuery = useQuery({
@@ -99,11 +112,16 @@ function HistoryImportDialog({
       setImporting(false);
       setProgress({ done: 0, total: 0, current: "" });
       setSummary(null);
+      setUploaded([]);
+      setUploadError(null);
       cancelRef.current = false;
     }
   }, [open]);
 
-  const scanned = scanQuery.data ?? [];
+  const scanned = useMemo(
+    () => [...(scanQuery.data ?? []), ...uploaded],
+    [scanQuery.data, uploaded],
+  );
   const grouped = useMemo(() => {
     const groups: Record<ImportedArchiveSource, ScannedSession[]> = {
       codex: [],
@@ -208,6 +226,27 @@ function HistoryImportDialog({
     if (created + overwritten > 0) onImported();
   }
 
+  async function uploadFile(file: File) {
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const result = await uploadImportFile(uploadSource, file);
+      const item: ScannedSession = {
+        source: uploadSource,
+        externalId: `${result.fileName}:${result.size}:${Date.now()}`,
+        sourcePath: result.sourcePath,
+        title: result.fileName,
+        size: result.size,
+      };
+      setUploaded((prev) => [...prev, item]);
+      setSelected((prev) => new Set(prev).add(selectionKey(item)));
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setUploading(false);
+    }
+  }
+
   const progressValue =
     progress.total === 0 ? 0 : Math.round((progress.done / progress.total) * 100);
   const overwriteSelectedCount = [...selected].filter((key) => importedKeys.has(key)).length;
@@ -230,6 +269,48 @@ function HistoryImportDialog({
         </DialogHeader>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/30 p-3">
+            <input
+              accept={uploadSource === "cursor" ? ".vscdb,.sqlite,.db" : ".jsonl,.json,.txt"}
+              className="hidden"
+              disabled={importing || uploading}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) void uploadFile(file);
+              }}
+              ref={fileInputRef}
+              type="file"
+            />
+            <Select
+              disabled={importing || uploading}
+              onValueChange={(value) => setUploadSource(value as ImportedArchiveSource)}
+              value={uploadSource}
+            >
+              <SelectTrigger className="w-36" size="sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="codex">Codex JSONL</SelectItem>
+                <SelectItem value="claude-code">Claude Code JSONL</SelectItem>
+                <SelectItem value="cursor">Cursor 数据库</SelectItem>
+                <SelectItem value="kimi">Kimi JSONL</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              disabled={importing || uploading}
+              onClick={() => fileInputRef.current?.click()}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              <Upload className="size-4" />
+              {uploading ? "上传中…" : "上传归档文件"}
+            </Button>
+            {uploadError ? (
+              <p className="basis-full text-destructive text-xs">{uploadError}</p>
+            ) : null}
+          </div>
           {scanQuery.isPending ? (
             <div className="flex items-center gap-2 text-muted-foreground text-sm">
               <LoaderCircle className="size-4 animate-spin" />

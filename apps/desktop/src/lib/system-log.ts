@@ -1,7 +1,10 @@
-import { invoke } from "@tauri-apps/api/core";
+import {
+  appendServerActivityLog,
+  clearServerActivityLogs,
+  loadServerActivityLogs,
+} from "@/lib/chat-server";
 
 export const SYSTEM_LOGS_STORE_KEY = "system-logs";
-const SYSTEM_LOGS_STORAGE_KEY = "m-dashboard-system-logs-v1";
 export type SystemLogLevel = "info" | "success" | "warning" | "error";
 
 export type SystemLog = {
@@ -15,52 +18,19 @@ export type SystemLog = {
 
 export async function loadSystemLogs(): Promise<SystemLog[]> {
   try {
-    const contents = await invoke<string>("read_system_logs");
-    const stored = parseLogs(contents);
-    return stored;
-  } catch {
-    try {
-      const stored = JSON.parse(window.localStorage.getItem(SYSTEM_LOGS_STORAGE_KEY) ?? "[]");
-      return sortLogs(Array.isArray(stored) ? stored.filter(isSystemLog) : []);
-    } catch {
-      return [];
-    }
-  }
-}
-
-export async function appendSystemLog(entry: Omit<SystemLog, "id" | "timestamp">): Promise<void> {
-  const logs = await loadSystemLogs();
-  const next: SystemLog = {
-    ...entry,
-    id: crypto.randomUUID(),
-    timestamp: new Date().toISOString(),
-  };
-  await writeSystemLogs([next, ...logs].slice(0, 200));
-}
-
-export async function clearSystemLogs(): Promise<void> {
-  await writeSystemLogs([]);
-}
-
-async function writeSystemLogs(logs: SystemLog[]): Promise<void> {
-  try {
-    await invoke("write_system_logs", { contents: JSON.stringify(logs) });
-  } catch {
-    try {
-      window.localStorage.setItem(SYSTEM_LOGS_STORAGE_KEY, JSON.stringify(logs));
-    } catch {
-      // Logging must never prevent the app from rendering.
-    }
-  }
-}
-
-function parseLogs(contents: string): SystemLog[] {
-  try {
-    const stored: unknown = JSON.parse(contents);
+    const stored = await loadServerActivityLogs();
     return sortLogs(Array.isArray(stored) ? stored.filter(isSystemLog) : []);
   } catch {
     return [];
   }
+}
+
+export async function appendSystemLog(entry: Omit<SystemLog, "id" | "timestamp">): Promise<void> {
+  await appendServerActivityLog(entry);
+}
+
+export async function clearSystemLogs(): Promise<void> {
+  await clearServerActivityLogs();
 }
 
 function sortLogs(logs: SystemLog[]): SystemLog[] {

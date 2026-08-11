@@ -1,4 +1,3 @@
-import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Camera,
   Check,
@@ -18,6 +17,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
+import { openExternal as platformOpenExternal } from "@/lib/platform";
 import { createUserDataStore } from "@/lib/settings-store";
 
 type Bookmark = {
@@ -595,17 +595,7 @@ async function openExternal(value: string) {
     return;
   }
 
-  try {
-    if ("__TAURI_INTERNALS__" in window) {
-      await openUrl(targetUrl);
-      return;
-    }
-  } catch {
-    window.open(targetUrl, "_blank", "noopener,noreferrer");
-    return;
-  }
-
-  window.open(targetUrl, "_blank", "noopener,noreferrer");
+  await platformOpenExternal(targetUrl);
 }
 
 export { DashboardPage };

@@ -20,6 +20,7 @@
     "dev:web": "pnpm --filter chatdesk-desktop dev",
     "dev:server": "pnpm server:dev",
     "migrate:chatdesk": "node scripts/migrate-to-chatdesk.mjs",
+    "chat:sessions:dedupe": "node scripts/dedupe-chat-sessions.mjs",
     "migrate:test": "node --test scripts/migrate-to-chatdesk.test.mjs",
     "server:dev": "node --watch --experimental-strip-types apps/server/src/server.ts",
     "server:test": "node --experimental-strip-types --test apps/server/src/*.test.ts",

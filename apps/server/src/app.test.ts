@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { createChatServer } from "./app.ts";
 import type { ServerConfig } from "./config.ts";
+import type { ChatSession } from "./protocol.ts";
 import { RunJournal } from "./run-journal.ts";
 import { SessionStore } from "./store.ts";
 
@@ -103,6 +104,22 @@ describe("chat server", () => {
     assert.deepEqual(await second.json(), { id: "archive-test", overwritten: true });
   });
 
+  it("accepts authenticated archive uploads into the server data directory", async () => {
+    const server = await createTestServer();
+    const form = new FormData();
+    form.set("source", "codex");
+    form.set("file", new File(["{}\n"], "rollout.jsonl", { type: "application/jsonl" }));
+    const response = await server.app.request("http://localhost/v1/archive/upload", {
+      method: "POST",
+      headers: auth(),
+      body: form,
+    });
+    assert.equal(response.status, 201);
+    const uploaded = (await response.json()) as { sourcePath: string; size: number };
+    assert.equal(uploaded.size, 3);
+    assert.equal(uploaded.sourcePath.startsWith(server.config.dataDir), true);
+  });
+
   it("preserves persisted message metadata when a stale client save omits it", async () => {
     const server = await createTestServer();
     await server.store.save({
@@ -135,6 +152,45 @@ describe("chat server", () => {
     const saved = await response.json();
     assert.equal(saved.messages.length, 2);
     assert.deepEqual(saved.messages[1].metadata, { usage: { inputTokens: 120 } });
+  });
+
+  it("replaces an empty-id assistant when a stale client sends the same reply with a stable id", async () => {
+    const server = await createTestServer();
+    const baseMessage = {
+      role: "assistant",
+      parts: [{ type: "text", text: "same reply" }],
+      metadata: { usage: { totalTokens: 3 } },
+    };
+    await server.store.save({
+      schemaVersion: 2,
+      id: "duplicate-session",
+      title: "Duplicate",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      messages: [
+        { id: "user-1", role: "user", parts: [{ type: "text", text: "hello" }] },
+        { id: "", ...baseMessage } as ChatSession["messages"][number],
+      ],
+      attachments: [],
+    });
+
+    const response = await server.app.request("http://localhost/v1/sessions/duplicate-session", {
+      method: "PATCH",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: [
+          { id: "user-1", role: "user", parts: [{ type: "text", text: "hello" }] },
+          { id: "stable-assistant", ...baseMessage },
+        ],
+      }),
+    });
+
+    assert.equal(response.status, 200);
+    const saved = await response.json();
+    assert.deepEqual(
+      saved.messages.map((message: { id: string }) => message.id),
+      ["user-1", "stable-assistant"],
+    );
   });
 
   it("persists a pending port change for the next restart", async () => {
@@ -225,6 +281,66 @@ describe("chat server", () => {
       { headers: auth() },
     );
     assert.equal(await downloaded.text(), "hello");
+  });
+
+  it("manages local workspaces and activity logs through the server", async () => {
+    const server = await createTestServer();
+    const workspace = await server.app.request("http://localhost/v1/workspaces", {
+      method: "POST",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ path: server.config.dataDir, name: "测试工作区" }),
+    });
+    assert.equal(workspace.status, 201);
+    const project = (await workspace.json()) as { id: string; name: string };
+    assert.equal(project.name, "测试工作区");
+
+    const file = await server.app.request(`http://localhost/v1/workspaces/${project.id}/file`, {
+      method: "POST",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "write", path: "workspace-test.txt", content: "hello" }),
+    });
+    assert.equal(file.status, 200);
+    const read = await server.app.request(`http://localhost/v1/workspaces/${project.id}/file`, {
+      method: "POST",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "read", path: "workspace-test.txt" }),
+    });
+    assert.equal((await read.json()).content, "hello");
+
+    const activity = await server.app.request("http://localhost/v1/activity-logs", {
+      method: "POST",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ level: "info", source: "test", message: "ok" }),
+    });
+    assert.equal(activity.status, 201);
+    const logs = await server.app.request("http://localhost/v1/activity-logs", { headers: auth() });
+    assert.equal((await logs.json()).length, 3);
+  });
+
+  it("persists automation tasks and executes them on demand", async () => {
+    const server = await createTestServer();
+    const task = {
+      id: "automation-test",
+      name: "测试任务",
+      type: "log-current-time",
+      intervalMinutes: 5,
+      enabled: true,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const saved = await server.app.request("http://localhost/v1/automations", {
+      method: "PUT",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify([task]),
+    });
+    assert.equal(saved.status, 200);
+    const run = await server.app.request("http://localhost/v1/automations/automation-test/run", {
+      method: "POST",
+      headers: auth(),
+    });
+    assert.equal(run.status, 204);
+    const logs = await server.app.request("http://localhost/v1/activity-logs", { headers: auth() });
+    assert.equal((await logs.json()).length, 2);
   });
 
   it("persists a reviewer model only while that model is configured", async () => {

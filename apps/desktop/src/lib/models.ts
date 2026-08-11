@@ -1,6 +1,5 @@
 import type { ModelConfig } from "@chatdesk/shared";
 import { loadChatServerConfig, saveChatServerConfig } from "@/lib/chat-server";
-import { settingsStore } from "@/lib/settings-store";
 
 export const MODELS_STORE_KEY = "models";
 
@@ -40,9 +39,7 @@ export async function loadModels(): Promise<ModelConfig[]> {
   } catch (error) {
     console.error("Failed to load models from Chat Server", error);
   }
-  const stored = await settingsStore.get<unknown>(MODELS_STORE_KEY);
-  if (!Array.isArray(stored)) return [];
-  return stored.filter(isModelConfig).map(normalizeModelConfig);
+  return [];
 }
 
 function normalizeModelConfig(model: ModelConfig): ModelConfig {
@@ -72,8 +69,6 @@ export async function saveModels(models: ModelConfig[]): Promise<void> {
     models: models.map(({ apiKey: _apiKey, ...model }) => model),
     apiKeys: Object.fromEntries(models.map((model) => [model.id, model.apiKey])),
   });
-  await settingsStore.set(MODELS_STORE_KEY, models);
-  await settingsStore.save();
 }
 
 function isModelConfig(value: unknown): value is ModelConfig {
