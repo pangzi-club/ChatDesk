@@ -36,7 +36,7 @@
     "desktop:build": "pnpm --filter chatdesk-desktop desktop:build",
     "check": "biome check .",
     "check:write": "biome check --write .",
-    "format": "biome format --write .",
+    "format": "biome check --write .",
     "lint": "biome lint .",
     "preview": "pnpm --filter chatdesk-desktop preview"
   },
