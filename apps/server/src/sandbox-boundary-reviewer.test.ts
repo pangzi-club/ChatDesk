@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, symlink } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, it } from "vitest";
 
 import { classifySandboxBoundary } from "./sandbox-boundary-reviewer.ts";
@@ -22,6 +25,24 @@ describe("sandbox boundary classifier", () => {
     );
     assert.equal(result.requiresReview, true);
     assert.deepEqual(result.reasons, ["external-path"]);
+  });
+
+  it("does not review read-only workspace paths that resolve through node_modules symlinks", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-reviewer-symlink-"));
+    await mkdir(path.join(root, "node_modules"), { recursive: true });
+    await mkdir(path.join(root, ".pnpm", "aws4fetch"), { recursive: true });
+    await symlink(
+      path.join(root, ".pnpm", "aws4fetch"),
+      path.join(root, "node_modules", "aws4fetch"),
+    );
+
+    for (const toolName of ["list_dir", "read_file", "search_files"]) {
+      const result = classifySandboxBoundary(
+        { toolName, input: { path: "node_modules/aws4fetch" } },
+        root,
+      );
+      assert.equal(result.requiresReview, false, toolName);
+    }
   });
 
   it("flags network and external shell paths", () => {

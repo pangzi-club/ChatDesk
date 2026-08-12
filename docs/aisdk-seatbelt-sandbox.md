@@ -217,4 +217,6 @@ AI SDK 在这套方案中的作用，是**缩小 Agent 的能力范围，并将�
 
 这套方案不依赖特定的应用框架。只要运行环境能够调用本地工具并启动子进程，就可以按照「AI SDK 划定能力边界，审批策略决定何时暂停，Seatbelt 强制系统边界」的思路实现。还可以进一步细化读取权限、按目录配置白名单，或将 Shell 命令纳入同一套审批流程。无论如何扩展，核心原则都不变：提示词和交互负责引导，应用校验与系统沙箱负责安全。
 
+当前应用的 Settings > 沙箱页面支持配置额外的读取目录白名单。白名单目录会加入 Seatbelt 的 `file-read*` 允许范围，并额外添加 `file-write*` 拒绝规则，因此即使目录位于系统临时目录等可写根下，也只能读取和遍历，不能由受限 Bash 写入。配置保存在 Chat Server 的 `settings.json` 中，仅对新启动的受限 Bash 生效。
+
 参考：[ChatGPT Sandbox 官方说明](https://learn.chatgpt.com/docs/sandboxing?surface=app)。

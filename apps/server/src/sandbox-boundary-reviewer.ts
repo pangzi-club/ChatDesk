@@ -97,6 +97,7 @@ function commandUsesOutsideWorkspace(command: string, workspace: string) {
 export function classifySandboxBoundary(
   toolCall: ToolCallLike,
   workspace: string | undefined,
+  readablePaths: string[] = [],
 ): SandboxBoundaryAssessment {
   const toolName = toolCall.toolName;
   if (!toolName || !workspace || !isWorkspaceTool(toolName)) {
@@ -107,9 +108,43 @@ export function classifySandboxBoundary(
   const input = toolCall.input && typeof toolCall.input === "object" ? toolCall.input : {};
   const value = input as { path?: unknown; cwd?: unknown; command?: unknown };
   const reasons: SandboxBoundaryReason[] = [];
+  const readableRoots = readablePaths.flatMap((candidate) => {
+    const absolute = path.resolve(candidate.trim());
+    if (!candidate.trim()) return [];
+    const roots = [absolute];
+    try {
+      const resolved = realpathSync(absolute);
+      if (resolved !== absolute) roots.push(resolved);
+    } catch {
+      // Keep the configured lexical path for symlink-aware matching.
+    }
+    return roots;
+  });
+  const isReadablePath = (candidate: string) => {
+    const resolved = resolveCandidate(root, candidate);
+    const target = existsSync(resolved) ? realpathSync(resolved) : resolved;
+    return readableRoots.some(
+      (directory) =>
+        resolved === directory ||
+        resolved.startsWith(`${directory}${path.sep}`) ||
+        target === directory ||
+        target.startsWith(`${directory}${path.sep}`),
+    );
+  };
 
   if (toolName !== "bash" && typeof value.path === "string" && value.path.trim()) {
-    if (isOutsideWorkspace(root, value.path)) addReason(reasons, "external-path");
+    const outsideWorkspace = isOutsideWorkspace(root, value.path);
+    const readOnlyTool =
+      toolName === "read_file" || toolName === "list_dir" || toolName === "search_files";
+    const lexicalPath = resolveCandidate(root, value.path);
+    const lexicallyInsideWorkspace =
+      lexicalPath === root || lexicalPath.startsWith(`${root}${path.sep}`);
+    if (
+      outsideWorkspace &&
+      (!readOnlyTool || (!lexicallyInsideWorkspace && !isReadablePath(value.path)))
+    ) {
+      addReason(reasons, "external-path");
+    }
   }
 
   if (toolName === "bash" && typeof value.cwd === "string" && value.cwd.trim()) {

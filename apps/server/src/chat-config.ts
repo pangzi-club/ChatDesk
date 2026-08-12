@@ -8,6 +8,7 @@ const DEFAULT_CONFIG: ChatServerConfigData = {
   models: [],
   chatTools: {},
   sandboxMode: "ask",
+  sandboxReadablePaths: [],
   approvalReviewerModelId: undefined,
   mcpServers: [],
   installedSkillIds: [],
@@ -39,6 +40,17 @@ function normalize(value: unknown): ChatServerConfigData {
         : {},
     sandboxMode:
       record.sandboxMode === "auto" || record.sandboxMode === "full" ? record.sandboxMode : "ask",
+    sandboxReadablePaths: Array.isArray(record.sandboxReadablePaths)
+      ? [
+          ...new Set(
+            record.sandboxReadablePaths
+              .filter(
+                (item): item is string => typeof item === "string" && path.isAbsolute(item.trim()),
+              )
+              .map((item) => item.trim()),
+          ),
+        ].slice(0, 100)
+      : [],
     approvalReviewerModelId: reviewerModelExists ? configuredReviewerModelId : undefined,
     mcpServers: Array.isArray(record.mcpServers) ? record.mcpServers : [],
     installedSkillIds: Array.isArray(record.installedSkillIds)

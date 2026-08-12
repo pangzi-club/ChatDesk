@@ -436,6 +436,15 @@
   border-color: #ededee;
 }
 
+.settings-page [data-slot="button"] {
+  height: 2.25rem;
+  min-height: 2.25rem;
+}
+
+.settings-page [data-slot="button"].size-9 {
+  width: 2.25rem;
+}
+
 .app-page-root section.rounded-lg.border.bg-card,
 .app-page-root section.overflow-hidden.rounded-lg.bg-card,
 .app-page-root .rounded-lg.border.bg-card,

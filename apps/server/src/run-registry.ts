@@ -258,6 +258,7 @@ export class RunRegistry {
               ...(createClientTools(input.toolNames) ?? {}),
               ...createWorkspaceToolsForInput({
                 ...input,
+                sandboxReadablePaths: chatConfig.sandboxReadablePaths,
                 cwd: effectiveCwd,
                 model,
                 sandboxMode,
@@ -288,6 +289,7 @@ export class RunRegistry {
           reviewLog: this.reviewLog,
           sessionId,
           runId,
+          readablePaths: chatConfig.sandboxReadablePaths,
         }),
         experimental_toolApprovalSecret: this.toolApprovalSecret,
         stopWhen: stepCountIs(MAX_AGENT_STEPS),
@@ -408,6 +410,7 @@ function createToolApproval(options: {
   reviewLog: SandboxReviewLogStore;
   sessionId: string;
   runId: string;
+  readablePaths: string[];
 }) {
   const mode = options.mode;
   if (mode === "full") return undefined;
@@ -424,7 +427,7 @@ function createToolApproval(options: {
       return "approved" as const;
     }
 
-    const assessment = classifySandboxBoundary(toolCall, options.workspace);
+    const assessment = classifySandboxBoundary(toolCall, options.workspace, options.readablePaths);
     if (!assessment.requiresReview) {
       if (options.mode === "auto") return "not-applicable" as const;
       if (!isWorkspaceMutationTool(toolName)) return "not-applicable" as const;
@@ -635,6 +638,7 @@ function createWorkspaceToolsForInput(
   input: RunStartInput & {
     approvedEscalationToolCallIds: Set<string>;
     onSandboxBlocked: Parameters<typeof createWorkspaceTools>[3];
+    sandboxReadablePaths?: string[];
   },
 ) {
   const cwd = input.cwd?.trim();
@@ -651,6 +655,7 @@ function createWorkspaceToolsForInput(
     input.sandboxMode ?? "ask",
     input.approvedEscalationToolCallIds,
     input.onSandboxBlocked,
+    input.sandboxReadablePaths,
   );
   const selected = selectWorkspaceToolNames(names);
   return Object.fromEntries(selected.map((name) => [name, tools[name]]));

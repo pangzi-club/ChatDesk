@@ -30,6 +30,7 @@ import {
   Search,
   Server,
   Settings,
+  ShieldCheck,
   Sparkles,
   SquareTerminal,
   Trash2,
@@ -174,6 +175,12 @@ const commandItems = [
     label: "Tools",
     icon: Wrench,
     keywords: ["设置", "tools", "工具", "工具包", "chat tools"],
+  },
+  {
+    to: "/settings/sandbox",
+    label: "沙箱",
+    icon: ShieldCheck,
+    keywords: ["设置", "sandbox", "沙箱", "读取白名单", "目录权限"],
   },
   {
     to: "/settings/memory",

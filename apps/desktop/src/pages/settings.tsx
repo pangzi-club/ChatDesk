@@ -21,6 +21,7 @@ import {
   ScrollText,
   Search,
   Server,
+  ShieldCheck,
   Sparkles,
   Trash2,
   Wrench,
@@ -108,6 +109,7 @@ import {
   testMcpConnection,
 } from "@/lib/mcp";
 import { formatModelLabel, loadModels, type ModelConfig, saveModels } from "@/lib/models";
+import { pickDirectory } from "@/lib/platform";
 import {
   loadAvailableSkills,
   loadInstalledSkillIds,
@@ -192,11 +194,11 @@ function SettingsLayout() {
 
   return (
     <div
-      className={
+      className={`settings-page ${
         isHistoryRoute
           ? "flex h-full min-h-0 w-full overflow-hidden bg-background"
           : "flex min-h-full w-full bg-background"
-      }
+      }`}
     >
       <aside className="app-shell-sidebar sticky top-0 flex h-screen w-[248px] shrink-0 flex-col border-border border-r px-4 pt-8 max-md:w-[220px] max-sm:w-[76px] max-sm:px-2">
         <Button
@@ -222,6 +224,7 @@ function SettingsLayout() {
           <SettingsNavItem to="/settings/mcp" icon={PlugZap} label="MCP" />
           <SettingsNavItem to="/settings/skills" icon={Sparkles} label="Skills" />
           <SettingsNavItem to="/settings/tools" icon={Wrench} label="Tools" />
+          <SettingsNavItem to="/settings/sandbox" icon={ShieldCheck} label="沙箱" />
           <SettingsNavItem to="/settings/memory" icon={Brain} label="长期记忆" />
           <SettingsNavItem to="/settings/keys" icon={KeyRound} label="API Keys" />
           <SettingsNavItem to="/settings/tray" icon={PanelTop} label="托盘" />
@@ -628,6 +631,146 @@ function ToolsSettingsPage() {
             settings={settings}
             onSettingsChange={handleSettingsChange}
           />
+        )}
+      </section>
+    </>
+  );
+}
+
+function SandboxSettingsPage() {
+  const queryClient = useQueryClient();
+  const configQuery = useQuery({
+    queryKey: ["chat-server-chat-config"],
+    queryFn: () => loadChatServerConfig(),
+  });
+  const [draft, setDraft] = useState<string[]>([]);
+  const [newPath, setNewPath] = useState("");
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (configQuery.data) setDraft(configQuery.data.sandboxReadablePaths ?? []);
+  }, [configQuery.data]);
+
+  async function save(paths: string[]) {
+    setError("");
+    try {
+      const config = await saveChatServerConfig({ sandboxReadablePaths: paths });
+      queryClient.setQueryData(["chat-server-chat-config"], config);
+      setDraft(config.sandboxReadablePaths ?? paths);
+      setNotice("已保存。新的 Bash 任务会使用这组读取目录。");
+    } catch (cause) {
+      setError(describeError(cause));
+    }
+  }
+
+  async function addPath(value: string) {
+    const normalized = value.trim();
+    if (!normalized?.startsWith("/")) {
+      setError("请输入绝对目录路径。");
+      return;
+    }
+    if (draft.includes(normalized)) return;
+    setNewPath("");
+    await save([...draft, normalized]);
+  }
+
+  return (
+    <>
+      <SettingsHeading
+        eyebrow="Security"
+        title="沙箱"
+        description="配置受限 Bash 可以读取的额外目录。这里的目录只读，不能通过沙箱写入。"
+      />
+      <section className="overflow-hidden rounded-lg border border-border bg-card">
+        <div className="border-border border-b px-5 py-4">
+          <div className="flex items-start gap-3">
+            <ShieldCheck className="mt-0.5 size-5 shrink-0 text-primary" />
+            <div>
+              <h2 className="font-medium text-sm">读取目录白名单</h2>
+              <p className="mt-1 text-muted-foreground text-xs leading-5">
+                workspace
+                仍按原规则可读写；这里添加的目录只会授予读取和遍历权限，不会加入写入范围。路径必须是当前
+                Chat Server 所在机器上的绝对路径。
+              </p>
+            </div>
+          </div>
+        </div>
+        {configQuery.isPending ? (
+          <div className="space-y-3 p-5" aria-busy="true" role="status">
+            <div className="h-10 animate-pulse rounded-md bg-accent" />
+            <div className="h-10 animate-pulse rounded-md bg-accent" />
+          </div>
+        ) : configQuery.isError ? (
+          <div className="px-5 py-12 text-center text-sm">读取沙箱设置失败，请刷新页面后重试。</div>
+        ) : (
+          <>
+            <div className="flex flex-col gap-2 border-border border-b p-5 sm:flex-row">
+              <Input
+                aria-label="绝对目录路径"
+                className="h-9 bg-background font-mono text-xs"
+                onChange={(event) => setNewPath(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") void addPath(newPath);
+                }}
+                placeholder="例如 /Users/me/.config/tool"
+                value={newPath}
+              />
+              <Button
+                className="shrink-0"
+                onClick={() => void addPath(newPath)}
+                size="sm"
+                type="button"
+              >
+                <Plus className="size-3.5" /> 添加目录
+              </Button>
+              <Button
+                aria-label="选择目录"
+                onClick={async () => {
+                  const selected = await pickDirectory();
+                  if (selected) await addPath(selected);
+                }}
+                size="icon"
+                type="button"
+                variant="outline"
+              >
+                <ShieldCheck className="size-4" />
+              </Button>
+            </div>
+            {draft.length === 0 ? (
+              <div className="px-5 py-12 text-center">
+                <ShieldCheck className="mx-auto size-8 text-muted-foreground" />
+                <p className="mt-3 font-medium text-sm">还没有额外读取目录</p>
+                <p className="mt-1 text-muted-foreground text-xs">
+                  默认只允许 workspace 和系统运行所需目录。
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {draft.map((directory) => (
+                  <div className="flex items-center gap-3 px-5 py-3" key={directory}>
+                    <code className="min-w-0 flex-1 truncate text-xs">{directory}</code>
+                    <Button
+                      aria-label={`移除 ${directory}`}
+                      onClick={() => void save(draft.filter((item) => item !== directory))}
+                      size="icon"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <Trash2 className="size-3.5 text-muted-foreground" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {(notice || error) && (
+              <div
+                className={`border-border border-t px-5 py-3 text-xs ${error ? "text-destructive" : "text-muted-foreground"}`}
+              >
+                {error || notice}
+              </div>
+            )}
+          </>
         )}
       </section>
     </>
@@ -2402,6 +2545,7 @@ export {
   McpSettingsPage,
   MemorySettingsPage,
   ModelsSettingsPage,
+  SandboxSettingsPage,
   SettingsLayout,
   SkillsSettingsPage,
   SystemLogsSettingsPage,

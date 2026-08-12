@@ -127,6 +127,7 @@ export type ChatServerConfigData = {
   models: unknown[];
   chatTools: Record<string, boolean>;
   sandboxMode: SandboxMode;
+  sandboxReadablePaths: string[];
   approvalReviewerModelId?: string;
   mcpServers: unknown[];
   installedSkillIds: string[];

@@ -6,7 +6,12 @@ import { promisify } from "node:util";
 import { type ToolSet, tool } from "ai";
 import { z } from "zod";
 import type { SandboxMode } from "./protocol.ts";
-import { resolveCommandCwd, runSandboxedShell, SandboxBlockedError } from "./sandbox-exec.ts";
+import {
+  resolveCommandCwd,
+  runSandboxedRead,
+  runSandboxedShell,
+  SandboxBlockedError,
+} from "./sandbox-exec.ts";
 
 const MAX_FILE_BYTES = 512 * 1024;
 const MAX_SEARCH_RESULTS = 500;
@@ -20,6 +25,17 @@ type SandboxEscalationHandler = (toolCall: {
   input: unknown;
   errorReason?: string;
 }) => Promise<{ approved: boolean; reason?: string }>;
+type DirectoryResult = {
+  path: string;
+  entries: Array<{ name: string; path: string; kind: "dir" | "file" | "other" }>;
+};
+type ReadFileResult = { path: string; content: string };
+type SearchResult = {
+  query?: string;
+  pattern?: string;
+  matches: string[];
+  truncated: boolean;
+};
 function rootPath(cwd: string) {
   const value = cwd.trim();
   if (!value) throw new Error("请选择 workspace 后再使用文件工具");
@@ -62,23 +78,101 @@ function resolveTarget(root: string, candidate: string, mode: SandboxMode, allow
   return withinRoot(root, trimmed);
 }
 
+function resolveReadableTarget(
+  root: string,
+  candidate: string,
+  mode: SandboxMode,
+  allowOutside: boolean,
+  readablePaths: string[],
+) {
+  if (mode === "full" || allowOutside) return resolveTarget(root, candidate, mode, true);
+  const trimmed = candidate.trim();
+  const lexicalTarget = path.resolve(
+    path.isAbsolute(trimmed) ? trimmed : path.resolve(root, trimmed),
+  );
+  const target = canonicalizeTarget(
+    path.isAbsolute(trimmed) ? trimmed : path.resolve(root, trimmed),
+  );
+  if (lexicalTarget === root || lexicalTarget.startsWith(`${root}${path.sep}`)) return target;
+  if (target === root || target.startsWith(`${root}${path.sep}`)) return target;
+  const readableRoots = resolveReadableRoots(readablePaths);
+  if (
+    readableRoots.some(
+      (directory) =>
+        lexicalTarget === directory ||
+        lexicalTarget.startsWith(`${directory}${path.sep}`) ||
+        target === directory ||
+        target.startsWith(`${directory}${path.sep}`),
+    )
+  ) {
+    return target;
+  }
+  throw new SandboxBlockedError("路径不在 workspace 或沙箱读取白名单内");
+}
+
+function displayPath(root: string, target: string) {
+  const relative = path.relative(root, target);
+  return relative && !relative.startsWith("..") && !path.isAbsolute(relative) ? relative : target;
+}
+
+function resolveReadableRoots(readablePaths: string[]) {
+  return readablePaths.flatMap((value) => {
+    const absolute = path.resolve(value.trim());
+    if (!value.trim()) return [];
+    const roots = [absolute];
+    try {
+      const resolved = realpathSync(absolute);
+      if (resolved !== absolute) roots.push(resolved);
+    } catch {
+      // Keep non-existent configured paths out of runtime reads until they exist.
+    }
+    return roots;
+  });
+}
+
 async function listDirectory(
   cwd: string,
   relativePath: string | undefined,
   mode: SandboxMode,
   allowOutside = false,
-) {
+  readablePaths: string[] = [],
+): Promise<DirectoryResult> {
   const root = rootPath(cwd);
-  const target = resolveTarget(root, relativePath || ".", mode, allowOutside);
+  if (mode !== "full" && !allowOutside) {
+    const result = await runSandboxedRead(
+      { operation: "list_dir", workspace: root, path: relativePath, readablePaths },
+      { mode },
+    );
+    if (result.sandboxBlocked) throw new SandboxBlockedError(result.error);
+    if (!result.result) throw new Error(result.error);
+    return result.result as DirectoryResult;
+  }
+  const target = resolveReadableTarget(
+    root,
+    relativePath || ".",
+    mode,
+    allowOutside,
+    readablePaths,
+  );
   const entries = await readdir(target, { withFileTypes: true });
   return {
-    path: path.relative(root, target) || ".",
+    path: displayPath(root, target),
     entries: entries
-      .filter((entry) => !SKIPPED_DIRECTORIES.has(entry.name))
+      .filter((entry) => {
+        if (!SKIPPED_DIRECTORIES.has(entry.name)) return true;
+        const readableRoots = resolveReadableRoots(readablePaths);
+        const entryPath = path.resolve(target, entry.name);
+        return readableRoots.some(
+          (directory) => entryPath === directory || entryPath.startsWith(`${directory}${path.sep}`),
+        );
+      })
       .map((entry) => ({
         name: entry.name,
-        path: path.relative(root, path.join(target, entry.name)),
-        kind: entry.isDirectory() ? "dir" : entry.isFile() ? "file" : "other",
+        path: displayPath(root, path.join(target, entry.name)),
+        kind: (entry.isDirectory() ? "dir" : entry.isFile() ? "file" : "other") as
+          | "dir"
+          | "file"
+          | "other",
       }))
       .sort((a, b) => a.path.localeCompare(b.path)),
   };
@@ -89,13 +183,23 @@ async function readTextFile(
   relativePath: string,
   mode: SandboxMode,
   allowOutside = false,
-) {
+  readablePaths: string[] = [],
+): Promise<ReadFileResult> {
   const root = rootPath(cwd);
-  const target = resolveTarget(root, relativePath, mode, allowOutside);
+  if (mode !== "full" && !allowOutside) {
+    const result = await runSandboxedRead(
+      { operation: "read_file", workspace: root, path: relativePath, readablePaths },
+      { mode },
+    );
+    if (result.sandboxBlocked) throw new SandboxBlockedError(result.error);
+    if (!result.result) throw new Error(result.error);
+    return result.result as ReadFileResult;
+  }
+  const target = resolveReadableTarget(root, relativePath, mode, allowOutside, readablePaths);
   const metadata = await stat(target);
   if (!metadata.isFile()) throw new Error("路径不是文件");
   if (metadata.size > MAX_FILE_BYTES) throw new Error("文件超过 512 KB，未读取");
-  return { path: path.relative(root, target), content: await readFile(target, "utf8") };
+  return { path: displayPath(root, target), content: await readFile(target, "utf8") };
 }
 
 async function searchFiles(
@@ -103,9 +207,19 @@ async function searchFiles(
   options: { path?: string; pattern?: string; query?: string; maxResults?: number },
   mode: SandboxMode,
   allowOutside = false,
-) {
+  readablePaths: string[] = [],
+): Promise<SearchResult> {
   const root = rootPath(cwd);
-  const start = resolveTarget(root, options.path || ".", mode, allowOutside);
+  if (mode !== "full" && !allowOutside) {
+    const result = await runSandboxedRead(
+      { operation: "search_files", workspace: root, ...options, readablePaths },
+      { mode },
+    );
+    if (result.sandboxBlocked) throw new SandboxBlockedError(result.error);
+    if (!result.result) throw new Error(result.error);
+    return result.result as SearchResult;
+  }
+  const start = resolveReadableTarget(root, options.path || ".", mode, allowOutside, readablePaths);
   const limit = Math.min(Math.max(options.maxResults ?? 100, 1), MAX_SEARCH_RESULTS);
   const matches: string[] = [];
   const needle = options.query?.trim().toLowerCase();
@@ -130,21 +244,30 @@ async function searchFiles(
     }
   };
 
+  const readableRoots = resolveReadableRoots(readablePaths);
+  const isReadable = (target: string) =>
+    target === root ||
+    target.startsWith(`${root}${path.sep}`) ||
+    readableRoots.some(
+      (directory) => target === directory || target.startsWith(`${directory}${path.sep}`),
+    );
+
   const addFile = async (target: string) => {
     if (matches.length >= limit || !matchesFilePattern(target)) return;
     try {
       const resolvedTarget = realpathSync(target);
-      if (resolvedTarget !== root && !resolvedTarget.startsWith(`${root}${path.sep}`)) return;
+      if (!isReadable(resolvedTarget) && !isReadable(path.resolve(target))) return;
       const metadata = await stat(resolvedTarget);
       if (!metadata.isFile() || !(await matchesContent(resolvedTarget))) return;
     } catch {
       return;
     }
-    matches.push(path.relative(root, target));
+    matches.push(displayPath(root, target));
   };
 
-  const gitFiles = await listGitFiles(root, start);
-  if (gitFiles) {
+  const startInWorkspace = start === root || start.startsWith(`${root}${path.sep}`);
+  const gitFiles = startInWorkspace ? await listGitFiles(root, start) : null;
+  if (gitFiles?.length) {
     for (const target of gitFiles) {
       await addFile(target);
       if (matches.length >= limit) break;
@@ -217,11 +340,14 @@ export function createWorkspaceTools(
   mode: SandboxMode = "ask",
   approvedToolCallIds = new Set<string>(),
   onSandboxBlocked?: SandboxEscalationHandler,
+  readablePaths: string[] = [],
 ): ToolSet {
   const pathScope =
     mode === "full"
       ? "完全访问模式下也可使用外部绝对路径。"
-      : "受限模式下路径必须位于当前 workspace 内。";
+      : readablePaths.length > 0
+        ? "受限模式下路径必须位于当前 workspace 或沙箱读取白名单内；白名单目录只读。"
+        : "受限模式下路径必须位于当前 workspace 内。";
   const tools: ToolSet = {
     list_dir: tool({
       description: `列出文件与子目录。${pathScope}`,
@@ -229,13 +355,19 @@ export function createWorkspaceTools(
       execute: async ({ path: relativePath }, { toolCallId }) => {
         const input = { path: relativePath };
         try {
-          return await listDirectory(cwd, relativePath, mode, approvedToolCallIds.has(toolCallId));
+          return await listDirectory(
+            cwd,
+            relativePath,
+            mode,
+            approvedToolCallIds.has(toolCallId),
+            readablePaths,
+          );
         } catch (error) {
           return retryAfterSandboxReview(error, onSandboxBlocked, {
             toolName: "list_dir",
             toolCallId,
             input,
-            retry: () => listDirectory(cwd, relativePath, mode, true),
+            retry: () => listDirectory(cwd, relativePath, mode, true, readablePaths),
           });
         }
       },
@@ -246,13 +378,19 @@ export function createWorkspaceTools(
       execute: async ({ path: relativePath }, { toolCallId }) => {
         const input = { path: relativePath };
         try {
-          return await readTextFile(cwd, relativePath, mode, approvedToolCallIds.has(toolCallId));
+          return await readTextFile(
+            cwd,
+            relativePath,
+            mode,
+            approvedToolCallIds.has(toolCallId),
+            readablePaths,
+          );
         } catch (error) {
           return retryAfterSandboxReview(error, onSandboxBlocked, {
             toolName: "read_file",
             toolCallId,
             input,
-            retry: () => readTextFile(cwd, relativePath, mode, true),
+            retry: () => readTextFile(cwd, relativePath, mode, true, readablePaths),
           });
         }
       },
@@ -267,13 +405,19 @@ export function createWorkspaceTools(
       }),
       execute: async (options, { toolCallId }) => {
         try {
-          return await searchFiles(cwd, options, mode, approvedToolCallIds.has(toolCallId));
+          return await searchFiles(
+            cwd,
+            options,
+            mode,
+            approvedToolCallIds.has(toolCallId),
+            readablePaths,
+          );
         } catch (error) {
           return retryAfterSandboxReview(error, onSandboxBlocked, {
             toolName: "search_files",
             toolCallId,
             input: options,
-            retry: () => searchFiles(cwd, options, mode, true),
+            retry: () => searchFiles(cwd, options, mode, true, readablePaths),
           });
         }
       },
@@ -342,7 +486,12 @@ export function createWorkspaceTools(
         const input = { command, cwd: requestedCwd };
         const run = async (allowOutside: boolean) => {
           const commandCwd = resolveCommandCwd(cwd, requestedCwd, mode, allowOutside);
-          const result = await runSandboxedShell(command, { cwd: commandCwd, mode, allowOutside });
+          const result = await runSandboxedShell(command, {
+            cwd: commandCwd,
+            mode,
+            allowOutside,
+            readablePaths,
+          });
           if (result.sandboxBlocked) throw new SandboxBlockedError(result.out);
           return result;
         };
