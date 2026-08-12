@@ -1,6 +1,6 @@
 import { ArrowLeft, Lock, SquareTerminal, Wrench } from "lucide-react";
 import type { ComponentType } from "react";
-import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useNavigate, type NavLinkRenderProps } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { getReturnPath } from "@/lib/app-return-path";
@@ -114,7 +114,7 @@ function DevToolsNavItem({
 }) {
   return (
     <NavLink
-      className={({ isActive }) =>
+      className={({ isActive }: NavLinkRenderProps) =>
         `sidebar-nav-item flex h-8 items-center gap-3 px-3 text-sm transition-colors max-sm:justify-center max-sm:px-0 ${isActive ? "is-active font-medium" : ""}`
       }
       to={to}

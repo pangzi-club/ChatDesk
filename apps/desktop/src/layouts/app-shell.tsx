@@ -45,7 +45,13 @@ import {
   useRef,
   useState,
 } from "react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import {
+  NavLink,
+  Outlet,
+  useLocation,
+  useNavigate,
+  type NavLinkRenderProps,
+} from "react-router-dom";
 import { TitlebarDragRegion } from "@/components/titlebar";
 import {
   AlertDialog,
@@ -353,7 +359,7 @@ function AppShell() {
                   </summary>
                   <div className="absolute right-3 bottom-full left-3 mb-2 overflow-hidden rounded-md border border-border bg-popover p-1 shadow-lg max-md:right-2 max-md:left-2 max-sm:right-1.5 max-sm:left-1.5">
                     <NavLink
-                      className={({ isActive }) =>
+                      className={({ isActive }: NavLinkRenderProps) =>
                         `flex h-9 items-center gap-2 rounded-sm px-2 text-sm transition-colors ${
                           isActive
                             ? "bg-accent text-accent-foreground"
@@ -527,12 +533,12 @@ function SidebarNavItem({ item }: { item: (typeof navItems)[number] }) {
 
   return (
     <NavLink
-      className={({ isActive }) =>
+      className={({ isActive }: NavLinkRenderProps) =>
         `sidebar-nav-item flex h-8 w-full items-center gap-2 px-3 text-left text-[13px] font-medium transition-colors max-md:justify-center max-md:px-0 max-sm:h-8 ${isActive ? "is-active" : ""}`
       }
       to={item.to}
     >
-      {({ isActive }) => (
+      {({ isActive }: NavLinkRenderProps) => (
         <>
           <Icon className="size-4 shrink-0" />
           <span className="max-md:hidden">{item.label}</span>
