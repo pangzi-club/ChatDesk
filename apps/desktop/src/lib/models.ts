@@ -4,8 +4,8 @@ import { loadChatServerConfig, saveChatServerConfig } from "@/lib/chat-server";
 export const MODELS_STORE_KEY = "models";
 
 const KNOWN_MODEL_CONTEXT_WINDOWS: Record<string, number> = {
-  "deepseek-v4-flash": 128_000,
-  "deepseek-v4-pro": 128_000,
+  "deepseek-v4-flash": 1_000_000,
+  "deepseek-v4-pro": 1_000_000,
   "kimi-k3": 1_000_000,
   "kimi-k2.7-code": 256_000,
   "kimi-k2.7-code-highspeed": 256_000,

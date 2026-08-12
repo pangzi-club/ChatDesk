@@ -1401,7 +1401,7 @@ const providerPresets = {
         supportsTools: true,
         supportsImages: false,
         supportsReasoning: false,
-        inputContext: 128_000,
+        inputContext: 1_000_000,
         outputContext: 8_000,
       },
       {
@@ -1409,7 +1409,7 @@ const providerPresets = {
         supportsTools: true,
         supportsImages: false,
         supportsReasoning: true,
-        inputContext: 128_000,
+        inputContext: 1_000_000,
         outputContext: 64_000,
       },
     ],
