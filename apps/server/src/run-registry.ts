@@ -29,6 +29,7 @@ import {
 } from "./sandbox-boundary-reviewer.ts";
 import { SandboxReviewLogStore } from "./sandbox-review-log.ts";
 import type { SessionStore } from "./store.ts";
+import { buildSystemPrompt } from "./system-prompt.ts";
 import { hasWorkspace, selectWorkspaceToolNames } from "./tool-selection.ts";
 import { createWorkspaceTools } from "./workspace-tools.ts";
 
@@ -42,6 +43,17 @@ export const MAX_AGENT_STEPS = 30;
 
 export function reachedToolLimit(stepCount: number, finishReason: string | undefined) {
   return stepCount >= MAX_AGENT_STEPS && finishReason === "tool-calls";
+}
+
+export function resolveEffectiveWorkspace(
+  current: ChatSession,
+  input: RunStartInput,
+  resolveWorkspace: (id: string) => string | undefined,
+) {
+  const resolvedWorkspace = input.workspaceId ? resolveWorkspace(input.workspaceId) : undefined;
+  if (input.workspaceId && !resolvedWorkspace) throw new Error("workspace 不存在");
+  if (input.cwd && !input.workspaceId) throw new Error("请先选择已注册的 workspace");
+  return resolvedWorkspace ?? current.cwd;
 }
 
 function baseUrl(value: string) {
@@ -193,12 +205,16 @@ export class RunRegistry {
         ? [...current.messages, input.message]
         : current.messages;
     const now = new Date().toISOString();
-    const resolvedWorkspace = input.workspaceId
-      ? this.resolveWorkspace(input.workspaceId)
-      : undefined;
-    if (input.workspaceId && !resolvedWorkspace) throw new Error("workspace 不存在");
-    if (input.cwd && !input.workspaceId) throw new Error("请先选择已注册的 workspace");
-    const effectiveCwd = resolvedWorkspace ?? current.cwd;
+    const effectiveCwd = resolveEffectiveWorkspace(current, input, this.resolveWorkspace);
+    const workspaceToolInstructions = effectiveCwd
+      ? "本地源码检索规则：按文件名或关键词查找时必须使用 search_files，它支持 query 关键词并遵循 workspace 的 Git 排除规则；不要通过 bash 执行递归 grep、find 或 rg，尤其不要扫描 node_modules、.git、dist、target。"
+      : "";
+    const prompt = await buildSystemPrompt({
+      cwd: effectiveCwd,
+      system: input.system,
+      memory: input.memory,
+      workspaceToolInstructions,
+    });
     const session: ChatSession = {
       ...current,
       title: input.title?.trim() || deriveTitle(messages),
@@ -209,6 +225,7 @@ export class RunRegistry {
       sandboxMode,
       mcpServerIds: input.mcpServerIds ?? current.mcpServerIds,
       skillIds: input.skillIds ?? current.skillIds,
+      systemPrompt: prompt,
       messages,
     };
     await this.store.save(session);
@@ -230,17 +247,7 @@ export class RunRegistry {
         ? provider.responses(model.name.trim())
         : provider.chat(model.name.trim());
       const modelMessages = await convertToModelMessages(messages);
-      const workspaceToolInstructions = effectiveCwd
-        ? "本地源码检索规则：按文件名或关键词查找时必须使用 search_files，它支持 query 关键词并遵循 workspace 的 Git 排除规则；不要通过 bash 执行递归 grep、find 或 rg，尤其不要扫描 node_modules、.git、dist、target。"
-        : "";
-      const system = [
-        workspaceToolInstructions,
-        input.system,
-        input.memory,
-        effectiveCwd ? `当前 workspace：${effectiveCwd}` : "",
-      ]
-        .filter(Boolean)
-        .join("\n\n");
+      const system = prompt.text;
       let completedStepCount = 0;
       const result = streamText({
         model: languageModel,

@@ -8,6 +8,8 @@ export type {
   ServerModelConfig,
   SessionIndexItem,
   SessionStatus,
+  SystemPromptSection,
+  SystemPromptSnapshot,
 } from "@chatdesk/shared";
 export {
   CHAT_SCHEMA_VERSION,

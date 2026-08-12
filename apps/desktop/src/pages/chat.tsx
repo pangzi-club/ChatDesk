@@ -11,6 +11,7 @@ import {
 } from "ai";
 import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
+import type { RunStartInput, SystemPromptSnapshot } from "@chatdesk/shared";
 import {
   ArrowUp,
   Bot,
@@ -43,7 +44,6 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-
 import { ChatContextDialog } from "@/components/chat-context-dialog";
 import { ChatMemoryDialog } from "@/components/chat-memory-dialog";
 import { ChatReviewerDialog } from "@/components/chat-reviewer-dialog";
@@ -98,6 +98,7 @@ import {
   initializeChatServer,
   loadChatServerConfig,
   loadChatServerPort,
+  loadChatServerSystemPromptPreview,
   saveChatServerConfig,
   stopChatServerRun,
   subscribeChatServerEvents,
@@ -270,6 +271,7 @@ function ChatPage() {
   const sessionAttachmentsRef = useRef<ChatAttachment[]>([]);
   const suppressSaveRef = useRef(false);
   const pendingSessionRef = useRef<ChatSession | null>(null);
+  const systemPromptRef = useRef<SystemPromptSnapshot | undefined>(undefined);
   const workspaceSelectionInitializedRef = useRef(false);
   const sandboxModeInitializedRef = useRef(false);
   const savedFingerprintRef = useRef("");
@@ -299,6 +301,40 @@ function ChatPage() {
   const selectedModel = models.find((model) => model.id === selectedModelId) ?? models[0];
   const selectedModelRef = useRef(selectedModel);
   selectedModelRef.current = selectedModel;
+  const getPromptInput = useCallback(async () => {
+    const memory = memoryRef.current;
+    const cwd = workspaceRef.current.trim();
+    const workspaceId = workspaceKey.trim();
+    const skills = skillsRef.current.filter((skill) => selectedSkillIds.includes(skill.id));
+    const activeTools = await resolveActiveTools(
+      toolsRef.current,
+      selectedModelRef.current,
+      () => cwd,
+    );
+    const system = [
+      activeTools.toolNames.length
+        ? `当前已启用工具：${activeTools.toolNames.join(", ")}`
+        : "当前未启用工具。",
+      formatSkillsSystemHint(skills),
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    return {
+      system,
+      memory: memory.enabled && memory.items.length > 0 ? formatMemoryForInject(memory.items) : "",
+      cwd: cwd || undefined,
+      workspaceId: workspaceId || undefined,
+      toolNames: activeTools.toolNames,
+    } satisfies Pick<RunStartInput, "system" | "memory" | "cwd" | "workspaceId" | "toolNames">;
+  }, [selectedSkillIds, workspaceKey]);
+  const promptKey = [
+    selectedCwd,
+    workspaceKey,
+    selectedModel?.id ?? "",
+    selectedSkillIds.join(","),
+    JSON.stringify(chatMemory),
+    JSON.stringify(chatTools),
+  ].join("|");
   const selectedMcpIds = useMemo(
     () => mcpServers.filter((server) => server.enabledByDefault).map((server) => server.id),
     [mcpServers],
@@ -308,15 +344,13 @@ function ChatPage() {
       createModelTransport(
         sessionId,
         selectedModel,
-        () => memoryRef.current,
         () => toolsRef.current,
-        () => workspaceRef.current,
-        () => workspaceKey,
         () => sandboxModeRef.current,
         () => skillsRef.current.filter((skill) => selectedSkillIds.includes(skill.id)),
         () => selectedMcpIds,
+        getPromptInput,
       ),
-    [selectedMcpIds, selectedModel, selectedSkillIds, sessionId, workspaceKey],
+    [getPromptInput, selectedMcpIds, selectedModel, selectedSkillIds, sessionId],
   );
   const { addToolApprovalResponse, messages, setMessages, sendMessage, stop, status, error } =
     useChat({
@@ -369,6 +403,7 @@ function ChatPage() {
       sessionCreatedAtRef.current = new Date().toISOString();
       sessionAttachmentsRef.current = [];
       pendingSessionRef.current = null;
+      systemPromptRef.current = undefined;
       setSessionTitle("新对话");
       setSandboxMode(sandboxModeRef.current);
       savedFingerprintRef.current = "";
@@ -677,6 +712,7 @@ function ChatPage() {
     setSessionTitle(session.title);
     setWorkspaceKey(session.workspaceId ?? "");
     setSessionCwd(session.cwd ?? "");
+    systemPromptRef.current = session.systemPrompt;
     sessionCreatedAtRef.current = session.createdAt;
     sessionAttachmentsRef.current = session.attachments;
     const lastSessionMessage = session.messages[session.messages.length - 1];
@@ -745,6 +781,7 @@ function ChatPage() {
         const canonicalSession = await waitForCanonicalSession(sessionId, messageText(lastMessage));
         if (!canonicalSession) throw new Error("Chat Server 未返回 canonical 会话");
         const canonicalMessages = canonicalSession.messages;
+        systemPromptRef.current = canonicalSession.systemPrompt;
         sessionAttachmentsRef.current = canonicalSession.attachments;
         const materialized = await materializeGeneratedImages(
           sessionId,
@@ -915,6 +952,27 @@ function ChatPage() {
           >
             <Gauge className="size-4" />
           </Button>
+          <Button
+            aria-label="Reviewer 记录"
+            className="chat-icon-button"
+            size="icon"
+            title="查看当前对话的 Reviewer 记录"
+            variant="ghost"
+            type="button"
+            onClick={() => setReviewerOpen(true)}
+          >
+            <ClipboardCheck className="size-4" />
+          </Button>
+          <Button
+            aria-label="长期记忆"
+            className="chat-icon-button"
+            size="icon"
+            variant="ghost"
+            type="button"
+            onClick={() => setMemoryOpen(true)}
+          >
+            <Brain className="size-4" />
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -971,27 +1029,6 @@ function ChatPage() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button
-            aria-label="Reviewer 记录"
-            className="chat-icon-button"
-            size="icon"
-            title="查看当前对话的 Reviewer 记录"
-            variant="ghost"
-            type="button"
-            onClick={() => setReviewerOpen(true)}
-          >
-            <ClipboardCheck className="size-4" />
-          </Button>
-          <Button
-            aria-label="长期记忆"
-            className="chat-icon-button"
-            size="icon"
-            variant="ghost"
-            type="button"
-            onClick={() => setMemoryOpen(true)}
-          >
-            <Brain className="size-4" />
-          </Button>
           <Button
             aria-label="显示设置"
             className="chat-icon-button"
@@ -1330,6 +1367,12 @@ function ChatPage() {
         latestUsage={latestContextUsage}
         messageCount={messages.length}
         model={selectedModel}
+        promptKey={promptKey}
+        loadPrompt={async () =>
+          systemPromptRef.current ??
+          (await loadChatServerSystemPromptPreview(sessionId, await getPromptInput()))
+        }
+        sessionId={sessionId}
         onOpenChange={setContextOpen}
         open={contextOpen}
       />
@@ -1542,13 +1585,13 @@ async function waitForCanonicalSession(sessionId: string, expectedAssistantText:
 function createModelTransport(
   sessionId: string,
   model: ModelConfig | undefined,
-  getMemory: () => ChatMemoryStore,
   getToolsSettings: () => ChatToolsSettings,
-  getCwd: () => string,
-  getWorkspaceId: () => string,
   getSandboxMode: () => ChatSandboxMode,
   getSkills: () => SkillDefinition[],
   getMcpServerIds: () => string[],
+  getPromptInput: () => Promise<
+    Pick<RunStartInput, "system" | "memory" | "cwd" | "workspaceId" | "toolNames">
+  >,
 ): ChatTransport<UIMessage> {
   return new DefaultChatTransport<UIMessage>({
     api: `${chatServerUrl()}/v1/sessions/${sessionId}/runs`,
@@ -1562,24 +1605,15 @@ function createModelTransport(
       if (!model || model.baseUrl.startsWith("local://")) {
         throw new Error("请先在设置中配置一个真实的模型 API。");
       }
-      const memory = getMemory();
-      const memorySystem =
-        memory.enabled && memory.items.length > 0 ? formatMemoryForInject(memory.items) : "";
-      const cwd = getCwd().trim();
-      const workspaceId = getWorkspaceId().trim();
+      const promptInput = await getPromptInput();
+      const cwd = promptInput.cwd;
+      const workspaceId = promptInput.workspaceId;
       const sandboxMode = getSandboxMode();
       await ensureChatServerSession(sessionId, {
         cwd: cwd || undefined,
         workspaceId: workspaceId || undefined,
       });
-      const skillsHint = formatSkillsSystemHint(getSkills());
-      const activeTools = await resolveActiveTools(getToolsSettings(), model, getCwd);
-      const toolsHint = activeTools.toolNames.length
-        ? `当前已启用工具：${activeTools.toolNames.join(", ")}`
-        : "当前未启用工具。";
-      const workspaceHint = cwd
-        ? `当前 workspace：${cwd}\n本地文件工具以此目录为根。`
-        : "当前未选择 workspace。";
+      const activeTools = { toolNames: promptInput.toolNames ?? [] };
       const serverConfig = await loadChatServerConfig();
       const models = [
         ...serverConfig.models.filter(
@@ -1597,10 +1631,7 @@ function createModelTransport(
         body: {
           messages,
           modelId: model.id,
-          system: [workspaceHint, toolsHint, skillsHint].filter(Boolean).join("\n\n"),
-          memory: memorySystem,
-          cwd: cwd || undefined,
-          workspaceId: workspaceId || undefined,
+          ...promptInput,
           sandboxMode,
           mcpServerIds: getMcpServerIds(),
           skillIds: getSkills().map((skill) => skill.id),

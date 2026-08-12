@@ -20,9 +20,10 @@ import { MemoryStore } from "./memory-store.ts";
 import { listProviderModels, testModelConnection } from "./model-test.ts";
 import { nodePlatform } from "./platform/index.ts";
 import type { ChatSession, RunStartInput } from "./protocol.ts";
-import { RunRegistry } from "./run-registry.ts";
+import { RunRegistry, resolveEffectiveWorkspace } from "./run-registry.ts";
 import { scanSkills } from "./skills-store.ts";
 import { SessionStore } from "./store.ts";
+import { buildSystemPrompt } from "./system-prompt.ts";
 import { WorkspaceStore } from "./workspace-store.ts";
 
 const runInputSchema = z.object({
@@ -940,6 +941,37 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return jsonError(message, message.includes("已有正在运行") ? 409 : 400);
+    }
+  });
+
+  app.post("/v1/sessions/:id/system-prompt/preview", async (c) => {
+    try {
+      const body = parseJson(await c.req.json(), runInputSchema) as RunStartInput;
+      const session = await store.get(c.req.param("id"));
+      if (session?.systemPrompt) return c.json(session.systemPrompt);
+      if (session) {
+        return c.json({
+          text: "",
+          sections: [],
+          cwd: session.cwd,
+        });
+      }
+      const current = session ?? ({ cwd: undefined } as ChatSession);
+      const cwd = resolveEffectiveWorkspace(current, body, (id) => workspaces.get(id)?.path);
+      const workspaceToolInstructions = cwd
+        ? "本地源码检索规则：按文件名或关键词查找时必须使用 search_files，它支持 query 关键词并遵循 workspace 的 Git 排除规则；不要通过 bash 执行递归 grep、find 或 rg，尤其不要扫描 node_modules、.git、dist、target。"
+        : "";
+      return c.json(
+        await buildSystemPrompt({
+          cwd,
+          system: body.system,
+          memory: body.memory,
+          workspaceToolInstructions,
+        }),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return jsonError(message, message === "会话不存在" ? 404 : 400);
     }
   });
 

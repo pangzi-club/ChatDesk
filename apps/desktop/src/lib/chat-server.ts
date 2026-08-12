@@ -6,7 +6,9 @@ import type {
   ChatServerReviewerLog,
   ChatSession,
   HealthResponse,
+  RunStartInput,
   SessionIndexItem,
+  SystemPromptSnapshot,
 } from "@chatdesk/shared";
 import { invoke, isTauri as tauriIsTauri } from "@tauri-apps/api/core";
 import type { UIMessage } from "ai";
@@ -55,6 +57,7 @@ export type ServerWorkspaceProject = {
   createdAt: string;
   updatedAt: string;
 };
+export type SystemPromptPreview = SystemPromptSnapshot;
 
 export type {
   ChatIndexItem,
@@ -505,6 +508,23 @@ export async function deleteChatServerSession(sessionId: string, port = CHAT_SER
 
 export async function stopChatServerRun(sessionId: string, port = CHAT_SERVER_DEFAULT_PORT) {
   return createClient(port).stopRun(sessionId);
+}
+
+export async function loadChatServerSystemPromptPreview(
+  sessionId: string,
+  input: Pick<RunStartInput, "system" | "memory" | "cwd" | "workspaceId" | "toolNames">,
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  const response = await chatServerRequest(
+    `/v1/sessions/${encodeURIComponent(sessionId)}/system-prompt/preview`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+    port,
+  );
+  return (await response.json()) as SystemPromptPreview;
 }
 
 export async function chatServerFetch(input: RequestInfo | URL, init?: RequestInit, port?: number) {

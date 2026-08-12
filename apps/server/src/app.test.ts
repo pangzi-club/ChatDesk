@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "vitest";
@@ -84,6 +84,76 @@ describe("chat server", () => {
     });
     assert.equal(deleted.status, 204);
     assert.equal(await server.store.get("session-test"), null);
+  });
+
+  it("previews the system prompt without starting a run", async () => {
+    const server = await createTestServer();
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "chatdesk-preview-workspace-"));
+    temporaryDirectories.push(workspace);
+    await writeFile(path.join(workspace, "AGENTS.md"), "只改动源码。", "utf8");
+    const registered = await server.app.request("http://localhost/v1/workspaces", {
+      method: "POST",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ path: workspace }),
+    });
+    const project = (await registered.json()) as { id: string };
+    const response = await server.app.request(
+      "http://localhost/v1/sessions/new-prompt-preview/system-prompt/preview",
+      {
+        method: "POST",
+        headers: { ...auth(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workspaceId: project.id,
+          system: "工具提示",
+          memory: "记忆提示",
+        }),
+      },
+    );
+    assert.equal(response.status, 200);
+    const preview = (await response.json()) as {
+      text: string;
+      sections: Array<{ id: string; included: boolean }>;
+      cwd?: string;
+    };
+    assert.equal(preview.cwd, await realpath(workspace));
+    assert.match(preview.text, /只改动源码。[\s\S]*工具提示[\s\S]*记忆提示/);
+    assert.equal(preview.sections.find((section) => section.id === "agents")?.included, true);
+    assert.equal(server.runs.activeCount(), 0);
+  });
+
+  it("uses the saved prompt snapshot for historical sessions", async () => {
+    const server = await createTestServer();
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "chatdesk-history-prompt-"));
+    temporaryDirectories.push(workspace);
+    await writeFile(path.join(workspace, "AGENTS.md"), "当前文件规则", "utf8");
+    const created = await server.app.request("http://localhost/v1/sessions", {
+      method: "POST",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "historical-prompt" }),
+    });
+    assert.equal(created.status, 201);
+    const historical = await server.store.get("historical-prompt");
+    assert.ok(historical);
+    await server.store.save({
+      ...historical,
+      cwd: workspace,
+      systemPrompt: {
+        text: "保存时的规则",
+        sections: [{ id: "agents", label: "AGENTS.md", content: "保存时的规则", included: true }],
+        cwd: workspace,
+      },
+    });
+
+    const response = await server.app.request(
+      "http://localhost/v1/sessions/historical-prompt/system-prompt/preview",
+      { method: "POST", headers: { ...auth(), "Content-Type": "application/json" }, body: "{}" },
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      text: "保存时的规则",
+      sections: [{ id: "agents", label: "AGENTS.md", content: "保存时的规则", included: true }],
+      cwd: workspace,
+    });
   });
 
   it("reports archive overwrites from the previous stored state", async () => {

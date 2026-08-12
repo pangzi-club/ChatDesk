@@ -23,6 +23,20 @@ export type ChatAttachment = {
   createdAt: string;
 };
 
+export type SystemPromptSection = {
+  id: string;
+  label: string;
+  content: string;
+  included: boolean;
+  path?: string;
+};
+
+export type SystemPromptSnapshot = {
+  text: string;
+  sections: SystemPromptSection[];
+  cwd?: string;
+};
+
 export type ChatSession = {
   schemaVersion: typeof CHAT_SCHEMA_VERSION;
   id: string;
@@ -35,6 +49,7 @@ export type ChatSession = {
   sandboxMode?: SandboxMode;
   mcpServerIds?: string[];
   skillIds?: string[];
+  systemPrompt?: SystemPromptSnapshot;
   messages: UIMessage[];
   attachments: ChatAttachment[];
 };
