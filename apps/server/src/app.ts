@@ -858,8 +858,14 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     const draft = runs.draftMessage(session.id);
     if (!draft?.parts.length) return c.json(session);
     const persisted = session.messages.find((message) => message.id === draft.id);
-    const draftWithMetadata = persisted?.metadata
-      ? { ...draft, metadata: persisted.metadata }
+    const draftWithMetadata = persisted
+      ? {
+          ...persisted,
+          parts: [
+            ...persisted.parts.filter((part) => part.type !== "text"),
+            ...draft.parts.filter((part) => part.type === "text"),
+          ],
+        }
       : draft;
     return c.json({
       ...session,

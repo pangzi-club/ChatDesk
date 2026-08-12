@@ -193,7 +193,12 @@ function mergeLiveDraft(messages: UIMessage[], draft: LiveDraft | undefined) {
   const existingIndex = messages.findIndex((message) => message.id === draft.runId);
   if (existingIndex < 0) return [...messages, assistant];
   return messages.map((message, index) =>
-    index === existingIndex ? { ...message, ...assistant, metadata: message.metadata } : message,
+    index === existingIndex
+      ? {
+          ...message,
+          parts: [...message.parts.filter((part) => part.type !== "text"), ...assistant.parts],
+        }
+      : message,
   );
 }
 
