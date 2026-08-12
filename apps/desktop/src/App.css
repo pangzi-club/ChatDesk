@@ -1009,9 +1009,44 @@
   font-size: 12px;
 }
 .chat-message-text {
+  overflow-wrap: anywhere;
   color: var(--chat-ink);
   font-size: var(--chat-text-size);
   line-height: var(--chat-text-line-height);
+}
+.chat-message-text-wrap {
+  position: relative;
+  min-width: 0;
+}
+.chat-message-text-wrap.is-collapsed .chat-message-text {
+  max-height: min(360px, 46vh);
+  overflow: hidden;
+}
+.chat-message-fade {
+  pointer-events: none;
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 72px;
+  background: linear-gradient(to bottom, transparent, #f1f1f2 88%);
+}
+.chat-message-text-wrap.is-collapsed .chat-message-fade {
+  bottom: 32px;
+}
+.user-message .chat-message-expand {
+  position: relative;
+  z-index: 1;
+  height: 28px;
+  margin-top: 4px;
+  padding: 0 6px;
+  color: var(--chat-muted);
+  font-size: 11px;
+}
+.user-message .chat-message-expand:hover,
+.user-message .chat-message-expand:focus-visible {
+  color: var(--chat-ink);
+  background: transparent;
 }
 .chat-message-text p {
   margin: 0;
@@ -2082,6 +2117,9 @@
 
 .dark .user-message .chat-message-text {
   background: #343541;
+}
+.dark .chat-message-fade {
+  background: linear-gradient(to bottom, transparent, #343541 88%);
 }
 
 /* Empty chat is an invitation: keep the shell quiet and make the next actions obvious. */

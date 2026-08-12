@@ -19,6 +19,7 @@ import {
   Bug,
   Check,
   ChevronDown,
+  ChevronUp,
   CircleStop,
   ClipboardCheck,
   Copy,
@@ -142,6 +143,8 @@ import { loadWorkspaceProjects } from "@/lib/workspaces";
 
 const EMPTY_STRING_ARRAY: string[] = [];
 const DEFAULT_WORKSPACE_LABEL = "Default Workspace";
+const CHAT_MESSAGE_COLLAPSE_CHAR_LIMIT = 1200;
+const CHAT_MESSAGE_COLLAPSE_LINE_LIMIT = 18;
 
 const EMPTY_CHAT_ACTIONS = [
   {
@@ -1430,6 +1433,7 @@ function MessageBubble({
   const text = messageText(message);
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const toolParts = message.parts.filter(isToolUIPart);
   const pendingApprovalParts = toolParts.filter((part) => part.state === "approval-requested");
   if (!isUser && !text.trim() && toolParts.length === 0) return null;
@@ -1438,6 +1442,10 @@ function MessageBubble({
   const toolLimitReached = Boolean(
     !isUser && (message.metadata as { toolLimitReached?: boolean } | undefined)?.toolLimitReached,
   );
+  const shouldCollapse =
+    isUser &&
+    (text.length > CHAT_MESSAGE_COLLAPSE_CHAR_LIMIT ||
+      text.split("\n").length > CHAT_MESSAGE_COLLAPSE_LINE_LIMIT);
 
   async function copyMessage() {
     if (!text.trim() || !navigator.clipboard) return;
@@ -1508,10 +1516,35 @@ function MessageBubble({
           </fieldset>
         ) : null}
         {text.trim() ? (
-          <div className="chat-message-text">
-            <Streamdown isAnimating={!isUser && isStreaming} plugins={{ code }}>
-              {text}
-            </Streamdown>
+          <div
+            className={`chat-message-text-wrap ${shouldCollapse && !expanded ? "is-collapsed" : ""}`}
+          >
+            <div className="chat-message-text">
+              <Streamdown isAnimating={!isUser && isStreaming} plugins={{ code }}>
+                {text}
+              </Streamdown>
+            </div>
+            {shouldCollapse && !expanded ? <div className="chat-message-fade" /> : null}
+            {shouldCollapse ? (
+              <Button
+                aria-expanded={expanded}
+                className="chat-message-expand"
+                onClick={() => setExpanded((value) => !value)}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                {expanded ? (
+                  <>
+                    <ChevronUp className="size-3.5" /> 收起
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="size-3.5" /> 展开全文
+                  </>
+                )}
+              </Button>
+            ) : null}
           </div>
         ) : null}
         {toolLimitReached ? (
