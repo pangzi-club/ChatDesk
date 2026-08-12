@@ -4,8 +4,8 @@ These instructions apply to the entire repository.
 
 ## Package Manager
 
-- Use the pnpm version declared in `package.json` (`pnpm@9.15.9`).
-- Prefer Corepack to activate the pinned version when necessary: `corepack prepare pnpm@9.15.9 --activate`.
+- Use the pnpm version declared in `package.json` (`pnpm@11.21.0`).
+- Prefer Corepack to activate the pinned version when necessary: `corepack prepare pnpm@11.21.0 --activate`.
 - Use `pnpm` for installing dependencies and running scripts. Do not use npm or Yarn, and do not create their lockfiles.
 
 ## Required Final Step

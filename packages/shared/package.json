@@ -4,7 +4,7 @@
   "version": "0.2.0",
   "description": "Runtime-neutral contracts and algorithms shared by ChatDesk runtimes",
   "license": "MIT",
-  "packageManager": "pnpm@9.15.9",
+  "packageManager": "pnpm@11.21.0",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
