@@ -47,10 +47,10 @@ import {
 } from "react";
 import {
   NavLink,
+  type NavLinkRenderProps,
   Outlet,
   useLocation,
   useNavigate,
-  type NavLinkRenderProps,
 } from "react-router-dom";
 import { TitlebarDragRegion } from "@/components/titlebar";
 import {
@@ -87,6 +87,11 @@ import { openExternal } from "@/lib/platform";
 import { settingsStore } from "@/lib/settings-store";
 import { appendSystemLog } from "@/lib/system-log";
 import { applyTrayEnabled, loadTrayEnabled } from "@/lib/tray";
+import {
+  getWorkspaceSessionKey,
+  sortWorkspaceProjects,
+  type WorkspaceSort,
+} from "@/lib/workspace-conversation-utils";
 import {
   addWorkspaceProject,
   loadWorkspaceProjects,
@@ -556,8 +561,6 @@ type WorkspaceChatGroup = {
   sessions: ChatIndexItem[];
 };
 
-type WorkspaceSort = "name" | "updated" | "count";
-
 function WorkspaceConversationGroups() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -955,57 +958,14 @@ function WorkspaceConversationSkeleton() {
   );
 }
 
-function sortWorkspaceProjects(
-  projects: Awaited<ReturnType<typeof loadWorkspaceProjects>>,
-  sessions: ChatIndexItem[],
-  sort: WorkspaceSort,
-) {
-  const latestSessionByWorkspace = new Map<string, string>();
-  const sessionCountByWorkspace = new Map<string, number>();
-  for (const session of sessions) {
-    if (!session.workspaceId) continue;
-    sessionCountByWorkspace.set(
-      session.workspaceId,
-      (sessionCountByWorkspace.get(session.workspaceId) ?? 0) + 1,
-    );
-    const current = latestSessionByWorkspace.get(session.workspaceId);
-    if (!current || session.updatedAt > current) {
-      latestSessionByWorkspace.set(session.workspaceId, session.updatedAt);
-    }
-  }
-
-  return [...projects].sort((a, b) => {
-    if (sort === "name") {
-      return pathBasename(a.path).localeCompare(pathBasename(b.path), undefined, {
-        sensitivity: "base",
-      });
-    }
-    if (sort === "count") {
-      const countDifference =
-        (sessionCountByWorkspace.get(b.id) ?? 0) - (sessionCountByWorkspace.get(a.id) ?? 0);
-      if (countDifference !== 0) return countDifference;
-      return pathBasename(a.path).localeCompare(pathBasename(b.path), undefined, {
-        sensitivity: "base",
-      });
-    }
-    const aUpdated = latestSessionByWorkspace.get(a.id) ?? a.createdAt;
-    const bUpdated = latestSessionByWorkspace.get(b.id) ?? b.createdAt;
-    return bUpdated.localeCompare(aUpdated);
-  });
-}
-
 function groupChatsByWorkspace(
   sessions: ChatIndexItem[],
   projects: Awaited<ReturnType<typeof loadWorkspaceProjects>>,
 ): WorkspaceChatGroup[] {
   const sessionsByWorkspace = new Map<string, ChatIndexItem[]>();
   const defaultSessions: ChatIndexItem[] = [];
-  const projectIdByPath = new Map(projects.map((project) => [project.path, project.id]));
-
   for (const session of sessions) {
-    const workspaceKey =
-      session.workspaceId ??
-      (session.cwd ? (projectIdByPath.get(session.cwd) ?? `cwd:${session.cwd}`) : undefined);
+    const workspaceKey = getWorkspaceSessionKey(session, projects);
     if (!workspaceKey) {
       defaultSessions.push(session);
       continue;
