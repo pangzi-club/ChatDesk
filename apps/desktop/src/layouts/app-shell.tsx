@@ -45,7 +45,13 @@ import {
   useRef,
   useState,
 } from "react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import {
+  NavLink,
+  type NavLinkRenderProps,
+  Outlet,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 import { TitlebarDragRegion } from "@/components/titlebar";
 import {
   AlertDialog,
@@ -81,6 +87,11 @@ import { openExternal } from "@/lib/platform";
 import { settingsStore } from "@/lib/settings-store";
 import { appendSystemLog } from "@/lib/system-log";
 import { applyTrayEnabled, loadTrayEnabled } from "@/lib/tray";
+import {
+  getWorkspaceSessionKey,
+  sortWorkspaceProjects,
+  type WorkspaceSort,
+} from "@/lib/workspace-conversation-utils";
 import {
   addWorkspaceProject,
   loadWorkspaceProjects,
@@ -353,7 +364,7 @@ function AppShell() {
                   </summary>
                   <div className="absolute right-3 bottom-full left-3 mb-2 overflow-hidden rounded-md border border-border bg-popover p-1 shadow-lg max-md:right-2 max-md:left-2 max-sm:right-1.5 max-sm:left-1.5">
                     <NavLink
-                      className={({ isActive }) =>
+                      className={({ isActive }: NavLinkRenderProps) =>
                         `flex h-9 items-center gap-2 rounded-sm px-2 text-sm transition-colors ${
                           isActive
                             ? "bg-accent text-accent-foreground"
@@ -527,12 +538,12 @@ function SidebarNavItem({ item }: { item: (typeof navItems)[number] }) {
 
   return (
     <NavLink
-      className={({ isActive }) =>
+      className={({ isActive }: NavLinkRenderProps) =>
         `sidebar-nav-item flex h-8 w-full items-center gap-2 px-3 text-left text-[13px] font-medium transition-colors max-md:justify-center max-md:px-0 max-sm:h-8 ${isActive ? "is-active" : ""}`
       }
       to={item.to}
     >
-      {({ isActive }) => (
+      {({ isActive }: NavLinkRenderProps) => (
         <>
           <Icon className="size-4 shrink-0" />
           <span className="max-md:hidden">{item.label}</span>
@@ -549,8 +560,6 @@ type WorkspaceChatGroup = {
   cwd?: string;
   sessions: ChatIndexItem[];
 };
-
-type WorkspaceSort = "name" | "updated" | "count";
 
 function WorkspaceConversationGroups() {
   const navigate = useNavigate();
@@ -949,57 +958,14 @@ function WorkspaceConversationSkeleton() {
   );
 }
 
-function sortWorkspaceProjects(
-  projects: Awaited<ReturnType<typeof loadWorkspaceProjects>>,
-  sessions: ChatIndexItem[],
-  sort: WorkspaceSort,
-) {
-  const latestSessionByWorkspace = new Map<string, string>();
-  const sessionCountByWorkspace = new Map<string, number>();
-  for (const session of sessions) {
-    if (!session.workspaceId) continue;
-    sessionCountByWorkspace.set(
-      session.workspaceId,
-      (sessionCountByWorkspace.get(session.workspaceId) ?? 0) + 1,
-    );
-    const current = latestSessionByWorkspace.get(session.workspaceId);
-    if (!current || session.updatedAt > current) {
-      latestSessionByWorkspace.set(session.workspaceId, session.updatedAt);
-    }
-  }
-
-  return [...projects].sort((a, b) => {
-    if (sort === "name") {
-      return pathBasename(a.path).localeCompare(pathBasename(b.path), undefined, {
-        sensitivity: "base",
-      });
-    }
-    if (sort === "count") {
-      const countDifference =
-        (sessionCountByWorkspace.get(b.id) ?? 0) - (sessionCountByWorkspace.get(a.id) ?? 0);
-      if (countDifference !== 0) return countDifference;
-      return pathBasename(a.path).localeCompare(pathBasename(b.path), undefined, {
-        sensitivity: "base",
-      });
-    }
-    const aUpdated = latestSessionByWorkspace.get(a.id) ?? a.createdAt;
-    const bUpdated = latestSessionByWorkspace.get(b.id) ?? b.createdAt;
-    return bUpdated.localeCompare(aUpdated);
-  });
-}
-
 function groupChatsByWorkspace(
   sessions: ChatIndexItem[],
   projects: Awaited<ReturnType<typeof loadWorkspaceProjects>>,
 ): WorkspaceChatGroup[] {
   const sessionsByWorkspace = new Map<string, ChatIndexItem[]>();
   const defaultSessions: ChatIndexItem[] = [];
-  const projectIdByPath = new Map(projects.map((project) => [project.path, project.id]));
-
   for (const session of sessions) {
-    const workspaceKey =
-      session.workspaceId ??
-      (session.cwd ? (projectIdByPath.get(session.cwd) ?? `cwd:${session.cwd}`) : undefined);
+    const workspaceKey = getWorkspaceSessionKey(session, projects);
     if (!workspaceKey) {
       defaultSessions.push(session);
       continue;

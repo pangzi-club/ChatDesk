@@ -5,6 +5,7 @@ export default defineConfig({
     environment: "node",
     include: [
       "apps/server/src/**/*.test.ts",
+      "apps/desktop/src/**/*.test.ts",
       "packages/shared/src/**/*.test.ts",
       "packages/chat-client/src/**/*.test.ts",
     ],

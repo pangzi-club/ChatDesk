@@ -27,7 +27,13 @@ import {
   X,
 } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import {
+  NavLink,
+  type NavLinkRenderProps,
+  Outlet,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 
 import { ChatMemorySettings } from "@/components/chat-memory-settings";
 import { ChatToolsSettings } from "@/components/chat-tools-settings";
@@ -391,7 +397,7 @@ function SettingsNavItem({
 }) {
   return (
     <NavLink
-      className={({ isActive }) =>
+      className={({ isActive }: NavLinkRenderProps) =>
         `sidebar-nav-item flex h-8 items-center gap-2 px-3 text-[13px] transition-colors max-sm:justify-center max-sm:px-0 ${isActive ? "is-active font-medium" : ""}`
       }
       to={to}
