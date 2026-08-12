@@ -649,7 +649,18 @@
   align-items: center;
 }
 .chat-brand {
+  position: relative;
+  z-index: 20;
   gap: 11px;
+}
+.chat-brand-title {
+  min-width: 0;
+}
+.chat-brand-title-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
 }
 .chat-brand-mark {
   display: grid;
@@ -675,8 +686,17 @@
 }
 .chat-brand h1 {
   margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 16px;
   font-weight: 680;
+}
+.chat-title-action {
+  width: 24px;
+  height: 24px;
+  color: var(--chat-muted);
 }
 .chat-header-actions {
   gap: 2px;

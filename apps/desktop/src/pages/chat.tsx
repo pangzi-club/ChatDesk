@@ -293,6 +293,9 @@ function ChatPage() {
   const skipSmoothScrollRef = useRef(false);
   const isComposingRef = useRef(false);
   const [sessionToDelete, setSessionToDelete] = useState<ChatIndexItem | null>(null);
+  const [conversationIdCopied, setConversationIdCopied] = useState(false);
+  const [conversationMenuOpen, setConversationMenuOpen] = useState(false);
+  const conversationMenuCloseTimerRef = useRef<number | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
@@ -314,6 +317,15 @@ function ChatPage() {
   const selectedModel = models.find((model) => model.id === selectedModelId) ?? models[0];
   const selectedModelRef = useRef(selectedModel);
   selectedModelRef.current = selectedModel;
+
+  useEffect(() => {
+    return () => {
+      if (conversationMenuCloseTimerRef.current !== null) {
+        window.clearTimeout(conversationMenuCloseTimerRef.current);
+      }
+    };
+  }, []);
+
   const getPromptInput = useCallback(async () => {
     const memory = memoryRef.current;
     const cwd = workspaceRef.current.trim();
@@ -899,6 +911,35 @@ function ChatPage() {
     );
   }
 
+  async function copyConversationId() {
+    if (!navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(sessionId);
+      setConversationIdCopied(true);
+      window.setTimeout(() => setConversationIdCopied(false), 1500);
+    } catch {
+      setConversationIdCopied(false);
+    }
+  }
+
+  function keepConversationMenuOpen() {
+    if (conversationMenuCloseTimerRef.current !== null) {
+      window.clearTimeout(conversationMenuCloseTimerRef.current);
+      conversationMenuCloseTimerRef.current = null;
+    }
+    setConversationMenuOpen(true);
+  }
+
+  function scheduleConversationMenuClose() {
+    if (conversationMenuCloseTimerRef.current !== null) {
+      window.clearTimeout(conversationMenuCloseTimerRef.current);
+    }
+    conversationMenuCloseTimerRef.current = window.setTimeout(() => {
+      conversationMenuCloseTimerRef.current = null;
+      setConversationMenuOpen(false);
+    }, 140);
+  }
+
   async function confirmRemoveSession() {
     const item = sessionToDelete;
     if (!item) return;
@@ -938,9 +979,49 @@ function ChatPage() {
           <div className="chat-brand-mark">
             <Sparkles className="size-4" />
           </div>
-          <div>
+          <div className="chat-brand-title">
             <p className="chat-kicker">Workspace assistant</p>
-            <h1>{sessionTitle}</h1>
+            <div className="chat-brand-title-row">
+              <h1>{sessionTitle}</h1>
+              <DropdownMenu
+                modal={false}
+                open={conversationMenuOpen}
+                onOpenChange={(open) => {
+                  if (open) keepConversationMenuOpen();
+                  else scheduleConversationMenuClose();
+                }}
+              >
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    aria-label="对话操作"
+                    className="chat-title-action"
+                    size="icon"
+                    title="对话操作"
+                    type="button"
+                    variant="ghost"
+                    onPointerEnter={keepConversationMenuOpen}
+                    onPointerLeave={scheduleConversationMenuClose}
+                  >
+                    <MoreHorizontal className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="start"
+                  onPointerEnter={keepConversationMenuOpen}
+                  onPointerLeave={scheduleConversationMenuClose}
+                  sideOffset={6}
+                >
+                  <DropdownMenuItem onSelect={() => void copyConversationId()}>
+                    {conversationIdCopied ? (
+                      <Check className="size-4 text-emerald-500" />
+                    ) : (
+                      <Copy className="size-4" />
+                    )}
+                    {conversationIdCopied ? "已复制对话 ID" : "复制对话 ID"}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </div>
         <div className="chat-header-actions">
@@ -995,7 +1076,7 @@ function ChatPage() {
                 variant="ghost"
                 type="button"
               >
-                <MoreHorizontal className="size-4" />
+                <History className="size-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="chat-history-menu" sideOffset={8}>
