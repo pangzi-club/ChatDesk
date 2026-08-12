@@ -29,10 +29,10 @@ import {
 import { type FormEvent, useEffect, useState } from "react";
 import {
   NavLink,
+  type NavLinkRenderProps,
   Outlet,
   useLocation,
   useNavigate,
-  type NavLinkRenderProps,
 } from "react-router-dom";
 
 import { ChatMemorySettings } from "@/components/chat-memory-settings";

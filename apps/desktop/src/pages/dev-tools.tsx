@@ -1,6 +1,6 @@
 import { ArrowLeft, Lock, SquareTerminal, Wrench } from "lucide-react";
 import type { ComponentType } from "react";
-import { Link, NavLink, Outlet, useNavigate, type NavLinkRenderProps } from "react-router-dom";
+import { Link, NavLink, type NavLinkRenderProps, Outlet, useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { getReturnPath } from "@/lib/app-return-path";
