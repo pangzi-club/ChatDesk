@@ -83,6 +83,11 @@ function ReviewEntry({ entry }: { entry: ChatServerReviewerLog }) {
           </span>
         ))}
       </div>
+      {entry.command ? (
+        <pre className="mt-2 overflow-x-auto rounded border border-border bg-muted/40 px-2.5 py-2 font-mono text-[11px] leading-5">
+          <code>{entry.command}</code>
+        </pre>
+      ) : null}
       {entry.rationale || entry.reason || entry.error ? (
         <p className="mt-2 whitespace-pre-wrap break-words text-muted-foreground text-xs leading-5">
           {entry.rationale || entry.reason || entry.error}

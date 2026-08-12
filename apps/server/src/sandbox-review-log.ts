@@ -14,6 +14,7 @@ export type SandboxReviewLogEntry = {
   runId?: string;
   toolCallId?: string;
   toolName?: string;
+  command?: string;
   reasons: SandboxBoundaryReason[];
   decision: SandboxReviewLogDecision;
   rationale?: string;

@@ -565,7 +565,7 @@ async function logSandboxReview(
   payload: {
     sessionId?: string;
     runId?: string;
-    toolCall?: { toolCallId?: string; toolName?: string };
+    toolCall?: { toolCallId?: string; toolName?: string; input?: unknown };
     assessment: SandboxBoundaryAssessment;
     decision: string;
     rationale?: string;
@@ -581,6 +581,7 @@ async function logSandboxReview(
       runId: payload.runId,
       toolCallId: payload.toolCall?.toolCallId,
       toolName: payload.toolCall?.toolName,
+      command: extractBashCommand(payload.toolCall),
       reasons: payload.assessment.reasons,
       decision: payload.decision as "approve" | "deny" | "user-approval",
       rationale: payload.rationale,
@@ -599,6 +600,7 @@ async function logSandboxReview(
       runId: payload.runId,
       toolCallId: payload.toolCall?.toolCallId,
       toolName: payload.toolCall?.toolName,
+      command: extractBashCommand(payload.toolCall),
       reasons: payload.assessment.reasons,
       decision: payload.decision,
       rationale: payload.rationale,
@@ -608,6 +610,16 @@ async function logSandboxReview(
       error: payload.error?.replace(/Bearer\s+\S+/gi, "Bearer [redacted]").slice(0, 500),
     }),
   );
+}
+
+function extractBashCommand(toolCall: { toolName?: string; input?: unknown } | undefined) {
+  if (toolCall?.toolName !== "bash" || !toolCall.input || typeof toolCall.input !== "object") {
+    return undefined;
+  }
+  const command = (toolCall.input as { command?: unknown }).command;
+  return typeof command === "string" && command.trim()
+    ? command.replace(/Bearer\s+\S+/gi, "Bearer [redacted]").slice(0, 12_000)
+    : undefined;
 }
 
 function selectTools(tools: Record<string, unknown>, names: string[] | undefined) {

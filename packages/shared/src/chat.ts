@@ -140,6 +140,7 @@ export type ChatServerReviewerLog = {
   runId?: string;
   toolCallId?: string;
   toolName?: string;
+  command?: string;
   reasons: string[];
   decision: "approve" | "deny" | "user-approval";
   rationale?: string;
