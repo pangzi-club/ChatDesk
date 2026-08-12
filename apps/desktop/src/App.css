@@ -1744,6 +1744,12 @@
   display: inline-flex;
   color: #898989;
 }
+.chat-tool-call-icon.is-sandbox {
+  color: #c45b45;
+}
+.chat-tool-call-icon.is-manual {
+  color: #b27a25;
+}
 .chat-tool-call-title {
   flex: 0 1 auto;
   min-width: 0;

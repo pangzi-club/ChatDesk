@@ -10,7 +10,9 @@ import {
   type LucideIcon,
   MousePointerClick,
   Search,
+  ShieldAlert,
   Terminal,
+  UserRoundCheck,
   Wrench,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -245,6 +247,23 @@ function statusLabel(options: {
   return state;
 }
 
+function isSandboxFailure(errorText: string | undefined) {
+  return Boolean(errorText && /沙箱|sandbox/i.test(errorText));
+}
+
+function renderToolIcon(options: {
+  pending: boolean;
+  toolIcon: LucideIcon;
+  sandboxFailure?: boolean;
+  manualApproval?: boolean;
+}) {
+  if (options.sandboxFailure) return <ShieldAlert className="size-3.5" />;
+  if (options.manualApproval) return <UserRoundCheck className="size-3.5" />;
+  if (options.pending) return <LoaderCircle className="size-3.5 animate-spin" />;
+  const ToolIcon = options.toolIcon;
+  return <ToolIcon className="size-3.5" />;
+}
+
 export function ChatToolCallCard({
   toolName,
   state,
@@ -261,6 +280,8 @@ export function ChatToolCallCard({
   const outputError = extractToolOutputError(output);
   const resolvedError = errorText || outputError;
   const failed = state === "output-error" || Boolean(resolvedError);
+  const sandboxFailure = failed && isSandboxFailure(resolvedError);
+  const manualApproval = state === "approval-requested" && !approval?.isAutomatic;
   const webSearch =
     toolName === "web_search" || toolName === "web_search_preview"
       ? extractWebSearchSummary(output)
@@ -331,12 +352,16 @@ export function ChatToolCallCard({
         type="button"
         onClick={compact ? undefined : () => setOpen((value) => !value)}
       >
-        <span className="chat-tool-call-icon">
-          {pending ? (
-            <LoaderCircle className="size-3.5 animate-spin" />
-          ) : (
-            <ToolIcon className="size-3.5" />
-          )}
+        <span
+          className={`chat-tool-call-icon ${sandboxFailure ? "is-sandbox" : ""} ${manualApproval ? "is-manual" : ""}`}
+          title={sandboxFailure ? "沙箱拒绝" : manualApproval ? "等待人工确认" : undefined}
+        >
+          {renderToolIcon({
+            pending,
+            toolIcon: ToolIcon,
+            sandboxFailure,
+            manualApproval,
+          })}
         </span>
         <span className="chat-tool-call-title">
           {title}
@@ -450,6 +475,11 @@ export function ChatToolCallGroup({ calls }: ChatToolCallGroupProps) {
     lastCall.state === "input-available" ||
     lastCall.state === "approval-requested";
   const ToolIcon = getChatToolIcon(lastCall.toolName);
+  const lastOutputError = extractToolOutputError(lastCall.output);
+  const lastError = lastCall.errorText || lastOutputError;
+  const sandboxFailure =
+    (lastCall.state === "output-error" || Boolean(lastError)) && isSandboxFailure(lastError);
+  const manualApproval = lastCall.state === "approval-requested" && !lastCall.approval?.isAutomatic;
 
   return (
     <div className={`chat-tool-call-group ${pending ? "is-pending" : ""}`}>
@@ -459,12 +489,16 @@ export function ChatToolCallGroup({ calls }: ChatToolCallGroupProps) {
         type="button"
         onClick={() => setOpen((value) => !value)}
       >
-        <span className="chat-tool-call-icon">
-          {pending ? (
-            <LoaderCircle className="size-3.5 animate-spin" />
-          ) : (
-            <ToolIcon className="size-3.5" />
-          )}
+        <span
+          className={`chat-tool-call-icon ${sandboxFailure ? "is-sandbox" : ""} ${manualApproval ? "is-manual" : ""}`}
+          title={sandboxFailure ? "沙箱拒绝" : manualApproval ? "等待人工确认" : undefined}
+        >
+          {renderToolIcon({
+            pending,
+            toolIcon: ToolIcon,
+            sandboxFailure,
+            manualApproval,
+          })}
         </span>
         <span className="chat-tool-call-title">{getChatToolSummary(lastCall)}</span>
         {calls.length > 1 ? <span className="chat-tool-call-count">{calls.length}</span> : null}
