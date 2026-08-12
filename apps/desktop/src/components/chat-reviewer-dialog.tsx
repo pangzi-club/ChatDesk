@@ -113,7 +113,7 @@ export function ChatReviewerDialog({ open, sessionId, onOpenChange }: ChatReview
         <DialogHeader>
           <DialogTitle>Reviewer 记录</DialogTitle>
           <DialogDescription>
-            仅显示当前对话。Reviewer 只处理越过 workspace 或 Seatbelt 的请求；失败时会回退人工确认。
+            仅显示当前对话。Approve for me 先尝试沙箱执行；只有被沙箱拦截的请求才会交给 Reviewer。
           </DialogDescription>
         </DialogHeader>
         <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">

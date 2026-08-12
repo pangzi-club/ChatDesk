@@ -262,6 +262,16 @@ export class RunRegistry {
                 model,
                 sandboxMode,
                 approvedEscalationToolCallIds,
+                onSandboxBlocked: createSandboxEscalationHandler({
+                  mode: sandboxMode,
+                  workspace: session.cwd,
+                  messages,
+                  reviewerModel,
+                  approvedEscalationToolCallIds,
+                  reviewLog: this.reviewLog,
+                  sessionId,
+                  runId,
+                }),
               }),
               ...selectTools(createBusinessTools(chatConfig.apiKeys), input.toolNames),
               ...(input.toolNames?.includes("web_search") && model.responsive
@@ -416,9 +426,12 @@ function createToolApproval(options: {
 
     const assessment = classifySandboxBoundary(toolCall, options.workspace);
     if (!assessment.requiresReview) {
+      if (options.mode === "auto") return "not-applicable" as const;
       if (!isWorkspaceMutationTool(toolName)) return "not-applicable" as const;
-      return options.mode === "auto" ? "not-applicable" : "user-approval";
+      return "user-approval";
     }
+
+    if (mode === "auto") return "not-applicable" as const;
 
     if (mode === "ask") {
       await logSandboxReview(options.reviewLog, {
@@ -475,6 +488,73 @@ function createToolApproval(options: {
         error: error instanceof Error ? error.message : String(error),
       });
       return "user-approval";
+    }
+  };
+}
+
+function createSandboxEscalationHandler(options: {
+  mode: SandboxMode;
+  workspace: string | undefined;
+  messages: UIMessage[];
+  reviewerModel: import("./protocol.ts").ServerModelConfig | undefined;
+  approvedEscalationToolCallIds: Set<string>;
+  reviewLog: SandboxReviewLogStore;
+  sessionId: string;
+  runId: string;
+}) {
+  return async (toolCall: { toolName: string; toolCallId?: string; input: unknown }) => {
+    const assessment: SandboxBoundaryAssessment = {
+      requiresReview: true,
+      reasons: ["sandbox-denied"],
+      summary: "实际执行时被当前沙箱拦截",
+    };
+    if (
+      options.mode !== "auto" ||
+      !toolCall.toolCallId ||
+      !options.workspace ||
+      !options.reviewerModel
+    ) {
+      await logSandboxReview(options.reviewLog, {
+        sessionId: options.sessionId,
+        runId: options.runId,
+        toolCall,
+        assessment,
+        decision: "user-approval",
+        reason: !options.reviewerModel ? "reviewer-not-configured" : "sandbox-blocked",
+      });
+      return { approved: false };
+    }
+
+    try {
+      const result = await reviewSandboxBoundary({
+        model: options.reviewerModel,
+        toolCall,
+        assessment,
+        workspace: options.workspace,
+        sandboxMode: options.mode,
+        messages: options.messages,
+      });
+      await logSandboxReview(options.reviewLog, {
+        sessionId: options.sessionId,
+        runId: options.runId,
+        toolCall,
+        assessment,
+        ...result,
+      });
+      if (result.decision !== "approve") return { approved: false, reason: result.rationale };
+      options.approvedEscalationToolCallIds.add(toolCall.toolCallId);
+      return { approved: true, reason: result.rationale };
+    } catch (error) {
+      await logSandboxReview(options.reviewLog, {
+        sessionId: options.sessionId,
+        runId: options.runId,
+        toolCall,
+        assessment,
+        decision: "user-approval",
+        reason: "reviewer-failed",
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return { approved: false };
     }
   };
 }
@@ -540,7 +620,10 @@ function resolveApprovalReviewerModel(config: {
 }
 
 function createWorkspaceToolsForInput(
-  input: RunStartInput & { approvedEscalationToolCallIds: Set<string> },
+  input: RunStartInput & {
+    approvedEscalationToolCallIds: Set<string>;
+    onSandboxBlocked: Parameters<typeof createWorkspaceTools>[3];
+  },
 ) {
   const cwd = input.cwd?.trim();
   if (!hasWorkspace(cwd)) return {};
@@ -555,6 +638,7 @@ function createWorkspaceToolsForInput(
     cwd,
     input.sandboxMode ?? "ask",
     input.approvedEscalationToolCallIds,
+    input.onSandboxBlocked,
   );
   const selected = selectWorkspaceToolNames(names);
   return Object.fromEntries(selected.map((name) => [name, tools[name]]));

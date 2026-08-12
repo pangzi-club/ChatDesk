@@ -14,7 +14,8 @@ export type SandboxBoundaryReason =
   | "external-path"
   | "external-cwd"
   | "network"
-  | "ambiguous-shell";
+  | "ambiguous-shell"
+  | "sandbox-denied";
 
 export type SandboxBoundaryAssessment = {
   requiresReview: boolean;

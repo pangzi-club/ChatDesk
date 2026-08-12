@@ -15,7 +15,7 @@ export const CHAT_SANDBOX_MODE_LABELS: Record<ChatSandboxMode, string> = {
 
 export const CHAT_SANDBOX_MODE_DESCRIPTIONS: Record<ChatSandboxMode, string> = {
   ask: "需要审批的写入和越界请求先询问你。",
-  auto: "工作区内直接执行；越界请求交给 Reviewer，失败时询问你。",
+  auto: "先在沙箱内执行；仅被沙箱拦截时交给 Reviewer。",
   full: "不调用 Reviewer；由完整沙箱权限执行工具。",
 };
 

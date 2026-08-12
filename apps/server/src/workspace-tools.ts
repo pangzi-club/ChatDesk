@@ -6,13 +6,19 @@ import { promisify } from "node:util";
 import { type ToolSet, tool } from "ai";
 import { z } from "zod";
 import type { SandboxMode } from "./protocol.ts";
-import { resolveCommandCwd, runSandboxedShell } from "./sandbox-exec.ts";
+import { resolveCommandCwd, runSandboxedShell, SandboxBlockedError } from "./sandbox-exec.ts";
 
 const MAX_FILE_BYTES = 512 * 1024;
 const MAX_SEARCH_RESULTS = 500;
 const MAX_GIT_FILE_LIST_BYTES = 32 * 1024 * 1024;
 const SKIPPED_DIRECTORIES = new Set([".git", "node_modules", "target", "dist"]);
 const execFileAsync = promisify(execFile);
+
+type SandboxEscalationHandler = (toolCall: {
+  toolName: string;
+  toolCallId?: string;
+  input: unknown;
+}) => Promise<{ approved: boolean; reason?: string }>;
 function rootPath(cwd: string) {
   const value = cwd.trim();
   if (!value) throw new Error("请选择 workspace 后再使用文件工具");
@@ -42,7 +48,7 @@ function canonicalizeTarget(target: string) {
 function withinRoot(root: string, candidate: string) {
   const resolved = canonicalizeTarget(path.resolve(root, candidate || "."));
   if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
-    throw new Error("路径必须位于当前 workspace 内");
+    throw new SandboxBlockedError("路径必须位于当前 workspace 内");
   }
   return resolved;
 }
@@ -209,6 +215,7 @@ export function createWorkspaceTools(
   cwd: string,
   mode: SandboxMode = "ask",
   approvedToolCallIds = new Set<string>(),
+  onSandboxBlocked?: SandboxEscalationHandler,
 ): ToolSet {
   const pathScope =
     mode === "full"
@@ -218,14 +225,36 @@ export function createWorkspaceTools(
     list_dir: tool({
       description: `列出文件与子目录。${pathScope}`,
       inputSchema: z.object({ path: z.string().optional() }),
-      execute: ({ path: relativePath }, { toolCallId }) =>
-        listDirectory(cwd, relativePath, mode, approvedToolCallIds.has(toolCallId)),
+      execute: async ({ path: relativePath }, { toolCallId }) => {
+        const input = { path: relativePath };
+        try {
+          return await listDirectory(cwd, relativePath, mode, approvedToolCallIds.has(toolCallId));
+        } catch (error) {
+          return retryAfterSandboxReview(error, onSandboxBlocked, {
+            toolName: "list_dir",
+            toolCallId,
+            input,
+            retry: () => listDirectory(cwd, relativePath, mode, true),
+          });
+        }
+      },
     }),
     read_file: tool({
       description: `读取文本文件。${pathScope}`,
       inputSchema: z.object({ path: z.string().min(1) }),
-      execute: ({ path: relativePath }, { toolCallId }) =>
-        readTextFile(cwd, relativePath, mode, approvedToolCallIds.has(toolCallId)),
+      execute: async ({ path: relativePath }, { toolCallId }) => {
+        const input = { path: relativePath };
+        try {
+          return await readTextFile(cwd, relativePath, mode, approvedToolCallIds.has(toolCallId));
+        } catch (error) {
+          return retryAfterSandboxReview(error, onSandboxBlocked, {
+            toolName: "read_file",
+            toolCallId,
+            input,
+            retry: () => readTextFile(cwd, relativePath, mode, true),
+          });
+        }
+      },
     }),
     search_files: tool({
       description: `按文件名模式或文本关键词搜索文件，query 支持不区分大小写的关键词匹配。Git workspace 遵循 .gitignore，非 Git workspace 跳过 .git、node_modules、target、dist。${pathScope}`,
@@ -235,17 +264,40 @@ export function createWorkspaceTools(
         query: z.string().optional().describe("要查找的不区分大小写文本关键词"),
         maxResults: z.number().int().min(1).max(MAX_SEARCH_RESULTS).optional(),
       }),
-      execute: (options, { toolCallId }) =>
-        searchFiles(cwd, options, mode, approvedToolCallIds.has(toolCallId)),
+      execute: async (options, { toolCallId }) => {
+        try {
+          return await searchFiles(cwd, options, mode, approvedToolCallIds.has(toolCallId));
+        } catch (error) {
+          return retryAfterSandboxReview(error, onSandboxBlocked, {
+            toolName: "search_files",
+            toolCallId,
+            input: options,
+            retry: () => searchFiles(cwd, options, mode, true),
+          });
+        }
+      },
     }),
     write_file: tool({
       description: `创建或覆盖文本文件。${pathScope}`,
       inputSchema: z.object({ path: z.string().min(1), content: z.string() }),
       execute: async ({ path: relativePath, content }, { toolCallId }) => {
-        const root = rootPath(cwd);
-        const target = resolveTarget(root, relativePath, mode, approvedToolCallIds.has(toolCallId));
-        await writeFile(target, content, "utf8");
-        return { path: path.relative(root, target), bytes: Buffer.byteLength(content) };
+        const input = { path: relativePath, content };
+        const write = async (allowOutside: boolean) => {
+          const root = rootPath(cwd);
+          const target = resolveTarget(root, relativePath, mode, allowOutside);
+          await writeFile(target, content, "utf8");
+          return { path: path.relative(root, target), bytes: Buffer.byteLength(content) };
+        };
+        try {
+          return await write(approvedToolCallIds.has(toolCallId));
+        } catch (error) {
+          return retryAfterSandboxReview(error, onSandboxBlocked, {
+            toolName: "write_file",
+            toolCallId,
+            input,
+            retry: () => write(true),
+          });
+        }
       },
     }),
     edit_file: tool({
@@ -256,14 +308,27 @@ export function createWorkspaceTools(
         newText: z.string(),
       }),
       execute: async ({ path: relativePath, oldText, newText }, { toolCallId }) => {
-        const root = rootPath(cwd);
-        const target = resolveTarget(root, relativePath, mode, approvedToolCallIds.has(toolCallId));
-        const content = await readFile(target, "utf8");
-        const count = content.split(oldText).length - 1;
-        if (count !== 1)
-          throw new Error(count === 0 ? "未找到要替换的文本" : "oldText 必须只匹配一次");
-        await writeFile(target, content.replace(oldText, newText), "utf8");
-        return { path: path.relative(root, target), changed: true };
+        const input = { path: relativePath, oldText, newText };
+        const edit = async (allowOutside: boolean) => {
+          const root = rootPath(cwd);
+          const target = resolveTarget(root, relativePath, mode, allowOutside);
+          const content = await readFile(target, "utf8");
+          const count = content.split(oldText).length - 1;
+          if (count !== 1)
+            throw new Error(count === 0 ? "未找到要替换的文本" : "oldText 必须只匹配一次");
+          await writeFile(target, content.replace(oldText, newText), "utf8");
+          return { path: path.relative(root, target), changed: true };
+        };
+        try {
+          return await edit(approvedToolCallIds.has(toolCallId));
+        } catch (error) {
+          return retryAfterSandboxReview(error, onSandboxBlocked, {
+            toolName: "edit_file",
+            toolCallId,
+            input,
+            retry: () => edit(true),
+          });
+        }
       },
     }),
     bash: tool({
@@ -273,11 +338,41 @@ export function createWorkspaceTools(
         cwd: z.string().optional().describe("可选的 Bash 工作目录；完全访问模式支持外部绝对路径"),
       }),
       execute: async ({ command, cwd: requestedCwd }, { toolCallId }) => {
-        const allowOutside = approvedToolCallIds.has(toolCallId);
-        const commandCwd = resolveCommandCwd(cwd, requestedCwd, mode, allowOutside);
-        return runSandboxedShell(command, { cwd: commandCwd, mode, allowOutside });
+        const input = { command, cwd: requestedCwd };
+        const run = async (allowOutside: boolean) => {
+          const commandCwd = resolveCommandCwd(cwd, requestedCwd, mode, allowOutside);
+          const result = await runSandboxedShell(command, { cwd: commandCwd, mode, allowOutside });
+          if (result.sandboxBlocked) throw new SandboxBlockedError(result.out);
+          return result;
+        };
+        try {
+          return await run(approvedToolCallIds.has(toolCallId));
+        } catch (error) {
+          return retryAfterSandboxReview(error, onSandboxBlocked, {
+            toolName: "bash",
+            toolCallId,
+            input,
+            retry: () => run(true),
+          });
+        }
       },
     }),
   };
   return tools;
+}
+
+async function retryAfterSandboxReview<T>(
+  error: unknown,
+  onSandboxBlocked: SandboxEscalationHandler | undefined,
+  options: {
+    toolName: string;
+    toolCallId?: string;
+    input: unknown;
+    retry: () => Promise<T>;
+  },
+): Promise<T> {
+  if (!(error instanceof SandboxBlockedError) || !onSandboxBlocked) throw error;
+  const decision = await onSandboxBlocked(options);
+  if (!decision.approved) throw new SandboxBlockedError("被沙箱拦截了");
+  return options.retry();
 }

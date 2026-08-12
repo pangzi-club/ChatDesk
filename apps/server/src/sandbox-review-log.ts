@@ -32,7 +32,9 @@ function isEntry(value: unknown): value is SandboxReviewLogEntry {
     typeof entry.timestamp === "string" &&
     Array.isArray(entry.reasons) &&
     entry.reasons.every((reason) =>
-      ["external-path", "external-cwd", "network", "ambiguous-shell"].includes(reason),
+      ["external-path", "external-cwd", "network", "ambiguous-shell", "sandbox-denied"].includes(
+        reason,
+      ),
     ) &&
     ["approve", "deny", "user-approval"].includes(entry.decision ?? "")
   );

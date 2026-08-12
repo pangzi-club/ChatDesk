@@ -1533,14 +1533,12 @@ function ModelsSettingsPage() {
     onSuccess: (config, modelId) => {
       queryClient.setQueryData(["chat-server-chat-config"], config);
       if (modelId === "__none__") {
-        setReviewerNotice(
-          "已关闭自动 Reviewer。之后所有越过 workspace 或 Seatbelt 的请求都会暂停，并等待你的人工确认。",
-        );
+        setReviewerNotice("已关闭自动 Reviewer。沙箱拦截的请求会暂停，并等待你的人工确认。");
         return;
       }
       const model = models.find((item) => item.id === modelId);
       setReviewerNotice(
-        `已保存：${model ? `「${formatModelLabel(model)}」` : "选定模型"} 现在负责判断是否批准越过 workspace 或 Seatbelt 的一次性请求。Reviewer 不会执行工具或读取工作区；调用失败时仍会回退人工确认。`,
+        `已保存：${model ? `「${formatModelLabel(model)}」` : "选定模型"} 现在负责判断沙箱拦截后的单次重试。Reviewer 不会执行工具或读取工作区；判断失败时会返回沙箱拦截错误。`,
       );
     },
   });
@@ -1695,8 +1693,8 @@ function ModelsSettingsPage() {
           <div>
             <h2 className="font-medium text-sm">权限 Reviewer</h2>
             <p className="mt-1 max-w-lg text-muted-foreground text-xs leading-5">
-              Approve for me 遇到需要越过 workspace 或 Seatbelt
-              的请求时，由选定模型判断是否允许一次性执行。未配置或调用失败时回退为人工确认。
+              Approve for me 遇到沙箱拦截
+              的请求时，由选定模型判断是否允许一次性执行。未配置、拒绝或调用失败时返回沙箱拦截错误。
             </p>
             <p className="mt-2 max-w-lg text-muted-foreground text-xs leading-5">
               Reviewer 只接收精简的对话上下文、工具名称和参数摘要，不会执行工具或读取工作区内容。

@@ -9,6 +9,21 @@ import type { SandboxMode } from "./protocol.ts";
 const execFileAsync = promisify(execFile);
 const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 
+export class SandboxBlockedError extends Error {
+  readonly code = "sandbox_blocked" as const;
+
+  constructor(message = "被沙箱拦截了") {
+    super(message);
+    this.name = "SandboxBlockedError";
+  }
+}
+
+export function isSandboxBlockedOutput(output: string) {
+  return /(?:sandbox(?:-exec)?[^\n]*(?:deny|violation)|operation not permitted|sandbox violation)/i.test(
+    output,
+  );
+}
+
 export async function runSandboxedShell(
   command: string,
   options: { cwd: string; mode: SandboxMode; allowOutside?: boolean; timeoutMs?: number },
@@ -24,7 +39,7 @@ export async function runSandboxedShell(
   const executable = effectiveMode === "full" ? shell : "/usr/bin/sandbox-exec";
 
   if (effectiveMode !== "full" && process.platform !== "darwin") {
-    throw new Error("受限沙箱需要 macOS Seatbelt；当前平台不支持，已拒绝执行命令");
+    throw new SandboxBlockedError("受限沙箱需要 macOS Seatbelt；当前平台不支持");
   }
 
   try {
@@ -34,7 +49,11 @@ export async function runSandboxedShell(
       maxBuffer: MAX_OUTPUT_BYTES,
       shell: false,
     });
-    return { code: 0, out: `${result.stdout}${result.stderr}`.slice(0, MAX_OUTPUT_BYTES) };
+    return {
+      code: 0,
+      out: `${result.stdout}${result.stderr}`.slice(0, MAX_OUTPUT_BYTES),
+      sandboxBlocked: false,
+    };
   } catch (error) {
     const failure = error as NodeJS.ErrnoException & {
       stdout?: string;
@@ -45,6 +64,7 @@ export async function runSandboxedShell(
     return {
       code: typeof failure.code === "number" ? failure.code : -1,
       out: output || failure.message || "命令执行失败",
+      sandboxBlocked: effectiveMode !== "full" && isSandboxBlockedOutput(output),
     };
   }
 }
@@ -82,7 +102,7 @@ export function resolveCommandCwd(
   const resolved = path.resolve(root, candidate);
   if (mode === "full" || allowOutside) return resolveDirectory(resolved);
   if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
-    throw new Error("受限模式下 Bash 只能在当前 workspace 内执行");
+    throw new SandboxBlockedError("受限模式下 Bash 只能在当前 workspace 内执行");
   }
   return resolveDirectory(resolved);
 }

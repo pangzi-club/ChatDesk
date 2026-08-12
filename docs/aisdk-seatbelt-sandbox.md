@@ -75,21 +75,21 @@ Agent 得到的是「工具调用失败」或「命令被拒绝」等明确结�
 | --- | --- | --- |
 | 技术沙箱（sandbox） | 进程实际上能读写哪里、能否联网 | macOS 子进程通过 Seatbelt 限制工作区外写入和网络 |
 | 审批策略（approval policy） | 什么时候暂停并请求批准 | 工具调用遇到写入、越界路径或外部命令时生成 approval request |
-| Reviewer | 谁对 eligible approval request 作决定 | `Ask for approval` 由用户决定；当前项目的 `Approve for me` 只自动放行工作区内安全操作，越界升级仍回到用户确认 |
+| Reviewer | 谁对沙箱拦截后的单次重试作决定 | `Ask for approval` 由用户决定；当前项目的 `Approve for me` 先尝试沙箱执行，只有实际被拦截时才交给 reviewer |
 
 聊天页面的三个选项建议按以下语义理解：
 
 | UI 选项 | 官方语义映射 | 当前行为 |
 | --- | --- | --- |
 | **Ask for approval** | `workspace-write` + `on-request` + `user` | 工作区内读操作直接执行；写入、修改和需要越界的操作暂停并等待用户批准 |
-| **Approve for me** | `workspace-write` + `on-request` + `auto_review`（仅 eligible 请求） | 工作区内写入、编辑和 Bash 自动批准；任何 workspace 外路径、网络和不透明 Shell 等升级请求交给 reviewer 或用户确认 |
+| **Approve for me** | `workspace-write` + `on-request` + `auto_review`（仅沙箱拦截后的请求） | 先在沙箱内执行；只有实际被 Seatbelt 或 workspace 边界拦截时交给 reviewer，普通命令失败不提权重试 |
 | **Full access** | `danger-full-access` + `never` | 不使用 Seatbelt 限制，允许显式外部路径和任意 Bash 当前目录；仍保留工具调用审计 |
 
 权限选择保存为 Chat Server 的全局设置，并在新建、切换会话或重新打开应用时沿用；会话记录中的旧 `sandboxMode` 字段只用于兼容历史数据，不再覆盖全局选择。
 
-这里的“Approve for me”不是“所有权限自动放开”。它只代表对符合自动审批条件的请求替用户决定；任何访问 workspace 外路径（包括只读访问 `.env`、pnpm store 或其他缓存）、网络、外部写入和无法可靠分析的 Shell，都必须升级给 reviewer 或用户确认。Seatbelt 仍负责最终执行边界，自动 reviewer 不能扩大底层沙箱能力。
+这里的“Approve for me”不是“所有权限自动放开”。工具会先在当前沙箱中执行；只有明确收到沙箱拒绝时，才把该次请求交给 reviewer 做一次性判断。普通退出码失败、参数错误或依赖缺失不会触发提权重试；reviewer 拒绝或自身失败时返回 `sandbox_blocked`（“被沙箱拦截了”）。
 
-越界流程应保持可追踪：工具先返回 approval request，用户批准后，客户端携带该次 tool call 的批准结果重放调用；重放只对对应请求生效，不能把一次批准永久变成全局白名单。
+审批流程应保持可追踪：人工批准或 reviewer 批准都只对当前 tool call 的一次执行生效；批准后的重放不能永久变成全局白名单。`Approve for me` 下如果 reviewer 未配置、拒绝或调用失败，工具返回 `sandbox_blocked`，不会自动扩大权限。
 
 可以在 `system` 或 `instructions` 中告知模型当前权限模式，让模型了解写入是否需要确认；真正的强制逻辑仍应放在 `execute` 和子进程沙箱中。切换模式时不必重建整套工具，可通过 getter 或 ref 读取最新状态，避免闭包持有旧值。
 
