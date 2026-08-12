@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import type { ChatTokenUsage } from "@chatdesk/shared";
 import type { SandboxBoundaryReason } from "./sandbox-boundary-reviewer.ts";
 
 const REVIEW_LOG_FILE = "sandbox-review-log.json";
@@ -22,6 +23,7 @@ export type SandboxReviewLogEntry = {
   reason?: string;
   modelId?: string;
   durationMs?: number;
+  usage?: ChatTokenUsage;
   error?: string;
 };
 

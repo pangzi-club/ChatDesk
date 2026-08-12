@@ -77,6 +77,15 @@ export type ServerModelConfig = {
   supportsReasoning?: boolean;
 };
 
+export type ChatTokenUsage = {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  reasoningOutputTokens?: number;
+};
+
 export type RunStartInput = {
   messages?: UIMessage[];
   message?: UIMessage;
@@ -148,6 +157,7 @@ export type ChatServerReviewerLog = {
   reason?: string;
   modelId?: string;
   durationMs?: number;
+  usage?: ChatTokenUsage;
   error?: string;
 };
 

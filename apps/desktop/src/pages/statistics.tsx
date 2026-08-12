@@ -136,21 +136,31 @@ function Heatmap({
 }
 
 function DetailsTable({ rows }: { rows: UsageAggregate[] }) {
+  const sourceLabel = (source: UsageAggregate["source"]) => {
+    if (source === "reviewer") return "Reviewer";
+    if (source === "native") return "本机对话";
+    if (source === "mixed") return "混合";
+    return source;
+  };
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[680px] text-left text-sm">
         <thead className="border-border border-b text-muted-foreground text-xs">
           <tr>
-            {["模型", "供应商", "消息数", "输入", "输出", "缓存读", "缓存写"].map((heading) => (
-              <th className="px-3 py-3 font-medium" key={heading}>
-                {heading}
-              </th>
-            ))}
+            {["来源", "模型", "供应商", "消息数", "输入", "输出", "缓存读", "缓存写"].map(
+              (heading) => (
+                <th className="px-3 py-3 font-medium" key={heading}>
+                  {heading}
+                </th>
+              ),
+            )}
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
           {rows.map((row) => (
             <tr key={`${row.provider}-${row.model}-${row.source}`}>
+              <td className="px-3 py-3 text-muted-foreground">{sourceLabel(row.source)}</td>
               <td className="max-w-[180px] truncate px-3 py-3 font-medium" title={row.model}>
                 {row.model}
               </td>

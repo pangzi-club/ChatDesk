@@ -1,6 +1,7 @@
 export type {
   ChatAttachment,
   ChatSession,
+  ChatTokenUsage,
   HealthResponse,
   RunStartInput,
   SandboxMode,

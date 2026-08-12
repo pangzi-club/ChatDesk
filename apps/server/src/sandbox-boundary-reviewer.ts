@@ -7,7 +7,7 @@ import { z } from "zod";
 import { createKimiFetch } from "./kimi.ts";
 import { createMiniMaxFetch, isMiniMaxModel } from "./minimax.ts";
 
-import type { SandboxReviewerDecision, ServerModelConfig } from "./protocol.ts";
+import type { ChatTokenUsage, SandboxReviewerDecision, ServerModelConfig } from "./protocol.ts";
 import { textFromMessage } from "./protocol.ts";
 
 export type SandboxBoundaryReason =
@@ -28,6 +28,7 @@ export type SandboxReviewResult = {
   rationale: string;
   modelId: string;
   durationMs: number;
+  usage?: ChatTokenUsage;
 };
 
 type ToolCallLike = {
@@ -155,6 +156,33 @@ function resolveBaseUrl(value: string) {
     .replace(/\/responses$/i, "");
 }
 
+function normalizeUsage(value: unknown): ChatTokenUsage | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const source = value as Record<string, unknown>;
+  const number = (key: string) =>
+    typeof source[key] === "number" && Number.isFinite(source[key]) ? source[key] : undefined;
+  const nestedNumber = (parent: string, key: string) => {
+    const nested = source[parent];
+    if (!nested || typeof nested !== "object") return undefined;
+    const candidate = (nested as Record<string, unknown>)[key];
+    return typeof candidate === "number" && Number.isFinite(candidate) ? candidate : undefined;
+  };
+  const usage: ChatTokenUsage = {
+    inputTokens: number("inputTokens"),
+    outputTokens: number("outputTokens"),
+    totalTokens: number("totalTokens"),
+    cacheReadTokens:
+      nestedNumber("inputTokenDetails", "cacheReadTokens") ??
+      number("cachedInputTokens") ??
+      number("cacheReadInputTokens"),
+    cacheWriteTokens:
+      nestedNumber("inputTokenDetails", "cacheWriteTokens") ?? number("cacheWriteInputTokens"),
+    reasoningOutputTokens:
+      nestedNumber("outputTokenDetails", "reasoningTokens") ?? number("reasoningTokens"),
+  };
+  return Object.values(usage).some((value) => value !== undefined) ? usage : undefined;
+}
+
 export async function reviewSandboxBoundary(options: {
   model: ServerModelConfig;
   toolCall: ToolCallLike;
@@ -204,5 +232,6 @@ export async function reviewSandboxBoundary(options: {
     ...result.output,
     modelId: model.id || model.name,
     durationMs: Date.now() - startedAt,
+    usage: normalizeUsage(result.usage),
   };
 }
