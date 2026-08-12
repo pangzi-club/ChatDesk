@@ -1018,6 +1018,11 @@
   position: relative;
   min-width: 0;
 }
+.chat-message-parts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
 .chat-message-text-wrap.is-collapsed .chat-message-text {
   max-height: min(360px, 46vh);
   overflow: hidden;
@@ -1707,6 +1712,9 @@
   flex-direction: column;
   gap: 8px;
   margin: 0 0 12px;
+}
+.chat-message-parts > .chat-tool-calls {
+  margin: 0;
 }
 .chat-tool-call {
   overflow: hidden;

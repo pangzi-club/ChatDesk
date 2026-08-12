@@ -50,7 +50,7 @@ import { ChatMemoryDialog } from "@/components/chat-memory-dialog";
 import { ChatReviewerDialog } from "@/components/chat-reviewer-dialog";
 import { ChatSettingsDialog } from "@/components/chat-settings-dialog";
 import { ChatSkillsPicker } from "@/components/chat-skills-picker";
-import { ChatToolCallGroup } from "@/components/chat-tool-call-card";
+import { type ChatToolCallCardProps, ChatToolCallGroup } from "@/components/chat-tool-call-card";
 import { ChatToolsPicker } from "@/components/chat-tools-picker";
 import {
   AlertDialog,
@@ -145,6 +145,11 @@ const EMPTY_STRING_ARRAY: string[] = [];
 const DEFAULT_WORKSPACE_LABEL = "Default Workspace";
 const CHAT_MESSAGE_COLLAPSE_CHAR_LIMIT = 1200;
 const CHAT_MESSAGE_COLLAPSE_LINE_LIMIT = 18;
+
+type ChatToolPart = Extract<UIMessage["parts"][number], { toolCallId: string }>;
+type ChatMessageBlock =
+  | { kind: "text"; key: string; text: string }
+  | { kind: "tools"; key: string; parts: ChatToolPart[] };
 
 const EMPTY_CHAT_ACTIONS = [
   {
@@ -1419,6 +1424,48 @@ function pathBasename(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
 
+function toChatToolCall(part: ChatToolPart): ChatToolCallCardProps {
+  return {
+    id: part.toolCallId,
+    toolName: getToolName(part),
+    state: part.state,
+    input: part.input,
+    output: "output" in part ? part.output : undefined,
+    errorText: "errorText" in part ? part.errorText : undefined,
+    approval: "approval" in part ? part.approval : undefined,
+    preliminary: "preliminary" in part ? Boolean(part.preliminary) : false,
+  };
+}
+
+function getChatMessageBlocks(message: UIMessage): ChatMessageBlock[] {
+  const blocks: ChatMessageBlock[] = [];
+  let toolParts: ChatToolPart[] = [];
+
+  function flushToolParts() {
+    if (toolParts.length === 0) return;
+    blocks.push({ kind: "tools", key: `tools-${blocks.length}`, parts: toolParts });
+    toolParts = [];
+  }
+
+  message.parts.forEach((part, index) => {
+    if (isToolUIPart(part)) {
+      toolParts.push(part);
+      return;
+    }
+    if (part.type === "text" && part.text.trim()) {
+      flushToolParts();
+      const previous = blocks[blocks.length - 1];
+      if (previous?.kind === "text") {
+        previous.text += part.text;
+      } else {
+        blocks.push({ kind: "text", key: `text-${index}`, text: part.text });
+      }
+    }
+  });
+  flushToolParts();
+  return blocks;
+}
+
 function MessageBubble({
   message,
   isStreaming,
@@ -1435,6 +1482,7 @@ function MessageBubble({
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const toolParts = message.parts.filter(isToolUIPart);
+  const messageBlocks = getChatMessageBlocks(message);
   const pendingApprovalParts = toolParts.filter((part) => part.state === "approval-requested");
   if (!isUser && !text.trim() && toolParts.length === 0) return null;
   const usage = showTokenUsage && !isUser ? getMessageUsage(message) : undefined;
@@ -1468,22 +1516,51 @@ function MessageBubble({
           <strong>{isUser ? "你" : "ChatDesk"}</strong>
           <span>{isUser ? "刚刚" : isStreaming ? "生成中" : "已完成"}</span>
         </div>
-        {!isUser && toolParts.length > 0 ? (
-          <div className="chat-tool-calls">
-            <ChatToolCallGroup
-              calls={toolParts.map((part) => ({
-                id: part.toolCallId,
-                toolName: getToolName(part),
-                state: part.state,
-                input: part.input,
-                output: "output" in part ? part.output : undefined,
-                errorText: "errorText" in part ? part.errorText : undefined,
-                approval: "approval" in part ? part.approval : undefined,
-                preliminary: "preliminary" in part ? Boolean(part.preliminary) : false,
-              }))}
-            />
-          </div>
-        ) : null}
+        <div className="chat-message-parts">
+          {messageBlocks.map((block) => {
+            if (block.kind === "tools") {
+              return (
+                <div className="chat-tool-calls" key={block.key}>
+                  <ChatToolCallGroup calls={block.parts.map(toChatToolCall)} />
+                </div>
+              );
+            }
+            const collapseBlock = isUser && shouldCollapse;
+            return (
+              <div
+                className={`chat-message-text-wrap ${collapseBlock && !expanded ? "is-collapsed" : ""}`}
+                key={block.key}
+              >
+                <div className="chat-message-text">
+                  <Streamdown isAnimating={!isUser && isStreaming} plugins={{ code }}>
+                    {block.text}
+                  </Streamdown>
+                </div>
+                {collapseBlock && !expanded ? <div className="chat-message-fade" /> : null}
+                {collapseBlock ? (
+                  <Button
+                    aria-expanded={expanded}
+                    className="chat-message-expand"
+                    onClick={() => setExpanded((value) => !value)}
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                  >
+                    {expanded ? (
+                      <>
+                        <ChevronUp className="size-3.5" /> 收起
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="size-3.5" /> 展开全文
+                      </>
+                    )}
+                  </Button>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
         {pendingApprovalParts.length > 0 ? (
           <fieldset className="chat-approval-strip">
             <legend className="sr-only">工具审批</legend>
@@ -1514,38 +1591,6 @@ function MessageBubble({
               ))}
             </div>
           </fieldset>
-        ) : null}
-        {text.trim() ? (
-          <div
-            className={`chat-message-text-wrap ${shouldCollapse && !expanded ? "is-collapsed" : ""}`}
-          >
-            <div className="chat-message-text">
-              <Streamdown isAnimating={!isUser && isStreaming} plugins={{ code }}>
-                {text}
-              </Streamdown>
-            </div>
-            {shouldCollapse && !expanded ? <div className="chat-message-fade" /> : null}
-            {shouldCollapse ? (
-              <Button
-                aria-expanded={expanded}
-                className="chat-message-expand"
-                onClick={() => setExpanded((value) => !value)}
-                size="sm"
-                type="button"
-                variant="ghost"
-              >
-                {expanded ? (
-                  <>
-                    <ChevronUp className="size-3.5" /> 收起
-                  </>
-                ) : (
-                  <>
-                    <ChevronDown className="size-3.5" /> 展开全文
-                  </>
-                )}
-              </Button>
-            ) : null}
-          </div>
         ) : null}
         {toolLimitReached ? (
           <p className="mt-2 text-amber-600 text-xs dark:text-amber-300">
