@@ -188,6 +188,17 @@ function mergeLiveDraft(messages: UIMessage[], draft: LiveDraft | undefined) {
   );
 }
 
+function scrollChatToBottom(element: HTMLDivElement, behavior: ScrollBehavior) {
+  if (behavior === "auto") {
+    const previousBehavior = element.style.scrollBehavior;
+    element.style.scrollBehavior = "auto";
+    element.scrollTop = element.scrollHeight;
+    element.style.scrollBehavior = previousBehavior;
+    return;
+  }
+  element.scrollTo({ top: element.scrollHeight, behavior });
+}
+
 function ChatPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -264,6 +275,7 @@ function ChatPage() {
   const savedFingerprintRef = useRef("");
   const extractedFingerprintRef = useRef("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const skipSmoothScrollRef = useRef(false);
   const isComposingRef = useRef(false);
   const [sessionToDelete, setSessionToDelete] = useState<ChatIndexItem | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -677,7 +689,16 @@ function ChatPage() {
         });
       }
     }
+    skipSmoothScrollRef.current = true;
     setMessages(mergeLiveDraft(session.messages, liveDraftsRef.current.get(session.id)));
+    requestAnimationFrame(() => {
+      if (activeSessionRef.current !== session.id) {
+        skipSmoothScrollRef.current = false;
+        return;
+      }
+      const scrollElement = scrollRef.current;
+      if (scrollElement) scrollChatToBottom(scrollElement, "auto");
+    });
     if (session.modelId) setSelectedModelId(session.modelId);
     const sessionSkillIds = session.skillIds ?? savedChatSkillIds;
     setSelectedSkillIds(sessionSkillIds.filter((id) => installedSkillIds.includes(id)));
@@ -780,7 +801,14 @@ function ChatPage() {
   // Scroll when a message arrives or the local response indicator changes.
   // biome-ignore lint/correctness/useExhaustiveDependencies: these values intentionally trigger the scroll effect.
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    const scrollElement = scrollRef.current;
+    if (!scrollElement) return;
+    if (skipSmoothScrollRef.current) {
+      skipSmoothScrollRef.current = false;
+      scrollChatToBottom(scrollElement, "auto");
+      return;
+    }
+    scrollChatToBottom(scrollElement, "smooth");
   }, [messages.length, isGenerating]);
 
   function submitMessage() {
