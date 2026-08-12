@@ -21,7 +21,6 @@ import {
   ChevronDown,
   ChevronUp,
   CircleStop,
-  ClipboardCheck,
   Copy,
   FilePlus2,
   Folder,
@@ -42,15 +41,16 @@ import {
   Sparkles,
   Trash2,
   User,
+  Wrench,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ChatContextDialog } from "@/components/chat-context-dialog";
 import { ChatMemoryDialog } from "@/components/chat-memory-dialog";
-import { ChatReviewerDialog } from "@/components/chat-reviewer-dialog";
 import { ChatSettingsDialog } from "@/components/chat-settings-dialog";
 import { ChatSkillsPicker } from "@/components/chat-skills-picker";
 import { type ChatToolCallCardProps, ChatToolCallGroup } from "@/components/chat-tool-call-card";
+import { ChatToolLogDialog } from "@/components/chat-tool-log-dialog";
 import { ChatToolsPicker } from "@/components/chat-tools-picker";
 import {
   AlertDialog,
@@ -299,7 +299,7 @@ function ChatPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
-  const [reviewerOpen, setReviewerOpen] = useState(false);
+  const [toolLogOpen, setToolLogOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
@@ -1047,15 +1047,15 @@ function ChatPage() {
             <Gauge className="size-4" />
           </Button>
           <Button
-            aria-label="Reviewer 记录"
+            aria-label="Tool 记录"
             className="chat-icon-button"
             size="icon"
-            title="查看当前对话的 Reviewer 记录"
+            title="查看当前对话的 Tool 记录"
             variant="ghost"
             type="button"
-            onClick={() => setReviewerOpen(true)}
+            onClick={() => setToolLogOpen(true)}
           >
-            <ClipboardCheck className="size-4" />
+            <Wrench className="size-4" />
           </Button>
           <Button
             aria-label="长期记忆"
@@ -1476,11 +1476,7 @@ function ChatPage() {
         open={memoryOpen}
         store={chatMemory}
       />
-      <ChatReviewerDialog
-        onOpenChange={setReviewerOpen}
-        open={reviewerOpen}
-        sessionId={sessionId}
-      />
+      <ChatToolLogDialog messages={messages} onOpenChange={setToolLogOpen} open={toolLogOpen} />
       <AlertDialog
         open={sessionToDelete !== null}
         onOpenChange={(open) => {

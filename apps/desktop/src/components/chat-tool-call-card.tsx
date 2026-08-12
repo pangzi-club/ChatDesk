@@ -363,11 +363,20 @@ export function ChatToolCallCard({
             manualApproval,
           })}
         </span>
-        <span className="chat-tool-call-title">
-          {title}
-          {summaryQuery ? ` · ${summaryQuery}` : ""}
-          {isImageGeneration && imageMeta?.fileName ? ` · ${imageMeta.fileName}` : ""}
-          {workspaceSummary}
+        <span
+          className="chat-tool-call-title"
+          title={isImageGeneration ? imageMeta?.fileName : undefined}
+        >
+          <span className="chat-tool-call-title-name">{title}</span>
+          {summaryQuery ? (
+            <span className="chat-tool-call-title-detail"> · {summaryQuery}</span>
+          ) : null}
+          {isImageGeneration && imageMeta?.fileName ? (
+            <span className="chat-tool-call-title-detail"> · {imageMeta.fileName}</span>
+          ) : null}
+          {workspaceSummary ? (
+            <span className="chat-tool-call-title-detail">{workspaceSummary}</span>
+          ) : null}
         </span>
         <span className="chat-tool-call-status">{status}</span>
         {!compact ? (
