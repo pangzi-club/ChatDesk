@@ -1,7 +1,19 @@
 import assert from "node:assert/strict";
 import type { UIMessage } from "ai";
 import { test } from "vitest";
-import { mergeLatestMessageMetadata, normalizeCompletedMessages } from "./run-registry.ts";
+import {
+  MAX_AGENT_STEPS,
+  mergeLatestMessageMetadata,
+  normalizeCompletedMessages,
+  reachedToolLimit,
+} from "./run-registry.ts";
+
+test("uses 30 steps as the tool loop limit", () => {
+  assert.equal(MAX_AGENT_STEPS, 30);
+  assert.equal(reachedToolLimit(30, "tool-calls"), true);
+  assert.equal(reachedToolLimit(29, "tool-calls"), false);
+  assert.equal(reachedToolLimit(30, "stop"), false);
+});
 
 test("mergeLatestMessageMetadata persists usage on the latest assistant message", () => {
   const messages: UIMessage[] = [

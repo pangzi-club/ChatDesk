@@ -38,6 +38,12 @@ type ActiveRun = {
   controller: AbortController;
 };
 
+export const MAX_AGENT_STEPS = 30;
+
+export function reachedToolLimit(stepCount: number, finishReason: string | undefined) {
+  return stepCount >= MAX_AGENT_STEPS && finishReason === "tool-calls";
+}
+
 function baseUrl(value: string) {
   return value
     .trim()
@@ -235,6 +241,7 @@ export class RunRegistry {
       ]
         .filter(Boolean)
         .join("\n\n");
+      let completedStepCount = 0;
       const result = streamText({
         model: languageModel,
         messages: modelMessages,
@@ -266,7 +273,10 @@ export class RunRegistry {
           runId,
         }),
         experimental_toolApprovalSecret: this.toolApprovalSecret,
-        stopWhen: stepCountIs(20),
+        stopWhen: stepCountIs(MAX_AGENT_STEPS),
+        onStepEnd: () => {
+          completedStepCount += 1;
+        },
         abortSignal: controller.signal,
       });
       let completedMessages: UIMessage[] | undefined;
@@ -274,7 +284,11 @@ export class RunRegistry {
         originalMessages: messages,
         messageMetadata: ({ part }) => {
           if (part.type !== "finish") return undefined;
-          return { usage: part.totalUsage };
+          const toolLimitReached = reachedToolLimit(completedStepCount, part.finishReason);
+          return {
+            usage: part.totalUsage,
+            ...(toolLimitReached ? { toolLimitReached: true, stopReason: "tool-limit" } : {}),
+          };
         },
         onFinish: ({ messages: finishedMessages }) => {
           completedMessages = finishedMessages;

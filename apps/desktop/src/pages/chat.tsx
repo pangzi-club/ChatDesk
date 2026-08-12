@@ -1473,7 +1473,7 @@ function MessageBubble({
         ) : null}
         {toolLimitReached ? (
           <p className="mt-2 text-amber-600 text-xs dark:text-amber-300">
-            已达到工具调用上限（20 轮），如需继续请发送一条新消息。
+            已达到执行轮数上限（30 轮），如需继续请发送一条新消息。
           </p>
         ) : null}
         {(!isUser || text.trim()) && (
