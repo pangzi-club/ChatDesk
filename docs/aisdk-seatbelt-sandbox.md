@@ -82,12 +82,12 @@ Agent 得到的是「工具调用失败」或「命令被拒绝」等明确结�
 | UI 选项 | 官方语义映射 | 当前行为 |
 | --- | --- | --- |
 | **Ask for approval** | `workspace-write` + `on-request` + `user` | 工作区内读操作直接执行；写入、修改和需要越界的操作暂停并等待用户批准 |
-| **Approve for me** | `workspace-write` + `on-request` + `auto_review`（仅 eligible 请求） | 工作区内写入、编辑和 Bash 自动批准；外部路径、网络 Bash 等升级请求仍要求用户明确确认 |
+| **Approve for me** | `workspace-write` + `on-request` + `auto_review`（仅 eligible 请求） | 工作区内写入、编辑和 Bash 自动批准；任何 workspace 外路径、网络和不透明 Shell 等升级请求交给 reviewer 或用户确认 |
 | **Full access** | `danger-full-access` + `never` | 不使用 Seatbelt 限制，允许显式外部路径和任意 Bash 当前目录；仍保留工具调用审计 |
 
 权限选择保存为 Chat Server 的全局设置，并在新建、切换会话或重新打开应用时沿用；会话记录中的旧 `sandboxMode` 字段只用于兼容历史数据，不再覆盖全局选择。
 
-这里的“Approve for me”不是“所有权限自动放开”。它只代表对符合自动审批条件的请求替用户决定；如果请求要突破工作区或访问网络，当前实现采用保守回退，继续要求用户确认。原因是本项目尚未接入独立的自动 reviewer，不能把“自动决定”误当成“跳过系统边界”。
+这里的“Approve for me”不是“所有权限自动放开”。它只代表对符合自动审批条件的请求替用户决定；任何访问 workspace 外路径（包括只读访问 `.env`、pnpm store 或其他缓存）、网络、外部写入和无法可靠分析的 Shell，都必须升级给 reviewer 或用户确认。Seatbelt 仍负责最终执行边界，自动 reviewer 不能扩大底层沙箱能力。
 
 越界流程应保持可追踪：工具先返回 approval request，用户批准后，客户端携带该次 tool call 的批准结果重放调用；重放只对对应请求生效，不能把一次批准永久变成全局白名单。
 

@@ -36,6 +36,18 @@ describe("sandbox boundary classifier", () => {
     assert.deepEqual(result.reasons, ["network", "external-path"]);
   });
 
+  it("flags read-only Bash inspection of external files", () => {
+    const result = classifySandboxBoundary(
+      {
+        toolName: "bash",
+        input: { command: "cat /Users/bohaowang/Workspace/.env" },
+      },
+      workspace,
+    );
+    assert.equal(result.requiresReview, true);
+    assert.deepEqual(result.reasons, ["external-path"]);
+  });
+
   it("flags relative paths that escape through shell redirection", () => {
     const result = classifySandboxBoundary(
       { toolName: "bash", input: { command: "echo secret > ../outside.txt" } },

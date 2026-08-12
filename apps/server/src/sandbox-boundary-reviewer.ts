@@ -36,7 +36,7 @@ type ToolCallLike = {
 };
 
 const NETWORK_COMMAND_PATTERN =
-  /\b(curl|wget|ssh|scp|sftp|nc|ncat|telnet|ftp|git\s+(clone|fetch|pull|push)|npm\s+(install|publish)|pnpm\s+(install|add)|yarn\s+(add|install)|pip\s+install|brew\s+install)\b/i;
+  /\b(curl|wget|ssh|scp|sftp|nc|ncat|telnet|ftp|git\s+(clone|fetch|pull|push)|npm\s+(install|add|publish|view|info|search|outdated)|pnpm\s+(install|add|publish|view|info|search|outdated)|yarn\s+(add|install|publish|info|outdated)|pip\s+(install|download|search)|brew\s+(install|update|upgrade))\b/i;
 const AMBIGUOUS_SHELL_PATTERN =
   /(\$\(|`|\beval\b|\bxargs\b|\bfind\b[^\n]*\s-exec\b|\b(bash|sh|zsh|fish)\s+-c\b|\b(node|python|python3|perl|ruby)\s+-[ec]\b)/i;
 const ABSOLUTE_PATH_PATTERN =
@@ -88,6 +88,10 @@ function collectCommandPaths(command: string) {
   return paths;
 }
 
+function commandUsesOutsideWorkspace(command: string, workspace: string) {
+  return collectCommandPaths(command).some((candidate) => isOutsideWorkspace(workspace, candidate));
+}
+
 export function classifySandboxBoundary(
   toolCall: ToolCallLike,
   workspace: string | undefined,
@@ -112,9 +116,7 @@ export function classifySandboxBoundary(
 
   if (toolName === "bash" && typeof value.command === "string") {
     if (NETWORK_COMMAND_PATTERN.test(value.command)) addReason(reasons, "network");
-    if (
-      collectCommandPaths(value.command).some((candidate) => isOutsideWorkspace(root, candidate))
-    ) {
+    if (commandUsesOutsideWorkspace(value.command, root)) {
       addReason(reasons, "external-path");
     }
     if (AMBIGUOUS_SHELL_PATTERN.test(value.command)) addReason(reasons, "ambiguous-shell");
