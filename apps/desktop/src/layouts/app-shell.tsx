@@ -531,7 +531,7 @@ function ChatServerStatusBanner() {
   return (
     <div
       aria-live="polite"
-      className={`flex min-h-10 shrink-0 items-center justify-between gap-3 border-border border-b px-4 py-2 text-xs max-sm:items-start ${isRestarting ? "bg-amber-500/10 text-amber-800 dark:text-amber-200" : "bg-destructive/10 text-destructive"}`}
+      className={`fixed top-10 right-4 z-40 flex min-h-10 w-[min(24rem,calc(100vw-2rem))] items-center justify-between gap-3 rounded-lg border px-4 py-2 text-xs shadow-lg backdrop-blur-sm max-sm:top-9 max-sm:right-3 max-sm:left-3 max-sm:w-auto max-sm:items-start ${isRestarting ? "border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-200" : "border-destructive/30 bg-destructive/10 text-destructive"}`}
       role="status"
     >
       <div className="flex min-w-0 items-center gap-2">
