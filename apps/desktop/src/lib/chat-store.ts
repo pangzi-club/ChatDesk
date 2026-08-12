@@ -121,6 +121,17 @@ export async function saveChatSession(session: ChatSession): Promise<void> {
   await saveChatServerSession(session);
 }
 
+export async function clearChatSessionWorkspace(id: string): Promise<void> {
+  await initializeChatServer();
+  const session = await loadChatServerSession<ChatSession>(id);
+  if (!session) return;
+  await saveChatServerSession({
+    ...session,
+    workspaceId: null,
+    cwd: null,
+  } as unknown as ChatSession);
+}
+
 export async function deleteChatSession(id: string): Promise<void> {
   await initializeChatServer();
   await deleteChatServerSession(id);

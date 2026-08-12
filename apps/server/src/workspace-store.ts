@@ -22,6 +22,10 @@ function isWorkspace(value: unknown): value is WorkspaceProject {
   );
 }
 
+function normalizeWorkspacePath(value: string) {
+  return path.normalize(value.trim());
+}
+
 export class WorkspaceStore {
   private readonly file: string;
   private value: WorkspaceProject[] = [];
@@ -34,7 +38,17 @@ export class WorkspaceStore {
     await mkdir(path.dirname(this.file), { recursive: true });
     try {
       const parsed = JSON.parse(await readFile(this.file, "utf8")) as unknown;
-      this.value = Array.isArray(parsed) ? parsed.filter(isWorkspace) : [];
+      const seenPaths = new Set<string>();
+      this.value = Array.isArray(parsed)
+        ? parsed.filter((item): item is WorkspaceProject => {
+            if (!isWorkspace(item)) return false;
+            const normalizedPath = normalizeWorkspacePath(item.path);
+            if (seenPaths.has(normalizedPath)) return false;
+            seenPaths.add(normalizedPath);
+            item.path = normalizedPath;
+            return true;
+          })
+        : [];
     } catch {
       this.value = [];
     }
@@ -49,7 +63,7 @@ export class WorkspaceStore {
   }
 
   async add(input: { path: string; name?: string }) {
-    const normalizedPath = input.path.trim();
+    const normalizedPath = normalizeWorkspacePath(input.path);
     if (!normalizedPath) throw new Error("workspace 路径不能为空");
     const existing = this.value.find((item) => item.path === normalizedPath);
     if (existing) return structuredClone(existing);

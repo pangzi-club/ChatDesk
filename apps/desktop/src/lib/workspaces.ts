@@ -5,6 +5,7 @@ import {
   removeServerWorkspace,
 } from "@/lib/chat-server";
 import { pickDirectory } from "@/lib/platform";
+import { normalizeWorkspacePath } from "./workspace-path";
 
 export const WORKSPACE_PROJECTS_STORE_KEY = "workspace-projects";
 
@@ -45,7 +46,14 @@ export type WorkspaceGitInfo = {
 };
 
 export async function loadWorkspaceProjects(): Promise<WorkspaceProject[]> {
-  return (await loadServerWorkspaces()).filter(isWorkspaceProject);
+  const seenPaths = new Set<string>();
+  return (await loadServerWorkspaces()).filter((value) => {
+    if (!isWorkspaceProject(value)) return false;
+    const normalizedPath = normalizeWorkspacePath(value.path);
+    if (seenPaths.has(normalizedPath)) return false;
+    seenPaths.add(normalizedPath);
+    return true;
+  }) as WorkspaceProject[];
 }
 
 export async function saveWorkspaceProjects(projects: WorkspaceProject[]) {

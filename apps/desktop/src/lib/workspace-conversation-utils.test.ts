@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ChatIndexItem } from "./chat-store";
-import { getWorkspaceSessionKey, sortWorkspaceProjects } from "./workspace-conversation-utils";
+import {
+  getWorkspaceSessionKey,
+  sortWorkspaceConversationGroups,
+  sortWorkspaceProjects,
+} from "./workspace-conversation-utils";
 import type { WorkspaceProject } from "./workspaces";
 
 const projects: WorkspaceProject[] = [
@@ -32,6 +36,19 @@ describe("workspace conversation utilities", () => {
     ).toBe("alpha");
   });
 
+  it("matches sessions to a workspace by path even when workspace ids differ", () => {
+    expect(
+      getWorkspaceSessionKey(
+        session("legacy", {
+          workspaceId: "old-id",
+          cwd: "/work/alpha/",
+          updatedAt: "2026-01-03",
+        }),
+        projects,
+      ),
+    ).toBe("alpha");
+  });
+
   it("sorts workspaces by all conversations, including cwd-only sessions", () => {
     const sorted = sortWorkspaceProjects(
       projects,
@@ -43,5 +60,17 @@ describe("workspace conversation utilities", () => {
       "count",
     );
     expect(sorted.map((project) => project.id)).toEqual(["alpha", "beta"]);
+  });
+
+  it("sorts the default group with workspaces by conversation count", () => {
+    const sorted = sortWorkspaceConversationGroups(
+      [
+        { label: "Default", sessions: [] },
+        { label: "project", sessions: [{ id: "one" }, { id: "two" }] },
+      ],
+      "count",
+    );
+
+    expect(sorted.map((group) => group.label)).toEqual(["project", "Default"]);
   });
 });

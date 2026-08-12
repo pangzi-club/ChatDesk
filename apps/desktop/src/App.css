@@ -261,6 +261,30 @@
   border-color: #e3e3e5;
 }
 
+.sidebar-scroll-area {
+  scrollbar-color: #c4c5c8 transparent;
+  scrollbar-width: thin;
+}
+
+.sidebar-scroll-area::-webkit-scrollbar {
+  width: 5px;
+}
+
+.sidebar-scroll-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-scroll-area::-webkit-scrollbar-thumb {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+  background-color: #c4c5c8;
+}
+
+.sidebar-scroll-area::-webkit-scrollbar-thumb:hover {
+  background-color: #a9aaae;
+}
+
 .app-shell-sidebar > .border {
   background: #ffffff;
 }
@@ -349,6 +373,18 @@
 .dark .app-shell-sidebar {
   background: #202123;
   border-color: #3a3b40;
+}
+
+.dark .sidebar-scroll-area {
+  scrollbar-color: #5a5b61 transparent;
+}
+
+.dark .sidebar-scroll-area::-webkit-scrollbar-thumb {
+  background-color: #5a5b61;
+}
+
+.dark .sidebar-scroll-area::-webkit-scrollbar-thumb:hover {
+  background-color: #707178;
 }
 
 .dark .app-shell-content,

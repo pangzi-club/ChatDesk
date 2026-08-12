@@ -82,20 +82,28 @@ import {
   restartChatServer,
   subscribeChatServerEvents,
 } from "@/lib/chat-server";
-import { type ChatIndexItem, deleteChatSession, loadChatIndex } from "@/lib/chat-store";
+import {
+  type ChatIndexItem,
+  clearChatSessionWorkspace,
+  deleteChatSession,
+  loadChatIndex,
+} from "@/lib/chat-store";
 import { openExternal } from "@/lib/platform";
 import { settingsStore } from "@/lib/settings-store";
 import { appendSystemLog } from "@/lib/system-log";
 import { applyTrayEnabled, loadTrayEnabled } from "@/lib/tray";
 import {
   getWorkspaceSessionKey,
+  sortWorkspaceConversationGroups,
   sortWorkspaceProjects,
   type WorkspaceSort,
 } from "@/lib/workspace-conversation-utils";
 import {
   addWorkspaceProject,
   loadWorkspaceProjects,
+  removeWorkspaceProject,
   selectWorkspaceDirectory,
+  type WorkspaceProject,
 } from "@/lib/workspaces";
 
 const navItems = [
@@ -202,8 +210,10 @@ type CommandItem = (typeof commandItems)[number];
 
 const CHAT_UNREAD_STORAGE_KEY = "m-dashboard-chat-unread-v1";
 const WORKSPACE_COLLAPSE_STORAGE_KEY = "m-dashboard-workspace-collapse-v1";
+const WORKSPACE_SORT_STORAGE_KEY = "m-dashboard-workspace-sort-v1";
 const CHAT_UNREAD_STORE_KEY = "chatUnreadSessionIds";
 const WORKSPACE_COLLAPSE_STORE_KEY = "workspaceCollapseState";
+const WORKSPACE_SORT_STORE_KEY = "workspaceSort";
 
 function isTauri() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -253,6 +263,32 @@ async function saveWorkspaceCollapseState(state: Record<string, boolean>) {
     return;
   }
   window.localStorage.setItem(WORKSPACE_COLLAPSE_STORAGE_KEY, JSON.stringify(state));
+}
+
+function isWorkspaceSort(value: unknown): value is WorkspaceSort {
+  return value === "name" || value === "updated" || value === "count";
+}
+
+function loadWorkspaceSort() {
+  if (typeof window === "undefined") return "updated" as WorkspaceSort;
+  const stored = window.localStorage.getItem(WORKSPACE_SORT_STORAGE_KEY);
+  return isWorkspaceSort(stored) ? stored : "updated";
+}
+
+async function saveWorkspaceSort(sort: WorkspaceSort) {
+  if (isTauri()) {
+    await settingsStore.set(WORKSPACE_SORT_STORE_KEY, sort);
+    await settingsStore.save();
+    window.localStorage.removeItem(WORKSPACE_SORT_STORAGE_KEY);
+    return;
+  }
+  window.localStorage.setItem(WORKSPACE_SORT_STORAGE_KEY, sort);
+}
+
+function persistWorkspaceSort(sort: WorkspaceSort) {
+  void saveWorkspaceSort(sort).catch((error) =>
+    console.error("Failed to save workspace sort state", error),
+  );
 }
 
 function AppShell() {
@@ -338,7 +374,7 @@ function AppShell() {
                   <SidebarNavItem item={item} key={item.to} />
                 ))}
               </nav>
-              <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className="sidebar-scroll-area min-h-0 flex-1 overflow-y-auto">
                 <nav
                   className="space-y-0.5 px-3 pt-0 pb-2 max-md:px-2 max-sm:px-1.5"
                   aria-label="Secondary navigation"
@@ -575,7 +611,11 @@ function WorkspaceConversationGroups() {
   const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(loadUnreadChatIds);
   const [serverPort, setServerPort] = useState(14317);
   const [sessionToDelete, setSessionToDelete] = useState<ChatIndexItem | null>(null);
-  const [workspaceSort, setWorkspaceSort] = useState<WorkspaceSort>("updated");
+  const [workspaceToDelete, setWorkspaceToDelete] = useState<WorkspaceProject | null>(null);
+  const [orphanWorkspaceToClear, setOrphanWorkspaceToClear] = useState<WorkspaceChatGroup | null>(
+    null,
+  );
+  const [workspaceSort, setWorkspaceSort] = useState<WorkspaceSort>(loadWorkspaceSort);
   const chatIndexQuery = useQuery({
     queryKey: ["chat-index"],
     queryFn: loadChatIndex,
@@ -597,6 +637,7 @@ function WorkspaceConversationGroups() {
           chatIndexQuery.data ?? [],
           workspaceSort,
         ),
+        workspaceSort,
       ),
     [chatIndexQuery.data, workspaceProjectsQuery.data, workspaceSort],
   );
@@ -634,6 +675,26 @@ function WorkspaceConversationGroups() {
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workspace-projects"] }),
   });
+  const deleteWorkspaceMutation = useMutation({
+    mutationFn: (project: WorkspaceProject) => removeWorkspaceProject(project.id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["workspace-projects"] });
+      setWorkspaceToDelete(null);
+    },
+  });
+  const clearOrphanWorkspaceMutation = useMutation({
+    mutationFn: async (group: WorkspaceChatGroup) => {
+      await Promise.all(
+        group.sessions.map(async (item) => {
+          await clearChatSessionWorkspace(item.id);
+        }),
+      );
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["chat-index"] });
+      setOrphanWorkspaceToClear(null);
+    },
+  });
 
   useEffect(() => {
     let active = true;
@@ -650,8 +711,9 @@ function WorkspaceConversationGroups() {
     void Promise.all([
       settingsStore.get<unknown>(CHAT_UNREAD_STORE_KEY),
       settingsStore.get<unknown>(WORKSPACE_COLLAPSE_STORE_KEY),
+      settingsStore.get<unknown>(WORKSPACE_SORT_STORE_KEY),
     ])
-      .then(([unread, collapse]) => {
+      .then(([unread, collapse, sort]) => {
         if (Array.isArray(unread)) {
           setUnreadSessionIds(new Set(unread.filter((id): id is string => typeof id === "string")));
         }
@@ -664,6 +726,7 @@ function WorkspaceConversationGroups() {
             ),
           );
         }
+        if (isWorkspaceSort(sort)) setWorkspaceSort(sort);
       })
       .catch((error) => console.error("Failed to load desktop navigation state", error));
   }, []);
@@ -784,15 +847,30 @@ function WorkspaceConversationGroups() {
           <DropdownMenuContent align="end" sideOffset={6}>
             <DropdownMenuLabel>排序方式</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => setWorkspaceSort("name")}>
+            <DropdownMenuItem
+              onSelect={() => {
+                setWorkspaceSort("name");
+                persistWorkspaceSort("name");
+              }}
+            >
               <span className="flex-1">按名称</span>
               {workspaceSort === "name" ? <Check className="size-3.5" /> : null}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => setWorkspaceSort("updated")}>
+            <DropdownMenuItem
+              onSelect={() => {
+                setWorkspaceSort("updated");
+                persistWorkspaceSort("updated");
+              }}
+            >
               <span className="flex-1">按更新</span>
               {workspaceSort === "updated" ? <Check className="size-3.5" /> : null}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => setWorkspaceSort("count")}>
+            <DropdownMenuItem
+              onSelect={() => {
+                setWorkspaceSort("count");
+                persistWorkspaceSort("count");
+              }}
+            >
               <span className="flex-1">按对话数量</span>
               {workspaceSort === "count" ? <Check className="size-3.5" /> : null}
             </DropdownMenuItem>
@@ -802,6 +880,11 @@ function WorkspaceConversationGroups() {
       {addWorkspaceMutation.error ? (
         <p className="px-2 py-1 text-[11px] text-destructive">
           {describeError(addWorkspaceMutation.error)}
+        </p>
+      ) : null}
+      {deleteWorkspaceMutation.error ? (
+        <p className="px-2 py-1 text-[11px] text-destructive">
+          {describeError(deleteWorkspaceMutation.error)}
         </p>
       ) : null}
       {isPending ? (
@@ -839,6 +922,30 @@ function WorkspaceConversationGroups() {
                   >
                     <Plus className="size-3.5" />
                   </button>
+                  {group.key !== "default" ? (
+                    <button
+                      aria-label={`${workspaceProjectsQuery.data?.some((project) => project.id === group.key) ? "移除" : "移出"} ${group.label}`}
+                      className="mr-1 flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+                      disabled={
+                        deleteWorkspaceMutation.isPending || clearOrphanWorkspaceMutation.isPending
+                      }
+                      onClick={() => {
+                        const project = workspaceProjectsQuery.data?.find(
+                          (item) => item.id === group.key,
+                        );
+                        if (project) setWorkspaceToDelete(project);
+                        else setOrphanWorkspaceToClear(group);
+                      }}
+                      title={
+                        workspaceProjectsQuery.data?.some((project) => project.id === group.key)
+                          ? "移除 Workspace"
+                          : "移出 Workspace"
+                      }
+                      type="button"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  ) : null}
                 </div>
                 {!isCollapsed ? (
                   group.sessions.length > 0 ? (
@@ -941,6 +1048,66 @@ function WorkspaceConversationGroups() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <AlertDialog
+        open={workspaceToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleteWorkspaceMutation.isPending) setWorkspaceToDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>移除 Workspace？</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要移除“
+              {workspaceToDelete ? pathBasename(workspaceToDelete.path) : "这个 Workspace"}”吗？
+              这只会移除保存的目录，不会删除历史对话。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteWorkspaceMutation.isPending}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleteWorkspaceMutation.isPending}
+              onClick={() => {
+                if (workspaceToDelete) deleteWorkspaceMutation.mutate(workspaceToDelete);
+              }}
+              variant="destructive"
+            >
+              {deleteWorkspaceMutation.isPending ? "移除中..." : "移除"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={orphanWorkspaceToClear !== null}
+        onOpenChange={(open) => {
+          if (!open && !clearOrphanWorkspaceMutation.isPending) setOrphanWorkspaceToClear(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>移出历史 Workspace？</AlertDialogTitle>
+            <AlertDialogDescription>
+              将“{orphanWorkspaceToClear?.label ?? "这个 Workspace"}”下的
+              {orphanWorkspaceToClear?.sessions.length ?? 0} 条对话移到 Default。对话内容不会删除。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={clearOrphanWorkspaceMutation.isPending}>
+              取消
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={clearOrphanWorkspaceMutation.isPending}
+              onClick={() => {
+                if (orphanWorkspaceToClear)
+                  clearOrphanWorkspaceMutation.mutate(orphanWorkspaceToClear);
+              }}
+              variant="destructive"
+            >
+              {clearOrphanWorkspaceMutation.isPending ? "处理中..." : "移出"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }
@@ -961,6 +1128,7 @@ function WorkspaceConversationSkeleton() {
 function groupChatsByWorkspace(
   sessions: ChatIndexItem[],
   projects: Awaited<ReturnType<typeof loadWorkspaceProjects>>,
+  sort: WorkspaceSort,
 ): WorkspaceChatGroup[] {
   const sessionsByWorkspace = new Map<string, ChatIndexItem[]>();
   const defaultSessions: ChatIndexItem[] = [];
@@ -999,7 +1167,7 @@ function groupChatsByWorkspace(
     });
   }
 
-  return groups;
+  return sortWorkspaceConversationGroups(groups, sort);
 }
 
 function pathBasename(path: string) {

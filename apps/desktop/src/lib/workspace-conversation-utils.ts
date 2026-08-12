@@ -1,15 +1,30 @@
 import type { ChatIndexItem } from "@/lib/chat-store";
-import type { WorkspaceProject } from "@/lib/workspaces";
+import { normalizeWorkspacePath } from "./workspace-path";
+import type { WorkspaceProject } from "./workspaces";
 
 export type WorkspaceSort = "name" | "updated" | "count";
+
+export type WorkspaceConversationGroup<T = unknown> = {
+  label: string;
+  sessions: T[];
+};
 
 export function getWorkspaceSessionKey(
   session: Pick<ChatIndexItem, "workspaceId" | "cwd">,
   projects: WorkspaceProject[],
 ) {
-  if (session.workspaceId) return session.workspaceId;
-  if (!session.cwd) return undefined;
-  return projects.find((project) => project.path === session.cwd)?.id ?? `cwd:${session.cwd}`;
+  if (session.cwd) {
+    const normalizedCwd = normalizeWorkspacePath(session.cwd);
+    const project = projects.find(
+      (candidate) => normalizeWorkspacePath(candidate.path) === normalizedCwd,
+    );
+    if (project) return project.id;
+    if (session.workspaceId && projects.some((candidate) => candidate.id === session.workspaceId)) {
+      return session.workspaceId;
+    }
+    return `cwd:${normalizedCwd}`;
+  }
+  return session.workspaceId || undefined;
 }
 
 export function sortWorkspaceProjects(
@@ -46,6 +61,19 @@ export function sortWorkspaceProjects(
     const aUpdated = latestSessionByWorkspace.get(a.id) ?? a.createdAt;
     const bUpdated = latestSessionByWorkspace.get(b.id) ?? b.createdAt;
     return bUpdated.localeCompare(aUpdated);
+  });
+}
+
+export function sortWorkspaceConversationGroups<T extends WorkspaceConversationGroup<unknown>>(
+  groups: T[],
+  sort: WorkspaceSort,
+) {
+  if (sort !== "count") return groups;
+
+  return [...groups].sort((left, right) => {
+    const countDifference = right.sessions.length - left.sessions.length;
+    if (countDifference !== 0) return countDifference;
+    return left.label.localeCompare(right.label, undefined, { sensitivity: "base" });
   });
 }
 
