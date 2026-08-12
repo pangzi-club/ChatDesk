@@ -19,7 +19,7 @@ type ChatReviewerDialogProps = {
 const decisionLabels: Record<ChatServerReviewerLog["decision"], string> = {
   approve: "Reviewer 已批准",
   deny: "Reviewer 已拒绝",
-  "user-approval": "已回退人工确认",
+  "user-approval": "已转人工确认",
 };
 
 const reasonLabels: Record<string, string> = {
@@ -86,6 +86,11 @@ function ReviewEntry({ entry }: { entry: ChatServerReviewerLog }) {
       {entry.command ? (
         <pre className="mt-2 overflow-x-auto rounded border border-border bg-muted/40 px-2.5 py-2 font-mono text-[11px] leading-5">
           <code>{entry.command}</code>
+        </pre>
+      ) : null}
+      {entry.input ? (
+        <pre className="mt-2 overflow-x-auto rounded border border-border bg-muted/40 px-2.5 py-2 font-mono text-[11px] leading-5">
+          <code>{JSON.stringify(entry.input, null, 2)}</code>
         </pre>
       ) : null}
       {entry.rationale || entry.reason || entry.error ? (

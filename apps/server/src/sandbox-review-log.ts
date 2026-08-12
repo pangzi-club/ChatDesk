@@ -15,6 +15,7 @@ export type SandboxReviewLogEntry = {
   toolCallId?: string;
   toolName?: string;
   command?: string;
+  input?: Record<string, unknown>;
   reasons: SandboxBoundaryReason[];
   decision: SandboxReviewLogDecision;
   rationale?: string;

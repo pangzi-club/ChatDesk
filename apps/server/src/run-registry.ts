@@ -502,7 +502,12 @@ function createSandboxEscalationHandler(options: {
   sessionId: string;
   runId: string;
 }) {
-  return async (toolCall: { toolName: string; toolCallId?: string; input: unknown }) => {
+  return async (toolCall: {
+    toolName: string;
+    toolCallId?: string;
+    input: unknown;
+    errorReason?: string;
+  }) => {
     const assessment: SandboxBoundaryAssessment = {
       requiresReview: true,
       reasons: ["sandbox-denied"],
@@ -521,8 +526,12 @@ function createSandboxEscalationHandler(options: {
         assessment,
         decision: "user-approval",
         reason: !options.reviewerModel ? "reviewer-not-configured" : "sandbox-blocked",
+        error: toolCall.errorReason,
       });
-      return { approved: false };
+      return {
+        approved: false,
+        reason: `沙箱拒绝：${toolCall.errorReason ?? "未提供具体原因"}`,
+      };
     }
 
     try {
@@ -554,7 +563,10 @@ function createSandboxEscalationHandler(options: {
         reason: "reviewer-failed",
         error: error instanceof Error ? error.message : String(error),
       });
-      return { approved: false };
+      return {
+        approved: false,
+        reason: `Reviewer 调用失败，沙箱拒绝：${error instanceof Error ? error.message : String(error)}`,
+      };
     }
   };
 }
@@ -666,6 +678,7 @@ async function logSandboxReview(
       toolCallId: payload.toolCall?.toolCallId,
       toolName: payload.toolCall?.toolName,
       command: extractBashCommand(payload.toolCall),
+      input: extractReviewInput(payload.toolCall),
       reasons: payload.assessment.reasons,
       decision: payload.decision as "approve" | "deny" | "user-approval",
       rationale: payload.rationale,
@@ -685,6 +698,7 @@ async function logSandboxReview(
       toolCallId: payload.toolCall?.toolCallId,
       toolName: payload.toolCall?.toolName,
       command: extractBashCommand(payload.toolCall),
+      input: extractReviewInput(payload.toolCall),
       reasons: payload.assessment.reasons,
       decision: payload.decision,
       rationale: payload.rationale,
@@ -704,6 +718,34 @@ function extractBashCommand(toolCall: { toolName?: string; input?: unknown } | u
   return typeof command === "string" && command.trim()
     ? command.replace(/Bearer\s+\S+/gi, "Bearer [redacted]").slice(0, 12_000)
     : undefined;
+}
+
+function extractReviewInput(
+  toolCall: { toolName?: string; input?: unknown } | undefined,
+): Record<string, unknown> | undefined {
+  if (!toolCall?.input || typeof toolCall.input !== "object") return undefined;
+  const input = toolCall.input as Record<string, unknown>;
+  const fieldsByTool: Record<string, string[]> = {
+    list_dir: ["path"],
+    read_file: ["path"],
+    search_files: ["path", "pattern", "query", "maxResults"],
+    write_file: ["path"],
+    edit_file: ["path"],
+    bash: ["cwd"],
+  };
+  const fields = fieldsByTool[toolCall.toolName ?? ""];
+  if (!fields) return undefined;
+  const result = Object.fromEntries(
+    fields
+      .filter((field) => input[field] !== undefined)
+      .map((field) => [
+        field,
+        typeof input[field] === "string"
+          ? input[field].replace(/Bearer\s+\S+/gi, "Bearer [redacted]").slice(0, 2_000)
+          : input[field],
+      ]),
+  );
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 function selectTools(tools: Record<string, unknown>, names: string[] | undefined) {

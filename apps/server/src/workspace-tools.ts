@@ -18,6 +18,7 @@ type SandboxEscalationHandler = (toolCall: {
   toolName: string;
   toolCallId?: string;
   input: unknown;
+  errorReason?: string;
 }) => Promise<{ approved: boolean; reason?: string }>;
 function rootPath(cwd: string) {
   const value = cwd.trim();
@@ -372,7 +373,12 @@ async function retryAfterSandboxReview<T>(
   },
 ): Promise<T> {
   if (!(error instanceof SandboxBlockedError) || !onSandboxBlocked) throw error;
-  const decision = await onSandboxBlocked(options);
-  if (!decision.approved) throw new SandboxBlockedError("被沙箱拦截了");
+  const decision = await onSandboxBlocked({
+    ...options,
+    errorReason: error.message,
+  });
+  if (!decision.approved) {
+    throw new SandboxBlockedError(decision.reason?.trim() || error.message);
+  }
   return options.retry();
 }

@@ -141,6 +141,7 @@ export type ChatServerReviewerLog = {
   toolCallId?: string;
   toolName?: string;
   command?: string;
+  input?: Record<string, unknown>;
   reasons: string[];
   decision: "approve" | "deny" | "user-approval";
   rationale?: string;
