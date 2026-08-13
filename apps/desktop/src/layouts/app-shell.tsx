@@ -477,7 +477,9 @@ function AppShell() {
             </aside>
 
             {/* 右列：内容区铺满到窗口顶部，拖拽条透明浮在上方 */}
-            <div className="app-shell-content relative flex min-w-0 flex-1 flex-col max-sm:w-[calc(100vw-4rem)]">
+            <div
+              className={`app-shell-content relative flex min-w-0 flex-1 flex-col max-sm:w-[calc(100vw-4rem)] ${isChatPage ? "chat-page" : ""}`}
+            >
               <div
                 className={`chat-split-layout ${isChatPage && chatWindowStates[chatWindowKey]?.open ? "is-open" : ""}`}
               >
