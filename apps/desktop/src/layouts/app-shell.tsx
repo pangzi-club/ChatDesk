@@ -402,7 +402,11 @@ function AppShell() {
         event.preventDefault();
         setChatWindowStates((current) => {
           const state = current[chatWindowKey] ?? createChatWindowState();
-          return { ...current, [chatWindowKey]: { ...state, open: !state.open } };
+          const open = !state.open;
+          return {
+            ...current,
+            [chatWindowKey]: { ...state, open, expanded: open ? state.expanded : false },
+          };
         });
         return;
       }
@@ -587,6 +591,7 @@ function AppShell() {
                           [chatWindowKey]: {
                             ...(current[chatWindowKey] ?? createChatWindowState()),
                             open: false,
+                            expanded: false,
                           },
                         }))
                       }
@@ -616,9 +621,14 @@ function AppShell() {
                     if (!isChatPage) return;
                     setChatWindowStates((current) => {
                       const state = current[chatWindowKey] ?? createChatWindowState();
+                      const open = !state.open;
                       return {
                         ...current,
-                        [chatWindowKey]: { ...state, open: !state.open },
+                        [chatWindowKey]: {
+                          ...state,
+                          open,
+                          expanded: open ? state.expanded : false,
+                        },
                       };
                     });
                   }}
