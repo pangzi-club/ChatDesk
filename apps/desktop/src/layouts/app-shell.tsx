@@ -93,6 +93,7 @@ import {
   clearChatSessionWorkspace,
   deleteChatSession,
   loadChatIndex,
+  loadChatSession,
 } from "@/lib/chat-store";
 import { subscribeFileViewerOpen } from "@/lib/file-viewer-events";
 import { openExternal } from "@/lib/platform";
@@ -311,6 +312,16 @@ function AppShell() {
   const navigate = useNavigate();
   const isChatPage = location.pathname === "/chat";
   const chatWindowKey = getChatWindowKey(location.search);
+  const chatUrlParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const chatSessionId = isChatPage ? chatUrlParams.get("sessionId") : null;
+  const chatSessionQuery = useQuery({
+    queryKey: ["chat-window-session", chatSessionId],
+    queryFn: () => loadChatSession(chatSessionId ?? ""),
+    enabled: Boolean(chatSessionId),
+  });
+  const chatWorkspaceId =
+    chatUrlParams.get("workspaceId") ?? chatSessionQuery.data?.workspaceId ?? "";
+  const chatWorkspaceCwd = chatUrlParams.get("workspaceCwd") ?? chatSessionQuery.data?.cwd ?? "";
   const hideMainSidebar =
     location.pathname.startsWith("/settings") || location.pathname.startsWith("/dev-tools/");
   const lockOutletScroll = location.pathname.startsWith("/settings/history");
@@ -498,6 +509,8 @@ function AppShell() {
                     />
                     <ChatWorkspaceWindow
                       split
+                      workspaceId={chatWorkspaceId}
+                      cwd={chatWorkspaceCwd}
                       state={chatWindowStates[chatWindowKey] ?? createChatWindowState()}
                       onToggle={() =>
                         setChatWindowStates((current) => ({
@@ -1289,11 +1302,15 @@ function ChatWorkspaceWindow({
   onToggle,
   split = false,
   state,
+  workspaceId,
+  cwd,
 }: {
   onChange: (state: ChatWindowState) => void;
   onToggle: () => void;
   split?: boolean;
   state: ChatWindowState;
+  workspaceId: string;
+  cwd: string;
 }) {
   const interactionRef = useRef<WindowInteraction | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1501,6 +1518,32 @@ function ChatWorkspaceWindow({
     onChange({ ...state, tabs: [...state.tabs, nextTab], activeTabId: nextTab.id });
   }
 
+  function addGitDiffTab() {
+    if (!workspaceId) return;
+    const existing = state.tabs.find(
+      (tab) => tab.kind === "git-diff" && tab.workspaceId === workspaceId,
+    );
+    if (existing) {
+      onChange({
+        ...state,
+        activeTabId: existing.id,
+        tabs: state.tabs.map((tab) =>
+          tab.id === existing.id ? { ...tab, cwd, refreshToken: Date.now() } : tab,
+        ),
+      });
+      return;
+    }
+    const nextTab = {
+      id: createChatWindowTabId(),
+      title: "Git Diff",
+      kind: "git-diff" as const,
+      workspaceId,
+      cwd,
+      refreshToken: Date.now(),
+    };
+    onChange({ ...state, tabs: [...state.tabs, nextTab], activeTabId: nextTab.id });
+  }
+
   function closeTab(tabId: string) {
     const nextTabs = state.tabs.filter((tab) => tab.id !== tabId);
     const nextActive =
@@ -1552,16 +1595,30 @@ function ChatWorkspaceWindow({
             </div>
           ))}
         </div>
-        <Button
-          aria-label="新建独立窗口"
-          className="chat-workspace-window-add"
-          onClick={addTab}
-          size="icon"
-          type="button"
-          variant="ghost"
-        >
-          <Plus className="size-3.5" />
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              aria-label="新建独立窗口"
+              className="chat-workspace-window-add"
+              size="icon"
+              title="新建窗口"
+              type="button"
+              variant="ghost"
+            >
+              <Plus className="size-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" sideOffset={6}>
+            <DropdownMenuItem onSelect={addTab}>
+              <Plus className="size-3.5" />
+              空白窗口
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={!workspaceId} onSelect={addGitDiffTab}>
+              <FolderGit2 className="size-3.5" />
+              Git Diff
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button
           aria-label="关闭 Chat 独立窗口"
           className="chat-workspace-window-toggle"
