@@ -46,6 +46,13 @@ test("NodePlatformAdapter reports Git line changes and file diff", async () => {
   const adapter = new NodePlatformAdapter();
   const info = await adapter.inspectGit(root);
   assert.equal(info.summary?.filesChanged, 2);
+  assert.deepEqual(
+    info.summary?.files.map((file) => [file.path, file.status]),
+    [
+      ["note.txt", "modified"],
+      ["new.txt", "untracked"],
+    ],
+  );
   assert.equal(info.summary?.insertions, 3);
   assert.equal(info.summary?.deletions, 1);
   const diff = await adapter.readGitDiff(root, "note.txt");

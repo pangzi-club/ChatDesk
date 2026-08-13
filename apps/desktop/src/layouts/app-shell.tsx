@@ -372,14 +372,18 @@ function AppShell() {
           cwd: request.cwd,
           path: request.path,
           content: request.content,
+          refreshToken: Date.now(),
         };
+        const refreshedTab = existing ? { ...existing, refreshToken: Date.now() } : tab;
         return {
           ...current,
           [key]: {
             ...state,
             open: true,
-            tabs: existing ? state.tabs : [...state.tabs, tab],
-            activeTabId: tab.id,
+            tabs: existing
+              ? state.tabs.map((item) => (item.id === existing.id ? refreshedTab : item))
+              : [...state.tabs, tab],
+            activeTabId: refreshedTab.id,
           },
         };
       });
@@ -1235,6 +1239,7 @@ type ChatWindowTab = {
   cwd?: string;
   path?: string;
   content?: string;
+  refreshToken?: number;
 };
 type ChatWindowState = {
   open: boolean;
@@ -1293,6 +1298,13 @@ function ChatWorkspaceWindow({
   const interactionRef = useRef<WindowInteraction | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
+  const activeTabId = activeTab?.id;
+  const activeTabKind = activeTab?.kind;
+  const activeTabPath = activeTab?.path;
+  const activeTabWorkspaceId = activeTab?.workspaceId;
+  const activeTabRefreshToken = activeTab?.refreshToken;
+  const tabResetKey = `${activeTabId ?? ""}:${activeTabPath ?? ""}:${activeTabRefreshToken ?? 0}`;
+  const gitTabKey = `${activeTabId ?? ""}:${activeTabKind ?? ""}:${activeTabWorkspaceId ?? ""}:${activeTabRefreshToken ?? 0}`;
   const [selectedPath, setSelectedPath] = useState(activeTab?.path ?? "");
   const [gitSummary, setGitSummary] = useState<WorkspaceGitSummary | null>(null);
   const [gitDiff, setGitDiff] = useState<{
@@ -1305,21 +1317,51 @@ function ChatWorkspaceWindow({
   } | null>(null);
   const [fileContent, setFileContent] = useState<{ path: string; content: string } | null>(null);
   const [viewerError, setViewerError] = useState<string | null>(null);
+  const [gitRefreshToken, setGitRefreshToken] = useState(0);
 
   useEffect(() => {
-    setSelectedPath(activeTab?.path ?? "");
+    if (!tabResetKey) return;
+    setSelectedPath(activeTabPath ?? "");
     setGitDiff(null);
     setFileContent(null);
     setViewerError(null);
-  }, [activeTab?.path]);
+  }, [activeTabPath, tabResetKey]);
 
   useEffect(() => {
+    if (!gitTabKey) return;
     let active = true;
-    if (!activeTab?.workspaceId || activeTab.kind !== "git-diff") {
+    if (!activeTabWorkspaceId || activeTabKind !== "git-diff") {
       setGitSummary(null);
       return;
     }
-    void loadServerWorkspaceGit(activeTab.workspaceId)
+    void loadServerWorkspaceGit(activeTabWorkspaceId)
+      .then((info) => {
+        if (!active) return;
+        const summary = info.summary ?? null;
+        setGitSummary(summary);
+        if (
+          summary?.files.length &&
+          !summary.files.some((file: WorkspaceGitFile) => file.path === selectedPath)
+        ) {
+          const nextPath = summary.files[0].path;
+          setSelectedPath(nextPath);
+        }
+      })
+      .catch((error) => {
+        if (active) setViewerError(error instanceof Error ? error.message : String(error));
+      });
+    const intervalId = window.setInterval(() => setGitRefreshToken((value) => value + 1), 15_000);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [activeTabKind, activeTabWorkspaceId, gitTabKey, selectedPath]);
+
+  useEffect(() => {
+    if (gitRefreshToken === 0 || activeTabKind !== "git-diff") return;
+    let active = true;
+    if (!activeTabWorkspaceId) return;
+    void loadServerWorkspaceGit(activeTabWorkspaceId)
       .then((info) => {
         if (active) setGitSummary(info.summary ?? null);
       })
@@ -1329,7 +1371,7 @@ function ChatWorkspaceWindow({
     return () => {
       active = false;
     };
-  }, [activeTab?.kind, activeTab?.workspaceId]);
+  }, [activeTabKind, activeTabWorkspaceId, gitRefreshToken]);
 
   useEffect(() => {
     let active = true;
@@ -1535,8 +1577,20 @@ function ChatWorkspaceWindow({
         <div className="chat-git-diff-panel">
           <header className="chat-git-diff-header">
             <span>{gitSummary?.branch ?? "Git Diff"}</span>
-            <span className="chat-git-diff-totals">
-              +{gitSummary?.insertions ?? 0} -{gitSummary?.deletions ?? 0}
+            <span className="chat-git-diff-header-actions">
+              <span className="chat-git-diff-totals">
+                +{gitSummary?.insertions ?? 0} -{gitSummary?.deletions ?? 0}
+              </span>
+              <Button
+                aria-label="刷新 Git Diff"
+                className="chat-workspace-window-add"
+                onClick={() => setGitRefreshToken((value) => value + 1)}
+                size="icon"
+                type="button"
+                variant="ghost"
+              >
+                <RefreshCw className="size-3.5" />
+              </Button>
             </span>
           </header>
           <div className="chat-git-diff-body">

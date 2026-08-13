@@ -1237,6 +1237,7 @@ function ChatPage() {
             className="chat-git-summary-float"
             onClick={() => {
               const firstFile = workspaceGitQuery.data?.summary?.files[0];
+              void workspaceGitQuery.refetch();
               openFileViewer({
                 mode: "diff",
                 path: firstFile?.path ?? "",
