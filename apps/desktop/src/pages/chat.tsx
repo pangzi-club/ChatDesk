@@ -1232,7 +1232,10 @@ function ChatPage() {
       </div>
 
       <div className="chat-composer-wrap">
-        {workspaceGitQuery.data?.summary && workspaceGitQuery.data.isRepository ? (
+        {workspaceGitQuery.data?.summary &&
+        workspaceGitQuery.data.isRepository &&
+        (workspaceGitQuery.data.summary.insertions > 0 ||
+          workspaceGitQuery.data.summary.deletions > 0) ? (
           <button
             className="chat-git-summary-float"
             onClick={() => {
