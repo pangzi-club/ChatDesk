@@ -609,6 +609,19 @@ function ChatPage() {
     wasGeneratingRef.current = isGenerating;
   }, [isGenerating, workspaceGitQuery.refetch, workspaceKey]);
   useEffect(() => {
+    if (!workspaceKey) return;
+    const refreshGitStatus = () => {
+      if (document.visibilityState === "hidden") return;
+      void workspaceGitQuery.refetch();
+    };
+    window.addEventListener("focus", refreshGitStatus);
+    document.addEventListener("visibilitychange", refreshGitStatus);
+    return () => {
+      window.removeEventListener("focus", refreshGitStatus);
+      document.removeEventListener("visibilitychange", refreshGitStatus);
+    };
+  }, [workspaceGitQuery.refetch, workspaceKey]);
+  useEffect(() => {
     if (!isGenerating) {
       generationStartedAtRef.current = null;
       setGenerationElapsedSeconds(0);

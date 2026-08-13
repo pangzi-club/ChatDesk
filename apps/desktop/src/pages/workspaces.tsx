@@ -11,7 +11,7 @@ import {
   Trash2,
   XCircle,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
@@ -223,6 +223,19 @@ function WorkspaceDetailPage() {
     refetchOnWindowFocus: true,
     staleTime: 0,
   });
+  useEffect(() => {
+    if (!project) return;
+    const refreshGitStatus = () => {
+      if (document.visibilityState === "hidden") return;
+      void gitQuery.refetch();
+    };
+    window.addEventListener("focus", refreshGitStatus);
+    document.addEventListener("visibilitychange", refreshGitStatus);
+    return () => {
+      window.removeEventListener("focus", refreshGitStatus);
+      document.removeEventListener("visibilitychange", refreshGitStatus);
+    };
+  }, [gitQuery.refetch, project]);
   if (projectsQuery.isPending)
     return (
       <div className="p-8 pt-16">
