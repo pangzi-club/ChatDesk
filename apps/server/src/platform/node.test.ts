@@ -81,6 +81,22 @@ test("NodePlatformAdapter restores individual and all Git changes", async () => 
   assert.equal((await adapter.inspectGit(root)).summary?.files.length, 0);
 });
 
+test("NodePlatformAdapter commits Git changes", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-platform-git-commit-"));
+  await execFileAsync("git", ["init", "-q", "-b", "main"], { cwd: root });
+  await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+  await execFileAsync("git", ["config", "user.name", "Test"], { cwd: root });
+  await writeFile(path.join(root, "note.txt"), "before\n", "utf8");
+  await execFileAsync("git", ["add", "."], { cwd: root });
+  await execFileAsync("git", ["commit", "-q", "-m", "initial"], { cwd: root });
+  await writeFile(path.join(root, "note.txt"), "after\n", "utf8");
+  const result = await new NodePlatformAdapter().commitGit(root, "update note");
+  assert.equal(result.message, "update note");
+  assert.equal(result.pushed, false);
+  assert.match(result.hash, /^[0-9a-f]{40}$/);
+  assert.equal((await new NodePlatformAdapter().inspectGit(root)).summary?.filesChanged, 0);
+});
+
 test("NodePlatformAdapter totals Git changes across truncated file lists", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-platform-git-many-files-"));
   await execFileAsync("git", ["init", "-q", "-b", "main"], { cwd: root });

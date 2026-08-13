@@ -1,6 +1,7 @@
 import { ChatServerClient, ChatServerError } from "@chatdesk/chat-client";
 import type {
   ChatIndexItem,
+  ChatServerAiUsageLog,
   ChatServerConfigData,
   ChatServerProviderModel,
   ChatServerReviewerLog,
@@ -9,6 +10,7 @@ import type {
   RunStartInput,
   SessionIndexItem,
   SystemPromptSnapshot,
+  WorkspaceGitCommitResult,
   WorkspaceGitDiff,
 } from "@chatdesk/shared";
 import { invoke, isTauri as tauriIsTauri } from "@tauri-apps/api/core";
@@ -60,9 +62,10 @@ export type ServerWorkspaceProject = {
 };
 export type SystemPromptPreview = SystemPromptSnapshot;
 
-export type { WorkspaceGitDiff } from "@chatdesk/shared";
+export type { WorkspaceGitCommitResult, WorkspaceGitDiff } from "@chatdesk/shared";
 export type {
   ChatIndexItem,
+  ChatServerAiUsageLog,
   ChatServerConfigData,
   ChatServerProviderModel,
   ChatServerReviewerLog,
@@ -338,6 +341,23 @@ export async function restoreServerWorkspaceGit(
   );
 }
 
+export async function commitServerWorkspaceGit(
+  id: string,
+  value: { message?: string; push?: boolean },
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  const response = await chatServerRequest(
+    `/v1/workspaces/${encodeURIComponent(id)}/git/commit`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(value),
+    },
+    port,
+  );
+  return (await response.json()) as WorkspaceGitCommitResult;
+}
+
 export async function loadServerWorkspaceFile(
   id: string,
   filePath: string,
@@ -448,6 +468,10 @@ export async function loadChatServerReviewerLogs(
   port = CHAT_SERVER_DEFAULT_PORT,
 ) {
   return createClient(port).getReviewerLogs(sessionId);
+}
+
+export async function loadChatServerAiUsageLogs(port = CHAT_SERVER_DEFAULT_PORT) {
+  return createClient(port).getAiUsageLogs();
 }
 
 export async function loadChatServerMemory(port = CHAT_SERVER_DEFAULT_PORT) {

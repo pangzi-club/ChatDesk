@@ -1,4 +1,8 @@
-import type { WorkspaceGitDiff, WorkspaceGitSummary } from "@chatdesk/shared";
+import type {
+  WorkspaceGitCommitResult,
+  WorkspaceGitDiff,
+  WorkspaceGitSummary,
+} from "@chatdesk/shared";
 import type { SandboxMode } from "../protocol.ts";
 
 export type PlatformCapabilities = {
@@ -91,6 +95,7 @@ export type PlatformAdapter = {
   inspectGit(root: string): Promise<WorkspaceGitInfo>;
   readGitDiff(root: string, relativePath: string): Promise<WorkspaceGitDiff>;
   restoreGit(root: string, relativePath?: string): Promise<void>;
+  commitGit(root: string, message?: string, push?: boolean): Promise<WorkspaceGitCommitResult>;
   runShell(
     root: string,
     command: string,

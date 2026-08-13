@@ -1,5 +1,6 @@
 import type {
   ChatIndexItem,
+  ChatServerAiUsageLog,
   ChatServerConfigData,
   ChatServerProviderModel,
   ChatServerReviewerLog,
@@ -255,6 +256,10 @@ export class ChatServerClient {
     );
   }
 
+  getAiUsageLogs() {
+    return this.json<ChatServerAiUsageLog[]>("/v1/ai-usage", undefined, "AI 用量记录加载失败");
+  }
+
   getMemory() {
     return this.json<unknown>("/v1/memory", undefined, "Chat Server 记忆加载失败");
   }
@@ -423,6 +428,7 @@ export class ChatServerClient {
 
 export type {
   ChatIndexItem,
+  ChatServerAiUsageLog,
   ChatServerConfigData,
   ChatServerProviderModel,
   ChatServerReviewerLog,

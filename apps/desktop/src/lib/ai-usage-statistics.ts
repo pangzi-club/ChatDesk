@@ -6,7 +6,7 @@ import {
   loadArchiveIndex,
   loadArchiveSession,
 } from "@/lib/chat-archive";
-import { loadChatServerReviewerLogs } from "@/lib/chat-server";
+import { loadChatServerAiUsageLogs, loadChatServerReviewerLogs } from "@/lib/chat-server";
 import { loadChatIndex, loadChatSession } from "@/lib/chat-store";
 import {
   addTokenUsage,
@@ -21,7 +21,7 @@ export type UsagePeriod = "today" | "week" | "month" | "30d" | "year";
 
 export type UsageRecord = {
   date: string;
-  source: ArchiveSource | "reviewer";
+  source: ArchiveSource | "reviewer" | "chat-server";
   provider: string;
   model: string;
   usage: TokenUsage;
@@ -31,7 +31,7 @@ export type UsageRecord = {
 export type UsageAggregate = {
   provider: string;
   model: string;
-  source: ArchiveSource | "reviewer" | "mixed";
+  source: ArchiveSource | "reviewer" | "chat-server" | "mixed";
   messageCount: number;
   usage: TokenUsage;
 };
@@ -216,6 +216,26 @@ async function collectRecords(models: ModelConfig[]): Promise<UsageRecord[]> {
       source: "reviewer",
       provider: config?.provider ?? "未知供应商",
       model: config?.name ?? entry.modelId ?? "Reviewer",
+      usage: entry.usage,
+      messageCount: 1,
+    });
+  }
+  let aiUsageLogs: Awaited<ReturnType<typeof loadChatServerAiUsageLogs>> = [];
+  try {
+    aiUsageLogs = await loadChatServerAiUsageLogs();
+  } catch {
+    // Chat Server usage logs are optional while the local server is unavailable.
+  }
+  for (const entry of aiUsageLogs) {
+    if (!entry.usage || !hasTokenUsage(entry.usage)) continue;
+    const config =
+      (entry.modelId ? modelById.get(entry.modelId) : undefined) ??
+      (entry.model ? modelByName.get(entry.model) : undefined);
+    records.push({
+      date: dateKey(entry.timestamp, new Date()),
+      source: "chat-server",
+      provider: entry.provider ?? config?.provider ?? "未知供应商",
+      model: entry.model ?? config?.name ?? entry.modelId ?? "Chat Server",
       usage: entry.usage,
       messageCount: 1,
     });

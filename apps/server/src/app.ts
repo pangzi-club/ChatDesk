@@ -8,12 +8,14 @@ import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { ActivityLogStore } from "./activity-log-store.ts";
+import { AiUsageLogStore, normalizeAiUsage } from "./ai-usage-log.ts";
 import { ArchiveStore } from "./archive-store.ts";
 import { AutomationScheduler, AutomationStore } from "./automation-store.ts";
 import { ChatConfigStore } from "./chat-config.ts";
 import { closeClientTools } from "./client-tools.ts";
 import type { ServerConfig } from "./config.ts";
 import { EventHub } from "./events.ts";
+import { normalizeGeneratedCommitMessage } from "./git-commit-message.ts";
 import { ImageGenerationStore } from "./image-generation-store.ts";
 import { McpRuntime } from "./mcp-runtime.ts";
 import { MemoryStore } from "./memory-store.ts";
@@ -283,6 +285,8 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   await archive.init();
   const activityLogs = new ActivityLogStore(config.dataDir);
   await activityLogs.init();
+  const aiUsageLogs = new AiUsageLogStore(config.dataDir);
+  await aiUsageLogs.init();
   await activityLogs.append({
     level: "info",
     source: "Chat Server",
@@ -431,6 +435,90 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
       const filePath = typeof body.path === "string" ? body.path : undefined;
       await nodePlatform.restoreGit(workspace.path, filePath);
       return c.body(null, 204);
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+  app.post("/v1/workspaces/:id/git/commit", async (c) => {
+    const workspace = workspaces.get(c.req.param("id"));
+    if (!workspace) return jsonError("workspace 不存在", 404);
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const message = typeof body.message === "string" ? body.message.trim() : "";
+      const push = body.push === true;
+      let finalMessage = message;
+      let generated = false;
+      if (!finalMessage) {
+        const config = chatConfig.get();
+        const model = (config.models.find((item) => {
+          if (!item || typeof item !== "object") return false;
+          const value = item as { isDefault?: unknown; id?: unknown };
+          return value.isDefault === true || value.id === config.approvalReviewerModelId;
+        }) ?? config.models.find((item) => item && typeof item === "object")) as
+          | {
+              name?: string;
+              baseUrl?: string;
+              apiKey?: string;
+              responsive?: boolean;
+              provider?: string;
+              id?: string;
+            }
+          | undefined;
+        const apiKey = model?.apiKey || (model?.id ? config.apiKeys[model.id] : undefined);
+        if (!model?.name || !model.baseUrl || !apiKey) {
+          return jsonError("未配置可用模型，请填写提交信息后重试");
+        }
+        const modelInput = {
+          name: model.name,
+          baseUrl: model.baseUrl,
+          provider: model.provider,
+        };
+        const diff = await nodePlatform.runShell(
+          workspace.path,
+          "git diff HEAD --stat && git diff HEAD",
+          "full",
+        );
+        if (diff.code !== 0) return jsonError(diff.out || "读取 Git 改动失败");
+        const { createOpenAI } = await import("@ai-sdk/openai");
+        const { generateText } = await import("ai");
+        const { createKimiFetch } = await import("./kimi.ts");
+        const { createMiniMaxFetch, isMiniMaxModel } = await import("./minimax.ts");
+        const provider = createOpenAI({
+          apiKey,
+          baseURL: model.baseUrl
+            .replace(/\/+$/, "")
+            .replace(/\/chat\/completions$/i, "")
+            .replace(/\/responses$/i, ""),
+          fetch: isMiniMaxModel(modelInput)
+            ? createMiniMaxFetch(modelInput)
+            : createKimiFetch(modelInput),
+        });
+        const languageModel = model.responsive
+          ? provider.responses(model.name)
+          : provider.chat(model.name);
+        const result = await generateText({
+          model: languageModel,
+          system:
+            "You write concise English Conventional Commits messages. Return exactly one line starting with one of feat:, fix:, docs:, refactor:, test:, chore:, build:, ci:, or perf:. Do not use quotes or explanations.",
+          prompt: `Summarize the following Git changes as one commit message:\n\n${diff.out.slice(0, 120_000)}`,
+          maxOutputTokens: 80,
+          maxRetries: 0,
+        });
+        const usage = normalizeAiUsage(result.usage);
+        if (usage) {
+          await aiUsageLogs.append({
+            operation: "git-commit-message",
+            modelId: model.id || model.name,
+            provider: model.provider,
+            model: model.name,
+            usage,
+          });
+        }
+        finalMessage = normalizeGeneratedCommitMessage(result.text);
+        generated = true;
+      }
+      const result = await nodePlatform.commitGit(workspace.path, finalMessage, push);
+      return c.json({ ...result, generated });
     } catch (error) {
       return jsonError(error instanceof Error ? error.message : String(error));
     }
@@ -590,6 +678,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   });
 
   app.get("/v1/chat-config", (c) => c.json(chatConfig.get()));
+  app.get("/v1/ai-usage", (c) => c.json(aiUsageLogs.list()));
   app.get("/v1/sandbox-reviews", (c) => c.json(runs.reviewLogs(c.req.query("sessionId"))));
   app.patch("/v1/chat-config", async (c) => {
     try {

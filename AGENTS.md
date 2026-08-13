@@ -2,6 +2,11 @@
 
 These instructions apply to the entire repository.
 
+## AI Usage Accounting
+
+- Unless a task explicitly says otherwise, every AI/model invocation must record its token usage through the existing usage persistence and statistics path. This includes background jobs, reviewers, generated text helpers, and feature-specific AI actions.
+- New AI integrations must preserve provider/model identity and input/output/cache/reasoning token fields when the provider returns them. Do not add an untracked AI call.
+
 ## Package Manager
 
 - Use the pnpm version declared in `package.json` (`pnpm@11.21.0`).

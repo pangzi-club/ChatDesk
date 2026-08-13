@@ -2,7 +2,12 @@ import { execFile } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import type { WorkspaceGitDiff, WorkspaceGitFile, WorkspaceGitSummary } from "@chatdesk/shared";
+import type {
+  WorkspaceGitCommitResult,
+  WorkspaceGitDiff,
+  WorkspaceGitFile,
+  WorkspaceGitSummary,
+} from "@chatdesk/shared";
 
 type GitStatus = {
   branch: string | null;
@@ -243,4 +248,20 @@ export async function restoreGit(root: string, relativePath?: string): Promise<v
   }
   await runGit(root, ["reset", "--hard", "HEAD"]);
   await runGit(root, ["clean", "-fd"]);
+}
+
+export async function commitGit(
+  root: string,
+  message?: string,
+  push = false,
+): Promise<WorkspaceGitCommitResult> {
+  const commitMessage = message?.trim();
+  if (!commitMessage) throw new Error("提交信息不能为空");
+  await runGit(root, ["add", "-A"]);
+  const status = await runGit(root, ["status", "--porcelain"]);
+  if (!status.stdout.trim()) throw new Error("当前没有可提交的改动");
+  await runGit(root, ["commit", "-m", commitMessage]);
+  const hash = (await runGit(root, ["rev-parse", "HEAD"])).stdout.trim();
+  if (push) await runGit(root, ["push"]);
+  return { hash, message: commitMessage, pushed: push, generated: false };
 }

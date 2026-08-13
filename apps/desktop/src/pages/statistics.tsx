@@ -138,6 +138,7 @@ function Heatmap({
 function DetailsTable({ rows }: { rows: UsageAggregate[] }) {
   const sourceLabel = (source: UsageAggregate["source"]) => {
     if (source === "reviewer") return "Reviewer";
+    if (source === "chat-server") return "Chat Server";
     if (source === "native") return "本机对话";
     if (source === "mixed") return "混合";
     return source;

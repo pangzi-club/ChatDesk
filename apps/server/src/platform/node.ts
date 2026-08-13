@@ -5,7 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import type { SandboxMode } from "../protocol.ts";
 import { resolveCommandCwd, runSandboxedShell } from "../sandbox-exec.ts";
-import { collectGitSummary, readGitDiff, restoreGit } from "./git.ts";
+import { collectGitSummary, commitGit, readGitDiff, restoreGit } from "./git.ts";
 import type {
   PlatformAdapter,
   PlatformCapabilities,
@@ -284,6 +284,10 @@ export class NodePlatformAdapter implements PlatformAdapter {
 
   restoreGit(rootValue: string, relativePath?: string) {
     return restoreGit(rootPath(rootValue), relativePath);
+  }
+
+  commitGit(rootValue: string, message?: string, push?: boolean) {
+    return commitGit(rootPath(rootValue), message, push);
   }
 
   runShell(

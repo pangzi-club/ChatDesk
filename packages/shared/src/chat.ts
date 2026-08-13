@@ -162,6 +162,16 @@ export type ChatServerReviewerLog = {
   error?: string;
 };
 
+export type ChatServerAiUsageLog = {
+  id: string;
+  timestamp: string;
+  operation: string;
+  modelId?: string;
+  provider?: string;
+  model?: string;
+  usage: ChatTokenUsage;
+};
+
 export type ChatToolPackId =
   | "list_dir"
   | "search_files"
@@ -204,6 +214,13 @@ export type WorkspaceGitSummary = {
   filesChanged: number;
   files: WorkspaceGitFile[];
   truncated?: boolean;
+};
+
+export type WorkspaceGitCommitResult = {
+  hash: string;
+  message: string;
+  pushed: boolean;
+  generated: boolean;
 };
 
 export type ModelConfig = {
