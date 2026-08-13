@@ -7,24 +7,27 @@ import {
   isSandboxBlockedOutput,
   resolveCommandCwd,
   runSandboxedRead,
-  SandboxBlockedError,
+  SandboxPathError,
 } from "./sandbox-exec.ts";
 
 describe("sandbox execution errors", () => {
   it("only classifies recognizable Seatbelt denial output as sandbox blocked", () => {
     expect(isSandboxBlockedOutput("sandbox-exec: deny file-write-data")).toBe(true);
+    expect(isSandboxBlockedOutput("sandbox-exec: sandbox_apply: Operation not permitted")).toBe(
+      false,
+    );
     expect(isSandboxBlockedOutput("command failed: exit status 1")).toBe(false);
     expect(isSandboxBlockedOutput("permission denied by application")).toBe(false);
   });
 
-  it("uses a stable error code for boundary validation failures", () => {
-    expect(() => resolveCommandCwd("/tmp", "/etc", "ask")).toThrow(SandboxBlockedError);
+  it("uses a stable error code for invalid boundary paths", () => {
+    expect(() => resolveCommandCwd("/tmp", "/etc", "ask")).toThrow(SandboxPathError);
     try {
       resolveCommandCwd("/tmp", "/etc", "ask");
     } catch (error) {
       expect(error).toMatchObject({
-        code: "sandbox_blocked",
-        message: "受限模式下 Bash 只能在当前 workspace 内执行",
+        code: "sandbox_path_invalid",
+        message: "Bash cwd 必须是 workspace 内的相对路径或 workspace 内的绝对路径",
       });
     }
   });

@@ -31,7 +31,11 @@ import { SandboxReviewLogStore } from "./sandbox-review-log.ts";
 import type { SessionStore } from "./store.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
 import { hasWorkspace, selectWorkspaceToolNames } from "./tool-selection.ts";
-import { createWorkspaceTools } from "./workspace-tools.ts";
+import {
+  createWorkspaceTools,
+  preflightWorkspaceTool,
+  type WorkspaceToolPreflightMap,
+} from "./workspace-tools.ts";
 
 type ActiveRun = {
   id: string;
@@ -198,6 +202,7 @@ export class RunRegistry {
     if (!current) throw new Error("会话不存在");
     const sandboxMode = input.sandboxMode ?? chatConfig.sandboxMode ?? "ask";
     const approvedEscalationToolCallIds = collectApprovedToolCallIds(input.messages ?? []);
+    const preflightResults: WorkspaceToolPreflightMap = new Map();
     const reviewerModel = resolveApprovalReviewerModel(chatConfig);
     const messages = input.messages?.length
       ? input.messages
@@ -263,6 +268,7 @@ export class RunRegistry {
                 model,
                 sandboxMode,
                 approvedEscalationToolCallIds,
+                preflightResults,
                 onSandboxBlocked: createSandboxEscalationHandler({
                   mode: sandboxMode,
                   workspace: session.cwd,
@@ -290,6 +296,7 @@ export class RunRegistry {
           sessionId,
           runId,
           readablePaths: chatConfig.sandboxReadablePaths,
+          preflightResults,
         }),
         experimental_toolApprovalSecret: this.toolApprovalSecret,
         stopWhen: stepCountIs(MAX_AGENT_STEPS),
@@ -411,6 +418,7 @@ function createToolApproval(options: {
   sessionId: string;
   runId: string;
   readablePaths: string[];
+  preflightResults: WorkspaceToolPreflightMap;
 }) {
   const mode = options.mode;
   if (mode === "full") return undefined;
@@ -428,6 +436,41 @@ function createToolApproval(options: {
     }
 
     const assessment = classifySandboxBoundary(toolCall, options.workspace, options.readablePaths);
+    const preflightable = ["list_dir", "search_files", "read_file", "bash"].includes(toolName);
+    if (
+      preflightable &&
+      options.workspace &&
+      toolCallId &&
+      !options.approvedEscalationToolCallIds.has(toolCallId)
+    ) {
+      const preflight = await preflightWorkspaceTool({
+        toolName,
+        input: toolCall.input,
+        cwd: options.workspace,
+        mode,
+        readablePaths: options.readablePaths,
+      });
+      options.preflightResults.set(toolCallId, preflight);
+      if (preflight.status === "ok" || preflight.status === "error")
+        return "not-applicable" as const;
+      if (mode === "ask") {
+        await logSandboxReview(options.reviewLog, {
+          sessionId: options.sessionId,
+          runId: options.runId,
+          toolCall,
+          assessment: {
+            ...assessment,
+            requiresReview: true,
+            reasons: ["sandbox-denied"],
+            summary: "实际执行时被当前沙箱拦截",
+          },
+          decision: "user-approval",
+          reason: "sandbox-blocked",
+          error: preflight.error.message,
+        });
+        return "user-approval";
+      }
+    }
     if (!assessment.requiresReview) {
       if (options.mode === "auto") return "not-applicable" as const;
       if (!isWorkspaceMutationTool(toolName)) return "not-applicable" as const;
@@ -639,6 +682,7 @@ function createWorkspaceToolsForInput(
     approvedEscalationToolCallIds: Set<string>;
     onSandboxBlocked: Parameters<typeof createWorkspaceTools>[3];
     sandboxReadablePaths?: string[];
+    preflightResults: WorkspaceToolPreflightMap;
   },
 ) {
   const cwd = input.cwd?.trim();
@@ -656,6 +700,7 @@ function createWorkspaceToolsForInput(
     input.approvedEscalationToolCallIds,
     input.onSandboxBlocked,
     input.sandboxReadablePaths,
+    input.preflightResults,
   );
   const selected = selectWorkspaceToolNames(names);
   return Object.fromEntries(selected.map((name) => [name, tools[name]]));

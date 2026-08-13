@@ -11,6 +11,7 @@ import {
   runSandboxedRead,
   runSandboxedShell,
   SandboxBlockedError,
+  SandboxPathError,
 } from "./sandbox-exec.ts";
 
 const MAX_FILE_BYTES = 512 * 1024;
@@ -36,6 +37,65 @@ type SearchResult = {
   matches: string[];
   truncated: boolean;
 };
+export type WorkspaceToolPreflight =
+  | { status: "ok"; result: unknown }
+  | { status: "error"; error: unknown }
+  | { status: "sandbox-blocked"; error: SandboxBlockedError };
+
+export type WorkspaceToolPreflightMap = Map<string, WorkspaceToolPreflight>;
+
+export async function preflightWorkspaceTool(options: {
+  toolName: string;
+  input: unknown;
+  cwd: string;
+  mode: SandboxMode;
+  readablePaths?: string[];
+}): Promise<WorkspaceToolPreflight> {
+  const readablePaths = options.readablePaths ?? [];
+  try {
+    if (options.toolName === "list_dir") {
+      const input = options.input as { path?: string };
+      return {
+        status: "ok",
+        result: await listDirectory(options.cwd, input.path, options.mode, false, readablePaths),
+      };
+    }
+    if (options.toolName === "read_file") {
+      const input = options.input as { path: string };
+      return {
+        status: "ok",
+        result: await readTextFile(options.cwd, input.path, options.mode, false, readablePaths),
+      };
+    }
+    if (options.toolName === "search_files") {
+      return {
+        status: "ok",
+        result: await searchFiles(
+          options.cwd,
+          options.input as { path?: string; pattern?: string; query?: string; maxResults?: number },
+          options.mode,
+          false,
+          readablePaths,
+        ),
+      };
+    }
+    if (options.toolName === "bash") {
+      const input = options.input as { command: string; cwd?: string };
+      const commandCwd = resolveCommandCwd(options.cwd, input.cwd, options.mode, false);
+      const result = await runSandboxedShell(input.command, {
+        cwd: commandCwd,
+        mode: options.mode,
+        readablePaths,
+      });
+      if (result.sandboxBlocked) throw new SandboxBlockedError(result.out);
+      return { status: "ok", result };
+    }
+    return { status: "error", error: new Error(`不支持对 ${options.toolName} 做沙箱预执行`) };
+  } catch (error) {
+    if (error instanceof SandboxBlockedError) return { status: "sandbox-blocked", error };
+    return { status: "error", error };
+  }
+}
 function rootPath(cwd: string) {
   const value = cwd.trim();
   if (!value) throw new Error("请选择 workspace 后再使用文件工具");
@@ -65,7 +125,7 @@ function canonicalizeTarget(target: string) {
 function withinRoot(root: string, candidate: string) {
   const resolved = canonicalizeTarget(path.resolve(root, candidate || "."));
   if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
-    throw new SandboxBlockedError("路径必须位于当前 workspace 内");
+    throw new SandboxPathError("路径必须是 workspace 内的相对路径，或位于已配置的读取白名单目录内");
   }
   return resolved;
 }
@@ -107,7 +167,7 @@ function resolveReadableTarget(
   ) {
     return target;
   }
-  throw new SandboxBlockedError("路径不在 workspace 或沙箱读取白名单内");
+  throw new SandboxPathError("路径不在 workspace 或沙箱读取白名单内；请改用 workspace 相对路径");
 }
 
 function displayPath(root: string, target: string) {
@@ -138,15 +198,6 @@ async function listDirectory(
   readablePaths: string[] = [],
 ): Promise<DirectoryResult> {
   const root = rootPath(cwd);
-  if (mode !== "full" && !allowOutside) {
-    const result = await runSandboxedRead(
-      { operation: "list_dir", workspace: root, path: relativePath, readablePaths },
-      { mode },
-    );
-    if (result.sandboxBlocked) throw new SandboxBlockedError(result.error);
-    if (!result.result) throw new Error(result.error);
-    return result.result as DirectoryResult;
-  }
   const target = resolveReadableTarget(
     root,
     relativePath || ".",
@@ -154,6 +205,15 @@ async function listDirectory(
     allowOutside,
     readablePaths,
   );
+  if (mode !== "full" && !allowOutside) {
+    const result = await runSandboxedRead(
+      { operation: "list_dir", workspace: root, path: target, readablePaths },
+      { mode },
+    );
+    if (result.sandboxBlocked) throw new SandboxBlockedError(result.error);
+    if (!result.result) throw new Error(result.error);
+    return result.result as DirectoryResult;
+  }
   const entries = await readdir(target, { withFileTypes: true });
   return {
     path: displayPath(root, target),
@@ -186,16 +246,16 @@ async function readTextFile(
   readablePaths: string[] = [],
 ): Promise<ReadFileResult> {
   const root = rootPath(cwd);
+  const target = resolveReadableTarget(root, relativePath, mode, allowOutside, readablePaths);
   if (mode !== "full" && !allowOutside) {
     const result = await runSandboxedRead(
-      { operation: "read_file", workspace: root, path: relativePath, readablePaths },
+      { operation: "read_file", workspace: root, path: target, readablePaths },
       { mode },
     );
     if (result.sandboxBlocked) throw new SandboxBlockedError(result.error);
     if (!result.result) throw new Error(result.error);
     return result.result as ReadFileResult;
   }
-  const target = resolveReadableTarget(root, relativePath, mode, allowOutside, readablePaths);
   const metadata = await stat(target);
   if (!metadata.isFile()) throw new Error("路径不是文件");
   if (metadata.size > MAX_FILE_BYTES) throw new Error("文件超过 512 KB，未读取");
@@ -210,16 +270,16 @@ async function searchFiles(
   readablePaths: string[] = [],
 ): Promise<SearchResult> {
   const root = rootPath(cwd);
+  const start = resolveReadableTarget(root, options.path || ".", mode, allowOutside, readablePaths);
   if (mode !== "full" && !allowOutside) {
     const result = await runSandboxedRead(
-      { operation: "search_files", workspace: root, ...options, readablePaths },
+      { operation: "search_files", workspace: root, ...options, path: start, readablePaths },
       { mode },
     );
     if (result.sandboxBlocked) throw new SandboxBlockedError(result.error);
     if (!result.result) throw new Error(result.error);
     return result.result as SearchResult;
   }
-  const start = resolveReadableTarget(root, options.path || ".", mode, allowOutside, readablePaths);
   const limit = Math.min(Math.max(options.maxResults ?? 100, 1), MAX_SEARCH_RESULTS);
   const matches: string[] = [];
   const needle = options.query?.trim().toLowerCase();
@@ -341,6 +401,7 @@ export function createWorkspaceTools(
   approvedToolCallIds = new Set<string>(),
   onSandboxBlocked?: SandboxEscalationHandler,
   readablePaths: string[] = [],
+  preflightResults: WorkspaceToolPreflightMap = new Map(),
 ): ToolSet {
   const pathScope =
     mode === "full"
@@ -354,6 +415,8 @@ export function createWorkspaceTools(
       inputSchema: z.object({ path: z.string().optional() }),
       execute: async ({ path: relativePath }, { toolCallId }) => {
         const input = { path: relativePath };
+        const preflight = consumePreflight(preflightResults, toolCallId, approvedToolCallIds);
+        if (preflight) return resolvePreflight(preflight) as Promise<DirectoryResult>;
         try {
           return await listDirectory(
             cwd,
@@ -377,6 +440,8 @@ export function createWorkspaceTools(
       inputSchema: z.object({ path: z.string().min(1) }),
       execute: async ({ path: relativePath }, { toolCallId }) => {
         const input = { path: relativePath };
+        const preflight = consumePreflight(preflightResults, toolCallId, approvedToolCallIds);
+        if (preflight) return resolvePreflight(preflight) as Promise<ReadFileResult>;
         try {
           return await readTextFile(
             cwd,
@@ -404,6 +469,8 @@ export function createWorkspaceTools(
         maxResults: z.number().int().min(1).max(MAX_SEARCH_RESULTS).optional(),
       }),
       execute: async (options, { toolCallId }) => {
+        const preflight = consumePreflight(preflightResults, toolCallId, approvedToolCallIds);
+        if (preflight) return resolvePreflight(preflight) as Promise<SearchResult>;
         try {
           return await searchFiles(
             cwd,
@@ -484,6 +551,13 @@ export function createWorkspaceTools(
       }),
       execute: async ({ command, cwd: requestedCwd }, { toolCallId }) => {
         const input = { command, cwd: requestedCwd };
+        const preflight = consumePreflight(preflightResults, toolCallId, approvedToolCallIds);
+        if (preflight)
+          return resolvePreflight(preflight) as Promise<{
+            code: number;
+            out: string;
+            sandboxBlocked: boolean;
+          }>;
         const run = async (allowOutside: boolean) => {
           const commandCwd = resolveCommandCwd(cwd, requestedCwd, mode, allowOutside);
           const result = await runSandboxedShell(command, {
@@ -509,6 +583,29 @@ export function createWorkspaceTools(
     }),
   };
   return tools;
+}
+
+function consumePreflight(
+  preflightResults: WorkspaceToolPreflightMap,
+  toolCallId: string | undefined,
+  approvedToolCallIds: Set<string>,
+) {
+  if (!toolCallId) return undefined;
+  const result = preflightResults.get(toolCallId);
+  if (result) {
+    preflightResults.delete(toolCallId);
+    if (approvedToolCallIds.has(toolCallId) && result.status === "sandbox-blocked") {
+      return undefined;
+    }
+  }
+  if (approvedToolCallIds.has(toolCallId)) return undefined;
+  return result;
+}
+
+function resolvePreflight(preflight: WorkspaceToolPreflight): Promise<unknown> {
+  if (preflight.status === "ok") return Promise.resolve(preflight.result);
+  if (preflight.status === "error") return Promise.reject(preflight.error);
+  return Promise.reject(preflight.error);
 }
 
 async function retryAfterSandboxReview<T>(

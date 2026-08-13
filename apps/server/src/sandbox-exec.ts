@@ -20,7 +20,17 @@ export class SandboxBlockedError extends Error {
   }
 }
 
+export class SandboxPathError extends Error {
+  readonly code = "sandbox_path_invalid" as const;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "SandboxPathError";
+  }
+}
+
 export function isSandboxBlockedOutput(output: string) {
+  if (/sandbox_apply:\s*operation not permitted/i.test(output)) return false;
   return /(?:sandbox(?:-exec)?[^\n]*(?:deny|violation)|operation not permitted|sandbox violation)/i.test(
     output,
   );
@@ -105,7 +115,7 @@ export async function runSandboxedRead(
       ? ["--experimental-strip-types", helper]
       : [
           "-p",
-          buildSeatbeltProfile(workspace, request.readablePaths ?? []),
+          buildSeatbeltProfile(workspace, request.readablePaths ?? [], [path.dirname(helper)]),
           process.execPath,
           "--experimental-strip-types",
           helper,
@@ -184,7 +194,11 @@ function sandboxEnvironment(cwd: string) {
   };
 }
 
-export function buildSeatbeltProfile(workspace: string, readablePaths: string[] = []) {
+export function buildSeatbeltProfile(
+  workspace: string,
+  readablePaths: string[] = [],
+  additionalReadPaths: string[] = [],
+) {
   const temp = realpathSync(os.tmpdir());
   const escapeValue = (value: string) => value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
   const configuredReadRoots = readablePaths
@@ -216,6 +230,7 @@ export function buildSeatbeltProfile(workspace: string, readablePaths: string[] 
     path.dirname(process.execPath),
     ...pathRoots,
     ...configuredReadRoots,
+    ...additionalReadPaths,
   ].filter((value, index, values) => values.indexOf(value) === index);
   return [
     "(version 1)",
@@ -253,7 +268,9 @@ export function resolveCommandCwd(
   const resolved = path.resolve(root, candidate);
   if (mode === "full" || allowOutside) return resolveDirectory(resolved);
   if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
-    throw new SandboxBlockedError("受限模式下 Bash 只能在当前 workspace 内执行");
+    throw new SandboxPathError(
+      "Bash cwd 必须是 workspace 内的相对路径或 workspace 内的绝对路径",
+    );
   }
   return resolveDirectory(resolved);
 }
