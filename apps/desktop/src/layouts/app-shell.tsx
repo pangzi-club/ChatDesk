@@ -1401,6 +1401,8 @@ function ChatWorkspaceWindow({
     };
   }, [activeTabKind, activeTabWorkspaceId, gitRefreshToken, selectedPath]);
 
+  // Refreshing the Git summary must also reload the currently selected diff.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: gitRefreshToken intentionally reloads the current file diff.
   useEffect(() => {
     let active = true;
     if (!activeTab) return;
@@ -1427,7 +1429,7 @@ function ChatWorkspaceWindow({
     return () => {
       active = false;
     };
-  }, [activeTab, selectedPath]);
+  }, [activeTab, gitRefreshToken, selectedPath]);
 
   function selectFile(file: WorkspaceGitFile) {
     setSelectedPath(file.path);

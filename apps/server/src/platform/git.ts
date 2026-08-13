@@ -136,14 +136,15 @@ export async function collectGitSummary(
       });
     }
   }
-  const files = [...entries.values()].slice(0, MAX_GIT_FILES);
+  const allFiles = [...entries.values()];
+  const files = allFiles.slice(0, MAX_GIT_FILES);
   return {
     branch: status.branch,
     upstream: null,
     ahead: status.ahead,
     behind: status.behind,
-    insertions: files.reduce((sum, file) => sum + (file.additions ?? 0), 0),
-    deletions: files.reduce((sum, file) => sum + (file.deletions ?? 0), 0),
+    insertions: allFiles.reduce((sum, file) => sum + (file.additions ?? 0), 0),
+    deletions: allFiles.reduce((sum, file) => sum + (file.deletions ?? 0), 0),
     filesChanged: entries.size,
     files,
     truncated: entries.size > files.length,

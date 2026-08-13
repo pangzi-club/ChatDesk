@@ -60,6 +60,28 @@ test("NodePlatformAdapter reports Git line changes and file diff", async () => {
   assert.equal(diff.additions, 2);
 });
 
+test("NodePlatformAdapter totals Git changes across truncated file lists", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-platform-git-many-files-"));
+  await execFileAsync("git", ["init", "-q", "-b", "main"], { cwd: root });
+  await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+  await execFileAsync("git", ["config", "user.name", "Test"], { cwd: root });
+  for (let index = 0; index < 201; index += 1) {
+    await writeFile(path.join(root, `file-${index}.txt`), "before\n", "utf8");
+  }
+  await execFileAsync("git", ["add", "."], { cwd: root });
+  await execFileAsync("git", ["commit", "-q", "-m", "initial"], { cwd: root });
+  for (let index = 0; index < 201; index += 1) {
+    await writeFile(path.join(root, `file-${index}.txt`), "after\n", "utf8");
+  }
+
+  const summary = (await new NodePlatformAdapter().inspectGit(root)).summary;
+  assert.equal(summary?.filesChanged, 201);
+  assert.equal(summary?.files.length, 200);
+  assert.equal(summary?.insertions, 201);
+  assert.equal(summary?.deletions, 201);
+  assert.equal(summary?.truncated, true);
+});
+
 test("NodePlatformAdapter runs full shell commands with a bounded result", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-platform-shell-"));
   const result = await new NodePlatformAdapter().runShell(root, "printf server", "full");

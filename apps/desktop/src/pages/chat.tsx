@@ -598,8 +598,16 @@ function ChatPage() {
     queryFn: () => loadServerWorkspaceGit(workspaceKey),
     enabled: Boolean(workspaceKey),
     refetchInterval: isGenerating ? 15_000 : false,
+    staleTime: 0,
     refetchOnWindowFocus: true,
   });
+  const wasGeneratingRef = useRef(false);
+  useEffect(() => {
+    if (wasGeneratingRef.current && !isGenerating && workspaceKey) {
+      void workspaceGitQuery.refetch();
+    }
+    wasGeneratingRef.current = isGenerating;
+  }, [isGenerating, workspaceGitQuery.refetch, workspaceKey]);
   useEffect(() => {
     if (!isGenerating) {
       generationStartedAtRef.current = null;
@@ -1234,13 +1242,12 @@ function ChatPage() {
       <div className="chat-composer-wrap">
         {workspaceGitQuery.data?.summary &&
         workspaceGitQuery.data.isRepository &&
-        (workspaceGitQuery.data.summary.insertions > 0 ||
-          workspaceGitQuery.data.summary.deletions > 0) ? (
+        workspaceGitQuery.data.summary.filesChanged > 0 ? (
           <button
             className="chat-git-summary-float"
-            onClick={() => {
-              const firstFile = workspaceGitQuery.data?.summary?.files[0];
-              void workspaceGitQuery.refetch();
+            onClick={async () => {
+              const result = await workspaceGitQuery.refetch();
+              const firstFile = result.data?.summary?.files[0];
               openFileViewer({
                 mode: "diff",
                 path: firstFile?.path ?? "",

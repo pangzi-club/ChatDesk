@@ -219,6 +219,9 @@ function WorkspaceDetailPage() {
     queryKey: ["workspace-git", project?.id],
     queryFn: () => loadWorkspaceGitInfo(project?.id ?? ""),
     enabled: Boolean(project),
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
   });
   if (projectsQuery.isPending)
     return (
