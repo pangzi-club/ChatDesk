@@ -10,7 +10,8 @@ const tauriRoot = path.join(desktopRoot, "src-tauri");
 const binariesDir = path.join(tauriRoot, "binaries");
 const resourcesDir = path.join(tauriRoot, "resources");
 const browserPath = path.join(resourcesDir, "playwright-browsers");
-const serverBundlePath = path.join(root, ".cache/chat-server.cjs");
+const serverCacheDir = path.join(root, "apps/server/.cache");
+const serverBundlePath = path.join(serverCacheDir, "chat-server.cjs");
 const pkgCachePath = process.env.PKG_CACHE_PATH || path.join(root, ".cache/pkg");
 const localBinExtension = process.platform === "win32" ? ".cmd" : "";
 const localBinDir = path.join(desktopRoot, "node_modules/.bin");
@@ -26,6 +27,7 @@ assertTool("esbuild");
 await mkdir(binariesDir, { recursive: true });
 await mkdir(resourcesDir, { recursive: true });
 await mkdir(browserPath, { recursive: true });
+await mkdir(serverCacheDir, { recursive: true });
 await mkdir(pkgCachePath, { recursive: true });
 
 if (process.env.M_DASHBOARD_SKIP_BROWSER_DOWNLOAD !== "1") {
@@ -50,6 +52,8 @@ await runTool(
     "--target",
     pkgTarget,
     "--fallback-to-source",
+    "--public-packages",
+    "undici",
     "--output",
     path.join(binariesDir, `chat-server-${targetTriple}${extension}`),
   ],

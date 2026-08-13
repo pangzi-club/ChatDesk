@@ -94,7 +94,7 @@ async function searchFiles(request: Request) {
   return { query: needle || undefined, pattern, matches, truncated: matches.length >= limit };
 }
 
-async function main() {
+export async function runSandboxReadHelper() {
   const input = await new Promise<string>((resolve, reject) => {
     let value = "";
     process.stdin.setEncoding("utf8");
@@ -111,10 +111,3 @@ async function main() {
         : await searchFiles(request);
   process.stdout.write(JSON.stringify({ ok: true, result }));
 }
-
-main().catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
-  const blocked = /(?:operation not permitted|sandbox|deny|permission denied)/i.test(message);
-  process.stdout.write(JSON.stringify({ ok: false, blocked, error: message }));
-  process.exitCode = 1;
-});

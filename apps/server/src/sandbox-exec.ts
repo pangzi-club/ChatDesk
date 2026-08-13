@@ -2,7 +2,6 @@ import { execFile, spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import type { SandboxMode } from "./protocol.ts";
@@ -108,17 +107,20 @@ export async function runSandboxedRead(
   const workspace = resolveDirectory(request.workspace);
   const timeout = options.timeoutMs ?? 120_000;
   const effectiveMode = options.allowOutside ? "full" : options.mode;
-  const helper = fileURLToPath(new URL("./sandbox-read-helper.ts", import.meta.url));
   const payload = JSON.stringify(request);
+  const serverEntry = process.argv[1];
+  const isPackaged = (process as NodeJS.Process & { pkg?: unknown }).pkg !== undefined;
+  const nodeArgs = isPackaged
+    ? []
+    : ["--experimental-strip-types", ...(serverEntry ? [serverEntry] : [])];
   const args =
     effectiveMode === "full"
-      ? ["--experimental-strip-types", helper]
+      ? nodeArgs
       : [
           "-p",
-          buildSeatbeltProfile(workspace, request.readablePaths ?? [], [path.dirname(helper)]),
+          buildSeatbeltProfile(workspace, request.readablePaths ?? []),
           process.execPath,
-          "--experimental-strip-types",
-          helper,
+          ...nodeArgs,
         ];
   const executable = effectiveMode === "full" ? process.execPath : "/usr/bin/sandbox-exec";
 
