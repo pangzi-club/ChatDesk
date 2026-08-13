@@ -2294,7 +2294,7 @@
 .chat-header {
   position: relative;
   height: 56px;
-  border-bottom-color: #ededee;
+  border-bottom-color: var(--chat-line);
   padding: 0 22px;
 }
 
