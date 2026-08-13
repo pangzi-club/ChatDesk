@@ -9,6 +9,7 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  Keyboard,
   KeyRound,
   LoaderCircle,
   Package,
@@ -110,6 +111,16 @@ import {
 } from "@/lib/mcp";
 import { formatModelLabel, loadModels, type ModelConfig, saveModels } from "@/lib/models";
 import { pickDirectory } from "@/lib/platform";
+import {
+  DEFAULT_SHORTCUTS,
+  formatShortcut,
+  loadShortcutSettings,
+  type ShortcutAction,
+  type ShortcutBinding,
+  type ShortcutSettings,
+  saveShortcutSettings,
+  shortcutFromKeyboardEvent,
+} from "@/lib/shortcuts";
 import {
   loadAvailableSkills,
   loadInstalledSkillIds,
@@ -220,6 +231,7 @@ function SettingsLayout() {
         </p>
         <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto" aria-label="设置导航">
           <SettingsNavItem to="/settings/theme" icon={Palette} label="主题" />
+          <SettingsNavItem to="/settings/shortcuts" icon={Keyboard} label="快捷键" />
           <SettingsNavItem to="/settings/models" icon={Package} label="模型" />
           <SettingsNavItem to="/settings/mcp" icon={PlugZap} label="MCP" />
           <SettingsNavItem to="/settings/skills" icon={Sparkles} label="Skills" />
@@ -529,6 +541,113 @@ function ThemeSettingsPage() {
             </label>
           ))}
         </RadioGroup>
+      </section>
+    </>
+  );
+}
+
+function ShortcutsSettingsPage() {
+  const [settings, setSettings] = useState<ShortcutSettings>(DEFAULT_SHORTCUTS);
+  const [isLoading, setIsLoading] = useState(true);
+  const [editing, setEditing] = useState<ShortcutAction | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void loadShortcutSettings()
+      .then((value) => {
+        if (active) setSettings(value);
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  function updateShortcut(action: ShortcutAction, binding: ShortcutBinding) {
+    const next = { ...settings, [action]: binding };
+    setSettings(next);
+    void saveShortcutSettings(next);
+  }
+
+  const items: Array<{ action: ShortcutAction; label: string; description: string }> = [
+    {
+      action: "chatSidebar",
+      label: "Chat 侧边栏按钮",
+      description: "打开 Chat 右侧独立窗口。",
+    },
+    {
+      action: "chatSidebarMaximize",
+      label: "Chat 侧边栏最大按钮",
+      description: "在分栏与最大化窗口之间切换。",
+    },
+  ];
+
+  return (
+    <>
+      <SettingsHeading
+        eyebrow="Navigation"
+        title="快捷键"
+        description="为常用的 Chat 窗口操作设置键盘组合键。点击快捷键后直接按下新的组合键即可。快捷键使用物理按键识别，适配 macOS Option 键产生的字符变化。"
+      />
+      <section className="overflow-hidden rounded-lg border border-border bg-card">
+        <div className="border-border border-b px-5 py-4">
+          <h2 className="font-medium text-sm">Chat 窗口</h2>
+          <p className="mt-1 text-muted-foreground text-xs">快捷键仅在 Chat 页面生效。</p>
+        </div>
+        <div className="divide-y divide-border">
+          {items.map((item) => {
+            const isEditing = editing === item.action;
+            const binding = settings[item.action];
+            return (
+              <div
+                className="flex flex-wrap items-center justify-between gap-4 px-5 py-4"
+                key={item.action}
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-sm">{item.label}</p>
+                  <p className="mt-1 text-muted-foreground text-xs">{item.description}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    aria-label={`设置${item.label}快捷键`}
+                    className={`min-w-24 rounded-md border px-3 py-1.5 text-center font-mono text-xs transition-colors ${isEditing ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background text-foreground hover:bg-accent"}`}
+                    disabled={isLoading}
+                    onBlur={() => setEditing(null)}
+                    onClick={() => setEditing(item.action)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        setEditing(null);
+                        return;
+                      }
+                      if (!isEditing) return;
+                      const next = shortcutFromKeyboardEvent(event.nativeEvent);
+                      if (!next) return;
+                      event.preventDefault();
+                      updateShortcut(item.action, next);
+                      setEditing(null);
+                    }}
+                    onKeyUp={(event) => event.preventDefault()}
+                    type="button"
+                  >
+                    {isEditing ? "按下快捷键" : formatShortcut(binding)}
+                  </button>
+                  <Button
+                    aria-label={`恢复${item.label}默认快捷键`}
+                    onClick={() => updateShortcut(item.action, DEFAULT_SHORTCUTS[item.action])}
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                  >
+                    恢复默认
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </section>
     </>
   );
@@ -2547,6 +2666,7 @@ export {
   ModelsSettingsPage,
   SandboxSettingsPage,
   SettingsLayout,
+  ShortcutsSettingsPage,
   SkillsSettingsPage,
   SystemLogsSettingsPage,
   ThemeSettingsPage,

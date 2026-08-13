@@ -16,6 +16,7 @@ import {
   ModelsSettingsPage,
   SandboxSettingsPage,
   SettingsLayout,
+  ShortcutsSettingsPage,
   SkillsSettingsPage,
   SystemLogsSettingsPage,
   ThemeSettingsPage,
@@ -83,6 +84,7 @@ const router = createHashRouter([
         children: [
           { index: true, element: <Navigate replace to="theme" /> },
           { path: "theme", element: <ThemeSettingsPage /> },
+          { path: "shortcuts", element: <ShortcutsSettingsPage /> },
           { path: "keys", element: <ApiKeysSettingsPage /> },
           { path: "models", element: <ModelsSettingsPage /> },
           { path: "mcp", element: <McpSettingsPage /> },

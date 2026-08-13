@@ -14,6 +14,7 @@ import {
   ExternalLink,
   FolderGit2,
   Image,
+  Keyboard,
   KeyRound,
   LayoutDashboard,
   LoaderCircle,
@@ -100,6 +101,14 @@ import {
 import { subscribeFileViewerOpen } from "@/lib/file-viewer-events";
 import { openExternal } from "@/lib/platform";
 import { settingsStore } from "@/lib/settings-store";
+import {
+  DEFAULT_SHORTCUTS,
+  formatShortcut,
+  loadShortcutSettings,
+  matchesShortcut,
+  type ShortcutSettings,
+  subscribeShortcutSettings,
+} from "@/lib/shortcuts";
 import { appendSystemLog } from "@/lib/system-log";
 import { applyTrayEnabled, loadTrayEnabled } from "@/lib/tray";
 import {
@@ -165,6 +174,12 @@ const commandItems = [
   },
   { to: "/settings", label: "Settings", icon: Settings, keywords: ["设置"] },
   { to: "/settings/theme", label: "主题", icon: Palette, keywords: ["theme", "外观"] },
+  {
+    to: "/settings/shortcuts",
+    label: "快捷键",
+    icon: Keyboard,
+    keywords: ["设置", "快捷键", "shortcut", "hotkey", "键盘"],
+  },
   { to: "/settings/keys", label: "API Keys", icon: KeyRound, keywords: ["设置", "密钥", "api"] },
   { to: "/settings/models", label: "模型", icon: Package, keywords: ["设置", "models", "model"] },
   {
@@ -310,6 +325,7 @@ function persistWorkspaceSort(sort: WorkspaceSort) {
 function AppShell() {
   const [isCommandMenuOpen, setIsCommandMenuOpen] = useState(false);
   const [chatWindowStates, setChatWindowStates] = useState<Record<string, ChatWindowState>>({});
+  const [shortcutSettings, setShortcutSettings] = useState<ShortcutSettings>(DEFAULT_SHORTCUTS);
   const location = useLocation();
   const navigate = useNavigate();
   const isChatPage = location.pathname === "/chat";
@@ -357,16 +373,56 @@ function AppShell() {
   }, []);
 
   useEffect(() => {
+    let active = true;
+    void loadShortcutSettings().then((value) => {
+      if (active) setShortcutSettings(value);
+    });
+    const unsubscribe = subscribeShortcutSettings(() => {
+      void loadShortcutSettings().then((value) => {
+        if (active) setShortcutSettings(value);
+      });
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
     function handleGlobalShortcut(event: globalThis.KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         setIsCommandMenuOpen((isOpen) => !isOpen);
+        return;
+      }
+      if (!isChatPage) return;
+      if (matchesShortcut(event, shortcutSettings.chatSidebar)) {
+        event.preventDefault();
+        setChatWindowStates((current) => {
+          const state = current[chatWindowKey] ?? createChatWindowState();
+          return { ...current, [chatWindowKey]: { ...state, open: !state.open } };
+        });
+        return;
+      }
+      if (matchesShortcut(event, shortcutSettings.chatSidebarMaximize)) {
+        event.preventDefault();
+        setChatWindowStates((current) => {
+          const state = current[chatWindowKey] ?? createChatWindowState();
+          return {
+            ...current,
+            [chatWindowKey]: {
+              ...state,
+              open: true,
+              expanded: state.open ? !state.expanded : true,
+            },
+          };
+        });
       }
     }
 
     window.addEventListener("keydown", handleGlobalShortcut);
     return () => window.removeEventListener("keydown", handleGlobalShortcut);
-  }, []);
+  }, [chatWindowKey, isChatPage, shortcutSettings]);
 
   useEffect(() => {
     return subscribeFileViewerOpen((request) => {
@@ -517,6 +573,8 @@ function AppShell() {
                     ) : null}
                     <ChatWorkspaceWindow
                       expanded={Boolean(chatWindowStates[chatWindowKey]?.expanded)}
+                      maximizeShortcut={formatShortcut(shortcutSettings.chatSidebarMaximize)}
+                      panelShortcut={formatShortcut(shortcutSettings.chatSidebar)}
                       split
                       workspaceId={chatWorkspaceId}
                       cwd={chatWorkspaceCwd}
@@ -562,6 +620,7 @@ function AppShell() {
                       };
                     });
                   }}
+                  panelShortcut={formatShortcut(shortcutSettings.chatSidebar)}
                   showPanelToggle={isChatPage && !chatWindowStates[chatWindowKey]?.open}
                 />
               </div>
@@ -1318,6 +1377,8 @@ function getChatWindowKey(search: string) {
 
 function ChatWorkspaceWindow({
   expanded,
+  maximizeShortcut,
+  panelShortcut,
   onChange,
   onToggle,
   onToggleExpanded,
@@ -1327,6 +1388,8 @@ function ChatWorkspaceWindow({
   cwd,
 }: {
   expanded: boolean;
+  maximizeShortcut: string;
+  panelShortcut: string;
   onChange: (state: ChatWindowState) => void;
   onToggle: () => void;
   onToggleExpanded: () => void;
@@ -1659,7 +1722,7 @@ function ChatWorkspaceWindow({
           className="chat-workspace-window-toggle"
           onClick={onToggleExpanded}
           size="icon"
-          title={expanded ? "恢复分栏" : "放大窗口"}
+          title={`${expanded ? "恢复分栏" : "放大窗口"}（${maximizeShortcut}）`}
           type="button"
           variant="ghost"
         >
@@ -1670,6 +1733,7 @@ function ChatWorkspaceWindow({
           className="chat-workspace-window-toggle"
           onClick={onToggle}
           size="icon"
+          title={`关闭 Chat 独立窗口（${panelShortcut}）`}
           type="button"
           variant="ghost"
         >
@@ -1771,10 +1835,12 @@ function clamp(value: number, min: number, max: number) {
 function TopActions({
   isPanelOpen,
   onTogglePanel,
+  panelShortcut,
   showPanelToggle,
 }: {
   isPanelOpen: boolean;
   onTogglePanel: () => void;
+  panelShortcut: string;
   showPanelToggle: boolean;
 }) {
   return (
@@ -1786,6 +1852,7 @@ function TopActions({
           className="size-8"
           onClick={onTogglePanel}
           size="icon"
+          title={`${isPanelOpen ? "关闭" : "打开"} Chat 独立窗口（${panelShortcut}）`}
           type="button"
           variant="ghost"
         >
