@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process";
-import { realpathSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -108,8 +108,8 @@ export async function runSandboxedRead(
   const timeout = options.timeoutMs ?? 120_000;
   const effectiveMode = options.allowOutside ? "full" : options.mode;
   const payload = JSON.stringify(request);
-  const serverEntry = process.argv[1];
   const isPackaged = (process as NodeJS.Process & { pkg?: unknown }).pkg !== undefined;
+  const serverEntry = isPackaged ? undefined : resolveServerEntry();
   const nodeArgs = isPackaged
     ? []
     : ["--experimental-strip-types", ...(serverEntry ? [serverEntry] : [])];
@@ -177,6 +177,18 @@ export async function runSandboxedRead(
     });
     child.stdin.end(payload);
   });
+}
+
+function resolveServerEntry() {
+  const currentEntry = process.argv[1];
+  if (currentEntry && /(?:^|[\\/])server\.(?:ts|js)$/.test(currentEntry)) {
+    return currentEntry;
+  }
+  const candidates = [
+    path.resolve(process.cwd(), "apps/server/src/server.ts"),
+    path.resolve(process.cwd(), "src/server.ts"),
+  ];
+  return candidates.find((candidate) => existsSync(candidate));
 }
 
 function resolveDirectory(value: string) {
