@@ -744,12 +744,10 @@
   min-height: 220px;
   flex-direction: column;
   overflow: visible;
-  border: 1px solid rgb(39 77 64 / 22%);
+  border: 1px solid #dedee1;
   border-radius: 12px;
-  background: rgb(250 253 251 / 97%);
-  box-shadow:
-    0 20px 50px rgb(27 55 45 / 18%),
-    0 3px 12px rgb(27 55 45 / 10%);
+  background: #ffffff;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 5%);
   color: var(--chat-ink);
 }
 .chat-workspace-window.is-split {
@@ -767,31 +765,30 @@
   box-shadow: none;
 }
 .dark .chat-workspace-window {
-  border-color: rgb(155 220 194 / 24%);
-  background: rgb(25 37 33 / 97%);
-  box-shadow:
-    0 20px 50px rgb(0 0 0 / 42%),
-    0 3px 12px rgb(0 0 0 / 28%);
+  border-color: #4a4b52;
+  background: #212124;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 20%);
 }
 .chat-workspace-window-tabs {
   display: flex;
-  min-height: 36px;
+  height: 56px;
+  min-height: 56px;
   flex-shrink: 0;
   align-items: center;
   gap: 4px;
   overflow: hidden;
   border-bottom: 1px solid var(--chat-line);
   border-radius: 11px 11px 0 0;
-  background: rgb(237 246 241 / 88%);
+  background: #ffffff;
   cursor: grab;
-  padding: 4px 6px;
+  padding: 0 12px;
   user-select: none;
 }
 .chat-workspace-window-tabs:active {
   cursor: grabbing;
 }
 .dark .chat-workspace-window-tabs {
-  background: rgb(34 51 44 / 90%);
+  background: #212124;
 }
 .chat-workspace-window.is-split .chat-workspace-window-tabs {
   border-radius: 0;
@@ -818,13 +815,13 @@
   font-size: 11px;
 }
 .chat-workspace-window-tab.is-active {
-  border-color: rgb(75 120 104 / 20%);
-  background: rgb(255 255 255 / 82%);
+  border-color: #e3e3e5;
+  background: #f1f1f2;
   color: var(--chat-ink);
 }
 .dark .chat-workspace-window-tab.is-active {
-  border-color: rgb(155 220 194 / 22%);
-  background: rgb(52 72 63 / 90%);
+  border-color: #4a4b52;
+  background: #343541;
 }
 .chat-workspace-window-tab-select,
 .chat-workspace-window-tab-close,
@@ -852,17 +849,17 @@
 .chat-workspace-window-tab-close:hover,
 .chat-workspace-window-add:hover {
   opacity: 1;
-  color: #277a5e;
+  color: #2f80ed;
 }
 .chat-workspace-window-add {
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
   flex-shrink: 0;
   opacity: 0.7;
 }
 .chat-workspace-window-toggle {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   flex-shrink: 0;
   margin-left: 2px;
   border-left: 1px solid var(--chat-line);
