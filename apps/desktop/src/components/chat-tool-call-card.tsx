@@ -44,10 +44,14 @@ export type ChatToolCallCardProps = {
   preliminary?: boolean;
   /** 仅显示调用标题，不展示参数和结果。 */
   compact?: boolean;
+  workspaceId?: string;
+  cwd?: string;
 };
 
 export type ChatToolCallGroupProps = {
   calls: ChatToolCallCardProps[];
+  workspaceId?: string;
+  cwd?: string;
 };
 
 function formatJson(value: unknown) {
@@ -274,6 +278,8 @@ export function ChatToolCallCard({
   approval,
   preliminary = false,
   compact = false,
+  workspaceId,
+  cwd,
 }: ChatToolCallCardProps) {
   const [open, setOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -284,6 +290,14 @@ export function ChatToolCallCard({
       ? (output as { path?: unknown; content?: unknown })
       : null;
   const readFilePath = typeof readFileResult?.path === "string" ? readFileResult.path : null;
+  const readFileInputPath =
+    toolName === "read_file" &&
+    input &&
+    typeof input === "object" &&
+    typeof (input as { path?: unknown }).path === "string"
+      ? (input as { path: string }).path
+      : null;
+  const readFileTarget = readFilePath ?? readFileInputPath;
   const resolvedError = errorText || outputError;
   const failed = state === "output-error" || Boolean(resolvedError);
   const sandboxFailure = failed && isSandboxFailure(resolvedError);
@@ -348,15 +362,43 @@ export function ChatToolCallCard({
     : "";
   const ToolIcon = getChatToolIcon(toolName);
 
+  function openReadFile() {
+    if (!readFileTarget) return;
+    openFileViewer({
+      mode: "source",
+      path: readFileTarget,
+      workspaceId,
+      cwd,
+      content: typeof readFileResult?.content === "string" ? readFileResult.content : undefined,
+    });
+  }
+
+  function toggleOpen() {
+    if (!compact) setOpen((value) => !value);
+  }
+
   return (
     <div
       className={`chat-tool-call ${compact ? "is-compact" : ""} ${failed || denied ? "is-error" : ""} ${pending ? "is-pending" : ""}`}
     >
-      <button
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: the summary contains an inline file link. */}
+      {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: role is conditional for compact cards. */}
+      <div
         aria-expanded={compact ? undefined : open}
         className="chat-tool-call-summary"
-        type="button"
-        onClick={compact ? undefined : () => setOpen((value) => !value)}
+        onClick={compact ? undefined : toggleOpen}
+        onKeyDown={
+          compact
+            ? undefined
+            : (event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  toggleOpen();
+                }
+              }
+        }
+        role={compact ? undefined : "button"}
+        tabIndex={compact ? undefined : 0}
       >
         <span
           className={`chat-tool-call-icon ${sandboxFailure ? "is-sandbox" : ""} ${manualApproval ? "is-manual" : ""}`}
@@ -381,14 +423,33 @@ export function ChatToolCallCard({
             <span className="chat-tool-call-title-detail"> · {imageMeta.fileName}</span>
           ) : null}
           {workspaceSummary ? (
-            <span className="chat-tool-call-title-detail">{workspaceSummary}</span>
+            toolName === "read_file" && readFileTarget ? (
+              <>
+                <span className="chat-tool-call-title-detail"> · </span>
+                <a
+                  aria-label={`打开文件 ${readFileTarget}`}
+                  className="chat-tool-call-title-detail chat-tool-call-file-link"
+                  href={`#file:${readFileTarget}`}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    openReadFile();
+                  }}
+                  title="在右侧打开文件"
+                >
+                  {getLastPathSegment(readFileTarget)}
+                </a>
+              </>
+            ) : (
+              <span className="chat-tool-call-title-detail">{workspaceSummary}</span>
+            )
           ) : null}
         </span>
         <span className="chat-tool-call-status">{status}</span>
         {!compact ? (
           <ChevronDown className={`chat-tool-call-chevron ${open ? "is-open" : ""}`} />
         ) : null}
-      </button>
+      </div>
       {imagePreviewSrc && !failed ? (
         <div className="chat-tool-call-preview px-3 pb-2">
           {preliminary ? (
@@ -470,22 +531,9 @@ export function ChatToolCallCard({
                   },
                 )}
               </pre>
-            ) : toolName === "read_file" && readFilePath ? (
-              <button
-                className="chat-tool-call-open-file"
-                onClick={() =>
-                  openFileViewer({
-                    mode: "source",
-                    path: readFilePath,
-                    content:
-                      typeof readFileResult?.content === "string"
-                        ? readFileResult.content
-                        : undefined,
-                  })
-                }
-                type="button"
-              >
-                打开文件查看器
+            ) : toolName === "read_file" && readFileTarget ? (
+              <button className="chat-tool-call-open-file" onClick={openReadFile} type="button">
+                {getLastPathSegment(readFileTarget)}
               </button>
             ) : (
               <pre>{formatJson(output)}</pre>
@@ -497,7 +545,7 @@ export function ChatToolCallCard({
   );
 }
 
-export function ChatToolCallGroup({ calls }: ChatToolCallGroupProps) {
+export function ChatToolCallGroup({ calls, workspaceId, cwd }: ChatToolCallGroupProps) {
   const [open, setOpen] = useState(false);
   const lastCall = calls[calls.length - 1];
   if (!lastCall) return null;
@@ -518,8 +566,8 @@ export function ChatToolCallGroup({ calls }: ChatToolCallGroupProps) {
       <button
         aria-expanded={open}
         className="chat-tool-call-group-summary"
-        type="button"
         onClick={() => setOpen((value) => !value)}
+        type="button"
       >
         <span
           className={`chat-tool-call-icon ${sandboxFailure ? "is-sandbox" : ""} ${manualApproval ? "is-manual" : ""}`}
@@ -539,7 +587,13 @@ export function ChatToolCallGroup({ calls }: ChatToolCallGroupProps) {
       {open ? (
         <div className="chat-tool-call-group-items">
           {calls.map((call) => (
-            <ChatToolCallCard key={call.id ?? call.toolName} {...call} compact />
+            <ChatToolCallCard
+              key={call.id ?? call.toolName}
+              {...call}
+              compact
+              cwd={cwd}
+              workspaceId={workspaceId}
+            />
           ))}
         </div>
       ) : null}

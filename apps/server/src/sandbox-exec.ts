@@ -268,9 +268,7 @@ export function resolveCommandCwd(
   const resolved = path.resolve(root, candidate);
   if (mode === "full" || allowOutside) return resolveDirectory(resolved);
   if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
-    throw new SandboxPathError(
-      "Bash cwd 必须是 workspace 内的相对路径或 workspace 内的绝对路径",
-    );
+    throw new SandboxPathError("Bash cwd 必须是 workspace 内的相对路径或 workspace 内的绝对路径");
   }
   return resolveDirectory(resolved);
 }

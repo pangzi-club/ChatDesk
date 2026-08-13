@@ -1219,6 +1219,8 @@ function ChatPage() {
               onApprovalResponse={respondToApproval}
               isStreaming={status === "streaming" && message.id === lastMessage?.id}
               showTokenUsage={chatDisplay.showTokenUsage}
+              cwd={selectedCwd}
+              workspaceId={workspaceKey || undefined}
             />
           ))}
           {isGenerating && !hasAssistantMessage && (
@@ -1616,11 +1618,15 @@ function MessageBubble({
   isStreaming,
   showTokenUsage,
   onApprovalResponse,
+  cwd,
+  workspaceId,
 }: {
   message: UIMessage;
   isStreaming: boolean;
   showTokenUsage: boolean;
   onApprovalResponse: (id: string, approved: boolean) => void;
+  cwd: string;
+  workspaceId?: string;
 }) {
   const text = messageText(message);
   const isUser = message.role === "user";
@@ -1666,7 +1672,11 @@ function MessageBubble({
             if (block.kind === "tools") {
               return (
                 <div className="chat-tool-calls" key={block.key}>
-                  <ChatToolCallGroup calls={block.parts.map(toChatToolCall)} />
+                  <ChatToolCallGroup
+                    calls={block.parts.map(toChatToolCall)}
+                    cwd={cwd}
+                    workspaceId={workspaceId}
+                  />
                 </div>
               );
             }

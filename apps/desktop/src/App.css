@@ -1067,6 +1067,15 @@
   border-color: var(--primary);
   color: var(--chat-ink);
 }
+.chat-tool-call-file-link {
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.chat-tool-call-file-link:hover,
+.chat-tool-call-file-link:focus-visible {
+  color: var(--primary);
+}
 .chat-workspace-window-resize {
   position: absolute;
   z-index: 2;
