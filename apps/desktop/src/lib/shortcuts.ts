@@ -138,17 +138,21 @@ export function formatShortcut(binding: ShortcutBinding) {
 }
 
 export function shortcutFromKeyboardEvent(event: KeyboardEvent): ShortcutBinding | null {
-  if (
-    event.key.length !== 1 ||
-    (!event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey)
-  ) {
+  const isModifier = ["Alt", "Control", "Meta", "Shift"].includes(event.key);
+  const hasModifier = event.metaKey || event.ctrlKey || event.altKey || event.shiftKey;
+  if (isModifier || !hasModifier || (!event.code && event.key.length !== 1)) {
     return null;
   }
+  const key = event.code.startsWith("Key")
+    ? event.code.slice(3).toLowerCase()
+    : event.code.startsWith("Digit")
+      ? event.code.slice(5)
+      : event.key.toLowerCase();
   return {
     alt: event.altKey,
     code: event.code || keyToCode(event.key),
     ctrl: event.ctrlKey,
-    key: event.key.toLowerCase(),
+    key,
     meta: event.metaKey,
     shift: event.shiftKey,
   };

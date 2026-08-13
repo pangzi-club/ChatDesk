@@ -28,7 +28,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
 import {
   NavLink,
   type NavLinkRenderProps,
@@ -565,11 +565,36 @@ function ShortcutsSettingsPage() {
     };
   }, []);
 
-  function updateShortcut(action: ShortcutAction, binding: ShortcutBinding) {
-    const next = { ...settings, [action]: binding };
-    setSettings(next);
-    void saveShortcutSettings(next);
-  }
+  const updateShortcut = useCallback(
+    (action: ShortcutAction, binding: ShortcutBinding) => {
+      const next = { ...settings, [action]: binding };
+      setSettings(next);
+      void saveShortcutSettings(next);
+    },
+    [settings],
+  );
+
+  useEffect(() => {
+    if (!editing) return;
+    const action = editing;
+
+    function handleShortcutKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setEditing(null);
+        return;
+      }
+      const next = shortcutFromKeyboardEvent(event);
+      if (!next) return;
+      event.preventDefault();
+      event.stopPropagation();
+      updateShortcut(action, next);
+      setEditing(null);
+    }
+
+    window.addEventListener("keydown", handleShortcutKeyDown, true);
+    return () => window.removeEventListener("keydown", handleShortcutKeyDown, true);
+  }, [editing, updateShortcut]);
 
   const items: Array<{ action: ShortcutAction; label: string; description: string }> = [
     {
@@ -614,22 +639,7 @@ function ShortcutsSettingsPage() {
                     aria-label={`设置${item.label}快捷键`}
                     className={`min-w-24 rounded-md border px-3 py-1.5 text-center font-mono text-xs transition-colors ${isEditing ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background text-foreground hover:bg-accent"}`}
                     disabled={isLoading}
-                    onBlur={() => setEditing(null)}
                     onClick={() => setEditing(item.action)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Escape") {
-                        event.preventDefault();
-                        setEditing(null);
-                        return;
-                      }
-                      if (!isEditing) return;
-                      const next = shortcutFromKeyboardEvent(event.nativeEvent);
-                      if (!next) return;
-                      event.preventDefault();
-                      updateShortcut(item.action, next);
-                      setEditing(null);
-                    }}
-                    onKeyUp={(event) => event.preventDefault()}
                     type="button"
                   >
                     {isEditing ? "按下快捷键" : formatShortcut(binding)}
