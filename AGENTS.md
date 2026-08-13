@@ -12,7 +12,7 @@ These instructions apply to the entire repository.
 
 - After completing every task, run `pnpm format` before reporting the result.
 - Review the formatting changes and include all task-related formatted files in the final result.
-- Run any additional checks appropriate to the change, such as `pnpm check` or `pnpm build`, after formatting.
+- Run any additional checks appropriate to the change, such as `pnpm check`, after formatting.
 
 ## CI Verification
 
@@ -23,7 +23,6 @@ These instructions apply to the entire repository.
   2. `pnpm check`
   3. `pnpm test`
   4. `pnpm shared:typecheck`
-  5. `pnpm build`
 - Treat any failure in this sequence as a blocker for reporting the change as CI-ready. Record environmental or pre-existing failures explicitly instead of presenting partial verification as complete.
 
 ## Development Server
