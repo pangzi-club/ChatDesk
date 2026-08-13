@@ -1277,11 +1277,10 @@ type WindowInteraction = {
 type ResizeDirection = "n" | "e" | "s" | "w" | "ne" | "se" | "sw" | "nw";
 
 function createChatWindowState(): ChatWindowState {
-  const firstTab = { id: createChatWindowTabId(), title: "空白窗口" };
   return {
     open: false,
-    tabs: [firstTab],
-    activeTabId: firstTab.id,
+    tabs: [],
+    activeTabId: null,
     right: 18,
     top: 48,
     width: 420,
