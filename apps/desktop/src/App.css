@@ -713,6 +713,9 @@
   flex: 0 0 auto;
   max-width: none;
 }
+.chat-split-layout.is-expanded > section {
+  display: none;
+}
 .chat-split-divider {
   position: relative;
   z-index: 3;
@@ -763,6 +766,11 @@
   border-width: 0 0 0 1px;
   border-radius: 0;
   box-shadow: none;
+}
+.chat-workspace-window.is-split.is-expanded {
+  width: 100%;
+  flex-basis: 100%;
+  border-left-width: 0;
 }
 .dark .chat-workspace-window {
   border-color: #4a4b52;

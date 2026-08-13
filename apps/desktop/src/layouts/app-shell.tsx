@@ -18,7 +18,9 @@ import {
   LayoutDashboard,
   LoaderCircle,
   Lock,
+  Maximize2,
   MessageCircle,
+  Minimize2,
   MoreHorizontal,
   Package,
   Palette,
@@ -481,35 +483,40 @@ function AppShell() {
               className={`app-shell-content relative flex min-w-0 flex-1 flex-col max-sm:w-[calc(100vw-4rem)] ${isChatPage ? "chat-page" : ""}`}
             >
               <div
-                className={`chat-split-layout ${isChatPage && chatWindowStates[chatWindowKey]?.open ? "is-open" : ""}`}
+                className={`chat-split-layout ${isChatPage && chatWindowStates[chatWindowKey]?.open ? "is-open" : ""} ${isChatPage && chatWindowStates[chatWindowKey]?.expanded ? "is-expanded" : ""}`}
               >
-                <section
-                  className="min-h-0 flex-1 overflow-y-auto"
-                  style={
-                    isChatPage && chatWindowStates[chatWindowKey]?.open
-                      ? {
-                          flexBasis: `${(1 - (chatWindowStates[chatWindowKey]?.splitRatio ?? 0.5)) * 100}%`,
-                        }
-                      : undefined
-                  }
-                >
-                  <Outlet />
-                </section>
+                {!chatWindowStates[chatWindowKey]?.expanded ? (
+                  <section
+                    className="min-h-0 flex-1 overflow-y-auto"
+                    style={
+                      isChatPage && chatWindowStates[chatWindowKey]?.open
+                        ? {
+                            flexBasis: `${(1 - (chatWindowStates[chatWindowKey]?.splitRatio ?? 0.5)) * 100}%`,
+                          }
+                        : undefined
+                    }
+                  >
+                    <Outlet />
+                  </section>
+                ) : null}
                 {isChatPage && chatWindowStates[chatWindowKey]?.open ? (
                   <>
-                    <ChatSplitDivider
-                      ratio={chatWindowStates[chatWindowKey]?.splitRatio ?? 0.5}
-                      onChange={(splitRatio) =>
-                        setChatWindowStates((current) => ({
-                          ...current,
-                          [chatWindowKey]: {
-                            ...(current[chatWindowKey] ?? createChatWindowState()),
-                            splitRatio,
-                          },
-                        }))
-                      }
-                    />
+                    {!chatWindowStates[chatWindowKey]?.expanded ? (
+                      <ChatSplitDivider
+                        ratio={chatWindowStates[chatWindowKey]?.splitRatio ?? 0.5}
+                        onChange={(splitRatio) =>
+                          setChatWindowStates((current) => ({
+                            ...current,
+                            [chatWindowKey]: {
+                              ...(current[chatWindowKey] ?? createChatWindowState()),
+                              splitRatio,
+                            },
+                          }))
+                        }
+                      />
+                    ) : null}
                     <ChatWorkspaceWindow
+                      expanded={Boolean(chatWindowStates[chatWindowKey]?.expanded)}
                       split
                       workspaceId={chatWorkspaceId}
                       cwd={chatWorkspaceCwd}
@@ -522,6 +529,15 @@ function AppShell() {
                             open: false,
                           },
                         }))
+                      }
+                      onToggleExpanded={() =>
+                        setChatWindowStates((current) => {
+                          const state = current[chatWindowKey] ?? createChatWindowState();
+                          return {
+                            ...current,
+                            [chatWindowKey]: { ...state, expanded: !state.expanded },
+                          };
+                        })
                       }
                       onChange={(next) =>
                         setChatWindowStates((current) => ({ ...current, [chatWindowKey]: next }))
@@ -1258,6 +1274,7 @@ type ChatWindowTab = {
 };
 type ChatWindowState = {
   open: boolean;
+  expanded: boolean;
   tabs: ChatWindowTab[];
   activeTabId: string | null;
   right: number;
@@ -1279,6 +1296,7 @@ type ResizeDirection = "n" | "e" | "s" | "w" | "ne" | "se" | "sw" | "nw";
 function createChatWindowState(): ChatWindowState {
   return {
     open: false,
+    expanded: false,
     tabs: [],
     activeTabId: null,
     right: 18,
@@ -1299,15 +1317,19 @@ function getChatWindowKey(search: string) {
 }
 
 function ChatWorkspaceWindow({
+  expanded,
   onChange,
   onToggle,
+  onToggleExpanded,
   split = false,
   state,
   workspaceId,
   cwd,
 }: {
+  expanded: boolean;
   onChange: (state: ChatWindowState) => void;
   onToggle: () => void;
+  onToggleExpanded: () => void;
   split?: boolean;
   state: ChatWindowState;
   workspaceId: string;
@@ -1569,11 +1591,11 @@ function ChatWorkspaceWindow({
 
   return (
     <div
-      className={`chat-workspace-window ${split ? "is-split" : ""}`}
+      className={`chat-workspace-window ${split ? "is-split" : ""} ${expanded ? "is-expanded" : ""}`}
       ref={containerRef}
       style={
         split
-          ? { flexBasis: `${state.splitRatio * 100}%` }
+          ? { flexBasis: expanded ? "100%" : `${state.splitRatio * 100}%` }
           : { height: state.height, right: state.right, top: state.top, width: state.width }
       }
     >
@@ -1631,6 +1653,18 @@ function ChatWorkspaceWindow({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <Button
+          aria-label={expanded ? "恢复 Chat 独立窗口分栏" : "放大 Chat 独立窗口"}
+          aria-pressed={expanded}
+          className="chat-workspace-window-toggle"
+          onClick={onToggleExpanded}
+          size="icon"
+          title={expanded ? "恢复分栏" : "放大窗口"}
+          type="button"
+          variant="ghost"
+        >
+          {expanded ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+        </Button>
         <Button
           aria-label="关闭 Chat 独立窗口"
           className="chat-workspace-window-toggle"
