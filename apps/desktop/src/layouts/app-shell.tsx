@@ -38,6 +38,7 @@ import {
   Sparkles,
   SquareTerminal,
   Trash2,
+  Undo2,
   Wrench,
   X,
 } from "lucide-react";
@@ -89,6 +90,7 @@ import {
   loadServerWorkspaceGit,
   loadServerWorkspaceGitDiff,
   restartChatServer,
+  restoreServerWorkspaceGit,
   subscribeChatServerEvents,
 } from "@/lib/chat-server";
 import {
@@ -1421,6 +1423,20 @@ function ChatWorkspaceWindow({
   const [fileContent, setFileContent] = useState<{ path: string; content: string } | null>(null);
   const [viewerError, setViewerError] = useState<string | null>(null);
   const [gitRefreshToken, setGitRefreshToken] = useState(0);
+  const [restoreTarget, setRestoreTarget] = useState<{ path?: string; label: string } | null>(null);
+  const restoreMutation = useMutation({
+    mutationFn: (path?: string) =>
+      restoreServerWorkspaceGit(activeTabWorkspaceId ?? workspaceId, path),
+    onSuccess: () => {
+      setRestoreTarget(null);
+      setGitDiff(null);
+      setViewerError(null);
+      setGitRefreshToken((value) => value + 1);
+    },
+    onError: (error) => {
+      setViewerError(error instanceof Error ? error.message : String(error));
+    },
+  });
 
   useEffect(() => {
     if (!tabResetKey) return;
@@ -1522,6 +1538,11 @@ function ChatWorkspaceWindow({
       activeTabId: activeTab?.id ?? state.activeTabId,
       tabs: state.tabs.map((tab) => (tab.id === activeTab?.id ? { ...tab, path: file.path } : tab)),
     });
+  }
+
+  function confirmRestore() {
+    if (!restoreTarget || !(activeTabWorkspaceId ?? workspaceId)) return;
+    restoreMutation.mutate(restoreTarget.path);
   }
 
   const viewer =
@@ -1758,23 +1779,53 @@ function ChatWorkspaceWindow({
               >
                 <RefreshCw className="size-3.5" />
               </Button>
+              <Button
+                aria-label="全部撤回 Git 改动"
+                className="chat-workspace-window-add"
+                disabled={restoreMutation.isPending || !(gitSummary?.files.length ?? 0)}
+                onClick={() => setRestoreTarget({ label: "全部 Git 改动" })}
+                size="icon"
+                title="全部撤回"
+                type="button"
+                variant="ghost"
+              >
+                <Undo2 className="size-3.5" />
+              </Button>
             </span>
           </header>
           <div className="chat-git-diff-body">
             <div className="chat-git-diff-files">
               {(gitSummary?.files ?? []).map((file) => (
-                <button
+                <div
                   className={`chat-git-diff-file ${file.path === selectedPath ? "is-active" : ""}`}
                   key={file.path}
-                  onClick={() => selectFile(file)}
-                  type="button"
                 >
-                  <span className="chat-git-diff-file-status">{file.status[0].toUpperCase()}</span>
-                  <span className="chat-git-diff-file-path">{file.path}</span>
-                  <span className="chat-git-diff-file-count">
-                    +{file.additions ?? "-"} -{file.deletions ?? "-"}
-                  </span>
-                </button>
+                  <button
+                    className="chat-git-diff-file-select"
+                    onClick={() => selectFile(file)}
+                    type="button"
+                  >
+                    <span className="chat-git-diff-file-status">
+                      {file.status[0].toUpperCase()}
+                    </span>
+                    <span className="chat-git-diff-file-path">{file.path}</span>
+                    <span className="chat-git-diff-file-count">
+                      +{file.additions ?? "-"} -{file.deletions ?? "-"}
+                    </span>
+                  </button>
+                  <Button
+                    aria-label={`撤回 ${file.path}`}
+                    className="chat-git-diff-file-restore"
+                    disabled={restoreMutation.isPending}
+                    onClick={() => setRestoreTarget({ path: file.path, label: file.path })}
+                    size="icon"
+                    title="撤回此文件"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <Undo2 className="size-3" />
+                  </Button>
+                </div>
               ))}
             </div>
             <div className="chat-git-diff-viewer">{viewer}</div>
@@ -1797,6 +1848,32 @@ function ChatWorkspaceWindow({
             />
           ))
         : null}
+      <AlertDialog
+        open={restoreTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !restoreMutation.isPending) setRestoreTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>撤回 Git 改动？</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要撤回“{restoreTarget?.label ?? "这些 Git 改动"}
+              ”吗？此操作会丢弃未提交的修改，无法恢复。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={restoreMutation.isPending}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={restoreMutation.isPending}
+              onClick={confirmRestore}
+              variant="destructive"
+            >
+              {restoreMutation.isPending ? "撤回中..." : "撤回"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

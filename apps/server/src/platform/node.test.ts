@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -58,6 +58,27 @@ test("NodePlatformAdapter reports Git line changes and file diff", async () => {
   const diff = await adapter.readGitDiff(root, "note.txt");
   assert.match(diff.content, /changed/);
   assert.equal(diff.additions, 2);
+});
+
+test("NodePlatformAdapter restores individual and all Git changes", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-platform-git-restore-"));
+  await execFileAsync("git", ["init", "-q", "-b", "main"], { cwd: root });
+  await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+  await execFileAsync("git", ["config", "user.name", "Test"], { cwd: root });
+  await writeFile(path.join(root, "tracked.txt"), "before\n", "utf8");
+  await execFileAsync("git", ["add", "."], { cwd: root });
+  await execFileAsync("git", ["commit", "-q", "-m", "initial"], { cwd: root });
+  await writeFile(path.join(root, "tracked.txt"), "changed\n", "utf8");
+  await writeFile(path.join(root, "untracked.txt"), "new\n", "utf8");
+  const adapter = new NodePlatformAdapter();
+  await adapter.restoreGit(root, "tracked.txt");
+  assert.equal(await readFile(path.join(root, "tracked.txt"), "utf8"), "before\n");
+  assert.equal(
+    (await adapter.inspectGit(root)).summary?.files.some((file) => file.path === "tracked.txt"),
+    false,
+  );
+  await adapter.restoreGit(root);
+  assert.equal((await adapter.inspectGit(root)).summary?.files.length, 0);
 });
 
 test("NodePlatformAdapter totals Git changes across truncated file lists", async () => {

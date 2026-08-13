@@ -423,6 +423,18 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
       return jsonError(error instanceof Error ? error.message : String(error));
     }
   });
+  app.post("/v1/workspaces/:id/git/restore", async (c) => {
+    const workspace = workspaces.get(c.req.param("id"));
+    if (!workspace) return jsonError("workspace 不存在", 404);
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const filePath = typeof body.path === "string" ? body.path : undefined;
+      await nodePlatform.restoreGit(workspace.path, filePath);
+      return c.body(null, 204);
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
   app.get("/v1/workspaces/:id/files", async (c) => {
     const workspace = workspaces.get(c.req.param("id"));
     if (!workspace) return jsonError("workspace 不存在", 404);

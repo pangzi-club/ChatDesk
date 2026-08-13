@@ -923,8 +923,8 @@
 .chat-git-diff-file {
   display: grid;
   width: 100%;
-  grid-template-columns: 18px minmax(0, 1fr);
-  gap: 4px;
+  grid-template-columns: minmax(0, 1fr) 26px;
+  gap: 2px;
   border: 0;
   border-radius: 5px;
   background: transparent;
@@ -933,6 +933,27 @@
   color: var(--chat-muted);
   cursor: pointer;
   font-size: 10px;
+}
+.chat-git-diff-file-select {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  padding: 2px 0;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+.chat-git-diff-file-restore {
+  width: 26px;
+  height: 26px;
+  color: var(--chat-muted);
+}
+.chat-git-diff-file-restore:hover {
+  color: var(--chat-ink);
 }
 .chat-git-diff-file:hover,
 .chat-git-diff-file.is-active {

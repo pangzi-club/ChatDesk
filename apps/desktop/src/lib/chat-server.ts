@@ -322,6 +322,22 @@ export async function loadServerWorkspaceGitDiff(
   return (await response.json()) as WorkspaceGitDiff;
 }
 
+export async function restoreServerWorkspaceGit(
+  id: string,
+  filePath?: string,
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  await chatServerRequest(
+    `/v1/workspaces/${encodeURIComponent(id)}/git/restore`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(filePath ? { path: filePath } : {}),
+    },
+    port,
+  );
+}
+
 export async function loadServerWorkspaceFile(
   id: string,
   filePath: string,

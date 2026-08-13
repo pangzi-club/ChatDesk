@@ -209,3 +209,38 @@ export async function readGitDiff(root: string, relativePath: string): Promise<W
     truncated,
   };
 }
+
+export async function restoreGit(root: string, relativePath?: string): Promise<void> {
+  if (relativePath?.trim()) {
+    const safePath = safeRelativePath(root, relativePath);
+    const statusOutput = await runGit(root, ["status", "--short", "--", safePath]);
+    const status =
+      statusOutput.stdout
+        .split(/\r?\n/)
+        .find((line) => line && !line.startsWith("## "))
+        ?.slice(0, 2) ?? "";
+    if (status === "??") {
+      await runGit(root, ["clean", "-fd", "--", safePath]);
+      return;
+    }
+    if (status.startsWith("A")) {
+      await runGit(root, ["reset", "HEAD", "--", safePath]);
+      await runGit(root, ["clean", "-fd", "--", safePath]);
+      return;
+    }
+    const paths = [safePath];
+    if (status.includes("R")) {
+      const renameOutput = await runGit(root, ["status", "--short", "--", safePath]);
+      const rawPath = renameOutput.stdout
+        .split(/\r?\n/)
+        .find((line) => line && !line.startsWith("## "))
+        ?.slice(3);
+      const previousPath = rawPath?.split(" -> ")[0];
+      if (previousPath) paths.unshift(safeRelativePath(root, previousPath));
+    }
+    await runGit(root, ["restore", "--source=HEAD", "--staged", "--worktree", "--", ...paths]);
+    return;
+  }
+  await runGit(root, ["reset", "--hard", "HEAD"]);
+  await runGit(root, ["clean", "-fd"]);
+}

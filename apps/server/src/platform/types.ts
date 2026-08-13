@@ -90,6 +90,7 @@ export type PlatformAdapter = {
   ): Promise<WorkspaceSearchResult>;
   inspectGit(root: string): Promise<WorkspaceGitInfo>;
   readGitDiff(root: string, relativePath: string): Promise<WorkspaceGitDiff>;
+  restoreGit(root: string, relativePath?: string): Promise<void>;
   runShell(
     root: string,
     command: string,
