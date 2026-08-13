@@ -25,6 +25,7 @@ import {
 } from "@/lib/chat-image-generation";
 import { CHAT_TOOL_DISPLAY_NAMES } from "@/lib/chat-tool-defs";
 import { CHAT_WORKSPACE_TOOL_DISPLAY_NAMES } from "@/lib/chat-workspace-tools";
+import { openFileViewer } from "@/lib/file-viewer-events";
 import { assetUrl } from "@/lib/platform";
 
 export type ChatToolCallCardProps = {
@@ -278,6 +279,11 @@ export function ChatToolCallCard({
   const [previewOpen, setPreviewOpen] = useState(false);
   const title = getChatToolTitle(toolName);
   const outputError = extractToolOutputError(output);
+  const readFileResult =
+    toolName === "read_file" && output && typeof output === "object"
+      ? (output as { path?: unknown; content?: unknown })
+      : null;
+  const readFilePath = typeof readFileResult?.path === "string" ? readFileResult.path : null;
   const resolvedError = errorText || outputError;
   const failed = state === "output-error" || Boolean(resolvedError);
   const sandboxFailure = failed && isSandboxFailure(resolvedError);
@@ -464,6 +470,23 @@ export function ChatToolCallCard({
                   },
                 )}
               </pre>
+            ) : toolName === "read_file" && readFilePath ? (
+              <button
+                className="chat-tool-call-open-file"
+                onClick={() =>
+                  openFileViewer({
+                    mode: "source",
+                    path: readFilePath,
+                    content:
+                      typeof readFileResult?.content === "string"
+                        ? readFileResult.content
+                        : undefined,
+                  })
+                }
+                type="button"
+              >
+                打开文件查看器
+              </button>
             ) : (
               <pre>{formatJson(output)}</pre>
             )}

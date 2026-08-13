@@ -9,6 +9,7 @@ import type {
   RunStartInput,
   SessionIndexItem,
   SystemPromptSnapshot,
+  WorkspaceGitDiff,
 } from "@chatdesk/shared";
 import { invoke, isTauri as tauriIsTauri } from "@tauri-apps/api/core";
 import type { UIMessage } from "ai";
@@ -59,6 +60,7 @@ export type ServerWorkspaceProject = {
 };
 export type SystemPromptPreview = SystemPromptSnapshot;
 
+export type { WorkspaceGitDiff } from "@chatdesk/shared";
 export type {
   ChatIndexItem,
   ChatServerConfigData,
@@ -305,6 +307,36 @@ export async function loadServerWorkspaceGit(id: string, port = CHAT_SERVER_DEFA
     port,
   );
   return response.json();
+}
+
+export async function loadServerWorkspaceGitDiff(
+  id: string,
+  filePath: string,
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  const response = await chatServerRequest(
+    `/v1/workspaces/${encodeURIComponent(id)}/git/diff?path=${encodeURIComponent(filePath)}`,
+    undefined,
+    port,
+  );
+  return (await response.json()) as WorkspaceGitDiff;
+}
+
+export async function loadServerWorkspaceFile(
+  id: string,
+  filePath: string,
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  const response = await chatServerRequest(
+    `/v1/workspaces/${encodeURIComponent(id)}/file`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "read", path: filePath }),
+    },
+    port,
+  );
+  return (await response.json()) as { path: string; content: string };
 }
 
 export async function loadServerAutomations(port = CHAT_SERVER_DEFAULT_PORT) {

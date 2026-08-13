@@ -175,6 +175,37 @@ export type ChatToolPackId =
 
 export type ChatToolsSettings = Record<ChatToolPackId, boolean>;
 
+export type WorkspaceGitFile = {
+  path: string;
+  previousPath?: string;
+  status: "added" | "modified" | "deleted" | "renamed" | "untracked" | "conflicted";
+  additions: number | null;
+  deletions: number | null;
+  binary?: boolean;
+};
+
+export type WorkspaceGitDiff = {
+  path: string;
+  previousPath?: string;
+  content: string;
+  additions: number | null;
+  deletions: number | null;
+  binary?: boolean;
+  truncated?: boolean;
+};
+
+export type WorkspaceGitSummary = {
+  branch: string | null;
+  upstream?: string | null;
+  ahead: number;
+  behind: number;
+  insertions: number;
+  deletions: number;
+  filesChanged: number;
+  files: WorkspaceGitFile[];
+  truncated?: boolean;
+};
+
 export type ModelConfig = {
   id: string;
   name: string;

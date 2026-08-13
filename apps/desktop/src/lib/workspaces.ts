@@ -1,3 +1,4 @@
+import type { WorkspaceGitFile, WorkspaceGitSummary } from "@chatdesk/shared";
 import {
   loadServerWorkspaceGit,
   loadServerWorkspaces,
@@ -43,7 +44,10 @@ export type WorkspaceGitInfo = {
   status: WorkspaceGitStatus | null;
   commits: WorkspaceCommit[];
   error: string | null;
+  summary: WorkspaceGitSummary | null;
 };
+
+export type { WorkspaceGitFile, WorkspaceGitSummary };
 
 export async function loadWorkspaceProjects(): Promise<WorkspaceProject[]> {
   const seenPaths = new Set<string>();

@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import type { SandboxMode } from "../protocol.ts";
 import { resolveCommandCwd, runSandboxedShell } from "../sandbox-exec.ts";
+import { collectGitSummary, readGitDiff } from "./git.ts";
 import type {
   PlatformAdapter,
   PlatformCapabilities,
@@ -88,13 +89,28 @@ async function inspectGit(root: string): Promise<WorkspaceGitInfo> {
       status: parsed,
       commits: parseGitCommits(log.stdout),
       error: null,
+      summary: await collectGitSummary(root, parsed),
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (message.includes("not a git repository")) {
-      return { pathExists: true, isRepository: false, status: null, commits: [], error: null };
+      return {
+        pathExists: true,
+        isRepository: false,
+        status: null,
+        commits: [],
+        error: null,
+        summary: null,
+      };
     }
-    return { pathExists: true, isRepository: false, status: null, commits: [], error: message };
+    return {
+      pathExists: true,
+      isRepository: false,
+      status: null,
+      commits: [],
+      error: message,
+      summary: null,
+    };
   }
 }
 
@@ -260,6 +276,10 @@ export class NodePlatformAdapter implements PlatformAdapter {
   inspectGit(rootValue: string) {
     const root = rootPath(rootValue);
     return inspectGit(root);
+  }
+
+  readGitDiff(rootValue: string, relativePath: string) {
+    return readGitDiff(rootPath(rootValue), relativePath);
   }
 
   runShell(

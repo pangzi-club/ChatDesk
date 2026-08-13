@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { test } from "vitest";
 import { NodePlatformAdapter } from "./node.ts";
+
+const execFileAsync = promisify(execFile);
 
 test("NodePlatformAdapter keeps file operations inside the workspace", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-platform-"));
@@ -26,6 +30,27 @@ test("NodePlatformAdapter reports non-git directories without failing", async ()
   assert.equal(result.pathExists, true);
   assert.equal(result.isRepository, false);
   assert.deepEqual(result.commits, []);
+  assert.equal(result.summary, null);
+});
+
+test("NodePlatformAdapter reports Git line changes and file diff", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-platform-git-diff-"));
+  await execFileAsync("git", ["init", "-q", "-b", "main"], { cwd: root });
+  await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+  await execFileAsync("git", ["config", "user.name", "Test"], { cwd: root });
+  await writeFile(path.join(root, "note.txt"), "one\ntwo\n", "utf8");
+  await execFileAsync("git", ["add", "."], { cwd: root });
+  await execFileAsync("git", ["commit", "-q", "-m", "initial"], { cwd: root });
+  await writeFile(path.join(root, "note.txt"), "one\nchanged\nthree\n", "utf8");
+  await writeFile(path.join(root, "new.txt"), "new line\n", "utf8");
+  const adapter = new NodePlatformAdapter();
+  const info = await adapter.inspectGit(root);
+  assert.equal(info.summary?.filesChanged, 2);
+  assert.equal(info.summary?.insertions, 3);
+  assert.equal(info.summary?.deletions, 1);
+  const diff = await adapter.readGitDiff(root, "note.txt");
+  assert.match(diff.content, /changed/);
+  assert.equal(diff.additions, 2);
 });
 
 test("NodePlatformAdapter runs full shell commands with a bounded result", async () => {

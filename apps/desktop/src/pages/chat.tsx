@@ -26,6 +26,7 @@ import {
   Folder,
   Gauge,
   GitBranch,
+  GitCommitHorizontal,
   Hammer,
   History,
   Laptop,
@@ -100,6 +101,7 @@ import {
   loadChatServerConfig,
   loadChatServerPort,
   loadChatServerSystemPromptPreview,
+  loadServerWorkspaceGit,
   saveChatServerConfig,
   stopChatServerRun,
   subscribeChatServerEvents,
@@ -129,6 +131,7 @@ import {
   saveChatToolsSettings,
 } from "@/lib/chat-tools";
 import { formatTokenUsage, getMessageUsage } from "@/lib/chat-usage";
+import { openFileViewer } from "@/lib/file-viewer-events";
 import { loadMcpServers, saveMcpServers } from "@/lib/mcp";
 import { formatModelLabel, loadModels, type ModelConfig } from "@/lib/models";
 import {
@@ -590,6 +593,13 @@ function ChatPage() {
   ]);
 
   const isGenerating = status === "submitted" || status === "streaming";
+  const workspaceGitQuery = useQuery({
+    queryKey: ["chat-workspace-git", workspaceKey],
+    queryFn: () => loadServerWorkspaceGit(workspaceKey),
+    enabled: Boolean(workspaceKey),
+    refetchInterval: isGenerating ? 15_000 : false,
+    refetchOnWindowFocus: true,
+  });
   useEffect(() => {
     if (!isGenerating) {
       generationStartedAtRef.current = null;
@@ -1222,6 +1232,35 @@ function ChatPage() {
       </div>
 
       <div className="chat-composer-wrap">
+        {workspaceGitQuery.data?.summary && workspaceGitQuery.data.isRepository ? (
+          <button
+            className="chat-git-summary-float"
+            onClick={() => {
+              const firstFile = workspaceGitQuery.data?.summary?.files[0];
+              openFileViewer({
+                mode: "diff",
+                path: firstFile?.path ?? "",
+                workspaceId: workspaceKey,
+                cwd: selectedCwd,
+              });
+            }}
+            type="button"
+          >
+            <GitCommitHorizontal className="size-3.5" />
+            <span className="chat-git-summary-branch">
+              {workspaceGitQuery.data.summary.branch ?? "HEAD"}
+            </span>
+            <span className="chat-git-summary-add">
+              +{workspaceGitQuery.data.summary.insertions}
+            </span>
+            <span className="chat-git-summary-delete">
+              -{workspaceGitQuery.data.summary.deletions}
+            </span>
+            <span className="chat-git-summary-files">
+              · {workspaceGitQuery.data.summary.filesChanged} 个文件已修改
+            </span>
+          </button>
+        ) : null}
         {error && <p className="chat-error">{error.message}</p>}
         <div className="chat-workspace-bar">
           <DropdownMenu>
