@@ -41,6 +41,7 @@ import {
   ShieldCheck,
   Sparkles,
   Trash2,
+  Upload,
   User,
   Wrench,
 } from "lucide-react";
@@ -53,6 +54,7 @@ import { ChatSkillsPicker } from "@/components/chat-skills-picker";
 import { type ChatToolCallCardProps, ChatToolCallGroup } from "@/components/chat-tool-call-card";
 import { ChatToolLogDialog } from "@/components/chat-tool-log-dialog";
 import { ChatToolsPicker } from "@/components/chat-tools-picker";
+import { GitCommitDialog } from "@/components/git-commit-dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -300,6 +302,7 @@ function ChatPage() {
   const [conversationMenuOpen, setConversationMenuOpen] = useState(false);
   const conversationMenuCloseTimerRef = useRef<number | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [gitCommitOpen, setGitCommitOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [toolLogOpen, setToolLogOpen] = useState(false);
@@ -1101,6 +1104,33 @@ function ChatPage() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
+                aria-label="提交或推送 Git 改动"
+                className="chat-icon-button"
+                disabled={
+                  !workspaceKey ||
+                  !(
+                    (workspaceGitQuery.data?.summary?.filesChanged ?? 0) > 0 ||
+                    (workspaceGitQuery.data?.summary?.ahead ?? 0) > 0
+                  )
+                }
+                size="icon"
+                title="提交或推送 Git 改动"
+                type="button"
+                variant="ghost"
+              >
+                <Upload className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="chat-select-menu" sideOffset={8}>
+              <DropdownMenuItem onSelect={() => setGitCommitOpen(true)}>
+                <Upload className="size-3.5" />
+                提交或推送
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
                 aria-label="更多选项"
                 className="chat-icon-button"
                 size="icon"
@@ -1520,6 +1550,18 @@ function ChatPage() {
         onSettingsChange={updateChatDisplay}
         open={settingsOpen}
         settings={chatDisplay}
+      />
+      <GitCommitDialog
+        branch={workspaceGitQuery.data?.summary?.branch}
+        hasChanges={Boolean(workspaceGitQuery.data?.summary?.filesChanged)}
+        canPush={Boolean(workspaceGitQuery.data?.summary?.ahead)}
+        insertions={workspaceGitQuery.data?.summary?.insertions ?? 0}
+        deletions={workspaceGitQuery.data?.summary?.deletions ?? 0}
+        filesChanged={workspaceGitQuery.data?.summary?.filesChanged ?? 0}
+        onOpenChange={setGitCommitOpen}
+        onSuccess={() => void workspaceGitQuery.refetch()}
+        open={gitCommitOpen}
+        workspaceId={workspaceKey}
       />
       <ChatContextDialog
         isGenerating={isGenerating}

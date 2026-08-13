@@ -890,6 +890,127 @@
   flex: 1;
   flex-direction: column;
 }
+.git-commit-dialog {
+  gap: 0;
+  overflow: hidden;
+  border-color: rgb(255 255 255 / 12%);
+  border-radius: 18px;
+  background: #292929;
+  padding: 0;
+  color: #f3f3f3;
+}
+.git-commit-dialog-header {
+  padding: 20px 22px 14px;
+}
+.git-commit-branch {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 18px;
+  font-weight: 500;
+}
+.git-commit-message {
+  min-height: 104px;
+  resize: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 10px 22px 18px;
+  color: #f3f3f3;
+  font-size: 16px;
+  box-shadow: none;
+}
+.git-commit-message::placeholder {
+  color: rgb(255 255 255 / 43%);
+}
+.git-commit-message:focus-visible {
+  border: 0;
+  box-shadow: none;
+  outline: none;
+}
+.git-commit-scope {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid rgb(255 255 255 / 12%);
+  padding: 12px 22px;
+}
+.git-commit-scope-check {
+  display: inline-flex;
+  width: 23px;
+  height: 23px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(255 255 255 / 32%);
+  border-radius: 6px;
+  color: #f3f3f3;
+}
+.git-commit-scope-label {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.git-commit-scope-count {
+  color: rgb(255 255 255 / 47%);
+  font-size: 11px;
+  font-weight: 400;
+}
+.git-commit-stats {
+  display: flex;
+  gap: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+}
+.git-commit-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 8px 10px;
+}
+.git-commit-action {
+  width: 100%;
+  min-height: 42px;
+  justify-content: flex-start;
+  border-radius: 10px;
+  padding: 0 14px;
+  color: rgb(255 255 255 / 75%);
+  font-size: 14px;
+}
+.git-commit-action.is-selected {
+  background: rgb(255 255 255 / 11%);
+  color: #fff;
+}
+.git-commit-action:disabled {
+  color: rgb(255 255 255 / 25%);
+}
+.git-commit-action-icon {
+  display: inline-flex;
+  width: 24px;
+  align-items: center;
+  justify-content: center;
+}
+.git-commit-dot {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-radius: 999px;
+}
+.git-commit-action-label {
+  flex: 1;
+  text-align: left;
+}
+.git-commit-shortcut {
+  display: inline-flex;
+  gap: 5px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 12%);
+  padding: 5px 10px;
+  color: rgb(255 255 255 / 72%);
+  font-size: 12px;
+}
 .chat-git-diff-header {
   display: flex;
   flex-shrink: 0;

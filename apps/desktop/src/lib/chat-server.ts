@@ -358,6 +358,15 @@ export async function commitServerWorkspaceGit(
   return (await response.json()) as WorkspaceGitCommitResult;
 }
 
+export async function pushServerWorkspaceGit(id: string, port = CHAT_SERVER_DEFAULT_PORT) {
+  const response = await chatServerRequest(
+    `/v1/workspaces/${encodeURIComponent(id)}/git/push`,
+    { method: "POST" },
+    port,
+  );
+  return (await response.json()) as WorkspaceGitCommitResult;
+}
+
 export async function loadServerWorkspaceFile(
   id: string,
   filePath: string,

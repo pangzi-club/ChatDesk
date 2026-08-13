@@ -523,6 +523,15 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
       return jsonError(error instanceof Error ? error.message : String(error));
     }
   });
+  app.post("/v1/workspaces/:id/git/push", async (c) => {
+    const workspace = workspaces.get(c.req.param("id"));
+    if (!workspace) return jsonError("workspace 不存在", 404);
+    try {
+      return c.json(await nodePlatform.pushGit(workspace.path));
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
   app.get("/v1/workspaces/:id/files", async (c) => {
     const workspace = workspaces.get(c.req.param("id"));
     if (!workspace) return jsonError("workspace 不存在", 404);

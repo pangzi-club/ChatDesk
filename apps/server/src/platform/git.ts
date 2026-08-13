@@ -265,3 +265,9 @@ export async function commitGit(
   if (push) await runGit(root, ["push"]);
   return { hash, message: commitMessage, pushed: push, generated: false };
 }
+
+export async function pushGit(root: string): Promise<WorkspaceGitCommitResult> {
+  await runGit(root, ["push"]);
+  const hash = (await runGit(root, ["rev-parse", "HEAD"])).stdout.trim();
+  return { hash, message: "", pushed: true, generated: false };
+}

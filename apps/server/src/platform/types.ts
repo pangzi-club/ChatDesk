@@ -96,6 +96,7 @@ export type PlatformAdapter = {
   readGitDiff(root: string, relativePath: string): Promise<WorkspaceGitDiff>;
   restoreGit(root: string, relativePath?: string): Promise<void>;
   commitGit(root: string, message?: string, push?: boolean): Promise<WorkspaceGitCommitResult>;
+  pushGit(root: string): Promise<WorkspaceGitCommitResult>;
   runShell(
     root: string,
     command: string,

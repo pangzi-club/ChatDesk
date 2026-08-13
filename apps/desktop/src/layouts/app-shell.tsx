@@ -60,6 +60,7 @@ import {
   useNavigate,
 } from "react-router-dom";
 import { FileViewer } from "@/components/file-viewer";
+import { GitCommitDialog } from "@/components/git-commit-dialog";
 import { TitlebarDragRegion } from "@/components/titlebar";
 import {
   AlertDialog,
@@ -74,14 +75,6 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -89,12 +82,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Textarea } from "@/components/ui/textarea";
 import { rememberReturnPath } from "@/lib/app-return-path";
 import {
   type ChatServerSession,
   canRestartChatServer,
-  commitServerWorkspaceGit,
   getChatServerStatus,
   loadChatServerPort,
   loadServerWorkspaceFile,
@@ -1446,8 +1437,6 @@ function ChatWorkspaceWindow({
   const [gitRefreshToken, setGitRefreshToken] = useState(0);
   const [restoreTarget, setRestoreTarget] = useState<{ path?: string; label: string } | null>(null);
   const [commitOpen, setCommitOpen] = useState(false);
-  const [commitMessage, setCommitMessage] = useState("");
-  const [commitError, setCommitError] = useState<string | null>(null);
   const restoreMutation = useMutation({
     mutationFn: (path?: string) =>
       restoreServerWorkspaceGit(activeTabWorkspaceId ?? workspaceId, path),
@@ -1460,21 +1449,6 @@ function ChatWorkspaceWindow({
     onError: (error) => {
       setViewerError(error instanceof Error ? error.message : String(error));
     },
-  });
-  const commitMutation = useMutation({
-    mutationFn: (push: boolean) =>
-      commitServerWorkspaceGit(activeTabWorkspaceId ?? workspaceId, {
-        message: commitMessage,
-        push,
-      }),
-    onSuccess: () => {
-      setCommitOpen(false);
-      setCommitMessage("");
-      setCommitError(null);
-      setGitDiff(null);
-      setGitRefreshToken((value) => value + 1);
-    },
-    onError: (error) => setCommitError(describeError(error)),
   });
 
   useEffect(() => {
@@ -1811,9 +1785,8 @@ function ChatWorkspaceWindow({
               <Button
                 aria-label="提交 Git 改动"
                 className="chat-workspace-window-add"
-                disabled={commitMutation.isPending || !(gitSummary?.files.length ?? 0)}
+                disabled={!gitSummary || (!(gitSummary.files.length > 0) && gitSummary.ahead <= 0)}
                 onClick={() => {
-                  setCommitError(null);
                   setCommitOpen(true);
                 }}
                 size="icon"
@@ -1928,59 +1901,21 @@ function ChatWorkspaceWindow({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <Dialog
+      <GitCommitDialog
         open={commitOpen}
-        onOpenChange={(open) => {
-          if (!commitMutation.isPending) setCommitOpen(open);
-          if (open) setCommitError(null);
+        onOpenChange={setCommitOpen}
+        workspaceId={activeTabWorkspaceId ?? workspaceId}
+        branch={gitSummary?.branch}
+        hasChanges={Boolean(gitSummary?.files.length)}
+        canPush={Boolean(gitSummary?.ahead)}
+        insertions={gitSummary?.insertions ?? 0}
+        deletions={gitSummary?.deletions ?? 0}
+        filesChanged={gitSummary?.filesChanged ?? 0}
+        onSuccess={() => {
+          setGitDiff(null);
+          setGitRefreshToken((value) => value + 1);
         }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>提交 Git 改动</DialogTitle>
-            <DialogDescription>
-              {gitSummary?.branch ? `提交到 ${gitSummary.branch}` : "提交当前 workspace 的所有改动"}
-              。留空将由 AI 自动生成提交信息。
-            </DialogDescription>
-          </DialogHeader>
-          <Textarea
-            autoFocus
-            className="min-h-28 resize-none"
-            disabled={commitMutation.isPending}
-            onChange={(event) => setCommitMessage(event.target.value)}
-            placeholder="提交信息（留空由 AI 自动生成）"
-            value={commitMessage}
-          />
-          {commitError ? <p className="text-destructive text-sm">{commitError}</p> : null}
-          <DialogFooter>
-            <Button
-              disabled={commitMutation.isPending}
-              onClick={() => setCommitOpen(false)}
-              type="button"
-              variant="outline"
-            >
-              取消
-            </Button>
-            <Button
-              disabled={commitMutation.isPending}
-              onClick={() => commitMutation.mutate(false)}
-              type="button"
-            >
-              {commitMutation.isPending ? <LoaderCircle className="size-4 animate-spin" /> : null}
-              提交
-            </Button>
-            <Button
-              className="bg-sky-600 text-white shadow-xs hover:bg-sky-500 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400"
-              disabled={commitMutation.isPending}
-              onClick={() => commitMutation.mutate(true)}
-              type="button"
-            >
-              {commitMutation.isPending ? <LoaderCircle className="size-4 animate-spin" /> : null}
-              提交并推送
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      />
     </div>
   );
 }
