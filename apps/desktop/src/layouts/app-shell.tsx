@@ -1358,12 +1358,12 @@ function ChatWorkspaceWindow({
         if (!active) return;
         const summary = info.summary ?? null;
         setGitSummary(summary);
-        if (
-          summary?.files.length &&
-          !summary.files.some((file: WorkspaceGitFile) => file.path === selectedPath)
-        ) {
-          const nextPath = summary.files[0].path;
-          setSelectedPath(nextPath);
+        if (!summary?.files.length) {
+          setSelectedPath("");
+          setGitDiff(null);
+        } else if (!summary.files.some((file: WorkspaceGitFile) => file.path === selectedPath)) {
+          setSelectedPath(summary.files[0].path);
+          setGitDiff(null);
         }
       })
       .catch((error) => {
@@ -1382,7 +1382,16 @@ function ChatWorkspaceWindow({
     if (!activeTabWorkspaceId) return;
     void loadServerWorkspaceGit(activeTabWorkspaceId)
       .then((info) => {
-        if (active) setGitSummary(info.summary ?? null);
+        if (!active) return;
+        const summary = info.summary ?? null;
+        setGitSummary(summary);
+        if (!summary?.files.length) {
+          setSelectedPath("");
+          setGitDiff(null);
+        } else if (!summary.files.some((file: WorkspaceGitFile) => file.path === selectedPath)) {
+          setSelectedPath(summary.files[0].path);
+          setGitDiff(null);
+        }
       })
       .catch((error) => {
         if (active) setViewerError(error instanceof Error ? error.message : String(error));
@@ -1390,7 +1399,7 @@ function ChatWorkspaceWindow({
     return () => {
       active = false;
     };
-  }, [activeTabKind, activeTabWorkspaceId, gitRefreshToken]);
+  }, [activeTabKind, activeTabWorkspaceId, gitRefreshToken, selectedPath]);
 
   useEffect(() => {
     let active = true;
