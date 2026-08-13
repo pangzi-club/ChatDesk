@@ -19,6 +19,7 @@ const execFileAsync = promisify(execFile);
 const MAX_FILE_BYTES = 512 * 1024;
 const MAX_SEARCH_RESULTS = 500;
 const SKIPPED_DIRECTORIES = new Set([".git", "node_modules", "target", "dist"]);
+const SKIPPED_FILES = new Set([".DS_Store", "Thumbs.db", "desktop.ini"]);
 
 function canonicalizeTarget(target: string) {
   const missingParts: string[] = [];
@@ -196,7 +197,11 @@ export class NodePlatformAdapter implements PlatformAdapter {
     return {
       path: path.relative(root, target) || ".",
       entries: entries
-        .filter((entry) => !SKIPPED_DIRECTORIES.has(entry.name))
+        .filter(
+          (entry) =>
+            !SKIPPED_DIRECTORIES.has(entry.name) &&
+            !(entry.isFile() && SKIPPED_FILES.has(entry.name)),
+        )
         .map((entry) => ({
           name: entry.name,
           path: path.relative(root, path.join(target, entry.name)),

@@ -1,9 +1,12 @@
+import { createRequire } from "node:module";
 import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 const host = process.env.TAURI_DEV_HOST;
+const require = createRequire(import.meta.url);
+const monacoRoot = path.dirname(require.resolve("monaco-editor/package.json"));
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
@@ -33,6 +36,9 @@ export default defineConfig(async () => ({
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],
+    },
+    fs: {
+      allow: [path.resolve(__dirname), monacoRoot],
     },
   },
 }));

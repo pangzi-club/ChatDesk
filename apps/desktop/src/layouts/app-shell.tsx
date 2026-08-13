@@ -1,5 +1,5 @@
-import type { WorkspaceGitFile, WorkspaceGitSummary } from "@chatdesk/shared";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { WorkspaceFileEntry, WorkspaceGitFile, WorkspaceGitSummary } from "@chatdesk/shared";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import {
   ArrowDown,
@@ -8,10 +8,13 @@ import {
   ChartColumn,
   Check,
   ChevronDown,
+  ChevronRight,
   CircleAlert,
   Clock3,
   CornerDownLeft,
   ExternalLink,
+  File,
+  Folder,
   FolderGit2,
   Image,
   Keyboard,
@@ -46,6 +49,7 @@ import {
 import {
   type ComponentType,
   type KeyboardEvent,
+  type ReactNode,
   type PointerEvent as ReactPointerEvent,
   useEffect,
   useMemo,
@@ -89,6 +93,7 @@ import {
   getChatServerStatus,
   loadChatServerPort,
   loadServerWorkspaceFile,
+  loadServerWorkspaceFiles,
   loadServerWorkspaceGit,
   loadServerWorkspaceGitDiff,
   restartChatServer,
@@ -437,21 +442,34 @@ function AppShell() {
       const key = getChatWindowKey(location.search);
       setChatWindowStates((current) => {
         const state = current[key] ?? createChatWindowState();
-        const kind = request.mode === "diff" ? "git-diff" : "source";
         const existing = state.tabs.find(
-          (tab) => tab.kind === kind && tab.workspaceId === request.workspaceId,
+          (tab) =>
+            (tab.kind === "workspace" || tab.kind === "source" || tab.kind === "git-diff") &&
+            tab.workspaceId === request.workspaceId,
         );
-        const tab = existing ?? {
+        const tab: ChatWindowTab = existing ?? {
           id: createChatWindowTabId(),
-          title: request.mode === "diff" ? "Git Diff" : pathBasename(request.path),
-          kind,
+          title: "Explorer",
+          kind: "workspace" as const,
           workspaceId: request.workspaceId,
           cwd: request.cwd,
           path: request.path,
           content: request.content,
           refreshToken: Date.now(),
+          explorerView: request.mode === "diff" ? ("git" as const) : ("files" as const),
+          editorMode: request.mode,
         };
-        const refreshedTab = existing ? { ...existing, refreshToken: Date.now() } : tab;
+        const refreshedTab: ChatWindowTab = existing
+          ? {
+              ...existing,
+              kind: "workspace" as const,
+              refreshToken: Date.now(),
+              path: request.path,
+              content: request.content,
+              explorerView: request.mode === "diff" ? ("git" as const) : ("files" as const),
+              editorMode: request.mode,
+            }
+          : tab;
         return {
           ...current,
           [key]: {
@@ -1331,6 +1349,12 @@ function pathBasename(path: string) {
   );
 }
 
+function pathDirectory(path: string) {
+  const normalized = path.replace(/\\/g, "/");
+  const separator = normalized.lastIndexOf("/");
+  return separator > 0 ? `${normalized.slice(0, separator)}/` : "";
+}
+
 function describeError(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
@@ -1338,12 +1362,14 @@ function describeError(error: unknown) {
 type ChatWindowTab = {
   id: string;
   title: string;
-  kind?: "blank" | "git-diff" | "source";
+  kind?: "blank" | "workspace" | "git-diff" | "source";
   workspaceId?: string;
   cwd?: string;
   path?: string;
   content?: string;
   refreshToken?: number;
+  explorerView?: "files" | "git";
+  editorMode?: "source" | "diff";
 };
 type ChatWindowState = {
   open: boolean;
@@ -1413,36 +1439,86 @@ function ChatWorkspaceWindow({
   cwd: string;
 }) {
   const interactionRef = useRef<WindowInteraction | null>(null);
+  const sidebarResizeRef = useRef<{ startX: number; initialWidth: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
   const activeTabId = activeTab?.id;
-  const activeTabKind = activeTab?.kind;
-  const activeTabPath = activeTab?.path;
-  const activeTabWorkspaceId = activeTab?.workspaceId;
-  const activeTabRefreshToken = activeTab?.refreshToken;
-  const tabResetKey = `${activeTabId ?? ""}:${activeTabPath ?? ""}:${activeTabRefreshToken ?? 0}`;
-  const gitTabKey = `${activeTabId ?? ""}:${activeTabKind ?? ""}:${activeTabWorkspaceId ?? ""}:${activeTabRefreshToken ?? 0}`;
-  const [selectedPath, setSelectedPath] = useState(activeTab?.path ?? "");
-  const [gitSummary, setGitSummary] = useState<WorkspaceGitSummary | null>(null);
-  const [gitDiff, setGitDiff] = useState<{
+  const workspaceTab =
+    activeTab?.kind === "workspace" ||
+    activeTab?.kind === "source" ||
+    activeTab?.kind === "git-diff"
+      ? activeTab
+      : null;
+  const activeTabWorkspaceId = workspaceTab?.workspaceId;
+  const [selectedPath, setSelectedPath] = useState(workspaceTab?.path ?? "");
+  const [explorerView, setExplorerView] = useState<"files" | "git">(
+    workspaceTab?.explorerView ?? (workspaceTab?.kind === "git-diff" ? "git" : "files"),
+  );
+  const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(() => new Set(["."]));
+  const [editorTabs, setEditorTabs] = useState<
+    Array<{
+      path: string;
+      mode: "source" | "diff";
+      content?: string;
+      originalContent?: string;
+      modifiedContent?: string;
+      binary?: boolean;
+      truncated?: boolean;
+    }>
+  >([]);
+  const [activeEditorPath, setActiveEditorPath] = useState(workspaceTab?.path ?? "");
+  const [editorContent, setEditorContent] = useState<{
     path: string;
+    mode: "source" | "diff";
     content: string;
-    additions: number | null;
-    deletions: number | null;
+    originalContent?: string;
+    modifiedContent?: string;
     binary?: boolean;
     truncated?: boolean;
   } | null>(null);
-  const [fileContent, setFileContent] = useState<{ path: string; content: string } | null>(null);
   const [viewerError, setViewerError] = useState<string | null>(null);
   const [gitRefreshToken, setGitRefreshToken] = useState(0);
   const [restoreTarget, setRestoreTarget] = useState<{ path?: string; label: string } | null>(null);
   const [commitOpen, setCommitOpen] = useState(false);
+  const gitQuery = useQuery({
+    queryKey: ["workspace-git", activeTabWorkspaceId, gitRefreshToken],
+    queryFn: () => loadServerWorkspaceGit(activeTabWorkspaceId ?? ""),
+    enabled: Boolean(activeTabWorkspaceId),
+    refetchInterval: 15_000,
+  });
+  const gitSummary =
+    (gitQuery.data as { summary?: WorkspaceGitSummary } | undefined)?.summary ?? null;
+  const directoryPaths = useMemo(
+    () => [...expandedDirectories].filter((path) => path === "." || path.length > 0),
+    [expandedDirectories],
+  );
+  const directoryQueries = useQueries({
+    queries: directoryPaths.map((path) => ({
+      queryKey: ["workspace-files", activeTabWorkspaceId, path],
+      queryFn: () => loadServerWorkspaceFiles(activeTabWorkspaceId ?? "", path),
+      enabled: Boolean(activeTabWorkspaceId),
+    })),
+  });
+  const directoryMap = useMemo(() => {
+    const map = new Map<
+      string,
+      { entries: WorkspaceFileEntry[]; isLoading: boolean; error?: string }
+    >();
+    directoryPaths.forEach((path, index) => {
+      const query = directoryQueries[index];
+      map.set(path, {
+        entries: (query.data as { entries?: WorkspaceFileEntry[] } | undefined)?.entries ?? [],
+        isLoading: query.isLoading,
+        error: query.error instanceof Error ? query.error.message : undefined,
+      });
+    });
+    return map;
+  }, [directoryPaths, directoryQueries]);
   const restoreMutation = useMutation({
     mutationFn: (path?: string) =>
       restoreServerWorkspaceGit(activeTabWorkspaceId ?? workspaceId, path),
     onSuccess: () => {
       setRestoreTarget(null);
-      setGitDiff(null);
       setViewerError(null);
       setGitRefreshToken((value) => value + 1);
     },
@@ -1452,89 +1528,83 @@ function ChatWorkspaceWindow({
   });
 
   useEffect(() => {
-    if (!tabResetKey) return;
-    setSelectedPath(activeTabPath ?? "");
-    setGitDiff(null);
-    setFileContent(null);
+    if (!workspaceId || state.tabs.length > 0) return;
+    const tab: ChatWindowTab = {
+      id: createChatWindowTabId(),
+      title: "Explorer",
+      kind: "workspace",
+      workspaceId,
+      cwd,
+      explorerView: "files",
+      refreshToken: Date.now(),
+    };
+    onChange({ ...state, tabs: [tab], activeTabId: tab.id });
+  }, [cwd, onChange, state, workspaceId]);
+
+  useEffect(() => {
+    if (!activeTabId) return;
+    const nextView =
+      workspaceTab?.explorerView ?? (workspaceTab?.kind === "git-diff" ? "git" : "files");
+    setExplorerView(nextView);
+    setSelectedPath(workspaceTab?.path ?? "");
+    setActiveEditorPath(workspaceTab?.path ?? "");
+    setEditorContent(null);
     setViewerError(null);
-  }, [activeTabPath, tabResetKey]);
+  }, [activeTabId, workspaceTab?.explorerView, workspaceTab?.kind, workspaceTab?.path]);
 
+  // Refreshing Git intentionally reloads the selected editor snapshot as well as the sidebar.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refresh intentionally reloads current editor content.
   useEffect(() => {
-    if (!gitTabKey) return;
     let active = true;
-    if (!activeTabWorkspaceId || activeTabKind !== "git-diff") {
-      setGitSummary(null);
+    const path = activeEditorPath || selectedPath;
+    if (!workspaceTab || !path || !activeTabWorkspaceId) return;
+    const mode = explorerView === "git" ? "diff" : "source";
+    if (mode === "source" && workspaceTab.path === path && workspaceTab.content !== undefined) {
+      setEditorContent({ path, mode, content: workspaceTab.content });
+      setEditorTabs((tabs) => {
+        const index = tabs.findIndex((tab) => tab.path === path);
+        if (index < 0) return [...tabs, { path, mode, content: workspaceTab.content }];
+        const next = [...tabs];
+        next[index] = { path, mode, content: workspaceTab.content };
+        return next;
+      });
       return;
     }
-    void loadServerWorkspaceGit(activeTabWorkspaceId)
-      .then((info) => {
-        if (!active) return;
-        const summary = info.summary ?? null;
-        setGitSummary(summary);
-        if (!summary?.files.length) {
-          setSelectedPath("");
-          setGitDiff(null);
-        } else if (!summary.files.some((file: WorkspaceGitFile) => file.path === selectedPath)) {
-          setSelectedPath(summary.files[0].path);
-          setGitDiff(null);
-        }
-      })
-      .catch((error) => {
-        if (active) setViewerError(error instanceof Error ? error.message : String(error));
-      });
-    const intervalId = window.setInterval(() => setGitRefreshToken((value) => value + 1), 15_000);
-    return () => {
-      active = false;
-      window.clearInterval(intervalId);
-    };
-  }, [activeTabKind, activeTabWorkspaceId, gitTabKey, selectedPath]);
-
-  useEffect(() => {
-    if (gitRefreshToken === 0 || activeTabKind !== "git-diff") return;
-    let active = true;
-    if (!activeTabWorkspaceId) return;
-    void loadServerWorkspaceGit(activeTabWorkspaceId)
-      .then((info) => {
-        if (!active) return;
-        const summary = info.summary ?? null;
-        setGitSummary(summary);
-        if (!summary?.files.length) {
-          setSelectedPath("");
-          setGitDiff(null);
-        } else if (!summary.files.some((file: WorkspaceGitFile) => file.path === selectedPath)) {
-          setSelectedPath(summary.files[0].path);
-          setGitDiff(null);
-        }
-      })
-      .catch((error) => {
-        if (active) setViewerError(error instanceof Error ? error.message : String(error));
-      });
-    return () => {
-      active = false;
-    };
-  }, [activeTabKind, activeTabWorkspaceId, gitRefreshToken, selectedPath]);
-
-  // Refreshing the Git summary must also reload the currently selected diff.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: gitRefreshToken intentionally reloads the current file diff.
-  useEffect(() => {
-    let active = true;
-    if (!activeTab) return;
-    if (!selectedPath) return;
-    if (activeTab.kind === "source" && activeTab.content !== undefined) {
-      setFileContent({ path: activeTab.path ?? selectedPath, content: activeTab.content });
-      return;
-    }
-    if (!activeTab.workspaceId) return;
     const request =
-      activeTab.kind === "source"
-        ? loadServerWorkspaceFile(activeTab.workspaceId, selectedPath)
-        : loadServerWorkspaceGitDiff(activeTab.workspaceId, selectedPath);
+      mode === "source"
+        ? loadServerWorkspaceFile(activeTabWorkspaceId, path)
+        : loadServerWorkspaceGitDiff(activeTabWorkspaceId, path);
     void request
       .then((result) => {
         if (!active) return;
-        if (activeTab.kind === "source")
-          setFileContent(result as { path: string; content: string });
-        else setGitDiff(result as NonNullable<typeof gitDiff>);
+        if (mode === "source") {
+          const value = result as { path: string; content: string };
+          setEditorContent({ path: value.path, mode, content: value.content });
+          setEditorTabs((tabs) => {
+            const index = tabs.findIndex((tab) => tab.path === path);
+            if (index < 0) return [...tabs, { path, mode, content: value.content }];
+            const next = [...tabs];
+            next[index] = { path, mode, content: value.content };
+            return next;
+          });
+        } else {
+          const value = result as {
+            path: string;
+            content: string;
+            originalContent?: string;
+            modifiedContent?: string;
+            binary?: boolean;
+            truncated?: boolean;
+          };
+          setEditorContent({ ...value, mode });
+          setEditorTabs((tabs) => {
+            const index = tabs.findIndex((tab) => tab.path === path);
+            if (index < 0) return [...tabs, { path, mode }];
+            const next = [...tabs];
+            next[index] = { path, mode };
+            return next;
+          });
+        }
       })
       .catch((error) => {
         if (active) setViewerError(error instanceof Error ? error.message : String(error));
@@ -1542,14 +1612,171 @@ function ChatWorkspaceWindow({
     return () => {
       active = false;
     };
-  }, [activeTab, gitRefreshToken, selectedPath]);
+  }, [
+    activeTabWorkspaceId,
+    activeEditorPath,
+    explorerView,
+    gitRefreshToken,
+    selectedPath,
+    workspaceTab,
+  ]);
 
-  function selectFile(file: WorkspaceGitFile) {
-    setSelectedPath(file.path);
+  function updateWorkspaceTab(patch: Partial<ChatWindowTab>) {
+    if (!activeTab) return;
     onChange({
       ...state,
-      activeTabId: activeTab?.id ?? state.activeTabId,
-      tabs: state.tabs.map((tab) => (tab.id === activeTab?.id ? { ...tab, path: file.path } : tab)),
+      tabs: state.tabs.map((tab) =>
+        tab.id === activeTab.id ? { ...tab, ...patch, kind: "workspace" } : tab,
+      ),
+    });
+  }
+
+  function selectFile(path: string, mode: "source" | "diff") {
+    setSelectedPath(path);
+    setActiveEditorPath(path);
+    setExplorerView(mode === "diff" ? "git" : "files");
+    updateWorkspaceTab({ path, editorMode: mode, explorerView: mode === "diff" ? "git" : "files" });
+  }
+
+  function selectGitFile(file: WorkspaceGitFile) {
+    selectFile(file.path, "diff");
+  }
+
+  function toggleDirectory(path: string) {
+    setExpandedDirectories((current) => {
+      const next = new Set(current);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }
+
+  function switchExplorerView(view: "files" | "git") {
+    setExplorerView(view);
+    updateWorkspaceTab({ explorerView: view });
+    if (view === "git") {
+      const first = gitSummary?.files[0];
+      if (first) selectGitFile(first);
+    }
+  }
+
+  function closeEditor(path: string) {
+    const next = editorTabs.filter((tab) => tab.path !== path);
+    setEditorTabs(next);
+    if (activeEditorPath === path) {
+      const fallback = next[next.length - 1];
+      setActiveEditorPath(fallback?.path ?? "");
+      setSelectedPath(fallback?.path ?? "");
+    }
+  }
+
+  function restoreFile(file: WorkspaceGitFile) {
+    setRestoreTarget({ path: file.path, label: file.path });
+  }
+
+  function renderDirectory(path: string, depth = 0): ReactNode {
+    const directory = directoryMap.get(path);
+    if (!directory) return null;
+    if (directory.isLoading) {
+      return (
+        <div className="chat-explorer-skeleton-list" style={{ paddingLeft: 8 + depth * 14 }}>
+          {[0, 1, 2].map((item) => (
+            <div className="chat-explorer-skeleton" key={item} />
+          ))}
+        </div>
+      );
+    }
+    if (directory.error) {
+      return (
+        <div className="chat-explorer-error" style={{ paddingLeft: 12 + depth * 14 }}>
+          {directory.error}
+        </div>
+      );
+    }
+    if (directory.entries.length === 0) {
+      return (
+        <div className="chat-explorer-empty" style={{ paddingLeft: 12 + depth * 14 }}>
+          目录为空
+        </div>
+      );
+    }
+    return directory.entries.map((entry) => {
+      const isExpanded = expandedDirectories.has(entry.path);
+      const gitFile = gitSummary?.files.find((file) => file.path === entry.path);
+      return (
+        <div key={entry.path}>
+          <div
+            className={`chat-explorer-row ${selectedPath === entry.path ? "is-active" : ""}`}
+            style={{ paddingLeft: 8 + depth * 14 }}
+          >
+            {entry.kind === "dir" ? (
+              <button
+                aria-label={`${isExpanded ? "收起" : "展开"} ${entry.name}`}
+                className="chat-explorer-chevron"
+                onClick={() => toggleDirectory(entry.path)}
+                type="button"
+              >
+                {isExpanded ? (
+                  <ChevronDown className="size-3" />
+                ) : (
+                  <ChevronRight className="size-3" />
+                )}
+              </button>
+            ) : (
+              <span className="chat-explorer-chevron" />
+            )}
+            <button
+              className="chat-explorer-entry"
+              onClick={() =>
+                entry.kind === "dir"
+                  ? toggleDirectory(entry.path)
+                  : selectFile(entry.path, "source")
+              }
+              type="button"
+            >
+              {entry.kind === "dir" ? (
+                <Folder className="size-3.5" />
+              ) : (
+                <File className="size-3.5" />
+              )}
+              <span className="chat-explorer-name">{entry.name}</span>
+              {gitFile ? (
+                <span className={`chat-explorer-status is-${gitFile.status}`}>
+                  {gitFile.status[0].toUpperCase()}
+                </span>
+              ) : null}
+            </button>
+          </div>
+          {entry.kind === "dir" && isExpanded ? renderDirectory(entry.path, depth + 1) : null}
+        </div>
+      );
+    });
+  }
+
+  const editorView = editorContent ? (
+    <FileViewer
+      path={editorContent.path}
+      mode={editorContent.mode}
+      content={editorContent.content}
+      originalContent={editorContent.originalContent}
+      modifiedContent={editorContent.modifiedContent}
+      binary={editorContent.binary}
+      truncated={editorContent.truncated}
+    />
+  ) : viewerError ? (
+    <div className="chat-workspace-window-empty text-destructive">{viewerError}</div>
+  ) : (
+    <div className="chat-workspace-window-empty">选择一个文件查看内容</div>
+  );
+
+  function selectEditor(tab: { path: string; mode: "source" | "diff" }) {
+    setActiveEditorPath(tab.path);
+    setSelectedPath(tab.path);
+    setExplorerView(tab.mode === "diff" ? "git" : "files");
+    updateWorkspaceTab({
+      path: tab.path,
+      editorMode: tab.mode,
+      explorerView: tab.mode === "diff" ? "git" : "files",
     });
   }
 
@@ -1557,23 +1784,6 @@ function ChatWorkspaceWindow({
     if (!restoreTarget || !(activeTabWorkspaceId ?? workspaceId)) return;
     restoreMutation.mutate(restoreTarget.path);
   }
-
-  const viewer =
-    activeTab?.kind === "git-diff" && gitDiff ? (
-      <FileViewer
-        path={gitDiff.path}
-        mode="diff"
-        content={gitDiff.content}
-        binary={gitDiff.binary}
-        truncated={gitDiff.truncated}
-      />
-    ) : activeTab?.kind === "source" && fileContent ? (
-      <FileViewer path={fileContent.path} mode="source" content={fileContent.content} />
-    ) : viewerError ? (
-      <div className="chat-workspace-window-empty text-destructive">{viewerError}</div>
-    ) : (
-      <div className="chat-workspace-window-empty">选择一个文件查看内容</div>
-    );
 
   function beginInteraction(event: ReactPointerEvent, direction: ResizeDirection | "move") {
     event.preventDefault();
@@ -1640,6 +1850,39 @@ function ChatWorkspaceWindow({
     window.addEventListener("pointerup", handleUp);
   }
 
+  function beginSidebarResize(event: ReactPointerEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    const initialWidth = containerRef.current
+      ?.querySelector<HTMLElement>(".chat-explorer-sidebar")
+      ?.getBoundingClientRect().width;
+    if (!initialWidth) return;
+    sidebarResizeRef.current = { startX: event.clientX, initialWidth };
+    const handleMove = (moveEvent: PointerEvent) => {
+      const interaction = sidebarResizeRef.current;
+      if (!interaction) return;
+      const bodyWidth = containerRef.current
+        ?.querySelector<HTMLElement>(".chat-explorer-body")
+        ?.getBoundingClientRect().width;
+      const maxWidth = Math.max(220, (bodyWidth ?? 600) - 220);
+      const width = clamp(
+        interaction.initialWidth + moveEvent.clientX - interaction.startX,
+        170,
+        maxWidth,
+      );
+      containerRef.current
+        ?.querySelector<HTMLElement>(".chat-explorer-sidebar")
+        ?.style.setProperty("width", `${width}px`);
+    };
+    const handleUp = () => {
+      sidebarResizeRef.current = null;
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+  }
+
   function addTab() {
     const nextTab = {
       id: createChatWindowTabId(),
@@ -1652,24 +1895,35 @@ function ChatWorkspaceWindow({
   function addGitDiffTab() {
     if (!workspaceId) return;
     const existing = state.tabs.find(
-      (tab) => tab.kind === "git-diff" && tab.workspaceId === workspaceId,
+      (tab) =>
+        (tab.kind === "workspace" || tab.kind === "source" || tab.kind === "git-diff") &&
+        tab.workspaceId === workspaceId,
     );
     if (existing) {
       onChange({
         ...state,
         activeTabId: existing.id,
         tabs: state.tabs.map((tab) =>
-          tab.id === existing.id ? { ...tab, cwd, refreshToken: Date.now() } : tab,
+          tab.id === existing.id
+            ? {
+                ...tab,
+                kind: "workspace" as const,
+                cwd,
+                explorerView: "git",
+                refreshToken: Date.now(),
+              }
+            : tab,
         ),
       });
       return;
     }
     const nextTab = {
       id: createChatWindowTabId(),
-      title: "Git Diff",
-      kind: "git-diff" as const,
+      title: "Explorer",
+      kind: "workspace" as const,
       workspaceId,
       cwd,
+      explorerView: "git" as const,
       refreshToken: Date.now(),
     };
     onChange({ ...state, tabs: [...state.tabs, nextTab], activeTabId: nextTab.id });
@@ -1746,7 +2000,7 @@ function ChatWorkspaceWindow({
             </DropdownMenuItem>
             <DropdownMenuItem disabled={!workspaceId} onSelect={addGitDiffTab}>
               <FolderGit2 className="size-3.5" />
-              Git Diff
+              Workspace Explorer
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -1774,21 +2028,21 @@ function ChatWorkspaceWindow({
           <PanelLeft className="size-3.5 rotate-180" />
         </Button>
       </div>
-      {activeTab?.kind === "git-diff" ? (
-        <div className="chat-git-diff-panel">
-          <header className="chat-git-diff-header">
-            <span>{gitSummary?.branch ?? "Git Diff"}</span>
-            <span className="chat-git-diff-header-actions">
-              <span className="chat-git-diff-totals">
-                +{gitSummary?.insertions ?? 0} -{gitSummary?.deletions ?? 0}
-              </span>
+      {workspaceTab ? (
+        <div className="chat-explorer-shell">
+          <header className="chat-explorer-toolbar">
+            <span className="chat-explorer-title">{gitQuery.data?.branch ?? "Explorer"}</span>
+            <span className="chat-explorer-toolbar-actions">
+              {explorerView === "git" ? (
+                <span className="chat-explorer-totals">
+                  +{gitSummary?.insertions ?? 0} -{gitSummary?.deletions ?? 0}
+                </span>
+              ) : null}
               <Button
                 aria-label="提交 Git 改动"
                 className="chat-workspace-window-add"
                 disabled={!gitSummary || (!(gitSummary.files.length > 0) && gitSummary.ahead <= 0)}
-                onClick={() => {
-                  setCommitOpen(true);
-                }}
+                onClick={() => setCommitOpen(true)}
                 size="icon"
                 title="提交 Git 改动"
                 type="button"
@@ -1797,10 +2051,11 @@ function ChatWorkspaceWindow({
                 <Upload className="size-3.5" />
               </Button>
               <Button
-                aria-label="刷新 Git Diff"
+                aria-label="刷新 Explorer"
                 className="chat-workspace-window-add"
                 onClick={() => setGitRefreshToken((value) => value + 1)}
                 size="icon"
+                title="刷新"
                 type="button"
                 variant="ghost"
               >
@@ -1820,46 +2075,115 @@ function ChatWorkspaceWindow({
               </Button>
             </span>
           </header>
-          <div className="chat-git-diff-body">
-            <div className="chat-git-diff-files">
-              {(gitSummary?.files ?? []).map((file) => (
-                <div
-                  className={`chat-git-diff-file ${file.path === selectedPath ? "is-active" : ""}`}
-                  key={file.path}
+          <div className="chat-explorer-body">
+            <aside className="chat-explorer-sidebar">
+              <div className="chat-explorer-view-tabs" role="tablist" aria-label="Explorer 视图">
+                <button
+                  aria-selected={explorerView === "files"}
+                  className={explorerView === "files" ? "is-active" : ""}
+                  onClick={() => switchExplorerView("files")}
+                  role="tab"
+                  type="button"
                 >
-                  <button
-                    className="chat-git-diff-file-select"
-                    onClick={() => selectFile(file)}
-                    type="button"
-                  >
-                    <span className="chat-git-diff-file-status">
-                      {file.status[0].toUpperCase()}
-                    </span>
-                    <span className="chat-git-diff-file-path">{file.path}</span>
-                    <span className="chat-git-diff-file-count">
-                      +{file.additions ?? "-"} -{file.deletions ?? "-"}
-                    </span>
-                  </button>
-                  <Button
-                    aria-label={`撤回 ${file.path}`}
-                    className="chat-git-diff-file-restore"
-                    disabled={restoreMutation.isPending}
-                    onClick={() => setRestoreTarget({ path: file.path, label: file.path })}
-                    size="icon"
-                    title="撤回此文件"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <Undo2 className="size-3" />
-                  </Button>
+                  <Folder className="size-3.5" />
+                  文件
+                </button>
+                <button
+                  aria-selected={explorerView === "git"}
+                  className={explorerView === "git" ? "is-active" : ""}
+                  onClick={() => switchExplorerView("git")}
+                  role="tab"
+                  type="button"
+                >
+                  <FolderGit2 className="size-3.5" />
+                  Git 改动{gitSummary?.filesChanged ? ` (${gitSummary.filesChanged})` : ""}
+                </button>
+              </div>
+              <div className="chat-explorer-list">
+                {explorerView === "files" ? (
+                  renderDirectory(".")
+                ) : gitQuery.isLoading ? (
+                  <div className="chat-explorer-skeleton-list">
+                    {[0, 1, 2, 3].map((item) => (
+                      <div className="chat-explorer-skeleton" key={item} />
+                    ))}
+                  </div>
+                ) : gitSummary?.files.length ? (
+                  gitSummary.files.map((file) => (
+                    <div
+                      className={`chat-explorer-row chat-explorer-git-row ${selectedPath === file.path ? "is-active" : ""}`}
+                      key={file.path}
+                    >
+                      <button
+                        className="chat-explorer-entry"
+                        onClick={() => selectGitFile(file)}
+                        type="button"
+                      >
+                        <span className={`chat-explorer-status is-${file.status}`}>
+                          {file.status[0].toUpperCase()}
+                        </span>
+                        <span className="chat-explorer-git-file">
+                          <span className="chat-explorer-git-file-name">
+                            {pathBasename(file.path)}
+                          </span>
+                          {pathDirectory(file.path) ? (
+                            <span className="chat-explorer-git-file-path">
+                              {pathDirectory(file.path)}
+                            </span>
+                          ) : null}
+                        </span>
+                      </button>
+                      <Button
+                        aria-label={`撤回 ${file.path}`}
+                        className="chat-explorer-restore"
+                        disabled={restoreMutation.isPending}
+                        onClick={() => restoreFile(file)}
+                        size="icon"
+                        title="撤回此文件"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <Undo2 className="size-3" />
+                      </Button>
+                    </div>
+                  ))
+                ) : (
+                  <div className="chat-explorer-empty">工作区没有 Git 改动</div>
+                )}
+              </div>
+            </aside>
+            <div
+              aria-hidden="true"
+              className="chat-explorer-sidebar-resize"
+              onPointerDown={beginSidebarResize}
+            />
+            <section className="chat-explorer-editor-pane">
+              {editorTabs.length > 0 ? (
+                <div className="chat-explorer-editor-tabs" role="tablist" aria-label="打开的文件">
+                  {editorTabs.map((tab) => (
+                    <div
+                      className={`chat-explorer-editor-tab ${tab.path === activeEditorPath && tab.mode === (editorContent?.mode ?? (explorerView === "git" ? "diff" : "source")) ? "is-active" : ""}`}
+                      key={tab.path}
+                    >
+                      <button onClick={() => selectEditor(tab)} role="tab" type="button">
+                        {pathBasename(tab.path)}
+                        {tab.mode === "diff" ? " · Diff" : ""}
+                      </button>
+                      <button
+                        aria-label={`关闭 ${pathBasename(tab.path)}`}
+                        onClick={() => closeEditor(tab.path)}
+                        type="button"
+                      >
+                        <X className="size-3" />
+                      </button>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-            <div className="chat-git-diff-viewer">{viewer}</div>
+              ) : null}
+              <div className="chat-explorer-editor">{editorView}</div>
+            </section>
           </div>
         </div>
-      ) : activeTab?.kind === "source" ? (
-        <div className="chat-git-diff-viewer">{viewer}</div>
       ) : (
         <div className="chat-workspace-window-empty" aria-live="polite">
           {state.tabs.length === 0 ? "窗口为空" : "空白占位窗口"}
@@ -1912,7 +2236,6 @@ function ChatWorkspaceWindow({
         deletions={gitSummary?.deletions ?? 0}
         filesChanged={gitSummary?.filesChanged ?? 0}
         onSuccess={() => {
-          setGitDiff(null);
           setGitRefreshToken((value) => value + 1);
         }}
       />

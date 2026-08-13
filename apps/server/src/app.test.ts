@@ -426,6 +426,19 @@ describe("chat server", () => {
     });
     assert.equal((await read.json()).content, "hello");
 
+    const files = await server.app.request(
+      `http://localhost/v1/workspaces/${project.id}/files?path=.`,
+      { headers: auth() },
+    );
+    assert.equal(files.status, 200);
+    const listing = (await files.json()) as {
+      entries: Array<{ path: string; kind: string }>;
+    };
+    assert.equal(
+      listing.entries.some((entry) => entry.path === "workspace-test.txt" && entry.kind === "file"),
+      true,
+    );
+
     const activity = await server.app.request("http://localhost/v1/activity-logs", {
       method: "POST",
       headers: { ...auth(), "Content-Type": "application/json" },

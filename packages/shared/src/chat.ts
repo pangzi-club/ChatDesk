@@ -194,10 +194,23 @@ export type WorkspaceGitFile = {
   binary?: boolean;
 };
 
+export type WorkspaceFileEntry = {
+  name: string;
+  path: string;
+  kind: "dir" | "file" | "other";
+};
+
+export type WorkspaceListResult = {
+  path: string;
+  entries: WorkspaceFileEntry[];
+};
+
 export type WorkspaceGitDiff = {
   path: string;
   previousPath?: string;
   content: string;
+  originalContent?: string;
+  modifiedContent?: string;
   additions: number | null;
   deletions: number | null;
   binary?: boolean;

@@ -28,6 +28,25 @@ async function runGit(root: string, args: string[], maxBuffer = MAX_GIT_RESPONSE
   });
 }
 
+async function readGitSnapshot(root: string, filePath: string) {
+  try {
+    const result = await runGit(root, ["show", `HEAD:${filePath}`], MAX_GIT_DIFF_BYTES + 1);
+    return result.stdout;
+  } catch {
+    return "";
+  }
+}
+
+async function readWorkingSnapshot(root: string, filePath: string) {
+  try {
+    const metadata = await stat(path.join(root, filePath));
+    if (metadata.size > MAX_GIT_DIFF_BYTES) return null;
+    return await readFile(path.join(root, filePath), "utf8");
+  } catch {
+    return "";
+  }
+}
+
 function safeRelativePath(root: string, relativePath: string) {
   const candidate = path.resolve(root, relativePath.trim());
   const relative = path.relative(root, candidate);
@@ -204,10 +223,17 @@ export async function readGitDiff(root: string, relativePath: string): Promise<W
     content = Buffer.from(content, "utf8").subarray(0, MAX_GIT_DIFF_BYTES).toString("utf8");
     truncated = true;
   }
+  const originalContent = binary
+    ? undefined
+    : await readGitSnapshot(root, file?.previousPath ?? safePath);
+  const modifiedContent = binary ? undefined : await readWorkingSnapshot(root, safePath);
+  if (modifiedContent === null) truncated = true;
   return {
     path: safePath,
     previousPath: file?.previousPath,
     content,
+    originalContent,
+    modifiedContent: modifiedContent ?? undefined,
     additions,
     deletions,
     binary,

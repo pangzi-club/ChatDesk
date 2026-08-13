@@ -2,6 +2,7 @@ import type {
   WorkspaceGitCommitResult,
   WorkspaceGitDiff,
   WorkspaceGitSummary,
+  WorkspaceListResult,
 } from "@chatdesk/shared";
 import type { SandboxMode } from "../protocol.ts";
 
@@ -13,16 +14,7 @@ export type PlatformCapabilities = {
   processManagement: boolean;
 };
 
-export type WorkspaceFileEntry = {
-  name: string;
-  path: string;
-  kind: "dir" | "file" | "other";
-};
-
-export type WorkspaceListResult = {
-  path: string;
-  entries: WorkspaceFileEntry[];
-};
+export type { WorkspaceFileEntry, WorkspaceListResult } from "@chatdesk/shared";
 
 export type WorkspaceReadResult = {
   path: string;

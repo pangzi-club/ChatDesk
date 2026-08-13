@@ -1293,12 +1293,14 @@ function ChatPage() {
             onClick={async () => {
               const result = await workspaceGitQuery.refetch();
               const firstFile = result.data?.summary?.files[0];
-              openFileViewer({
-                mode: "diff",
-                path: firstFile?.path ?? "",
-                workspaceId: workspaceKey,
-                cwd: selectedCwd,
-              });
+              if (firstFile) {
+                openFileViewer({
+                  mode: "diff",
+                  path: firstFile.path,
+                  workspaceId: workspaceKey,
+                  cwd: selectedCwd,
+                });
+              }
             }}
             type="button"
           >

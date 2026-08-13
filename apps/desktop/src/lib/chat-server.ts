@@ -12,6 +12,7 @@ import type {
   SystemPromptSnapshot,
   WorkspaceGitCommitResult,
   WorkspaceGitDiff,
+  WorkspaceListResult,
 } from "@chatdesk/shared";
 import { invoke, isTauri as tauriIsTauri } from "@tauri-apps/api/core";
 import type { UIMessage } from "ai";
@@ -62,7 +63,11 @@ export type ServerWorkspaceProject = {
 };
 export type SystemPromptPreview = SystemPromptSnapshot;
 
-export type { WorkspaceGitCommitResult, WorkspaceGitDiff } from "@chatdesk/shared";
+export type {
+  WorkspaceGitCommitResult,
+  WorkspaceGitDiff,
+  WorkspaceListResult,
+} from "@chatdesk/shared";
 export type {
   ChatIndexItem,
   ChatServerAiUsageLog,
@@ -310,6 +315,19 @@ export async function loadServerWorkspaceGit(id: string, port = CHAT_SERVER_DEFA
     port,
   );
   return response.json();
+}
+
+export async function loadServerWorkspaceFiles(
+  id: string,
+  relativePath = ".",
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  const response = await chatServerRequest(
+    `/v1/workspaces/${encodeURIComponent(id)}/files?path=${encodeURIComponent(relativePath)}`,
+    undefined,
+    port,
+  );
+  return (await response.json()) as WorkspaceListResult;
 }
 
 export async function loadServerWorkspaceGitDiff(

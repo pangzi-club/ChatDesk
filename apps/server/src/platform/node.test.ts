@@ -13,8 +13,13 @@ test("NodePlatformAdapter keeps file operations inside the workspace", async () 
   const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-platform-"));
   await mkdir(path.join(root, "src"));
   await writeFile(path.join(root, "src", "note.txt"), "hello world", "utf8");
+  await writeFile(path.join(root, ".DS_Store"), "system metadata", "utf8");
   const adapter = new NodePlatformAdapter();
 
+  assert.equal(
+    (await adapter.listDir(root)).entries.some((entry) => entry.name === ".DS_Store"),
+    false,
+  );
   assert.deepEqual((await adapter.readFile(root, "src/note.txt")).content, "hello world");
   await adapter.editFile(root, "src/note.txt", "world", "server");
   assert.deepEqual((await adapter.searchFiles(root, { query: "server" })).matches, [
@@ -58,6 +63,11 @@ test("NodePlatformAdapter reports Git line changes and file diff", async () => {
   const diff = await adapter.readGitDiff(root, "note.txt");
   assert.match(diff.content, /changed/);
   assert.equal(diff.additions, 2);
+  assert.equal(diff.originalContent, "one\ntwo\n");
+  assert.equal(diff.modifiedContent, "one\nchanged\nthree\n");
+  const untrackedDiff = await adapter.readGitDiff(root, "new.txt");
+  assert.equal(untrackedDiff.originalContent, "");
+  assert.equal(untrackedDiff.modifiedContent, "new line\n");
 });
 
 test("NodePlatformAdapter restores individual and all Git changes", async () => {
