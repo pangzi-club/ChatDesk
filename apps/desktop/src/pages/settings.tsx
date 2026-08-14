@@ -1140,6 +1140,9 @@ function EnvironmentSettingsPage() {
                       </div>
                     </div>
                   ))}
+                  {group.tools.length % 2 === 1 ? (
+                    <div aria-hidden="true" className="hidden bg-card sm:block" />
+                  ) : null}
                 </div>
               </div>
             ))}
