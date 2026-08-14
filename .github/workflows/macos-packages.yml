@@ -16,10 +16,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - arch: intel
-            runner: macos-13
-            machine: x86_64
-            target: x86_64-apple-darwin
           - arch: arm64
             runner: macos-14
             machine: arm64
