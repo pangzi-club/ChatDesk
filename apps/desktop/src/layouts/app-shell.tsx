@@ -89,6 +89,7 @@ import {
 import { rememberReturnPath } from "@/lib/app-return-path";
 import {
   type ChatServerSession,
+  canMonitorChatServer,
   canRestartChatServer,
   getChatServerStatus,
   loadChatServerPort,
@@ -674,7 +675,8 @@ function AppShell() {
 
 function ChatServerStatusBanner() {
   const queryClient = useQueryClient();
-  const enabled = canRestartChatServer();
+  const enabled = canMonitorChatServer();
+  const canRestart = canRestartChatServer();
   const statusQuery = useQuery({
     queryKey: ["chat-server-status"],
     queryFn: getChatServerStatus,
@@ -723,14 +725,23 @@ function ChatServerStatusBanner() {
       </div>
       <Button
         className="h-7 shrink-0 px-2 text-xs"
-        disabled={restartMutation.isPending || isRestarting}
-        onClick={() => restartMutation.mutate()}
+        disabled={restartMutation.isPending || statusQuery.isFetching || isRestarting}
+        onClick={() => {
+          if (canRestart) restartMutation.mutate();
+          else void statusQuery.refetch();
+        }}
         size="sm"
         type="button"
         variant="outline"
       >
-        <RefreshCw className={restartMutation.isPending ? "size-3.5 animate-spin" : "size-3.5"} />
-        重启服务
+        <RefreshCw
+          className={
+            restartMutation.isPending || statusQuery.isFetching
+              ? "size-3.5 animate-spin"
+              : "size-3.5"
+          }
+        />
+        {canRestart ? "重启服务" : "刷新状态"}
       </Button>
     </div>
   );

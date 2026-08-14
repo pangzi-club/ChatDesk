@@ -22,9 +22,10 @@ import { settingsStore } from "@/lib/settings-store";
 export const CHAT_SERVER_DEFAULT_PORT = 14317;
 const CHAT_SERVER_PORT_KEY = "chatServerPort";
 const CHAT_SERVER_PORT_STORAGE_KEY = "m-dashboard-chat-server-port-v1";
-const runtimeConfig: { port: number; token: string } = {
+const runtimeConfig: { port: number; token: string; managed: boolean } = {
   port: normalizePort(import.meta.env.VITE_CHAT_SERVER_PORT),
   token: import.meta.env.VITE_CHAT_SERVER_TOKEN ?? "",
+  managed: !import.meta.env.DEV,
 };
 let runtimePortKnown = Boolean(import.meta.env.VITE_CHAT_SERVER_PORT);
 let runtimeInitialization: Promise<void> | undefined;
@@ -35,6 +36,7 @@ export type ChatServerRuntimeInfo = {
   host?: string;
   port?: unknown;
   token?: unknown;
+  managed?: boolean;
   running?: boolean;
   state?: ChatServerState;
   restartAttempt?: number;
@@ -158,6 +160,10 @@ export function getChatServerToken() {
 }
 
 export function canRestartChatServer() {
+  return isTauri() && runtimeConfig.managed;
+}
+
+export function canMonitorChatServer() {
   return isTauri();
 }
 
@@ -203,6 +209,7 @@ function applyChatServerRuntime(info: ChatServerRuntimeInfo) {
     runtimePortKnown = true;
   }
   if (typeof info.token === "string" && info.token) runtimeConfig.token = info.token;
+  if (typeof info.managed === "boolean") runtimeConfig.managed = info.managed;
 }
 
 export async function getChatServerStatus(): Promise<ChatServerConnectionStatus> {

@@ -46,7 +46,7 @@ pub fn run() {
             app.manage(scheduler);
             let chat_server = if cfg!(debug_assertions) {
                 eprintln!("Chat Server is managed by pnpm dev in development");
-                ChatServerManager::unavailable(app.handle())
+                ChatServerManager::external(app.handle())
             } else {
                 ChatServerManager::start(app.handle())
             };

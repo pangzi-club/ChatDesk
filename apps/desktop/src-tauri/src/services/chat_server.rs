@@ -32,6 +32,7 @@ pub struct ChatServerInfo {
     pub host: String,
     pub port: u16,
     pub token: String,
+    pub managed: bool,
     pub running: bool,
     pub state: ChatServerState,
     pub restart_attempt: u32,
@@ -48,6 +49,7 @@ struct RuntimeState {
 #[derive(Clone)]
 pub struct ChatServerManager {
     app: AppHandle,
+    managed: bool,
     state: Arc<Mutex<RuntimeState>>,
     lifecycle: Arc<Mutex<()>>,
 }
@@ -56,9 +58,10 @@ impl ChatServerManager {
     pub fn start(app: &AppHandle) -> Self {
         let manager = Self {
             app: app.clone(),
+            managed: true,
             state: Arc::new(Mutex::new(RuntimeState {
                 child: None,
-                info: default_info(ChatServerState::Starting),
+                info: default_info(ChatServerState::Starting, true),
                 stop_requested: false,
                 stable_since: None,
             })),
@@ -80,12 +83,20 @@ impl ChatServerManager {
             .spawn(move || monitor.monitor_loop());
     }
 
-    pub fn unavailable(app: &AppHandle) -> Self {
+    pub fn external(app: &AppHandle) -> Self {
+        let mut info = default_info(ChatServerState::Offline, false);
+        info.port = std::env::var("CHAT_SERVER_PORT")
+            .ok()
+            .and_then(|value| value.parse::<u16>().ok())
+            .filter(|port| *port >= 1024)
+            .unwrap_or(DEFAULT_PORT);
+        info.token = std::env::var("CHAT_SERVER_TOKEN").unwrap_or_default();
         Self {
             app: app.clone(),
+            managed: false,
             state: Arc::new(Mutex::new(RuntimeState {
                 child: None,
-                info: default_info(ChatServerState::Offline),
+                info,
                 stop_requested: true,
                 stable_since: None,
             })),
@@ -102,6 +113,11 @@ impl ChatServerManager {
     }
 
     pub fn restart(&self) -> Result<ChatServerInfo, String> {
+        if !self.managed {
+            return Err(
+                "开发模式下 Chat Server 由 pnpm dev 管理，桌面端不会启动 sidecar".to_string(),
+            );
+        }
         let _lifecycle = self
             .lifecycle
             .lock()
@@ -311,11 +327,12 @@ impl ChatServerManager {
     }
 }
 
-fn default_info(state: ChatServerState) -> ChatServerInfo {
+fn default_info(state: ChatServerState, managed: bool) -> ChatServerInfo {
     ChatServerInfo {
         host: "127.0.0.1".to_string(),
         port: DEFAULT_PORT,
         token: String::new(),
+        managed,
         running: matches!(state, ChatServerState::Running),
         state,
         restart_attempt: 0,
@@ -451,6 +468,7 @@ fn spawn_server(app: &AppHandle) -> Result<(Child, ChatServerInfo), String> {
             host: "127.0.0.1".to_string(),
             port,
             token,
+            managed: true,
             running: true,
             state: ChatServerState::Running,
             restart_attempt: 0,
@@ -544,7 +562,7 @@ fn find_sidecar(app: &AppHandle) -> Result<std::path::PathBuf, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::restart_delay;
+    use super::{default_info, restart_delay, ChatServerState};
     use std::time::Duration;
 
     #[test]
@@ -553,5 +571,11 @@ mod tests {
         assert_eq!(restart_delay(2), Duration::from_secs(2));
         assert_eq!(restart_delay(3), Duration::from_secs(5));
         assert_eq!(restart_delay(99), Duration::from_secs(5));
+    }
+
+    #[test]
+    fn runtime_info_reports_whether_the_server_is_managed() {
+        assert!(default_info(ChatServerState::Running, true).managed);
+        assert!(!default_info(ChatServerState::Offline, false).managed);
     }
 }
