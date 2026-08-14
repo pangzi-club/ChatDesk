@@ -1,17 +1,17 @@
-# Chat HTTP Server 架构结论
+# Chat HTTP Server 架构
 
-本文记录关于「多会话并发对话」与「将核心对话逻辑下沉到 Node HTTP Server」的讨论结论，以及该服务需要实现的功能边界。
+本文记录 Chat HTTP Server 的架构设计决策与已实现的功能边界。Node HTTP Server 是 Session/Run 的真相源，UI 与侧栏只消费 HTTP/事件流，宿主负责进程与敏感能力。
 
-## 1. 问题背景
+## 1. 问题背景（迁移前）
 
-当前 Chat 是单页、单 `useChat` 实例、单活跃会话架构：
+迁移前 Chat 是单页、单 `useChat` 实例、单活跃会话架构：
 
 - 流式 / in-progress 状态只活在 `ChatPage` 本地；
 - 切换会话会主动 `stop()`，离开页面会随组件卸载中断生成；
 - `ChatIndexItem` 与侧栏列表没有 `status` 字段，无法展示各会话进行中状态；
 - 生成中不落盘，切走后无法恢复进行中消息。
 
-持久化层已是 per-session（`chat/{id}/session.json`），但运行时层是单飞。仅改 UI 无法支持「多 chat 同时跑 + 侧栏看进行中」。
+持久化层已是 per-session（`chat/{id}/session.json`），但运行时层是单飞。仅改 UI 无法支持「多 chat 同时跑 + 侧栏看进行中」。这些限制已在迁移到 Node HTTP Server 后消除。
 
 ## 2. 讨论结论
 
@@ -27,7 +27,7 @@
 |------|------|
 | 仅在 React 内做全局 runtime | 可快速验证产品，但对话引擎仍绑在桌面壳里 |
 | Node sidecar（stdio IPC） | 与现有 `browser-worker` 模式接近，暴露面小，但调试与跨应用迁移成本高 |
-| **Node HTTP Server** | **选定方案**：方便调试、实现简单、协议可迁移到其它客户端 |
+| **Node HTTP Server** | **已选定并实现**：方便调试、实现简单、协议可迁移到其它客户端 |
 
 选定 HTTP Server，不等于放弃「由桌面 App 拉起进程」。推荐形态是：
 
@@ -57,11 +57,11 @@ Node HTTP Server
 
 1. 只绑定 `127.0.0.1`；
 2. 随机端口或固定端口 + 端口信息写入本地文件，避免冲突；
-3. 启动时生成 token 并保留客户端 `Authorization` 传递链路；当前本地桌面服务暂不校验 token，重新开放网络暴露前必须恢复认证；
+3. 启动时生成 token 并保留客户端 `Authorization` 传递链路；Server 对除 `/health` 和 CORS 预检外的所有请求强制校验 `Bearer` token；
 4. 宿主进程负责拉起、崩溃重启、退出时等待 inflight 落盘后再终止；
 5. API Key 等密钥由受控配置注入，避免只活在 webview 内存里长期裸奔。
 
-## 3. HTTP Server 需要实现的功能
+## 3. HTTP Server 已实现的功能
 
 ### 3.1 进程与配置
 
@@ -125,32 +125,27 @@ Server 负责「何时调工具、如何把结果写回模型」；工具的真�
 - 支持按 `sessionId` 拉取消息快照，供切换会话时渲染；
 - 多个 UI 同时订阅同一 server 时行为一致（列表、status、消息流）。
 
-### 3.8 显式不做或后置的事项
+### 3.8 尚未实现或后置的事项
 
-以下内容可后置，避免第一期范围膨胀：
+以下内容尚未实现，避免范围膨胀：
 
 - 公网部署、多租户鉴权；
 - 完整断线续流（`reconnectToStream`）；
 - 将全部工具执行完全移出宿主；
 - 替换现有归档 / History 体系（可继续读现有 archive，与 live runtime 分离）。
 
-## 4. 与现有代码的关系（迁移指向）
+## 4. 当前代码位置
 
-现状关键位置（迁移时对照，不必一次搬完）：
+迁移已完成。关键实现位置：
 
-- `apps/desktop/src/pages/chat.tsx`：单 `useChat`、切会话 `stop()`、transport / `streamText`
-- `apps/desktop/src/lib/chat-store.ts`：`ChatSession` / `ChatIndexItem` 与落盘
-- `apps/desktop/src/layouts/app-shell.tsx`：侧栏会话列表（尚无 status）
-- `apps/desktop/src-tauri`：chat 落盘命令、workspace / MCP / seatbelt 等能力
-
-目标演进：
-
-1. 定义 HTTP + 事件协议（session / run / events）；
-2. 将 transport 与多路 run registry 迁入 Node server；
-3. UI 改为 HTTP 客户端，去掉切页即 `stop()`；
-4. 侧栏订阅 `session.status`；
-5. Tauri 增加进程拉起、token、优雅退出；工具经宿主桥接。
+- `apps/server/src/app.ts`：Hono 应用，路由注册，token 认证中间件，SSE 事件流。
+- `apps/server/src/run-registry.ts`：Run 真相源——多路生成、abort、status 状态机、toolApproval、上下文压缩、崩溃恢复。
+- `apps/server/src/store.ts`：Session Store，per-session 持久化。
+- `apps/server/src/sandbox-exec.ts`：Seatbelt 沙箱执行，deny-by-default profile。
+- `apps/desktop/src/lib/chat-server.ts`：前端 HTTP/SSE 客户端，封装 fetch 与 EventSource。
+- `apps/desktop/src/pages/chat.tsx`：Chat 页面，消费 HTTP 客户端，切页不中断生成。
+- `apps/desktop/src-tauri/src/services/chat_server.rs`：Tauri 侧进程拉起、token 注入、优雅退出。
 
 ## 5. 一句话总结
 
-**把 Session/Run 真相源放到本机 Node HTTP Server；UI 与侧栏只消费 HTTP/事件；宿主负责进程与敏感能力。** 这样既支持多 chat 并发与进行中状态，又便于调试和迁移到其它应用。
+**Session/Run 真相源在本机 Node HTTP Server；UI 与侧栏只消费 HTTP/事件；宿主负责进程与敏感能力。** 多 chat 并发与进行中状态已实现，调试和迁移到其它应用通过 HTTP 协议完成。

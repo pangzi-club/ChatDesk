@@ -110,38 +110,36 @@ System Prompt 中可以重申：
 
 当 Agent 需要执行 Shell 命令时，仅过滤命令字符串远远不够。macOS 的 Seatbelt 可以通过 `sandbox-exec` 为子进程应用沙箱策略（profile），并由系统强制执行。
 
-### 3.1 策略思路：默认允许，收紧写与网络
+### 3.1 策略思路：默认拒绝，按需放行
 
-一种实用的 profile 形态是：
+ChatDesk 实际使用的 profile 采用 `(deny default)` 策略——默认拒绝所有操作，再逐项放行必要的文件读取、进程 fork、IPC 和系统调用。这比 `(allow default)` 更严格，能限制进程的读取范围：
 
 ```text
 (version 1)
-(allow default)
-(deny file-write* (require-not (require-any
-  (subpath "<workspace>")
-  (subpath "<tmpdir>")
-  (subpath "/dev/null")
-  (subpath "/dev/tty"))))
+(allow file-read* (subpath "<workspace>"))
+(allow file-write* (subpath "<workspace>"))
+(allow file-write* (subpath "<tmpdir>"))
 (deny network*)   ; 可选：禁止网络
 ```
 
 含义是：
 
-- 进程仍可正常读取文件和执行命令。
-- **写文件**被收紧：只有工作区、系统临时目录、以及少数设备节点可写；写到家目录等位置会被拒绝。
-- **网络访问**可以按需关闭，防止沙箱中的进程向外传输数据。
+- 进程只能读取和写入 profile 中显式放行的路径，工作区外不可读。
+- **写文件**被收紧：只有工作区、临时目录和少数设备节点可写。
+- **网络访问**默认关闭，防止沙箱中的进程向外传输数据。
+- 进程 fork、exec、信号、IPC 等系统调用需要显式 allow。
 
-将路径写入 profile 前，需要转义反斜杠和双引号，并使用规范化后的绝对路径，避免通过符号链接绕过目录边界。
+将路径写入 profile 前，需要转义反斜杠和双引号，并使用规范化后的绝对路径，避免通过符号链接绕过目录边界。完整实现见 `apps/server/src/sandbox-exec.ts` 的 `buildSeatbeltProfile` 函数。
 
 ### 3.2 调用方式
 
-沙箱模式下大致等价于：
+沙箱模式下使用非登录 shell：
 
 ```bash
-sandbox-exec -p '<profile>' "$SHELL" -lc '<command>'
+sandbox-exec -p '<profile>' "$SHELL" -c '<command>'
 ```
 
-子进程的当前目录设为选定的工作区。完全访问模式可以直接启动 Shell，不经过 `sandbox-exec`。
+使用 `-c` 而非 `-lc`，避免加载登录 Shell 配置文件。子进程的当前目录设为选定的工作区。完全访问模式可以直接启动 Shell，不经过 `sandbox-exec`。
 
 演示效果通常很直观：
 

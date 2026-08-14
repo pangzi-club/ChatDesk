@@ -2,7 +2,7 @@
 
 > 目标：回答「apps/server 现在做的事情是不是就是 Claude Code / Codex 做的事」，以及还差什么。
 > 参照系：Claude Code、Codex CLI、Cursor 这类通用编码 agent。
-> 基于 `apps/server/src/` 当前实现逐一对照（2025-08-08）。
+> 基于 `apps/server/src/` 当前实现逐一对照（2026-08-14）。
 
 ## 一、通用编码 Agent 的能力全景
 
@@ -63,6 +63,20 @@
 - responses / chat 双协议（`responsive` 开关）。
 - 工具白名单（`toolNames`），客户端工具/服务端工具/业务工具分层选择。
 
+### ✅ 安全与审批
+- **三层沙箱模式**：`sandboxMode` 支持 `ask`（工作区内读操作直接执行，写入/越界暂停等待用户批准）、`auto`（先在沙箱内执行，仅实际被拦截时交 reviewer 判断）、`full`（不使用 Seatbelt，允许外部路径）。
+- **Seatbelt 沙箱执行**：`sandbox-exec.ts` 使用 macOS Seatbelt `(deny default)` profile，限制工作区外写入和网络访问；非登录 shell（`-c`）、最小化环境变量、独立 `HOME` 和缓存目录。
+- **工具审批**：`createToolApproval` 在 AI SDK `toolApproval` 回调中实现交互式审批，区分 workspace 工具与非 workspace 工具，支持已批准的 toolCallId 重放。
+- **边界 Reviewer**：`sandbox-boundary-reviewer.ts` 对越界操作做 AI 辅助判断，`auto` 模式下可自动批准或拒绝沙箱拦截后的重试。
+- **审批日志**：`sandbox-review-log.ts` 记录每次审批决策（approver/reviewer/user-approval）、原因和错误信息。
+- **结构化文件沙箱 worker**：`runSandboxedFile` 通过独立子进程执行 `list_dir`/`read_file`/`search_files`/`write_file`/`edit_file`，打包后解析 `chat-server-sandbox` 二进制。
+- **额外读取目录白名单**：Settings > 沙箱页面可配置 `sandboxReadablePaths`，加入 Seatbelt 只读范围。
+
+### ✅ 用量统计
+- **AI Usage 日志**：`ai-usage-log.ts` 持久化每次 AI 调用的 token 用量（输入、输出、缓存读写、推理 token），`GET /v1/ai-usage` 接口可查询。
+- **实时用量**：`messageMetadata` 在 `onFinish` 时写入 `usage: part.totalUsage`，前端可直接从消息 metadata 读取。
+- **Git commit 消息生成**：自动生成 commit message 时也记录 AI usage。
+
 ### ✅ 会话归档
 - `archive-store.ts`：扫描并导入 `~/.codex`、`~/.claude` 的历史 jsonl 会话，含 index 与详情。
 
@@ -70,67 +84,53 @@
 
 | 能力 | 现状 | 差距 |
 |---|---|---|
-| 权限边界 | 文件路径强制限制在 workspace 内 | 没有「允许/拒绝/询问」交互式审批 |
 | 上下文管理 | 已支持基于窗口阈值剪枝旧 reasoning 与工具结果 | 第一版不生成早期自然语言对话摘要 |
 | 并行工具调用 | 依赖模型单次返回多个 tool call（AI SDK 支持并行执行） | 无显式编排 |
-| 用量统计 | 归档 index 有 `usageTotal` 字段 | 无实时 token 计数展示/成本估算 |
+| Checkpoint / 回滚 | Git diff/restore/commit 接口已实现（`app.ts`） | 无基于 run 生命周期的自动快照 |
 
 ## 四、apps/server 未实现（→ TODO）
 
 按优先级从高到低：
 
-1. **审批模式**（Permission / Approval）
-   - 敏感命令（rm -rf、git push、npm publish）执行前弹窗确认。
-   - 会话级「自动允许/总是拒绝」记住选择。
-   - 这是从「自己玩的工具」到「敢在真实项目上用的工具」的关键门槛。
-
-2. **沙箱执行**（Sandbox）
-   - 可选的隔离环境：容器（如 `bun run --cwd` 隔离 / Docker / seatbelt 类方案）。
-   - 限制网络、文件系统副作用的策略开关。
-   - 参考：`docs/agent-sandbox-permission-controls.md`、`docs/aisdk-seatbelt-sandbox.md` 已有调研。
-
-3. **Hooks 系统**
+1. **Hooks 系统**
    - PreToolUse / PostToolUse / Stop / SessionStart / SessionEnd 等生命周期事件。
    - 可执行用户配置的脚本或 HTTP webhook。
    - 与审批模式天然衔接（hook 可以返回 block/allow）。
 
-4. **Subagents（Task 工具）**
+2. **Subagents（Task 工具）**
    - 暴露 `task` 工具：把独立子任务（如「调查这个目录的结构」「并行写三个测试文件」）交给子代理执行，返回结构化结果。
    - 需要：子 run 管理、结果回收、与主循环合并。
    - 收益：长任务吞吐、上下文隔离（子任务不污染主上下文）。
 
-5. **Checkpoint / 回滚**
+3. **Checkpoint / 回滚**
    - 每次 run 前后基于 git 或目录快照保存状态。
    - 支持「回滚到某次变更前」。
    - 依赖：run 生命周期事件已存在（`run.done` / `run.error`），接入成本低。
 
-6. **计划模式（Plan / Apply 分离）**
+4. **计划模式（Plan / Apply 分离）**
    - 进入 plan 模式时只允许只读工具（read/search/list），产出计划；确认后切 apply 模式执行。
    - 收益：减少误操作，接近 Claude Code 的默认行为。
 
-7. **Web Fetch 工具**
+5. **Web Fetch 工具**
    - 已有 web_search，缺 `web_fetch`（打开 URL 读正文）。对调研类任务很常用。
 
-8. **终端交互增强**
+6. **终端交互增强**
    - 交互式命令（sudo 密码、选择器）目前无法处理。
    - 至少：检测到交互时提示用户或直接失败并给替代方案。
 
-9. **语义代码搜索 / RAG**
+7. **语义代码搜索 / RAG**
     - 现在只有 grep 级搜索。可接入代码索引（如 ripgrep + embedding），对大仓库提升显著。
 
-10. **实时 token 用量与成本**
-    - 前端有 token 统计诉求，服务端归档已有 `usageTotal`，可把每次 run 的用量实时推到 SSE。
-
-11. **会话分享 / 导出**
+8. **会话分享 / 导出**
     - 归档已有 JSON，可加 Markdown/HTML 导出，或生成可分享链接。
 
 ## 五、结论
 
-apps/server 已经是一个**结构完整的编码 agent 骨架**：核心循环、文件/终端/浏览器工具、MCP、Skills、记忆、崩溃恢复都有，且分层清晰（客户端工具走 Tauri 侧、服务端工具走 Node 侧、业务工具独立）。
+apps/server 已经是一个**结构完整的编码 agent**：核心循环、文件/终端/浏览器工具、MCP、Skills、记忆、崩溃恢复、Seatbelt 沙箱、交互式审批、AI 用量统计都有，且分层清晰（客户端工具走 Tauri 侧、服务端工具走 Node 侧、业务工具独立）。
 
-但目前更像「**能对话、能干活的工作台**」，离 Claude Code / Codex 的差距集中在**安全与任务编排**两个方向：
+离 Claude Code / Codex 的差距集中在**任务编排**方向：
 
-- 安全：审批、沙箱、hooks —— 决定能否在真实项目上放心用；
-- 编排：subagents、checkpoint、计划模式 —— 决定能否高效处理复杂长任务。
+- 编排：subagents、checkpoint、计划模式 —— 决定能否高效处理复杂长任务；
+- 生命周期：Hooks 系统 —— 决定能否接入自定义工作流。
 
-这两个方向正好对应文档开头那张全景表里「任务编排」和「安全」两行，建议按 TODO 顺序优先做 1–3 项。
+这些方向对应文档开头全景表里「任务编排」和「可靠性」两行，建议按 TODO 顺序优先做 1–4 项。

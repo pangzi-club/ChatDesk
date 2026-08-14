@@ -57,7 +57,7 @@ Tauri starts `chat-server` with a loopback host, a per-launch token, and a data 
 
 Window geometry is managed by `tauri-plugin-window-state` in the platform app configuration directory; this small UI preference is intentionally exempt from the `~/.chatdesk` data boundary.
 
-The server still receives a per-launch token and the frontend still passes it through for a future authentication layer, but the local API currently does not enforce token validation. The packaged app does not scan legacy directories at startup. Use `pnpm migrate:chatdesk -- --apply` before launching the new app to migrate data from older layouts.
+The server enforces token validation on every request except `/health` and CORS preflight (`OPTIONS`). The frontend obtains the per-launch token through the `chat_server_info` command and sends it as a `Bearer` Authorization header. The packaged app does not scan legacy directories at startup. Use `pnpm migrate:chatdesk -- --apply` before launching the new app to migrate data from older layouts.
 
 The app bundles only Chromium's headless shell. Updating Playwright requires rebuilding the browser resource and retesting the packaged browser tools.
 
