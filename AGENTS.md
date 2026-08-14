@@ -50,6 +50,13 @@ These instructions apply to the entire repository.
 
 - When adding, removing, or renaming a Settings page, update the Settings search items in the same change so every visible Settings route remains discoverable by its current label and keywords.
 
+## Desktop Design
+
+- Before changing desktop pages, layouts, components, or styles, read and follow [`docs/desktop-design-guidelines.md`](docs/desktop-design-guidelines.md).
+- Treat the current Sidebar, App Shell, and Chat experience as the repository's canonical design reference. Extend their quiet, compact, content-first workbench language instead of introducing a parallel visual system.
+- Do not invoke, reference, or use the `frontend-design` skill as a design authority for this repository.
+- When a change intentionally alters the shared desktop design language, update the design guidelines in the same change.
+
 ## Code Placement
 
 Put new code in the narrowest directory that matches its runtime and responsibility. Do not add application runtime code to the repository root or duplicate the same behavior across runtimes.

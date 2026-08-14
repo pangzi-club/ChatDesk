@@ -1210,7 +1210,7 @@ function WorkspaceConversationGroups() {
                       {hiddenCount > 0 && !isRecent ? (
                         <button
                           aria-expanded={isExpanded}
-                          className={`flex h-7 w-full items-center gap-1 rounded-md pr-2 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground ${isRecent ? "pl-2" : "pl-8"}`}
+                          className="flex h-7 w-full items-center gap-1 rounded-md pr-2 pl-8 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
                           onClick={() => toggleExpanded(group.key)}
                           type="button"
                         >
