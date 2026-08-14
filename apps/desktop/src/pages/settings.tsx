@@ -109,7 +109,14 @@ import {
   saveMcpServers,
   testMcpConnection,
 } from "@/lib/mcp";
-import { formatModelLabel, loadModels, type ModelConfig, saveModels } from "@/lib/models";
+import {
+  formatModelContextSize,
+  formatModelLabel,
+  loadModels,
+  type ModelConfig,
+  saveModels,
+  sortModelsByName,
+} from "@/lib/models";
 import { pickDirectory } from "@/lib/platform";
 import {
   DEFAULT_SHORTCUTS,
@@ -2214,6 +2221,7 @@ function ModelsSettingsPage() {
     queryFn: () => loadChatServerConfig(),
   });
   const models = modelsQuery.data ?? [];
+  const sortedModels = sortModelsByName(models);
   const [notice, setNotice] = useState("");
   const [reviewerNotice, setReviewerNotice] = useState("");
   const [editing, setEditing] = useState<ModelConfig | null>(null);
@@ -2328,7 +2336,7 @@ function ModelsSettingsPage() {
           </div>
         ) : (
           <div className="space-y-3 p-5">
-            {models.map((model) => (
+            {sortedModels.map((model) => (
               <div
                 className="flex items-center gap-3 rounded-md border border-border bg-background px-4 py-3"
                 key={model.id}
@@ -2343,9 +2351,17 @@ function ModelsSettingsPage() {
                       <Badge className="px-2 py-0.5 text-[10px]">默认</Badge>
                     ) : null}
                   </div>
-                  <p className="mt-1 truncate text-muted-foreground text-xs">
-                    {model.provider} · {model.baseUrl}
-                  </p>
+                  <div className="mt-1 flex min-w-0 items-center gap-2 text-muted-foreground text-xs">
+                    <p className="min-w-0 truncate">
+                      {model.provider} · {model.baseUrl}
+                    </p>
+                    <span aria-hidden="true" className="shrink-0">
+                      ·
+                    </span>
+                    <span className="shrink-0 font-mono">
+                      上下文 {formatModelContextSize(model.inputContext)}
+                    </span>
+                  </div>
                 </div>
                 {!model.isDefault ? (
                   <Button
@@ -2411,7 +2427,7 @@ function ModelsSettingsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none__">未配置（人工确认）</SelectItem>
-                {models.map((model) => (
+                {sortedModels.map((model) => (
                   <SelectItem key={model.id} value={model.id}>
                     {formatModelLabel(model)}
                   </SelectItem>

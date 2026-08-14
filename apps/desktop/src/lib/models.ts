@@ -27,6 +27,23 @@ export function formatModelLabel(model: Pick<ModelConfig, "name" | "responsive">
   return `${model.name} · ${model.responsive ? "Responses API" : "Chat Completions"}`;
 }
 
+export function formatModelContextSize(value: number | undefined) {
+  if (value === undefined || !Number.isFinite(value) || value <= 0) return "未设置";
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toLocaleString("zh-CN", { maximumFractionDigits: 1 })}M tokens`;
+  }
+  if (value >= 1_000) {
+    return `${(value / 1_000).toLocaleString("zh-CN", { maximumFractionDigits: 1 })}K tokens`;
+  }
+  return `${value.toLocaleString("zh-CN")} tokens`;
+}
+
+export function sortModelsByName<T extends Pick<ModelConfig, "name">>(models: readonly T[]): T[] {
+  return [...models].sort((left, right) =>
+    left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" }),
+  );
+}
+
 export async function loadModels(): Promise<ModelConfig[]> {
   try {
     const config = await loadChatServerConfig();

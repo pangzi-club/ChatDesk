@@ -1,5 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { resolveModelInputContext } from "./models.ts";
+import { formatModelContextSize, resolveModelInputContext, sortModelsByName } from "./models.ts";
+
+describe("model sorting", () => {
+  it("sorts names naturally without mutating the saved order", () => {
+    const models = [{ name: "model-10" }, { name: "Alpha" }, { name: "model-2" }];
+
+    expect(sortModelsByName(models).map((model) => model.name)).toEqual([
+      "Alpha",
+      "model-2",
+      "model-10",
+    ]);
+    expect(models.map((model) => model.name)).toEqual(["model-10", "Alpha", "model-2"]);
+  });
+});
+
+describe("model context formatting", () => {
+  it("formats context sizes for the model list", () => {
+    expect(formatModelContextSize(1_000_000)).toBe("1M tokens");
+    expect(formatModelContextSize(204_800)).toBe("204.8K tokens");
+    expect(formatModelContextSize(800)).toBe("800 tokens");
+    expect(formatModelContextSize(undefined)).toBe("未设置");
+    expect(formatModelContextSize(Number.NaN)).toBe("未设置");
+  });
+});
 
 describe("model context normalization", () => {
   it("migrates legacy DeepSeek V4 128K windows to 1M", () => {

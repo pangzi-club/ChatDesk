@@ -148,7 +148,7 @@ import { formatTokenUsage, getMessageUsage } from "@/lib/chat-usage";
 import { detectMissingDevelopmentTools } from "@/lib/developer-environment";
 import { openFileViewer } from "@/lib/file-viewer-events";
 import { loadMcpServers, saveMcpServers } from "@/lib/mcp";
-import { formatModelLabel, loadModels, type ModelConfig } from "@/lib/models";
+import { formatModelLabel, loadModels, type ModelConfig, sortModelsByName } from "@/lib/models";
 import { openExternal } from "@/lib/platform";
 import {
   formatSkillsSystemHint,
@@ -282,6 +282,7 @@ function ChatPage() {
   const skillsRef = useRef<SkillDefinition[]>(availableSkills);
   skillsRef.current = availableSkills;
   const models = configuredModels ?? [];
+  const sortedModels = sortModelsByName(models);
   const [selectedModelId, setSelectedModelId] = useState("");
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -1602,7 +1603,7 @@ function ChatPage() {
                         未配置模型
                       </DropdownMenuItem>
                     ) : (
-                      models.map((model) => (
+                      sortedModels.map((model) => (
                         <DropdownMenuRadioItem
                           className="!py-1 !text-[11px]"
                           key={model.id}
