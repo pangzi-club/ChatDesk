@@ -8,11 +8,15 @@ function TitlebarDragRegion({ className = "" }: { className?: string }) {
     // biome-ignore lint/a11y/useSemanticElements: 1
     <div
       className={`h-full min-w-0 flex-1 ${className}`}
-      data-tauri-drag-region
       role="button"
       tabIndex={0}
       aria-label="切换窗口最大化"
-      onDoubleClick={() => appWindow.toggleMaximize()}
+      onMouseDown={() => {
+        void appWindow.startDragging();
+      }}
+      onDoubleClick={() => {
+        void appWindow.toggleMaximize();
+      }}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
