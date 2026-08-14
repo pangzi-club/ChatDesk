@@ -1430,11 +1430,19 @@
   cursor: pointer;
 }
 .chat-workspace-window-tab-select {
+  display: flex;
   min-width: 0;
+  align-items: center;
+  gap: 5px;
   overflow: hidden;
   padding: 5px 7px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.chat-workspace-window-tab-select span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .chat-workspace-window-tab-close {
   display: grid;
@@ -1472,6 +1480,93 @@
   color: var(--chat-muted);
   font-size: 12px;
   letter-spacing: 0.02em;
+}
+.chat-terminal-shell {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--card);
+}
+.chat-terminal-toolbar {
+  display: flex;
+  height: 34px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--chat-line);
+  padding: 0 8px 0 12px;
+  color: var(--chat-muted);
+  font-size: 11px;
+}
+.chat-terminal-location {
+  display: inline-flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-terminal-status {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 140px;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-terminal-status-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--primary);
+}
+.chat-terminal-status.is-exited .chat-terminal-status-dot {
+  background: var(--muted-foreground);
+}
+.chat-terminal-status.is-error {
+  color: var(--destructive);
+}
+.chat-terminal-status.is-error .chat-terminal-status-dot {
+  background: var(--destructive);
+}
+.chat-terminal {
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  background: var(--card);
+  padding: 10px 12px;
+}
+.chat-terminal .xterm {
+  height: 100%;
+}
+.chat-terminal .xterm-viewport {
+  scrollbar-color: color-mix(in srgb, var(--muted-foreground) 42%, transparent) transparent;
+  scrollbar-width: thin;
+}
+.chat-terminal-error {
+  flex-shrink: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--destructive) 25%, var(--border));
+  background: color-mix(in srgb, var(--destructive) 8%, var(--card));
+  padding: 7px 12px;
+  color: var(--destructive);
+  font-size: 11px;
+}
+.chat-terminal-unavailable {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--chat-muted);
+  font-size: 12px;
 }
 .chat-explorer-shell,
 .chat-explorer-editor-pane,

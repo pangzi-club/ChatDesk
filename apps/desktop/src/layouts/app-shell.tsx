@@ -64,6 +64,7 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
+import { ChatTerminal } from "@/components/chat-terminal";
 import { FileViewer } from "@/components/file-viewer";
 import { GitCommitDialog } from "@/components/git-commit-dialog";
 import { TitlebarDragRegion } from "@/components/titlebar";
@@ -121,6 +122,7 @@ import {
   subscribeShortcutSettings,
 } from "@/lib/shortcuts";
 import { appendSystemLog } from "@/lib/system-log";
+import { terminalSessions } from "@/lib/terminal";
 import { applyTrayEnabled, loadTrayEnabled } from "@/lib/tray";
 import {
   getWorkspaceSessionKey,
@@ -431,6 +433,9 @@ function AppShell() {
 
   useEffect(() => {
     function handleGlobalShortcut(event: globalThis.KeyboardEvent) {
+      const isTerminalInput =
+        event.target instanceof Element && Boolean(event.target.closest(".chat-terminal"));
+      if (isTerminalInput && !event.metaKey) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         setIsCommandMenuOpen((isOpen) => !isOpen);
@@ -1458,7 +1463,7 @@ function describeError(error: unknown) {
 type ChatWindowTab = {
   id: string;
   title: string;
-  kind?: "blank" | "workspace" | "git-diff" | "source";
+  kind?: "blank" | "workspace" | "git-diff" | "source" | "terminal";
   workspaceId?: string;
   cwd?: string;
   path?: string;
@@ -1547,6 +1552,7 @@ function ChatWorkspaceWindow({
     activeTab?.kind === "git-diff"
       ? activeTab
       : null;
+  const terminalTab = activeTab?.kind === "terminal" ? activeTab : null;
   const activeTabWorkspaceId = workspaceTab?.workspaceId;
   const [selectedPath, setSelectedPath] = useState(workspaceTab?.path ?? "");
   const [explorerView, setExplorerView] = useState<"files" | "git">(
@@ -2030,7 +2036,26 @@ function ChatWorkspaceWindow({
     onChange({ ...state, tabs: [...state.tabs, nextTab], activeTabId: nextTab.id });
   }
 
+  function addTerminalTab() {
+    if (!cwd) return;
+    const terminalCount = state.tabs.filter((tab) => tab.kind === "terminal").length;
+    const nextTab: ChatWindowTab = {
+      id: createChatWindowTabId(),
+      title: terminalCount === 0 ? "Terminal" : `Terminal ${terminalCount + 1}`,
+      kind: "terminal",
+      workspaceId,
+      cwd,
+    };
+    onChange({ ...state, tabs: [...state.tabs, nextTab], activeTabId: nextTab.id });
+  }
+
   function closeTab(tabId: string) {
+    const closingTab = state.tabs.find((tab) => tab.id === tabId);
+    if (closingTab?.kind === "terminal") {
+      void terminalSessions
+        .close(tabId)
+        .catch((error) => console.error("Failed to close terminal session", error));
+    }
     const nextTabs = state.tabs.filter((tab) => tab.id !== tabId);
     const nextActive =
       state.activeTabId === tabId
@@ -2078,7 +2103,8 @@ function ChatWorkspaceWindow({
                 onClick={() => onChange({ ...state, activeTabId: tab.id })}
                 type="button"
               >
-                {tab.title}
+                {tab.kind === "terminal" ? <SquareTerminal className="size-3" /> : null}
+                <span>{tab.title}</span>
               </button>
               <button
                 aria-label={`关闭${tab.title}`}
@@ -2094,10 +2120,10 @@ function ChatWorkspaceWindow({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
-              aria-label="新建独立窗口"
+              aria-label="新建独立窗口标签页"
               className="chat-workspace-window-add"
               size="icon"
-              title="新建窗口"
+              title="新建标签页"
               type="button"
               variant="ghost"
             >
@@ -2108,6 +2134,10 @@ function ChatWorkspaceWindow({
             <DropdownMenuItem disabled={!workspaceId} onSelect={addGitDiffTab}>
               <FolderGit2 className="size-3.5" />
               Workspace Explorer
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={!cwd} onSelect={addTerminalTab}>
+              <SquareTerminal className="size-3.5" />
+              Terminal
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -2291,6 +2321,8 @@ function ChatWorkspaceWindow({
             </section>
           </div>
         </div>
+      ) : terminalTab ? (
+        <ChatTerminal cwd={terminalTab.cwd ?? cwd} sessionKey={terminalTab.id} />
       ) : (
         <div className="chat-workspace-window-empty" aria-live="polite">
           {state.tabs.length === 0 ? "窗口为空" : "空白占位窗口"}

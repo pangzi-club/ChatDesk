@@ -4,6 +4,7 @@ mod services;
 
 use services::automation::AutomationScheduler;
 use services::chat_server::ChatServerManager;
+use services::terminal::TerminalManager;
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
@@ -51,6 +52,7 @@ pub fn run() {
                 ChatServerManager::start(app.handle())
             };
             app.manage(chat_server);
+            app.manage(TerminalManager::default());
             let dashboard_item =
                 MenuItem::with_id(app, "dashboard", "Dashboard", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
@@ -96,6 +98,10 @@ pub fn run() {
             commands::automation::sync_automation_tasks,
             commands::chat_server::chat_server_info,
             commands::chat_server::chat_server_restart,
+            commands::terminal::terminal_spawn,
+            commands::terminal::terminal_write,
+            commands::terminal::terminal_resize,
+            commands::terminal::terminal_close,
             commands::workspaces::select_workspace_directory,
             commands::workspaces::inspect_workspace,
         ])
@@ -106,6 +112,7 @@ pub fn run() {
                 if let Err(error) = app.state::<ChatServerManager>().shutdown() {
                     eprintln!("关闭 Chat Server 失败：{error}");
                 }
+                app.state::<TerminalManager>().shutdown();
             }
             _ => {}
         });
