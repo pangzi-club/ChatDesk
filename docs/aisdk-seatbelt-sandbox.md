@@ -179,7 +179,7 @@ Seatbelt 依赖 macOS 提供的系统能力。应用启动时应检测沙箱是�
 | 自由 Shell / 构建脚本 | Seatbelt（写路径与网络）+ Bash 越界审批 |
 | 用户体验 | 模式选择、待写入预览、工具调用卡片 |
 
-需要注意，Seatbelt 只约束**由 `sandbox-exec` 启动的子进程**。当前受限模式下，Shell 与 `list_dir`、`read_file`、`search_files`、`write_file`、`edit_file` 都通过受限 helper 或子进程执行；宿主进程仍负责路径归一化、参数校验和审批。明确切换到 Full access 时不使用 Seatbelt；明确批准工作区外的单次结构化写入时，helper profile 只额外放行该目标文件。工具边界、审批策略与进程沙箱仍是互补的防线。
+需要注意，Seatbelt 只约束**由 `sandbox-exec` 启动的子进程**。当前受限模式下，Shell 与 `list_dir`、`read_file`、`search_files`、`write_file`、`edit_file` 都通过受限 helper 或子进程执行；结构化文件操作使用独立的轻量 worker，不加载完整 Chat Server 或其依赖。宿主进程仍负责路径归一化、参数校验和审批。明确切换到 Full access 时不使用 Seatbelt；明确批准工作区外的单次结构化写入时，helper profile 只额外放行该目标文件。工具边界、审批策略与进程沙箱仍是互补的防线。
 
 ---
 

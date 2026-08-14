@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { type Dirent, existsSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -123,11 +123,11 @@ export async function runSandboxedFile(
   const effectiveMode = options.allowOutside ? "full" : options.mode;
   const payload = JSON.stringify(request);
   const isPackaged = (process as NodeJS.Process & { pkg?: unknown }).pkg !== undefined;
-  const serverEntry = isPackaged ? undefined : resolveServerEntry();
+  const helperEntry = isPackaged ? undefined : resolveSandboxFileEntry();
   const nodeArgs = isPackaged
     ? []
-    : ["--experimental-strip-types", ...(serverEntry ? [serverEntry] : [])];
-  const helperReadPaths = serverEntry ? collectHelperReadPaths(serverEntry) : [];
+    : ["--experimental-strip-types", ...(helperEntry ? [helperEntry] : [])];
+  const helperReadPaths = helperEntry ? [path.dirname(helperEntry)] : [];
   const args =
     effectiveMode === "full"
       ? nodeArgs
@@ -200,102 +200,16 @@ export async function runSandboxedFile(
   });
 }
 
-function resolveServerEntry() {
+function resolveSandboxFileEntry() {
   const currentEntry = process.argv[1];
-  if (currentEntry && /(?:^|[\\/])server\.(?:ts|js)$/.test(currentEntry)) {
+  if (currentEntry && /(?:^|[\\/])sandbox-file-entry\.(?:ts|js)$/.test(currentEntry)) {
     return currentEntry;
   }
   const candidates = [
-    path.resolve(process.cwd(), "apps/server/src/server.ts"),
-    path.resolve(process.cwd(), "src/server.ts"),
+    path.resolve(process.cwd(), "apps/server/src/sandbox-file-entry.ts"),
+    path.resolve(process.cwd(), "src/sandbox-file-entry.ts"),
   ];
   return candidates.find((candidate) => existsSync(candidate));
-}
-
-function collectHelperReadPaths(serverEntry: string) {
-  const serverDirectory = path.resolve(path.dirname(serverEntry), "..");
-  const roots = [
-    serverDirectory,
-    path.resolve(serverDirectory, "node_modules"),
-    path.resolve(serverDirectory, "..", "..", "node_modules"),
-  ];
-  const paths = new Set<string>();
-  for (const root of roots) {
-    if (root.endsWith("node_modules")) collectNodeModuleReadPaths(root, paths, 0);
-    else addReadPath(root, paths);
-  }
-  return [...paths];
-}
-
-function collectNodeModuleReadPaths(root: string, paths: Set<string>, depth: number) {
-  if (depth > 2 || !existsSync(root)) return;
-  addReadPath(root, paths);
-  let entries: Dirent<string>[];
-  try {
-    entries = readdirSync(root, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    if (entry.name === ".bin") continue;
-    const entryPath = path.join(root, entry.name);
-    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
-    addReadPath(entryPath, paths);
-    let resolved: string;
-    try {
-      resolved = realpathSync(entryPath);
-    } catch {
-      continue;
-    }
-    if (entry.name.startsWith("@")) {
-      collectScopedNodeModuleReadPaths(entryPath, resolved, paths);
-    } else {
-      addReadPath(entryPath, paths);
-      addPnpmStoreLinksRoot(resolved, paths);
-    }
-  }
-}
-
-function collectScopedNodeModuleReadPaths(
-  lexicalScope: string,
-  resolvedScope: string,
-  paths: Set<string>,
-) {
-  addReadPath(lexicalScope, paths);
-  let entries: Dirent<string>[];
-  try {
-    entries = readdirSync(resolvedScope, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    if (entry.name === ".bin") continue;
-    const packagePath = path.join(lexicalScope, entry.name);
-    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
-    addReadPath(packagePath, paths);
-    try {
-      addPnpmStoreLinksRoot(realpathSync(packagePath), paths);
-    } catch {
-      // Ignore broken optional dependency links.
-    }
-  }
-}
-
-function addPnpmStoreLinksRoot(value: string, paths: Set<string>) {
-  const linksMarker = `${path.sep}links`;
-  const linksIndex = value.indexOf(linksMarker);
-  if (linksIndex >= 0) paths.add(value.slice(0, linksIndex + linksMarker.length));
-}
-
-function addReadPath(value: string, paths: Set<string>) {
-  if (!value.startsWith("/")) return;
-  paths.add(value);
-  try {
-    paths.add(realpathSync(value));
-    if (statSync(value).isFile()) paths.add(path.dirname(realpathSync(value)));
-  } catch {
-    // Keep the lexical path for a root that may be created later.
-  }
 }
 
 function resolveDirectory(value: string) {

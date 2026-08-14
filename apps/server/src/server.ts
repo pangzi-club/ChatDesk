@@ -1,8 +1,3 @@
-import { serve } from "@hono/node-server";
-import { createChatServer } from "./app.ts";
-import { loadServerConfig } from "./config.ts";
-import { runSandboxFileHelper } from "./sandbox-file-helper.ts";
-
 type Shutdown = () => Promise<void> | void;
 
 let shutdownServer: Shutdown | undefined;
@@ -50,6 +45,11 @@ function installProductionProcessErrorHandlers() {
 installProductionProcessErrorHandlers();
 
 async function main() {
+  const [{ serve }, { createChatServer }, { loadServerConfig }] = await Promise.all([
+    import("@hono/node-server"),
+    import("./app.ts"),
+    import("./config.ts"),
+  ]);
   const config = await loadServerConfig();
   const server = await createChatServer(config);
   const httpServer = serve(
@@ -75,12 +75,14 @@ async function main() {
 }
 
 if (process.env.CHATDESK_SANDBOX_FILE === "1") {
-  void runSandboxFileHelper().catch((error) => {
-    const message = error instanceof Error ? error.message : String(error);
-    const blocked = /(?:operation not permitted|sandbox|deny|permission denied)/i.test(message);
-    process.stdout.write(JSON.stringify({ ok: false, blocked, error: message }));
-    process.exitCode = 1;
-  });
+  void import("./sandbox-file-worker.ts")
+    .then(({ runSandboxFileWorker }) => runSandboxFileWorker())
+    .catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      const blocked = /(?:operation not permitted|sandbox|deny|permission denied)/i.test(message);
+      process.stdout.write(JSON.stringify({ ok: false, blocked, error: message }));
+      process.exitCode = 1;
+    });
 } else {
   void main().catch((error) => {
     console.error(error);
