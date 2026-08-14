@@ -3,8 +3,19 @@ import { settingsStore } from "@/lib/settings-store";
 import { appendSystemLog } from "@/lib/system-log";
 
 type Theme = "dark" | "light" | "system";
-type ThemeColor = "ocean" | "violet" | "sunset" | "forest" | "solarized" | "github";
-type PrimaryColor = "blue" | "indigo" | "cyan" | "emerald" | "orange" | "rose";
+const themeColorValues = [
+  "ocean",
+  "gray",
+  "violet",
+  "sunset",
+  "forest",
+  "solarized",
+  "github",
+  "nord",
+  "mint",
+  "ruby",
+] as const;
+type ThemeColor = (typeof themeColorValues)[number];
 
 type ThemeProviderProps = {
   children: React.ReactNode;
@@ -15,54 +26,30 @@ type ThemeProviderProps = {
 type ThemeProviderState = {
   theme: Theme;
   themeColor: ThemeColor;
-  primaryColor: PrimaryColor;
   setTheme: (theme: Theme) => void;
   setThemeColor: (themeColor: ThemeColor) => void;
-  setPrimaryColor: (primaryColor: PrimaryColor) => void;
 };
 
 const initialState: ThemeProviderState = {
   theme: "system",
   themeColor: "ocean",
-  primaryColor: "blue",
   setTheme: () => null,
   setThemeColor: () => null,
-  setPrimaryColor: () => null,
 };
 
 const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
 
 const THEME_STORE_KEY = "theme";
 const THEME_COLOR_STORE_KEY = "themeColor";
-const PRIMARY_COLOR_STORE_KEY = "primaryColor";
+const LEGACY_PRIMARY_COLOR_STORE_KEY = "primaryColor";
 
 function isTheme(value: unknown): value is Theme {
   return value === "light" || value === "dark" || value === "system";
 }
 
 function isThemeColor(value: unknown): value is ThemeColor {
-  return (
-    value === "ocean" ||
-    value === "violet" ||
-    value === "sunset" ||
-    value === "forest" ||
-    value === "solarized" ||
-    value === "github"
-  );
+  return themeColorValues.includes(value as ThemeColor);
 }
-
-function isPrimaryColor(value: unknown): value is PrimaryColor {
-  return ["blue", "indigo", "cyan", "emerald", "orange", "rose"].includes(value as string);
-}
-
-const primaryColorValues: Record<PrimaryColor, { primary: string; ring: string }> = {
-  blue: { primary: "oklch(0.52 0.19 252)", ring: "oklch(0.62 0.18 250)" },
-  indigo: { primary: "oklch(0.51 0.21 275)", ring: "oklch(0.62 0.2 275)" },
-  cyan: { primary: "oklch(0.58 0.16 210)", ring: "oklch(0.68 0.15 210)" },
-  emerald: { primary: "oklch(0.52 0.15 160)", ring: "oklch(0.62 0.16 160)" },
-  orange: { primary: "oklch(0.62 0.19 45)", ring: "oklch(0.7 0.18 45)" },
-  rose: { primary: "oklch(0.58 0.2 10)", ring: "oklch(0.67 0.19 10)" },
-};
 
 function getSystemTheme(): "light" | "dark" {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
@@ -90,11 +77,6 @@ export function ThemeProvider({
     if (typeof window === "undefined") return "ocean";
     const stored = isTauri() ? null : window.localStorage.getItem("vite-ui-theme-color");
     return isThemeColor(stored) ? stored : "ocean";
-  });
-  const [primaryColor, setPrimaryColorState] = useState<PrimaryColor>(() => {
-    if (typeof window === "undefined") return "blue";
-    const stored = isTauri() ? null : window.localStorage.getItem("vite-ui-primary-color");
-    return isPrimaryColor(stored) ? stored : "blue";
   });
 
   // Sync with Tauri Store on mount (desktop app persistence)
@@ -138,19 +120,17 @@ export function ThemeProvider({
   }, []);
 
   useEffect(() => {
-    let isActive = true;
+    if (!isTauri()) {
+      window.localStorage.removeItem("vite-ui-primary-color");
+      return;
+    }
+
     settingsStore
-      .get<string>(PRIMARY_COLOR_STORE_KEY)
-      .then((savedColor) => {
-        if (!isActive || !isPrimaryColor(savedColor)) return;
-        setPrimaryColorState(savedColor);
-      })
+      .delete(LEGACY_PRIMARY_COLOR_STORE_KEY)
+      .then((existed) => (existed ? settingsStore.save() : undefined))
       .catch(() => {
         // Not running in Tauri, ignore
       });
-    return () => {
-      isActive = false;
-    };
   }, []);
 
   // Apply theme class to <html> + listen for system theme changes
@@ -158,18 +138,8 @@ export function ThemeProvider({
     const root = window.document.documentElement;
 
     root.classList.remove("light", "dark");
-    root.classList.remove(
-      "theme-ocean",
-      "theme-violet",
-      "theme-sunset",
-      "theme-forest",
-      "theme-solarized",
-      "theme-github",
-    );
+    root.classList.remove(...themeColorValues.map((color) => `theme-${color}`));
     root.classList.add(`theme-${themeColor}`);
-    const colors = primaryColorValues[primaryColor];
-    root.style.setProperty("--primary", colors.primary);
-    root.style.setProperty("--ring", colors.ring);
 
     if (theme === "system") {
       const resolved = getSystemTheme();
@@ -189,12 +159,11 @@ export function ThemeProvider({
 
     root.classList.add(theme);
     root.style.colorScheme = theme;
-  }, [theme, themeColor, primaryColor]);
+  }, [theme, themeColor]);
 
   const value = {
     theme,
     themeColor,
-    primaryColor,
     setTheme: (theme: Theme) => {
       if (!isTauri()) window.localStorage.setItem(storageKey, theme);
       setTheme(theme);
@@ -231,23 +200,6 @@ export function ThemeProvider({
           // Not running in Tauri, ignore
         });
     },
-    setPrimaryColor: (nextColor: PrimaryColor) => {
-      if (!isTauri()) window.localStorage.setItem("vite-ui-primary-color", nextColor);
-      setPrimaryColorState(nextColor);
-      void appendSystemLog({
-        level: "success",
-        source: "主题",
-        message: `已切换 Primary 主色：${nextColor}`,
-      }).catch(() => {
-        // Logging must never prevent a theme change.
-      });
-      settingsStore
-        .set(PRIMARY_COLOR_STORE_KEY, nextColor)
-        .then(() => settingsStore.save())
-        .catch(() => {
-          // Not running in Tauri, ignore
-        });
-    },
   };
 
   return (
@@ -267,4 +219,4 @@ export const useTheme = () => {
   return context;
 };
 
-export type { PrimaryColor, Theme, ThemeColor };
+export type { Theme, ThemeColor };

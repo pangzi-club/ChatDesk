@@ -197,7 +197,12 @@ const commandItems = [
     keywords: ["端口", "开发服务", "vite", "devtools"],
   },
   { to: "/settings", label: "Settings", icon: Settings, keywords: ["设置"] },
-  { to: "/settings/theme", label: "主题", icon: Palette, keywords: ["theme", "外观"] },
+  {
+    to: "/settings/theme",
+    label: "主题",
+    icon: Palette,
+    keywords: ["theme", "外观", "配色", "颜色", "灰白"],
+  },
   {
     to: "/settings/shortcuts",
     label: "快捷键",

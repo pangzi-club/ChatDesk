@@ -42,12 +42,7 @@ import {
 
 import { ChatMemorySettings } from "@/components/chat-memory-settings";
 import { ChatToolsSettings } from "@/components/chat-tools-settings";
-import {
-  type PrimaryColor,
-  type Theme,
-  type ThemeColor,
-  useTheme,
-} from "@/components/theme-provider";
+import { type Theme, type ThemeColor, useTheme } from "@/components/theme-provider";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -163,6 +158,12 @@ const themeColors: Array<{
     swatches: ["#3f9eb2", "#4678d5", "#f29d78"],
   },
   {
+    value: "gray",
+    label: "灰白",
+    description: "干净的中性灰白工作台",
+    swatches: ["#f7f7f8", "#dfe1e5", "#4f5661"],
+  },
+  {
     value: "violet",
     label: "紫罗兰",
     description: "靛蓝与紫色",
@@ -192,15 +193,24 @@ const themeColors: Array<{
     description: "清爽的蓝色工作台",
     swatches: ["#0969da", "#1f883d", "#bf8700"],
   },
-];
-
-const primaryColors: Array<{ value: PrimaryColor; label: string; color: string }> = [
-  { value: "blue", label: "蓝色", color: "#4678d5" },
-  { value: "indigo", label: "靛蓝", color: "#635bdb" },
-  { value: "cyan", label: "青色", color: "#159bb5" },
-  { value: "emerald", label: "翠绿", color: "#16836b" },
-  { value: "orange", label: "橙色", color: "#e27b25" },
-  { value: "rose", label: "玫红", color: "#d64d67" },
+  {
+    value: "nord",
+    label: "Nord",
+    description: "冷静的蓝灰色调",
+    swatches: ["#5e81ac", "#88c0d0", "#a3be8c"],
+  },
+  {
+    value: "mint",
+    label: "薄荷",
+    description: "轻盈的绿色与水色",
+    swatches: ["#0f9f8f", "#47c6a8", "#8abf4f"],
+  },
+  {
+    value: "ruby",
+    label: "宝石红",
+    description: "红色与莓果强调",
+    swatches: ["#c43f5b", "#e85d75", "#7c5cff"],
+  },
 ];
 
 function SettingsLayout() {
@@ -450,7 +460,7 @@ function SettingsHeading({
 }
 
 function ThemeSettingsPage() {
-  const { theme, setTheme, themeColor, setThemeColor, primaryColor, setPrimaryColor } = useTheme();
+  const { theme, setTheme, themeColor, setThemeColor } = useTheme();
   return (
     <>
       <SettingsHeading
@@ -518,32 +528,6 @@ function ThemeSettingsPage() {
                   </span>
                 </span>
               </span>
-            </label>
-          ))}
-        </RadioGroup>
-      </section>
-      <section className="mt-5 overflow-hidden rounded-lg border border-border bg-card">
-        <div className="border-border border-b px-5 py-4">
-          <h2 className="font-medium text-sm">Primary 主色</h2>
-          <p className="mt-1 text-muted-foreground text-xs">设置按钮、链接和选中状态使用的主色。</p>
-        </div>
-        <RadioGroup
-          className="flex flex-wrap gap-2 p-4"
-          onValueChange={(value) => setPrimaryColor(value as PrimaryColor)}
-          value={primaryColor}
-        >
-          {primaryColors.map((item) => (
-            <label
-              className="flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 transition-colors hover:border-primary/50 hover:bg-accent/35 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/8"
-              htmlFor={`primary-color-${item.value}`}
-              key={item.value}
-            >
-              <RadioGroupItem id={`primary-color-${item.value}`} value={item.value} />
-              <span
-                className="size-4 rounded-full ring-1 ring-black/10"
-                style={{ backgroundColor: item.color }}
-              />
-              <span className="font-medium text-sm">{item.label}</span>
             </label>
           ))}
         </RadioGroup>
