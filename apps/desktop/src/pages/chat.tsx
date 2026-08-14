@@ -31,7 +31,6 @@ import {
   FileText,
   Folder,
   GitBranch,
-  GitCommitHorizontal,
   Hammer,
   History,
   Laptop,
@@ -57,6 +56,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { ChatAttachmentChips } from "@/components/chat-attachment-chips";
 import { ChatContextDialog } from "@/components/chat-context-dialog";
 import { ChatContextPopover } from "@/components/chat-context-popover";
+import { ChatGitSummary } from "@/components/chat-git-summary";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { ChatMemoryDialog } from "@/components/chat-memory-dialog";
 import { ChatSettingsDialog } from "@/components/chat-settings-dialog";
@@ -1605,9 +1605,9 @@ function ChatPage() {
           {workspaceGitQuery.data?.summary &&
           workspaceGitQuery.data.isRepository &&
           workspaceGitQuery.data.summary.filesChanged > 0 ? (
-            <button
-              className="chat-git-summary-float"
-              onClick={async () => {
+            <ChatGitSummary
+              summary={workspaceGitQuery.data.summary}
+              onOpenDiff={async () => {
                 const result = await workspaceGitQuery.refetch();
                 const firstFile = result.data?.summary?.files[0];
                 if (firstFile) {
@@ -1619,22 +1619,7 @@ function ChatPage() {
                   });
                 }
               }}
-              type="button"
-            >
-              <GitCommitHorizontal className="size-3.5" />
-              <span className="chat-git-summary-branch">
-                {workspaceGitQuery.data.summary.branch ?? "HEAD"}
-              </span>
-              <span className="chat-git-summary-add">
-                +{workspaceGitQuery.data.summary.insertions}
-              </span>
-              <span className="chat-git-summary-delete">
-                -{workspaceGitQuery.data.summary.deletions}
-              </span>
-              <span className="chat-git-summary-files">
-                · {workspaceGitQuery.data.summary.filesChanged} 个文件已修改
-              </span>
-            </button>
+            />
           ) : null}
           <ChatTodoPanel messages={messages} />
         </div>

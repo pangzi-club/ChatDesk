@@ -1,6 +1,12 @@
 import { parseTodoList, TODO_TOOL_NAME, type TodoItem } from "@chatdesk/shared";
 import { getToolName, isToolUIPart, type UIMessage } from "ai";
 import { Check, Circle, ListTodo, LoaderCircle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+
+/** hover 预览开合的延迟时间，避免指针路过时明细层闪开闪收。 */
+const TODO_HOVER_DELAY = 150;
 
 export type ChatTodoState = {
   items: TodoItem[];
@@ -46,7 +52,16 @@ function TodoStatusIcon({ status }: { status: TodoItem["status"] }) {
 }
 
 export function ChatTodoPanel({ messages }: { messages: UIMessage[] }) {
+  const [open, setOpen] = useState(false);
+  const hoverTimerRef = useRef<number | null>(null);
   const state = getLatestTodoState(messages);
+
+  useEffect(() => {
+    return () => {
+      if (hoverTimerRef.current !== null) window.clearTimeout(hoverTimerRef.current);
+    };
+  }, []);
+
   if (!state) return null;
   const allDone = state.completed === state.total;
   const currentLabel = state.current
@@ -55,16 +70,56 @@ export function ChatTodoPanel({ messages }: { messages: UIMessage[] }) {
       : state.current.content
     : "";
 
+  function scheduleOpenChange(nextOpen: boolean) {
+    if (hoverTimerRef.current !== null) window.clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = window.setTimeout(() => {
+      hoverTimerRef.current = null;
+      setOpen(nextOpen);
+    }, TODO_HOVER_DELAY);
+  }
+
   return (
-    <div className={`chat-todo-float ${allDone ? "is-done" : ""}`}>
-      {allDone ? <Check className="size-3.5" /> : <ListTodo className="size-3.5" />}
-      <span className="chat-todo-float-count">
-        {state.completed}/{state.total}
-      </span>
-      <span className="chat-todo-float-label">
-        {allDone ? "全部完成" : currentLabel || "任务规划"}
-      </span>
-      <div className="chat-todo-float-details">
+    <Popover
+      onOpenChange={(nextOpen) => {
+        if (hoverTimerRef.current !== null) {
+          window.clearTimeout(hoverTimerRef.current);
+          hoverTimerRef.current = null;
+        }
+        setOpen(nextOpen);
+      }}
+      open={open}
+    >
+      <PopoverTrigger asChild>
+        <Button
+          aria-label={`任务进度 ${state.completed}/${state.total}`}
+          className={`chat-todo-float ${allDone ? "is-done" : ""}`}
+          onPointerEnter={() => scheduleOpenChange(true)}
+          onPointerLeave={() => scheduleOpenChange(false)}
+          title="任务进度"
+          type="button"
+          variant="outline"
+        >
+          {allDone ? (
+            <Check aria-hidden="true" className="size-3.5" />
+          ) : (
+            <ListTodo aria-hidden="true" className="size-3.5" />
+          )}
+          <span className="chat-todo-float-count">
+            {state.completed}/{state.total}
+          </span>
+          <span className="chat-todo-float-label">
+            {allDone ? "全部完成" : currentLabel || "任务规划"}
+          </span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="center"
+        className="chat-todo-float-details"
+        onPointerEnter={() => scheduleOpenChange(true)}
+        onPointerLeave={() => scheduleOpenChange(false)}
+        side="top"
+        sideOffset={8}
+      >
         <p className="chat-todo-float-details-title">
           任务进度 {state.completed}/{state.total}
         </p>
@@ -78,7 +133,7 @@ export function ChatTodoPanel({ messages }: { messages: UIMessage[] }) {
             </li>
           ))}
         </ul>
-      </div>
-    </div>
+      </PopoverContent>
+    </Popover>
   );
 }
