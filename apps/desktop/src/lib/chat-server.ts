@@ -1,5 +1,6 @@
 import { ChatServerClient, ChatServerError } from "@chatdesk/chat-client";
 import type {
+  ChatContextCompaction,
   ChatIndexItem,
   ChatServerAiUsageLog,
   ChatServerConfigData,
@@ -656,6 +657,11 @@ export function subscribeChatServerEvents(
     onStatus?: (event: { sessionId: string; status: ChatServerSession["status"] }) => void;
     onDelta?: (event: { sessionId: string; runId?: string; delta: string }) => void;
     onMessageUpdated?: (event: { sessionId: string; runId?: string; message?: UIMessage }) => void;
+    onContextCompacted?: (event: {
+      sessionId: string;
+      runId?: string;
+      contextCompaction: ChatContextCompaction;
+    }) => void;
   },
 ) {
   let closed = false;
@@ -684,6 +690,15 @@ export function subscribeChatServerEvents(
             sessionId: event.sessionId,
             runId: event.runId,
             message: event.message,
+          });
+        }
+      },
+      onContextCompacted: (event) => {
+        if (event.sessionId && event.contextCompaction) {
+          handlers.onContextCompacted?.({
+            sessionId: event.sessionId,
+            runId: event.runId,
+            contextCompaction: event.contextCompaction,
           });
         }
       },

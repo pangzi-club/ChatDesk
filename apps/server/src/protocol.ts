@@ -1,5 +1,6 @@
 export type {
   ChatAttachment,
+  ChatContextCompaction,
   ChatSession,
   ChatTokenUsage,
   HealthResponse,
@@ -16,6 +17,7 @@ export {
   CHAT_SCHEMA_VERSION,
   deriveTitle,
   isSessionStatus,
+  resolveContextCompactionThreshold,
   SESSION_STATUSES,
   textFromMessage,
 } from "@chatdesk/shared";

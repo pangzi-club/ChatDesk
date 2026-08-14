@@ -1,3 +1,4 @@
+import { resolveContextCompactionThreshold, resolveModelContextWindow } from "@chatdesk/shared";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Clipboard, Copy, LoaderCircle } from "lucide-react";
 import { useState } from "react";
@@ -51,7 +52,13 @@ export function ChatContextDialog({
   const [tab, setTab] = useState("usage");
   const [copied, setCopied] = useState(false);
   const usedTokens = latestUsage?.inputTokens;
-  const contextLimit = model?.inputContext;
+  const configuredContextLimit = model?.inputContext;
+  const contextLimit = resolveModelContextWindow(configuredContextLimit);
+  const compactionThreshold = resolveContextCompactionThreshold(configuredContextLimit);
+  const usesDefaultContextLimit =
+    configuredContextLimit === undefined ||
+    !Number.isFinite(configuredContextLimit) ||
+    configuredContextLimit <= 0;
   const usagePercent =
     usedTokens !== undefined && contextLimit
       ? Math.min(100, Math.max(0, (usedTokens / contextLimit) * 100))
@@ -102,7 +109,10 @@ export function ChatContextDialog({
                   )}
                 </div>
                 <div className="mt-2 flex items-center justify-between gap-3 text-muted-foreground text-xs">
-                  <span>模型窗口 {formatContextLimit(contextLimit)}</span>
+                  <span>
+                    模型窗口 {formatContextLimit(contextLimit)}
+                    {usesDefaultContextLimit ? "（默认）" : ""}
+                  </span>
                   <span>
                     {usagePercent === undefined ? "无法计算比例" : `${Math.round(usagePercent)}%`}
                   </span>
@@ -131,6 +141,12 @@ export function ChatContextDialog({
                     {formatTokenCount(latestUsage?.cacheReadTokens)}
                   </dd>
                 </div>
+                <div>
+                  <dt className="text-muted-foreground text-xs">自动压缩阈值</dt>
+                  <dd className="mt-1 font-mono text-xs">
+                    {formatContextLimit(compactionThreshold)}
+                  </dd>
+                </div>
               </dl>
               <p className="border-border border-t pt-4 text-muted-foreground text-xs leading-5">
                 {isGenerating
@@ -138,6 +154,11 @@ export function ChatContextDialog({
                   : usedTokens === undefined
                     ? "完成一次模型请求后，这里会显示实际测得的上下文用量。"
                     : "当前用量以最近一次已完成请求的输入 tokens 为准，包含系统提示、工具定义和对话历史。"}
+              </p>
+              <p className="-mt-3 text-muted-foreground text-xs leading-5">
+                {usesDefaultContextLimit
+                  ? "当前模型未声明输入上限，ChatDesk 按默认 128K 窗口计算；该值不是供应商声明。"
+                  : "自动压缩阈值由模型窗口计算，达到阈值后会清理旧推理与工具结果。"}
               </p>
             </div>
           </TabsContent>

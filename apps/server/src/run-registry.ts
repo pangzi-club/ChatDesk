@@ -3,6 +3,8 @@ import { createOpenAI, openai } from "@ai-sdk/openai";
 import {
   convertToModelMessages,
   createUIMessageStreamResponse,
+  type ModelMessage,
+  pruneMessages,
   stepCountIs,
   streamText,
   type ToolSet,
@@ -15,9 +17,11 @@ import type { EventHub } from "./events.ts";
 import { createKimiFetch } from "./kimi.ts";
 import { createMiniMaxFetch, isMiniMaxModel } from "./minimax.ts";
 import {
+  type ChatContextCompaction,
   type ChatSession,
   deriveTitle,
   type RunStartInput,
+  resolveContextCompactionThreshold,
   type SandboxMode,
   type SessionStatus,
 } from "./protocol.ts";
@@ -44,6 +48,24 @@ type ActiveRun = {
 };
 
 export const MAX_AGENT_STEPS = 30;
+
+export function estimateModelMessageTokens(messages: ModelMessage[]) {
+  return Math.ceil(JSON.stringify(messages).length / 4);
+}
+
+export function compactAgentContext(messages: ModelMessage[], thresholdTokens: number) {
+  const estimatedTokensBefore = estimateModelMessageTokens(messages);
+  if (estimatedTokensBefore <= thresholdTokens) return undefined;
+  const compactedMessages = pruneMessages({
+    messages,
+    reasoning: "all",
+    toolCalls: "before-last-3-messages",
+    emptyMessages: "remove",
+  });
+  const estimatedTokensAfter = estimateModelMessageTokens(compactedMessages);
+  if (estimatedTokensAfter >= estimatedTokensBefore) return undefined;
+  return { messages: compactedMessages, estimatedTokensBefore, estimatedTokensAfter };
+}
 
 export function reachedToolLimit(stepCount: number, finishReason: string | undefined) {
   return stepCount >= MAX_AGENT_STEPS && finishReason === "tool-calls";
@@ -254,6 +276,8 @@ export class RunRegistry {
       const modelMessages = await convertToModelMessages(messages);
       const system = prompt.text;
       let completedStepCount = 0;
+      let contextCompaction: ChatContextCompaction | undefined;
+      const contextCompactionThreshold = resolveContextCompactionThreshold(model.inputContext);
       const result = streamText({
         model: languageModel,
         messages: modelMessages,
@@ -302,6 +326,23 @@ export class RunRegistry {
         }),
         experimental_toolApprovalSecret: this.toolApprovalSecret,
         stopWhen: stepCountIs(MAX_AGENT_STEPS),
+        prepareStep: ({ messages: stepMessages, stepNumber }) => {
+          const compacted = compactAgentContext(stepMessages, contextCompactionThreshold);
+          if (!compacted) return undefined;
+          contextCompaction = {
+            count: (contextCompaction?.count ?? 0) + 1,
+            stepNumber,
+            estimatedTokensBefore: compacted.estimatedTokensBefore,
+            estimatedTokensAfter: compacted.estimatedTokensAfter,
+          };
+          this.events.publish({
+            type: "context.compacted",
+            sessionId,
+            runId,
+            contextCompaction,
+          });
+          return { messages: compacted.messages };
+        },
         onStepEnd: () => {
           completedStepCount += 1;
         },
@@ -315,6 +356,7 @@ export class RunRegistry {
           const toolLimitReached = reachedToolLimit(completedStepCount, part.finishReason);
           return {
             usage: part.totalUsage,
+            ...(contextCompaction ? { contextCompaction } : {}),
             ...(toolLimitReached ? { toolLimitReached: true, stopReason: "tool-limit" } : {}),
           };
         },

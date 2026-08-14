@@ -16,6 +16,11 @@ const KNOWN_MODEL_CONTEXT_WINDOWS: Record<string, number> = {
   "minimax-m2.5": 204_800,
 };
 
+const LEGACY_MODEL_CONTEXT_MIGRATIONS: Record<string, { from: number; to: number }> = {
+  "deepseek-v4-flash": { from: 128_000, to: 1_000_000 },
+  "deepseek-v4-pro": { from: 128_000, to: 1_000_000 },
+};
+
 export type { ModelConfig } from "@chatdesk/shared";
 
 export function formatModelLabel(model: Pick<ModelConfig, "name" | "responsive">) {
@@ -45,8 +50,7 @@ export async function loadModels(): Promise<ModelConfig[]> {
 function normalizeModelConfig(model: ModelConfig): ModelConfig {
   return {
     ...model,
-    inputContext:
-      model.inputContext ?? KNOWN_MODEL_CONTEXT_WINDOWS[model.name.trim().toLowerCase()],
+    inputContext: resolveModelInputContext(model),
     supportsTools: model.supportsTools === true,
     supportsImages: model.supportsImages === true,
     supportsReasoning: model.supportsReasoning === true,
@@ -58,6 +62,15 @@ function normalizeModelConfig(model: ModelConfig): ModelConfig {
     cacheReadPricePerMillion: normalizePrice(model.cacheReadPricePerMillion),
     cacheWritePricePerMillion: normalizePrice(model.cacheWritePricePerMillion),
   };
+}
+
+export function resolveModelInputContext(
+  model: Pick<ModelConfig, "name" | "inputContext">,
+): number | undefined {
+  const name = model.name.trim().toLowerCase();
+  const migration = LEGACY_MODEL_CONTEXT_MIGRATIONS[name];
+  if (migration && model.inputContext === migration.from) return migration.to;
+  return model.inputContext ?? KNOWN_MODEL_CONTEXT_WINDOWS[name];
 }
 
 function normalizePrice(value: unknown): number | undefined {

@@ -37,7 +37,7 @@
 对照上面的全景，apps/server 已经覆盖的部分：
 
 ### ✅ 核心循环
-- **Agentic loop**：`run-registry.ts` 基于 Vercel AI SDK `streamText` + 工具调用 + `stopWhen(stepCountIs(20))`，支持多步工具调用直至完成。
+- **Agentic loop**：`run-registry.ts` 基于 Vercel AI SDK `streamText` + 工具调用 + `stopWhen(stepCountIs(30))`，支持多步工具调用直至完成。
 - **中断/停止**：`AbortController`，`/runs/stop` 接口。
 - **流式输出**：UIMessage stream 双 tee（客户端流 + 服务端观察者），SSE 推送 `message.delta`。
 - **崩溃恢复**：`run-journal.ts` 在启动时恢复中断的 run 并标记 error。
@@ -51,6 +51,7 @@
 - **会话历史**：`store.ts` 持久化，CRUD 齐全。
 - **长期记忆**：`memory-store.ts`，可编辑的 JSON 记忆注入 system prompt。
 - **标题自动生成**：`deriveTitle` 取首条用户消息前 40 字。
+- **自动压缩**：`prepareStep` 在上下文超过动态阈值时剪枝旧 reasoning 与工具结果，并通过 SSE 和消息 metadata 向用户提示；完整聊天记录不受影响。详见 `docs/chat-context-compaction.md`。
 
 ### ✅ 工具生态
 - **MCP**：`mcp-runtime.ts` 支持 stdio 子进程 + remote HTTP 两种 transport，start / listTools / callTool / stop / test 全套，手写 JSON-RPC 2.0。
@@ -70,7 +71,7 @@
 | 能力 | 现状 | 差距 |
 |---|---|---|
 | 权限边界 | 文件路径强制限制在 workspace 内 | 没有「允许/拒绝/询问」交互式审批 |
-| 上下文管理 | 无压缩，但 draft 消息 + 增量事件避免全量重发 | 无 auto-compact |
+| 上下文管理 | 已支持基于窗口阈值剪枝旧 reasoning 与工具结果 | 第一版不生成早期自然语言对话摘要 |
 | 并行工具调用 | 依赖模型单次返回多个 tool call（AI SDK 支持并行执行） | 无显式编排 |
 | 用量统计 | 归档 index 有 `usageTotal` 字段 | 无实时 token 计数展示/成本估算 |
 
@@ -103,28 +104,24 @@
    - 支持「回滚到某次变更前」。
    - 依赖：run 生命周期事件已存在（`run.done` / `run.error`），接入成本低。
 
-6. **上下文自动压缩（auto-compact）**
-   - 当消息超过阈值时自动生成摘要替换早期消息。
-   - 需要：摘要模型调用、压缩后的消息重建、UI 提示「已压缩 N 条消息」。
-
-7. **计划模式（Plan / Apply 分离）**
+6. **计划模式（Plan / Apply 分离）**
    - 进入 plan 模式时只允许只读工具（read/search/list），产出计划；确认后切 apply 模式执行。
    - 收益：减少误操作，接近 Claude Code 的默认行为。
 
-8. **Web Fetch 工具**
+7. **Web Fetch 工具**
    - 已有 web_search，缺 `web_fetch`（打开 URL 读正文）。对调研类任务很常用。
 
-9. **终端交互增强**
+8. **终端交互增强**
    - 交互式命令（sudo 密码、选择器）目前无法处理。
    - 至少：检测到交互时提示用户或直接失败并给替代方案。
 
-10. **语义代码搜索 / RAG**
+9. **语义代码搜索 / RAG**
     - 现在只有 grep 级搜索。可接入代码索引（如 ripgrep + embedding），对大仓库提升显著。
 
-11. **实时 token 用量与成本**
+10. **实时 token 用量与成本**
     - 前端有 token 统计诉求，服务端归档已有 `usageTotal`，可把每次 run 的用量实时推到 SSE。
 
-12. **会话分享 / 导出**
+11. **会话分享 / 导出**
     - 归档已有 JSON，可加 Markdown/HTML 导出，或生成可分享链接。
 
 ## 五、结论

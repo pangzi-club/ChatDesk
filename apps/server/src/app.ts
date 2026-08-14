@@ -45,6 +45,7 @@ const runInputSchema = z.object({
       responsive: z.boolean().optional(),
       supportsTools: z.boolean().optional(),
       supportsReasoning: z.boolean().optional(),
+      inputContext: z.number().positive().optional(),
     })
     .optional(),
   modelId: z.string().optional(),

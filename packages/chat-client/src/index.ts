@@ -35,6 +35,7 @@ export type ChatEventHandlers = {
   onStatus?: (event: ServerEvent & { type: "session.status" }) => void;
   onDelta?: (event: ServerEvent & { type: "message.delta" }) => void;
   onMessageUpdated?: (event: ServerEvent & { type: "message.updated" }) => void;
+  onContextCompacted?: (event: ServerEvent & { type: "context.compacted" }) => void;
 };
 
 export class ChatServerError extends Error {
@@ -403,6 +404,9 @@ export class ChatServerClient {
         if (event.type === "message.updated") {
           handlers.onMessageUpdated?.(event as ServerEvent & { type: "message.updated" });
         }
+        if (event.type === "context.compacted") {
+          handlers.onContextCompacted?.(event as ServerEvent & { type: "context.compacted" });
+        }
       } catch {
         // Ignore malformed reconnect/event payloads.
       }
@@ -426,6 +430,7 @@ export class ChatServerClient {
         "session.status",
         "message.delta",
         "message.updated",
+        "context.compacted",
         "run.error",
         "run.done",
       ]) {

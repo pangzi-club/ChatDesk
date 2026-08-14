@@ -75,6 +75,7 @@ export type ServerModelConfig = {
   responsive?: boolean;
   supportsTools?: boolean;
   supportsReasoning?: boolean;
+  inputContext?: number;
 };
 
 export type ChatTokenUsage = {
@@ -85,6 +86,30 @@ export type ChatTokenUsage = {
   cacheWriteTokens?: number;
   reasoningOutputTokens?: number;
 };
+
+export const DEFAULT_MODEL_CONTEXT_WINDOW = 128_000;
+export const MAX_CONTEXT_COMPACTION_THRESHOLD = 100_000;
+export const CONTEXT_COMPACTION_RATIO = 0.75;
+
+export type ChatContextCompaction = {
+  count: number;
+  stepNumber: number;
+  estimatedTokensBefore: number;
+  estimatedTokensAfter: number;
+};
+
+export function resolveModelContextWindow(inputContext: number | undefined) {
+  return inputContext && Number.isFinite(inputContext) && inputContext > 0
+    ? inputContext
+    : DEFAULT_MODEL_CONTEXT_WINDOW;
+}
+
+export function resolveContextCompactionThreshold(inputContext: number | undefined) {
+  return Math.min(
+    Math.floor(resolveModelContextWindow(inputContext) * CONTEXT_COMPACTION_RATIO),
+    MAX_CONTEXT_COMPACTION_THRESHOLD,
+  );
+}
 
 export const DEVELOPMENT_TOOL_NAMES = [
   "node",
@@ -171,7 +196,13 @@ export type RunStartInput = {
 
 export type ServerEvent = {
   id: string;
-  type: "session.status" | "message.delta" | "message.updated" | "run.error" | "run.done";
+  type:
+    | "session.status"
+    | "message.delta"
+    | "message.updated"
+    | "context.compacted"
+    | "run.error"
+    | "run.done";
   sessionId: string;
   runId?: string;
   status?: SessionStatus;
@@ -179,6 +210,7 @@ export type ServerEvent = {
   delta?: string;
   message?: UIMessage;
   error?: string;
+  contextCompaction?: ChatContextCompaction;
   timestamp: string;
 };
 

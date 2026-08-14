@@ -1,5 +1,5 @@
 import { useChat } from "@ai-sdk/react";
-import type { RunStartInput, SystemPromptSnapshot } from "@chatdesk/shared";
+import type { ChatContextCompaction, RunStartInput, SystemPromptSnapshot } from "@chatdesk/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type ChatTransport,
@@ -440,6 +440,7 @@ function ChatPage() {
   chatStatusRef.current = status;
   const attachedStreamSessionRef = useRef<string | null>(null);
   const liveDraftsRef = useRef(new Map<string, LiveDraft>());
+  const [contextCompaction, setContextCompaction] = useState<ChatContextCompaction | null>(null);
 
   const startNewSession = useCallback(
     (nextWorkspaceId = "", nextWorkspaceCwd = "") => {
@@ -510,7 +511,12 @@ function ChatPage() {
 
   useEffect(() => {
     if (sessionId) attachedStreamSessionRef.current = null;
+    setContextCompaction(null);
   }, [sessionId]);
+
+  useEffect(() => {
+    if (status === "submitted") setContextCompaction(null);
+  }, [status]);
 
   useEffect(() => {
     // Stop consuming the previous browser stream when switching chats. The server run remains
@@ -559,6 +565,11 @@ function ChatPage() {
               );
               return [...withoutDraft, message];
             });
+          }
+        },
+        onContextCompacted: ({ sessionId: eventSessionId, contextCompaction }) => {
+          if (activeSessionRef.current === eventSessionId) {
+            setContextCompaction(contextCompaction);
           }
         },
       });
@@ -685,9 +696,17 @@ function ChatPage() {
     return () => window.clearInterval(intervalId);
   }, [isGenerating]);
 
-  const generationPhase = status === "submitted" ? "等待中" : "生成中";
+  const generationPhase = contextCompaction
+    ? "自动压缩上下文"
+    : status === "submitted"
+      ? "等待中"
+      : "生成中";
   const generationElapsedLabel = formatGenerationElapsed(generationElapsedSeconds);
-  const generationDetail = generationElapsedSeconds >= 10 ? "响应较慢，仍在等待中" : "";
+  const generationDetail = contextCompaction
+    ? "已清理旧推理与工具结果，继续生成"
+    : generationElapsedSeconds >= 10
+      ? "响应较慢，仍在等待中"
+      : "";
   const lastMessage = messages[messages.length - 1];
   const latestContextUsage = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -966,6 +985,7 @@ function ChatPage() {
     const text = input.trim();
     if (!text || isGenerating) return;
     setInput("");
+    setContextCompaction(null);
     shouldFollowScrollRef.current = true;
     liveDraftsRef.current.delete(sessionId);
     attachedStreamSessionRef.current = sessionId;
@@ -1937,6 +1957,10 @@ const MessageBubble = memo(function MessageBubble({
   const toolLimitReached = Boolean(
     !isUser && (message.metadata as { toolLimitReached?: boolean } | undefined)?.toolLimitReached,
   );
+  const contextCompaction = !isUser
+    ? (message.metadata as { contextCompaction?: ChatContextCompaction } | undefined)
+        ?.contextCompaction
+    : undefined;
   const shouldCollapse =
     isUser &&
     (text.length > CHAT_MESSAGE_COLLAPSE_CHAR_LIMIT ||
@@ -1966,7 +1990,15 @@ const MessageBubble = memo(function MessageBubble({
             generationStatus ? (
               <ChatGenerationStatus {...generationStatus} />
             ) : (
-              <span>已完成</span>
+              <span
+                title={
+                  contextCompaction ? formatContextCompactionTitle(contextCompaction) : undefined
+                }
+              >
+                {contextCompaction
+                  ? `已完成 · 已自动压缩上下文${contextCompaction.count > 1 ? ` ${contextCompaction.count} 次` : ""}`
+                  : "已完成"}
+              </span>
             )
           ) : null}
         </div>
@@ -2098,6 +2130,10 @@ function formatGenerationElapsed(seconds: number) {
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds % 60;
   return remainingSeconds > 0 ? `${minutes} 分 ${remainingSeconds} 秒` : `${minutes} 分`;
+}
+
+function formatContextCompactionTitle(compaction: ChatContextCompaction) {
+  return `估算上下文 ${compaction.estimatedTokensBefore.toLocaleString("zh-CN")} → ${compaction.estimatedTokensAfter.toLocaleString("zh-CN")} tokens`;
 }
 
 function messageHasToolParts(message: UIMessage) {
