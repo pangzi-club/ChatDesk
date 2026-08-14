@@ -1,5 +1,5 @@
 import { useChat } from "@ai-sdk/react";
-import { code } from "@streamdown/code";
+import type { RunStartInput, SystemPromptSnapshot } from "@chatdesk/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type ChatTransport,
@@ -9,9 +9,6 @@ import {
   lastAssistantMessageIsCompleteWithApprovalResponses,
   type UIMessage,
 } from "ai";
-import { Streamdown } from "streamdown";
-import "streamdown/styles.css";
-import type { RunStartInput, SystemPromptSnapshot } from "@chatdesk/shared";
 import {
   ArrowUp,
   Bot,
@@ -54,6 +51,7 @@ import {
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ChatContextDialog } from "@/components/chat-context-dialog";
+import { ChatMarkdown } from "@/components/chat-markdown";
 import { ChatMemoryDialog } from "@/components/chat-memory-dialog";
 import { ChatSettingsDialog } from "@/components/chat-settings-dialog";
 import { ChatSkillsPicker } from "@/components/chat-skills-picker";
@@ -167,8 +165,6 @@ const DEFAULT_WORKSPACE_LABEL = "Default Workspace";
 const CHAT_MESSAGE_COLLAPSE_CHAR_LIMIT = 1200;
 const CHAT_MESSAGE_COLLAPSE_LINE_LIMIT = 18;
 const CHAT_STREAM_UPDATE_THROTTLE_MS = 50;
-const STREAMDOWN_PLUGINS = { code };
-
 const EMPTY_CHAT_ACTIONS = [
   {
     label: "探索并理解代码",
@@ -1812,9 +1808,7 @@ function ChatMessageReasoning({ isStreaming, text }: { isStreaming: boolean; tex
       </button>
       {open ? (
         <div className="chat-message-reasoning-text">
-          <Streamdown isAnimating={isStreaming} plugins={STREAMDOWN_PLUGINS}>
-            {text}
-          </Streamdown>
+          <ChatMarkdown isAnimating={isStreaming}>{text}</ChatMarkdown>
         </div>
       ) : null}
     </div>
@@ -2007,9 +2001,7 @@ const MessageBubble = memo(function MessageBubble({
                 key={block.key}
               >
                 <div className="chat-message-text">
-                  <Streamdown isAnimating={!isUser && isStreaming} plugins={STREAMDOWN_PLUGINS}>
-                    {block.text}
-                  </Streamdown>
+                  <ChatMarkdown isAnimating={!isUser && isStreaming}>{block.text}</ChatMarkdown>
                 </div>
                 {collapseBlock && !expanded ? <div className="chat-message-fade" /> : null}
                 {collapseBlock ? (

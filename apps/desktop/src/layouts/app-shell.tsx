@@ -16,6 +16,7 @@ import {
   File,
   Folder,
   FolderGit2,
+  Globe2,
   Image,
   Keyboard,
   KeyRound,
@@ -64,6 +65,7 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
+import { ChatBrowser } from "@/components/chat-browser";
 import { ChatTerminal } from "@/components/chat-terminal";
 import { FileViewer } from "@/components/file-viewer";
 import { GitCommitDialog } from "@/components/git-commit-dialog";
@@ -89,6 +91,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { rememberReturnPath } from "@/lib/app-return-path";
+import { getBrowserPreviewTitle, normalizeBrowserPreviewUrl } from "@/lib/browser-preview";
+import { subscribeBrowserPreviewOpen } from "@/lib/browser-preview-events";
 import {
   type ChatServerSession,
   canMonitorChatServer,
@@ -516,6 +520,40 @@ function AppShell() {
               ? state.tabs.map((item) => (item.id === existing.id ? refreshedTab : item))
               : [...state.tabs, tab],
             activeTabId: refreshedTab.id,
+          },
+        };
+      });
+    });
+  }, [location.search]);
+
+  useEffect(() => {
+    return subscribeBrowserPreviewOpen((request) => {
+      const url = normalizeBrowserPreviewUrl(request.url);
+      if (!url) return;
+      const key = getChatWindowKey(location.search);
+      setChatWindowStates((current) => {
+        const state = current[key] ?? createChatWindowState();
+        const existing = [...state.tabs].reverse().find((tab) => tab.kind === "browser");
+        const tab: ChatWindowTab = existing ?? {
+          id: createChatWindowTabId(),
+          title: getBrowserPreviewTitle(url),
+          kind: "browser",
+        };
+        const updatedTab = {
+          ...tab,
+          title: getBrowserPreviewTitle(url),
+          url,
+          refreshToken: Date.now(),
+        };
+        return {
+          ...current,
+          [key]: {
+            ...state,
+            open: true,
+            tabs: existing
+              ? state.tabs.map((item) => (item.id === existing.id ? updatedTab : item))
+              : [...state.tabs, updatedTab],
+            activeTabId: updatedTab.id,
           },
         };
       });
@@ -1463,7 +1501,7 @@ function describeError(error: unknown) {
 type ChatWindowTab = {
   id: string;
   title: string;
-  kind?: "blank" | "workspace" | "git-diff" | "source" | "terminal";
+  kind?: "blank" | "workspace" | "git-diff" | "source" | "terminal" | "browser";
   workspaceId?: string;
   cwd?: string;
   path?: string;
@@ -1471,6 +1509,7 @@ type ChatWindowTab = {
   refreshToken?: number;
   explorerView?: "files" | "git";
   editorMode?: "source" | "diff";
+  url?: string;
 };
 type ChatWindowState = {
   open: boolean;
@@ -1553,6 +1592,7 @@ function ChatWorkspaceWindow({
       ? activeTab
       : null;
   const terminalTab = activeTab?.kind === "terminal" ? activeTab : null;
+  const browserTab = activeTab?.kind === "browser" ? activeTab : null;
   const activeTabWorkspaceId = workspaceTab?.workspaceId;
   const [selectedPath, setSelectedPath] = useState(workspaceTab?.path ?? "");
   const [explorerView, setExplorerView] = useState<"files" | "git">(
@@ -2049,6 +2089,38 @@ function ChatWorkspaceWindow({
     onChange({ ...state, tabs: [...state.tabs, nextTab], activeTabId: nextTab.id });
   }
 
+  function addBrowserTab() {
+    const nextTab: ChatWindowTab = {
+      id: createChatWindowTabId(),
+      title: "Browser",
+      kind: "browser",
+      url: "",
+    };
+    onChange({ ...state, tabs: [...state.tabs, nextTab], activeTabId: nextTab.id });
+  }
+
+  function navigateBrowser(url: string) {
+    if (!browserTab) return;
+    onChange({
+      ...state,
+      tabs: state.tabs.map((tab) =>
+        tab.id === browserTab.id
+          ? { ...tab, title: getBrowserPreviewTitle(url), url, refreshToken: Date.now() }
+          : tab,
+      ),
+    });
+  }
+
+  function refreshBrowser() {
+    if (!browserTab?.url) return;
+    onChange({
+      ...state,
+      tabs: state.tabs.map((tab) =>
+        tab.id === browserTab.id ? { ...tab, refreshToken: Date.now() } : tab,
+      ),
+    });
+  }
+
   function closeTab(tabId: string) {
     const closingTab = state.tabs.find((tab) => tab.id === tabId);
     if (closingTab?.kind === "terminal") {
@@ -2104,6 +2176,7 @@ function ChatWorkspaceWindow({
                 type="button"
               >
                 {tab.kind === "terminal" ? <SquareTerminal className="size-3" /> : null}
+                {tab.kind === "browser" ? <Globe2 className="size-3" /> : null}
                 <span>{tab.title}</span>
               </button>
               <button
@@ -2138,6 +2211,10 @@ function ChatWorkspaceWindow({
             <DropdownMenuItem disabled={!cwd} onSelect={addTerminalTab}>
               <SquareTerminal className="size-3.5" />
               Terminal
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={addBrowserTab}>
+              <Globe2 className="size-3.5" />
+              Browser
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -2323,6 +2400,13 @@ function ChatWorkspaceWindow({
         </div>
       ) : terminalTab ? (
         <ChatTerminal cwd={terminalTab.cwd ?? cwd} sessionKey={terminalTab.id} />
+      ) : browserTab ? (
+        <ChatBrowser
+          onNavigate={navigateBrowser}
+          onRefresh={refreshBrowser}
+          refreshToken={browserTab.refreshToken}
+          url={browserTab.url}
+        />
       ) : (
         <div className="chat-workspace-window-empty" aria-live="polite">
           {state.tabs.length === 0 ? "窗口为空" : "空白占位窗口"}
