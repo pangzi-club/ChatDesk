@@ -27,6 +27,11 @@ import { CHAT_TOOL_DISPLAY_NAMES } from "@/lib/chat-tool-defs";
 import { CHAT_WORKSPACE_TOOL_DISPLAY_NAMES } from "@/lib/chat-workspace-tools";
 import { openFileViewer } from "@/lib/file-viewer-events";
 import { assetUrl } from "@/lib/platform";
+import {
+  extractWorkspaceToolSummary,
+  getLastPathSegment,
+  resolveWorkspaceToolFileTarget,
+} from "./chat-tool-call-utils";
 
 export type ChatToolCallCardProps = {
   id?: string;
@@ -67,45 +72,6 @@ function isEmptyInput(value: unknown) {
   if (value === undefined || value === null) return true;
   if (typeof value !== "object") return false;
   return Object.keys(value as Record<string, unknown>).length === 0;
-}
-
-function getLastPathSegment(value: string) {
-  const normalized = value.replace(/[\\/]+$/, "");
-  const segments = normalized.split(/[\\/]/);
-  return segments[segments.length - 1] || normalized;
-}
-
-function extractWorkspaceToolSummary(toolName: string, input: unknown, output: unknown) {
-  const inputRecord = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
-  const outputRecord =
-    output && typeof output === "object" ? (output as Record<string, unknown>) : {};
-  const inputPath = typeof inputRecord.path === "string" ? inputRecord.path : "";
-  const outputPath = typeof outputRecord.path === "string" ? outputRecord.path : "";
-  const searchKeyword =
-    typeof inputRecord.query === "string" && inputRecord.query.trim()
-      ? inputRecord.query
-      : typeof outputRecord.query === "string" && outputRecord.query.trim()
-        ? outputRecord.query
-        : typeof inputRecord.pattern === "string"
-          ? inputRecord.pattern
-          : "";
-  const subject =
-    toolName === "search_files"
-      ? searchKeyword
-      : toolName === "read_file"
-        ? getLastPathSegment(inputPath || outputPath)
-        : inputPath ||
-          (toolName === "bash" && typeof inputRecord.command === "string"
-            ? inputRecord.command
-            : "");
-  const compact = subject.replace(/\s+/g, " ").trim();
-  const details = compact ? ` · ${Array.from(compact).slice(0, 54).join("")}` : "";
-  const code =
-    toolName === "bash" && typeof outputRecord.code === "number"
-      ? ` · exit ${outputRecord.code}`
-      : "";
-  const truncated = outputRecord.truncated === true ? " · 已截断" : "";
-  return `${details}${code}${truncated}`;
 }
 
 export function getChatToolTitle(toolName: string) {
@@ -285,19 +251,7 @@ export function ChatToolCallCard({
   const [previewOpen, setPreviewOpen] = useState(false);
   const title = getChatToolTitle(toolName);
   const outputError = extractToolOutputError(output);
-  const readFileResult =
-    toolName === "read_file" && output && typeof output === "object"
-      ? (output as { path?: unknown; content?: unknown })
-      : null;
-  const readFilePath = typeof readFileResult?.path === "string" ? readFileResult.path : null;
-  const readFileInputPath =
-    toolName === "read_file" &&
-    input &&
-    typeof input === "object" &&
-    typeof (input as { path?: unknown }).path === "string"
-      ? (input as { path: string }).path
-      : null;
-  const readFileTarget = readFilePath ?? readFileInputPath;
+  const fileTarget = resolveWorkspaceToolFileTarget(toolName, input, output);
   const resolvedError = errorText || outputError;
   const failed = state === "output-error" || Boolean(resolvedError);
   const sandboxFailure = failed && isSandboxFailure(resolvedError);
@@ -360,16 +314,17 @@ export function ChatToolCallCard({
   const workspaceSummary = CHAT_WORKSPACE_TOOL_DISPLAY_NAMES[toolName]
     ? extractWorkspaceToolSummary(toolName, input, output)
     : "";
+  const workspaceTitle = workspaceSummary ? `${title}${workspaceSummary}` : undefined;
   const ToolIcon = getChatToolIcon(toolName);
 
-  function openReadFile() {
-    if (!readFileTarget) return;
+  function openToolFile() {
+    if (!fileTarget) return;
     openFileViewer({
       mode: "source",
-      path: readFileTarget,
+      path: fileTarget.path,
       workspaceId,
       cwd,
-      content: typeof readFileResult?.content === "string" ? readFileResult.content : undefined,
+      content: fileTarget.content,
     });
   }
 
@@ -413,7 +368,7 @@ export function ChatToolCallCard({
         </span>
         <span
           className="chat-tool-call-title"
-          title={isImageGeneration ? imageMeta?.fileName : undefined}
+          title={isImageGeneration ? imageMeta?.fileName : workspaceTitle}
         >
           <span className="chat-tool-call-title-name">{title}</span>
           {summaryQuery ? (
@@ -423,21 +378,21 @@ export function ChatToolCallCard({
             <span className="chat-tool-call-title-detail"> · {imageMeta.fileName}</span>
           ) : null}
           {workspaceSummary ? (
-            toolName === "read_file" && readFileTarget ? (
+            fileTarget ? (
               <>
                 <span className="chat-tool-call-title-detail"> · </span>
                 <a
-                  aria-label={`打开文件 ${readFileTarget}`}
+                  aria-label={`打开文件 ${fileTarget.path}`}
                   className="chat-tool-call-title-detail chat-tool-call-file-link"
-                  href={`#file:${readFileTarget}`}
+                  href={`#file:${fileTarget.path}`}
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    openReadFile();
+                    openToolFile();
                   }}
-                  title="在右侧打开文件"
+                  title={fileTarget.path}
                 >
-                  {getLastPathSegment(readFileTarget)}
+                  {fileTarget.path}
                 </a>
               </>
             ) : (
@@ -531,9 +486,14 @@ export function ChatToolCallCard({
                   },
                 )}
               </pre>
-            ) : toolName === "read_file" && readFileTarget ? (
-              <button className="chat-tool-call-open-file" onClick={openReadFile} type="button">
-                {getLastPathSegment(readFileTarget)}
+            ) : fileTarget ? (
+              <button
+                className="chat-tool-call-open-file"
+                onClick={openToolFile}
+                title={fileTarget.path}
+                type="button"
+              >
+                {getLastPathSegment(fileTarget.path)}
               </button>
             ) : (
               <pre>{formatJson(output)}</pre>
