@@ -2457,6 +2457,9 @@
 .chat-tool-call.is-error .chat-tool-call-status {
   color: #d06161;
 }
+.chat-tool-call-group.is-error .chat-tool-call-status {
+  color: #d06161;
+}
 .chat-tool-call-chevron {
   width: 14px;
   height: 14px;

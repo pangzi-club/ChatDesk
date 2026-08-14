@@ -106,6 +106,54 @@ export function getChatToolSummary(call: ChatToolCallCardProps) {
   return `${title}${query ? ` · ${query}` : ""}${workspaceSummary}`;
 }
 
+function isToolCallPending(call: ChatToolCallCardProps) {
+  return (
+    call.preliminary ||
+    call.state === "input-streaming" ||
+    call.state === "input-available" ||
+    call.state === "approval-requested"
+  );
+}
+
+function getToolCallError(call: ChatToolCallCardProps) {
+  return call.errorText || extractToolOutputError(call.output);
+}
+
+function isToolCallFailed(call: ChatToolCallCardProps) {
+  return call.state === "output-error" || Boolean(getToolCallError(call));
+}
+
+export function getChatToolGroupSummary(calls: ChatToolCallCardProps[]) {
+  const firstCall = calls[0];
+  if (!firstCall) return "";
+  if (calls.length === 1) return getChatToolSummary(firstCall);
+
+  const toolNames = [...new Set(calls.map((call) => getChatToolTitle(call.toolName)))];
+  if (toolNames.length === 1) return toolNames[0];
+
+  const visibleToolNames = toolNames.slice(0, 2).join("、");
+  const remainingToolCount = toolNames.length - 2;
+  const toolLabel = remainingToolCount > 0 ? `${visibleToolNames}等` : visibleToolNames;
+  return toolLabel;
+}
+
+export function getChatToolGroupStatus(calls: ChatToolCallCardProps[]) {
+  const pendingCalls = calls.filter(isToolCallPending);
+  if (
+    pendingCalls.some((call) => call.state === "approval-requested" && !call.approval?.isAutomatic)
+  ) {
+    return "待确认";
+  }
+  if (pendingCalls.length > 0) return "执行中";
+
+  const failedCalls = calls.filter(isToolCallFailed);
+  if (failedCalls.length === calls.length) {
+    return calls.every((call) => call.state === "output-denied") ? "已拒绝" : "失败";
+  }
+  if (failedCalls.length > 0) return "部分失败";
+  return "已完成";
+}
+
 /** 业务 tool 经 withToolError 失败时返回 { error }，SDK 仍标为 output-available。 */
 function extractToolOutputError(output: unknown): string | undefined {
   if (!output || typeof output !== "object") return undefined;
@@ -507,22 +555,25 @@ export function ChatToolCallCard({
 
 export function ChatToolCallGroup({ calls, workspaceId, cwd }: ChatToolCallGroupProps) {
   const [open, setOpen] = useState(false);
-  const lastCall = calls[calls.length - 1];
-  if (!lastCall) return null;
-  const pending =
-    lastCall.preliminary ||
-    lastCall.state === "input-streaming" ||
-    lastCall.state === "input-available" ||
-    lastCall.state === "approval-requested";
-  const ToolIcon = getChatToolIcon(lastCall.toolName);
-  const lastOutputError = extractToolOutputError(lastCall.output);
-  const lastError = lastCall.errorText || lastOutputError;
+  const activeCall = [...calls].reverse().find(isToolCallPending) ?? calls[calls.length - 1];
+  if (!activeCall) return null;
+  const pending = calls.some(isToolCallPending);
+  const hasError =
+    !pending &&
+    (calls.some(isToolCallFailed) || calls.some((call) => call.state === "output-denied"));
+  const activeError = getToolCallError(activeCall);
   const sandboxFailure =
-    (lastCall.state === "output-error" || Boolean(lastError)) && isSandboxFailure(lastError);
-  const manualApproval = lastCall.state === "approval-requested" && !lastCall.approval?.isAutomatic;
+    (activeCall.state === "output-error" || Boolean(activeError)) && isSandboxFailure(activeError);
+  const manualApproval =
+    activeCall.state === "approval-requested" && !activeCall.approval?.isAutomatic;
+  const ToolIcon = calls.length === 1 ? getChatToolIcon(activeCall.toolName) : Wrench;
+  const summary = getChatToolGroupSummary(calls);
+  const status = getChatToolGroupStatus(calls);
 
   return (
-    <div className={`chat-tool-call-group ${pending ? "is-pending" : ""}`}>
+    <div
+      className={`chat-tool-call-group ${pending ? "is-pending" : ""} ${hasError ? "is-error" : ""}`}
+    >
       <button
         aria-expanded={open}
         className="chat-tool-call-group-summary"
@@ -540,8 +591,9 @@ export function ChatToolCallGroup({ calls, workspaceId, cwd }: ChatToolCallGroup
             manualApproval,
           })}
         </span>
-        <span className="chat-tool-call-title">{getChatToolSummary(lastCall)}</span>
-        {calls.length > 1 ? <span className="chat-tool-call-count">{calls.length}</span> : null}
+        <span className="chat-tool-call-title">{summary}</span>
+        {calls.length > 1 ? <span className="chat-tool-call-count">{calls.length} 次</span> : null}
+        <span className="chat-tool-call-status">{status}</span>
         <ChevronDown className={`chat-tool-call-chevron ${open ? "is-open" : ""}`} />
       </button>
       {open ? (

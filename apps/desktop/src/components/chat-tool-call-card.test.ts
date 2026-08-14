@@ -1,8 +1,66 @@
 import { describe, expect, it } from "vitest";
 import {
+  type ChatToolCallCardProps,
+  getChatToolGroupStatus,
+  getChatToolGroupSummary,
+} from "./chat-tool-call-card";
+import {
   extractWorkspaceToolSummary,
   resolveWorkspaceToolFileTarget,
 } from "./chat-tool-call-utils";
+
+function toolCall(overrides: Partial<ChatToolCallCardProps> = {}): ChatToolCallCardProps {
+  return {
+    toolName: "read_file",
+    state: "output-available",
+    ...overrides,
+  };
+}
+
+describe("chat tool call group summaries", () => {
+  it("shows the single call summary unchanged", () => {
+    expect(
+      getChatToolGroupSummary([
+        toolCall({ toolName: "read_file", input: { path: "package.json" } }),
+      ]),
+    ).toContain("读取文件");
+  });
+
+  it("summarizes repeated calls with the tool name and total count", () => {
+    expect(
+      getChatToolGroupSummary([
+        toolCall({ input: { path: "a.ts" } }),
+        toolCall({ input: { path: "b.ts" } }),
+        toolCall({ input: { path: "c.ts" } }),
+      ]),
+    ).toBe("本地开发 · 读取文件");
+  });
+
+  it("summarizes mixed calls using distinct tool names instead of the last call", () => {
+    expect(
+      getChatToolGroupSummary([
+        toolCall({ toolName: "search_files" }),
+        toolCall({ toolName: "read_file" }),
+        toolCall({ toolName: "bash" }),
+      ]),
+    ).toBe("本地开发 · 搜索文件、本地开发 · 读取文件等");
+  });
+
+  it("aggregates status across the group instead of trusting the last call", () => {
+    expect(
+      getChatToolGroupStatus([
+        toolCall({ state: "output-error", errorText: "failed" }),
+        toolCall({ state: "output-available" }),
+      ]),
+    ).toBe("部分失败");
+    expect(
+      getChatToolGroupStatus([
+        toolCall({ state: "output-available" }),
+        toolCall({ state: "input-streaming" }),
+      ]),
+    ).toBe("执行中");
+  });
+});
 
 describe("chat tool call workspace file targets", () => {
   it("keeps long edit_file paths intact in the summary", () => {
