@@ -314,11 +314,11 @@ function GitContent({ info }: { info: WorkspaceGitInfo }) {
           <GitBranch className="size-4 text-muted-foreground" />
           <span className="font-medium text-sm">{status?.branch ?? "未知分支"}</span>
           {status?.clean ? (
-            <span className="inline-flex items-center gap-1 text-emerald-600 text-xs">
+            <span className="status-pill-success inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs">
               <CheckCircle2 className="size-3.5" /> 工作区干净
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1 text-amber-600 text-xs">
+            <span className="status-pill-warning inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs">
               <XCircle className="size-3.5" /> 有未提交变更
             </span>
           )}

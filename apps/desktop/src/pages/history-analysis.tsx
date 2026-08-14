@@ -24,11 +24,11 @@ const SOURCE_FILTERS: Array<{ value: SourceFilter; label: string }> = [
 ];
 
 const CATEGORY_COLORS: Record<string, string> = {
-  inputTokens: "bg-sky-500",
-  outputTokens: "bg-emerald-500",
-  cacheReadTokens: "bg-amber-500",
-  cacheWriteTokens: "bg-orange-500",
-  reasoningOutputTokens: "bg-violet-500",
+  inputTokens: "chart-tone-input",
+  outputTokens: "chart-tone-output",
+  cacheReadTokens: "chart-tone-cache-read",
+  cacheWriteTokens: "chart-tone-cache-write",
+  reasoningOutputTokens: "chart-tone-reasoning",
 };
 
 function HistoryAnalysisPage() {

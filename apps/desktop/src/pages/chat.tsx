@@ -1110,7 +1110,7 @@ function ChatPage() {
                 >
                   <DropdownMenuItem onSelect={() => void copyConversationId()}>
                     {conversationIdCopied ? (
-                      <Check className="size-4 text-emerald-500" />
+                      <Check className="size-4 text-primary" />
                     ) : (
                       <Copy className="size-4" />
                     )}
@@ -1332,7 +1332,7 @@ function ChatPage() {
               aria-live="polite"
               className="mx-11 flex flex-col gap-3 border-border border-y bg-muted/35 px-4 py-3 sm:flex-row sm:items-center"
             >
-              <CircleAlert className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+              <CircleAlert className="size-4 shrink-0 text-primary" />
               <div className="min-w-0 flex-1">
                 <p className="font-medium text-sm">本地开发工具尚未接入</p>
                 <p className="mt-0.5 text-muted-foreground text-xs">
@@ -2068,7 +2068,7 @@ const MessageBubble = memo(function MessageBubble({
           </fieldset>
         ) : null}
         {toolLimitReached ? (
-          <p className="mt-2 text-amber-600 text-xs dark:text-amber-300">
+          <p className="mt-2 text-primary text-xs">
             已达到执行轮数上限（30 轮），如需继续请发送一条新消息。
           </p>
         ) : null}

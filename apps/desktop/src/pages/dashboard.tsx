@@ -21,7 +21,6 @@ import { openExternal as platformOpenExternal } from "@/lib/platform";
 import { createUserDataStore } from "@/lib/settings-store";
 
 type Bookmark = {
-  color: string;
   id: string;
   title: string;
   url: string;
@@ -38,18 +37,10 @@ const DEFAULT_BOOKMARKS: Bookmark[] = [
     id: "twitter",
     title: "X",
     url: "https://x.com",
-    color: "from-slate-700 to-cyan-700",
   },
 ];
 
-const BOOKMARK_COLORS = [
-  "from-sky-400 to-blue-600",
-  "from-emerald-400 to-teal-700",
-  "from-amber-300 to-orange-500",
-  "from-rose-400 to-red-600",
-  "from-indigo-400 to-violet-700",
-  "from-zinc-700 to-zinc-950",
-];
+const BOOKMARK_TONES = [1, 2, 3, 4, 5, 6] as const;
 
 function DashboardPage() {
   const navigate = useNavigate();
@@ -124,11 +115,9 @@ function DashboardPage() {
         ),
       );
     } else {
-      const nextColor = BOOKMARK_COLORS[bookmarks.length % BOOKMARK_COLORS.length];
       setBookmarks((currentBookmarks) => [
         ...currentBookmarks,
         {
-          color: nextColor,
           id: crypto.randomUUID(),
           title,
           url: normalizedUrl,
@@ -262,9 +251,10 @@ function DashboardPage() {
             </button>
           </div>
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-7">
-            {bookmarks.map((bookmark) => (
+            {bookmarks.map((bookmark, index) => (
               <BookmarkTile
                 bookmark={bookmark}
+                tone={BOOKMARK_TONES[index % BOOKMARK_TONES.length]}
                 key={bookmark.id}
                 onEdit={() => openEditBookmark(bookmark)}
                 onOpen={() => void openExternal(bookmark.url)}
@@ -305,7 +295,7 @@ function DashboardAction({
       onClick={onClick}
       type="button"
     >
-      <span className="flex size-8 items-center justify-center rounded-md bg-[#edf4ff] text-primary">
+      <span className="dashboard-action-mark flex size-8 items-center justify-center rounded-md">
         <Icon className="size-4" />
       </span>
       <span className="mt-4 font-medium text-sm">{label}</span>
@@ -316,10 +306,12 @@ function DashboardAction({
 
 function BookmarkTile({
   bookmark,
+  tone,
   onEdit,
   onOpen,
 }: {
   bookmark: Bookmark;
+  tone: number;
   onEdit: () => void;
   onOpen: () => void;
 }) {
@@ -333,7 +325,7 @@ function BookmarkTile({
       >
         <span className="flex size-10 items-center justify-center rounded-lg bg-muted">
           <span
-            className={`relative flex size-9 items-center justify-center overflow-hidden rounded-md bg-gradient-to-br ${bookmark.color} text-white shadow-inner`}
+            className={`bookmark-tile-swatch bookmark-tile-tone-${tone} relative flex size-9 items-center justify-center overflow-hidden rounded-md shadow-inner`}
           >
             <img
               alt=""
@@ -343,7 +335,7 @@ function BookmarkTile({
               }}
               src={getFaviconUrl(bookmark.url)}
             />
-            <span className="absolute font-semibold text-sm text-white/90">
+            <span className="absolute font-semibold text-sm text-current">
               {bookmark.title.slice(0, 1).toUpperCase()}
             </span>
           </span>
@@ -526,10 +518,7 @@ function parseBookmarks(value: unknown) {
     return null;
   }
 
-  return value.filter(isBookmark).map((bookmark, index) => ({
-    ...bookmark,
-    color: bookmark.color || BOOKMARK_COLORS[index % BOOKMARK_COLORS.length],
-  }));
+  return value.filter(isBookmark);
 }
 
 function isTauri() {

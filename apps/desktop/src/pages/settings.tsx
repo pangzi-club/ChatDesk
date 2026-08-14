@@ -149,67 +149,145 @@ const themeColors: Array<{
   value: ThemeColor;
   label: string;
   description: string;
-  swatches: [string, string, string];
+  swatches: [string, string, string, string];
 }> = [
   {
     value: "ocean",
     label: "海洋",
     description: "蓝色与青色",
-    swatches: ["#3f9eb2", "#4678d5", "#f29d78"],
+    swatches: ["#3f9eb2", "#4678d5", "#7dd3fc", "#f29d78"],
   },
   {
     value: "gray",
     label: "灰白",
     description: "干净的中性灰白工作台",
-    swatches: ["#f7f7f8", "#dfe1e5", "#4f5661"],
+    swatches: ["#f7f7f8", "#dfe1e5", "#9ca3af", "#4f5661"],
   },
   {
     value: "violet",
     label: "紫罗兰",
     description: "靛蓝与紫色",
-    swatches: ["#635bdb", "#a855f7", "#ec4899"],
+    swatches: ["#635bdb", "#8b5cf6", "#a855f7", "#ec4899"],
   },
   {
     value: "sunset",
     label: "日落",
     description: "橙色与珊瑚色",
-    swatches: ["#f97316", "#ef4444", "#eab308"],
+    swatches: ["#f97316", "#ef4444", "#fb7185", "#eab308"],
   },
   {
     value: "forest",
     label: "森林",
     description: "绿色与薄荷色",
-    swatches: ["#16836b", "#65a30d", "#14b8a6"],
+    swatches: ["#16836b", "#22c55e", "#65a30d", "#14b8a6"],
   },
   {
     value: "solarized",
     label: "Solarized",
     description: "经典低对比度配色",
-    swatches: ["#268bd2", "#2aa198", "#b58900"],
+    swatches: ["#268bd2", "#2aa198", "#b58900", "#cb4b16"],
   },
   {
     value: "github",
     label: "GitHub",
-    description: "清爽的蓝色工作台",
-    swatches: ["#0969da", "#1f883d", "#bf8700"],
+    description: "蓝灰色的 GitHub 风格工作台",
+    swatches: ["#0969da", "#1f883d", "#bf8700", "#8c959f"],
   },
   {
     value: "nord",
     label: "Nord",
     description: "冷静的蓝灰色调",
-    swatches: ["#5e81ac", "#88c0d0", "#a3be8c"],
+    swatches: ["#5e81ac", "#88c0d0", "#a3be8c", "#81a1c1"],
+  },
+  {
+    value: "tokyo-night",
+    label: "Tokyo Night",
+    description: "蓝紫夜色工作台",
+    swatches: ["#7aa2f7", "#bb9af7", "#f7768e", "#7dcfff"],
+  },
+  {
+    value: "doom",
+    label: "Doom",
+    description: "高对比的深色编辑器风格",
+    swatches: ["#51afef", "#c678dd", "#98be65", "#46d9ff"],
+  },
+  {
+    value: "zenburn",
+    label: "Zenburn",
+    description: "低饱和的暖暗色调",
+    swatches: ["#dcdccc", "#8fb28f", "#93e0e3", "#cc9393"],
+  },
+  {
+    value: "tomorrow",
+    label: "Tomorrow",
+    description: "干净的日间与夜间中性色",
+    swatches: ["#4271ae", "#e0e0e0", "#b5bd68", "#de935f"],
+  },
+  {
+    value: "modus",
+    label: "Modus",
+    description: "高可读性的中性高对比主题",
+    swatches: ["#005f9f", "#7fcfff", "#d9f0ff", "#ff7b7b"],
+  },
+  {
+    value: "spacemacs",
+    label: "Spacemacs",
+    description: "紫色与青绿色的组合",
+    swatches: ["#ae81ff", "#f92672", "#4db6ac", "#66d9ef"],
+  },
+  {
+    value: "monokai",
+    label: "Monokai",
+    description: "经典霓虹深色配色",
+    swatches: ["#f92672", "#a6e22e", "#66d9ef", "#fd971f"],
+  },
+  {
+    value: "gruvbox",
+    label: "Gruvbox",
+    description: "温暖的棕橙与墨绿",
+    swatches: ["#fabd2f", "#458588", "#b16286", "#83a598"],
+  },
+  {
+    value: "dracula",
+    label: "Dracula",
+    description: "紫粉与荧光绿的暗色主题",
+    swatches: ["#bd93f9", "#50fa7b", "#ff79c6", "#6272a4"],
+  },
+  {
+    value: "material",
+    label: "Material",
+    description: "蓝灰色的 Material 风格",
+    swatches: ["#82aaff", "#c3e88d", "#89ddff", "#ff5370"],
+  },
+  {
+    value: "moe",
+    label: "Moe",
+    description: "柔和而多彩的深色主题",
+    swatches: ["#4db6ac", "#3f51b5", "#ffb74d", "#ba68c8"],
+  },
+  {
+    value: "cyberpunk",
+    label: "Cyberpunk",
+    description: "霓虹感更强的高饱和配色",
+    swatches: ["#ff4fd8", "#00e5ff", "#f7ff00", "#8c5cff"],
+  },
+  {
+    value: "kaolin",
+    label: "Kaolin",
+    description: "浅色与深色都偏柔和的编辑器风格",
+    swatches: ["#6c71c4", "#88c0d0", "#b48ead", "#d16d9e"],
   },
   {
     value: "mint",
     label: "薄荷",
     description: "轻盈的绿色与水色",
-    swatches: ["#0f9f8f", "#47c6a8", "#8abf4f"],
+    swatches: ["#0f9f8f", "#47c6a8", "#8abf4f", "#c4f1e8"],
   },
   {
     value: "ruby",
     label: "宝石红",
     description: "红色与莓果强调",
-    swatches: ["#c43f5b", "#e85d75", "#7c5cff"],
+    swatches: ["#c43f5b", "#e85d75", "#7c5cff", "#f59e0b"],
   },
 ];
 
@@ -500,7 +578,7 @@ function ThemeSettingsPage() {
           <p className="mt-1 text-muted-foreground text-xs">选择一组颜色作为界面的主色和强调色。</p>
         </div>
         <RadioGroup
-          className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2"
+          className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3"
           onValueChange={(value) => setThemeColor(value as ThemeColor)}
           value={themeColor}
         >
