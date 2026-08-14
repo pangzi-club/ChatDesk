@@ -177,13 +177,13 @@ const EMPTY_CHAT_ACTIONS = [
     accent: "blue",
   },
   {
-    label: "构建新功能、应用或工具",
+    label: "构建新功能、应用",
     prompt: "请帮我构建一个新功能、应用或工具。",
     icon: Hammer,
     accent: "violet",
   },
   {
-    label: "审查代码并提出修改建议",
+    label: "审查代码并修改建议",
     prompt: "请审查这份代码并提出修改建议。",
     icon: RefreshCw,
     accent: "green",
