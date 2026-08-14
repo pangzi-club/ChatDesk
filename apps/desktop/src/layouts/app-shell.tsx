@@ -1083,24 +1083,43 @@ function WorkspaceConversationGroups() {
         <div className="space-y-1.5">
           {groups.map((group) => {
             const isExpanded = expandedGroups.has(group.key);
+            const isRecent = group.key === "default";
             const isCollapsed = isGroupCollapsed(group);
-            const visibleSessions = isExpanded ? group.sessions : group.sessions.slice(0, 5);
+            const visibleSessions =
+              isRecent || isExpanded ? group.sessions : group.sessions.slice(0, 5);
             const hiddenCount = group.sessions.length - 5;
 
             return (
-              <div key={group.key}>
-                <div className="group flex h-7 min-w-0 items-center rounded-md transition-colors hover:bg-accent/60">
-                  <button
-                    aria-expanded={!isCollapsed}
-                    aria-label={isCollapsed ? `展开 ${group.label}` : `收起 ${group.label}`}
-                    className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left font-medium text-[13px] text-foreground"
-                    onClick={() => toggleCollapsed(group)}
-                    title={group.label}
-                    type="button"
-                  >
-                    <FolderGit2 className="size-4 shrink-0 text-muted-foreground" />
-                    <span className="truncate">{group.label}</span>
-                  </button>
+              <div className={isRecent ? "pt-2" : undefined} key={group.key}>
+                <div
+                  className={`group flex h-7 min-w-0 items-center rounded-md ${isRecent ? "px-2" : "transition-colors hover:bg-accent/60"}`}
+                >
+                  {isRecent ? (
+                    <h2 className="min-w-0 flex-1 font-medium text-xs text-muted-foreground uppercase">
+                      <button
+                        aria-expanded={!isCollapsed}
+                        aria-label={isCollapsed ? `展开 ${group.label}` : `收起 ${group.label}`}
+                        className="w-full truncate text-left"
+                        onClick={() => toggleCollapsed(group)}
+                        title={group.label}
+                        type="button"
+                      >
+                        {group.label}
+                      </button>
+                    </h2>
+                  ) : (
+                    <button
+                      aria-expanded={!isCollapsed}
+                      aria-label={isCollapsed ? `展开 ${group.label}` : `收起 ${group.label}`}
+                      className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left font-medium text-[13px] text-foreground"
+                      onClick={() => toggleCollapsed(group)}
+                      title={group.label}
+                      type="button"
+                    >
+                      <FolderGit2 className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{group.label}</span>
+                    </button>
+                  )}
                   <button
                     aria-label={`在 ${group.label} 中新建对话`}
                     className="mr-0.5 flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100"
@@ -1157,7 +1176,7 @@ function WorkspaceConversationGroups() {
                           >
                             <button
                               aria-current={isActive ? "page" : undefined}
-                              className={`flex min-w-0 flex-1 items-center rounded-md py-0 pr-1 pl-8 text-left font-medium text-[13px] ${isActive ? "text-accent-foreground" : "text-foreground"}`}
+                              className={`flex min-w-0 flex-1 items-center rounded-md py-0 pr-1 text-left font-medium text-[13px] ${isRecent ? "pl-2" : "pl-8"} ${isActive ? "text-accent-foreground" : "text-foreground"}`}
                               onClick={() => openSession(session.id)}
                               title={session.title}
                               type="button"
@@ -1188,10 +1207,10 @@ function WorkspaceConversationGroups() {
                           </div>
                         );
                       })}
-                      {hiddenCount > 0 ? (
+                      {hiddenCount > 0 && !isRecent ? (
                         <button
                           aria-expanded={isExpanded}
-                          className="flex h-7 w-full items-center gap-1 rounded-md pr-2 pl-8 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+                          className={`flex h-7 w-full items-center gap-1 rounded-md pr-2 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground ${isRecent ? "pl-2" : "pl-8"}`}
                           onClick={() => toggleExpanded(group.key)}
                           type="button"
                         >
@@ -1203,7 +1222,11 @@ function WorkspaceConversationGroups() {
                       ) : null}
                     </div>
                   ) : (
-                    <p className="px-2 py-1 pl-8 text-[12px] text-muted-foreground">暂无对话</p>
+                    <p
+                      className={`px-2 py-1 text-[12px] text-muted-foreground ${isRecent ? "pl-2" : "pl-8"}`}
+                    >
+                      暂无对话
+                    </p>
                   )
                 ) : null}
               </div>
@@ -1322,7 +1345,7 @@ function groupChatsByWorkspace(
   const defaultSessions: ChatIndexItem[] = [];
   for (const session of sessions) {
     const workspaceKey = getWorkspaceSessionKey(session, projects);
-    if (!workspaceKey) {
+    if (!workspaceKey || workspaceKey === "default") {
       defaultSessions.push(session);
       continue;
     }
@@ -1331,13 +1354,16 @@ function groupChatsByWorkspace(
     sessionsByWorkspace.set(workspaceKey, workspaceSessions);
   }
 
-  const groups: WorkspaceChatGroup[] = [
-    { key: "default", label: "Default", sessions: defaultSessions },
-  ];
+  const recentGroup: WorkspaceChatGroup = {
+    key: "default",
+    label: "最近",
+    sessions: defaultSessions,
+  };
+  const workspaceGroups: WorkspaceChatGroup[] = [];
 
   for (const project of projects) {
     const workspaceSessions = sessionsByWorkspace.get(project.id) ?? [];
-    groups.push({
+    workspaceGroups.push({
       key: project.id,
       label: pathBasename(project.path),
       cwd: project.path,
@@ -1347,7 +1373,7 @@ function groupChatsByWorkspace(
   }
 
   for (const [workspaceId, workspaceSessions] of sessionsByWorkspace) {
-    groups.push({
+    workspaceGroups.push({
       key: workspaceId,
       label: pathBasename(workspaceSessions[0]?.cwd ?? "") || "已移除的 Workspace",
       cwd: workspaceSessions[0]?.cwd,
@@ -1355,7 +1381,7 @@ function groupChatsByWorkspace(
     });
   }
 
-  return sortWorkspaceConversationGroups(groups, sort);
+  return [...sortWorkspaceConversationGroups(workspaceGroups, sort), recentGroup];
 }
 
 function pathBasename(path: string) {
