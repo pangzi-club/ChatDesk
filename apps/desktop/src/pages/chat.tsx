@@ -25,7 +25,6 @@ import {
   FilePlus2,
   FileText,
   Folder,
-  Gauge,
   GitBranch,
   GitCommitHorizontal,
   Hammer,
@@ -51,6 +50,7 @@ import {
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ChatContextDialog } from "@/components/chat-context-dialog";
+import { ChatContextPopover } from "@/components/chat-context-popover";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { ChatMemoryDialog } from "@/components/chat-memory-dialog";
 import { ChatSettingsDialog } from "@/components/chat-settings-dialog";
@@ -1149,15 +1149,15 @@ function ChatPage() {
             <Plus className="size-4" />
           </Button>
           <Button
-            aria-label="查看上下文用量"
+            aria-label="查看 System Prompt"
             className="chat-header-action-secondary chat-icon-button"
             onClick={() => setContextOpen(true)}
             size="icon"
-            title="查看当前上下文用量"
+            title="查看 System Prompt"
             type="button"
             variant="ghost"
           >
-            <Gauge className="size-4" />
+            <FileText className="size-4" />
           </Button>
           <Button
             aria-label="Tool 记录"
@@ -1643,6 +1643,12 @@ function ChatPage() {
               )}
             </div>
             <div className="chat-composer-actions">
+              <ChatContextPopover
+                inputContext={selectedModel?.inputContext}
+                inputTokens={latestContextUsage?.inputTokens}
+                isGenerating={isGenerating}
+                modelName={selectedModel?.name}
+              />
               <Button
                 aria-label="语音输入"
                 className="chat-tool-button !size-7 hidden sm:inline-flex"
@@ -1686,10 +1692,6 @@ function ChatPage() {
         workspaceId={workspaceKey}
       />
       <ChatContextDialog
-        isGenerating={isGenerating}
-        latestUsage={latestContextUsage}
-        messageCount={messages.length}
-        model={selectedModel}
         promptKey={promptKey}
         loadPrompt={async () =>
           systemPromptRef.current ??
