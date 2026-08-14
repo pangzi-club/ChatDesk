@@ -24,7 +24,9 @@ import {
   CircleStop,
   Copy,
   Download,
+  ExternalLink,
   FilePlus2,
+  FileText,
   Folder,
   Gauge,
   GitBranch,
@@ -49,7 +51,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ChatContextDialog } from "@/components/chat-context-dialog";
 import { ChatMemoryDialog } from "@/components/chat-memory-dialog";
@@ -89,6 +91,12 @@ import {
   saveChatMemory,
 } from "@/lib/chat-memory";
 import { isWorkspaceMemoryExcludedTool, scheduleMemoryUpdateFromTurn } from "@/lib/chat-memory-ops";
+import {
+  type ChatFilePart,
+  type ChatSourcePart,
+  type ChatToolPart,
+  getChatMessageBlocks,
+} from "@/lib/chat-message-blocks";
 import {
   CHAT_SANDBOX_MODE_DESCRIPTIONS,
   CHAT_SANDBOX_MODE_LABELS,
@@ -143,6 +151,7 @@ import { detectMissingDevelopmentTools } from "@/lib/developer-environment";
 import { openFileViewer } from "@/lib/file-viewer-events";
 import { loadMcpServers, saveMcpServers } from "@/lib/mcp";
 import { formatModelLabel, loadModels, type ModelConfig } from "@/lib/models";
+import { openExternal } from "@/lib/platform";
 import {
   formatSkillsSystemHint,
   loadAvailableSkills,
@@ -157,11 +166,8 @@ const EMPTY_STRING_ARRAY: string[] = [];
 const DEFAULT_WORKSPACE_LABEL = "Default Workspace";
 const CHAT_MESSAGE_COLLAPSE_CHAR_LIMIT = 1200;
 const CHAT_MESSAGE_COLLAPSE_LINE_LIMIT = 18;
-
-type ChatToolPart = Extract<UIMessage["parts"][number], { toolCallId: string }>;
-type ChatMessageBlock =
-  | { kind: "text"; key: string; text: string }
-  | { kind: "tools"; key: string; parts: ChatToolPart[] };
+const CHAT_STREAM_UPDATE_THROTTLE_MS = 50;
+const STREAMDOWN_PLUGINS = { code };
 
 const EMPTY_CHAT_ACTIONS = [
   {
@@ -214,15 +220,11 @@ function mergeLiveDraft(messages: UIMessage[], draft: LiveDraft | undefined) {
   );
 }
 
-function scrollChatToBottom(element: HTMLDivElement, behavior: ScrollBehavior) {
-  if (behavior === "auto") {
-    const previousBehavior = element.style.scrollBehavior;
-    element.style.scrollBehavior = "auto";
-    element.scrollTop = element.scrollHeight;
-    element.style.scrollBehavior = previousBehavior;
-    return;
-  }
-  element.scrollTo({ top: element.scrollHeight, behavior });
+function scrollChatToBottom(element: HTMLDivElement) {
+  const previousBehavior = element.style.scrollBehavior;
+  element.style.scrollBehavior = "auto";
+  element.scrollTop = element.scrollHeight;
+  element.style.scrollBehavior = previousBehavior;
 }
 
 function ChatPage() {
@@ -306,7 +308,7 @@ function ChatPage() {
   const savedFingerprintRef = useRef("");
   const extractedFingerprintRef = useRef("");
   const scrollRef = useRef<HTMLDivElement>(null);
-  const skipSmoothScrollRef = useRef(false);
+  const shouldFollowScrollRef = useRef(true);
   const isComposingRef = useRef(false);
   const [sessionToDelete, setSessionToDelete] = useState<ChatIndexItem | null>(null);
   const [conversationIdCopied, setConversationIdCopied] = useState(false);
@@ -396,10 +398,11 @@ function ChatPage() {
       ),
     [getPromptInput, selectedMcpIds, selectedModel, selectedSkillIds, sessionId],
   );
-  const { addToolApprovalResponse, messages, setMessages, sendMessage, stop, status, error } =
+  const { addToolApprovalResponse, error, messages, sendMessage, setMessages, status, stop } =
     useChat({
       id: sessionId,
       transport,
+      throttle: CHAT_STREAM_UPDATE_THROTTLE_MS,
       sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
       onError: (chatError) => {
         console.error("Chat request failed", chatError);
@@ -686,7 +689,7 @@ function ChatPage() {
     return () => window.clearInterval(intervalId);
   }, [isGenerating]);
 
-  const generationPhase = status === "submitted" ? "正在等待模型响应" : "正在生成回答";
+  const generationPhase = status === "submitted" ? "等待中" : "生成中";
   const generationElapsedLabel = formatGenerationElapsed(generationElapsedSeconds);
   const generationDetail = generationElapsedSeconds >= 10 ? "响应较慢，仍在等待中" : "";
   const lastMessage = messages[messages.length - 1];
@@ -698,8 +701,7 @@ function ChatPage() {
     return undefined;
   }, [messages]);
   const hasAssistantMessage =
-    lastMessage?.role === "assistant" &&
-    (messageText(lastMessage).trim().length > 0 || messageHasToolParts(lastMessage));
+    lastMessage?.role === "assistant" && getChatMessageBlocks(lastMessage).length > 0;
   useEffect(() => {
     if (models.length > 0 && !models.some((model) => model.id === selectedModelId)) {
       setSelectedModelId(models.find((model) => model.isDefault)?.id ?? models[0].id);
@@ -827,15 +829,12 @@ function ChatPage() {
         });
       }
     }
-    skipSmoothScrollRef.current = true;
+    shouldFollowScrollRef.current = true;
     setMessages(mergeLiveDraft(session.messages, liveDraftsRef.current.get(session.id)));
     requestAnimationFrame(() => {
-      if (activeSessionRef.current !== session.id) {
-        skipSmoothScrollRef.current = false;
-        return;
-      }
+      if (activeSessionRef.current !== session.id) return;
       const scrollElement = scrollRef.current;
-      if (scrollElement) scrollChatToBottom(scrollElement, "auto");
+      if (scrollElement) scrollChatToBottom(scrollElement);
     });
     if (session.modelId) setSelectedModelId(session.modelId);
     const sessionSkillIds = session.skillIds ?? savedChatSkillIds;
@@ -937,23 +936,41 @@ function ChatPage() {
     })();
   }, [messages, queryClient, selectedCwd, selectedModel, sessionId, status, setMessages]);
 
-  // Scroll when a message arrives or the local response indicator changes.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: these values intentionally trigger the scroll effect.
   useEffect(() => {
     const scrollElement = scrollRef.current;
     if (!scrollElement) return;
-    if (skipSmoothScrollRef.current) {
-      skipSmoothScrollRef.current = false;
-      scrollChatToBottom(scrollElement, "auto");
-      return;
-    }
-    scrollChatToBottom(scrollElement, "smooth");
-  }, [messages.length, isGenerating]);
+
+    const updateFollowState = () => {
+      const distanceFromBottom =
+        scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight;
+      shouldFollowScrollRef.current = distanceFromBottom <= 72;
+    };
+    let scrollFrame: number | null = null;
+    const followContentGrowth = () => {
+      if (!shouldFollowScrollRef.current || scrollFrame !== null) return;
+      scrollFrame = requestAnimationFrame(() => {
+        scrollFrame = null;
+        if (shouldFollowScrollRef.current) scrollChatToBottom(scrollElement);
+      });
+    };
+    const resizeObserver = new ResizeObserver(followContentGrowth);
+    const content = scrollElement.firstElementChild;
+    if (content) resizeObserver.observe(content);
+    scrollElement.addEventListener("scroll", updateFollowState, { passive: true });
+    followContentGrowth();
+
+    return () => {
+      if (scrollFrame !== null) cancelAnimationFrame(scrollFrame);
+      resizeObserver.disconnect();
+      scrollElement.removeEventListener("scroll", updateFollowState);
+    };
+  }, []);
 
   function submitMessage() {
     const text = input.trim();
     if (!text || isGenerating) return;
     setInput("");
+    shouldFollowScrollRef.current = true;
     liveDraftsRef.current.delete(sessionId);
     attachedStreamSessionRef.current = sessionId;
     void sendMessage({ text });
@@ -966,13 +983,16 @@ function ChatPage() {
     });
   }
 
-  function respondToApproval(id: string, approved: boolean) {
-    void addToolApprovalResponse({
-      id,
-      approved,
-      reason: approved ? undefined : "用户拒绝了此次操作",
-    });
-  }
+  const respondToApproval = useCallback(
+    (id: string, approved: boolean) => {
+      void addToolApprovalResponse({
+        id,
+        approved,
+        reason: approved ? undefined : "用户拒绝了此次操作",
+      });
+    },
+    [addToolApprovalResponse],
+  );
 
   function openSession(item: ChatIndexItem) {
     if (item.id === sessionId) return;
@@ -1114,7 +1134,7 @@ function ChatPage() {
           </Button>
           <Button
             aria-label="查看上下文用量"
-            className="chat-icon-button"
+            className="chat-header-action-secondary chat-icon-button"
             onClick={() => setContextOpen(true)}
             size="icon"
             title="查看当前上下文用量"
@@ -1125,7 +1145,7 @@ function ChatPage() {
           </Button>
           <Button
             aria-label="Tool 记录"
-            className="chat-icon-button"
+            className="chat-header-action-secondary chat-icon-button"
             size="icon"
             title="查看当前对话的 Tool 记录"
             variant="ghost"
@@ -1136,7 +1156,7 @@ function ChatPage() {
           </Button>
           <Button
             aria-label="长期记忆"
-            className="chat-icon-button"
+            className="chat-header-action-secondary chat-icon-button"
             size="icon"
             variant="ghost"
             type="button"
@@ -1148,7 +1168,7 @@ function ChatPage() {
             <DropdownMenuTrigger asChild>
               <Button
                 aria-label="提交或推送 Git 改动"
-                className="chat-icon-button"
+                className="chat-header-action-secondary chat-icon-button"
                 disabled={
                   !workspaceKey ||
                   !(
@@ -1290,6 +1310,15 @@ function ChatPage() {
               key={message.id}
               message={message}
               onApprovalResponse={respondToApproval}
+              generationStatus={
+                isGenerating && message.role === "assistant" && message.id === lastMessage?.id
+                  ? {
+                      detail: generationDetail,
+                      elapsedLabel: generationElapsedLabel,
+                      phase: generationPhase,
+                    }
+                  : undefined
+              }
               isStreaming={status === "streaming" && message.id === lastMessage?.id}
               showTokenUsage={chatDisplay.showTokenUsage}
               cwd={selectedCwd}
@@ -1338,6 +1367,14 @@ function ChatPage() {
                 <Bot className="size-4" />
               </div>
               <div className="chat-message-body">
+                <div className="chat-message-meta">
+                  <strong>ChatDesk</strong>
+                  <ChatGenerationStatus
+                    detail={generationDetail}
+                    elapsedLabel={generationElapsedLabel}
+                    phase={generationPhase}
+                  />
+                </div>
                 <div className="chat-thinking">
                   <span />
                   <span />
@@ -1346,20 +1383,6 @@ function ChatPage() {
               </div>
             </div>
           )}
-          {isGenerating ? (
-            <div
-              aria-live="polite"
-              className="chat-generation-status chat-generation-status-in-message"
-              role="status"
-            >
-              <span aria-hidden="true" className="chat-generation-status-dot" />
-              <span className="chat-generation-status-label">{generationPhase}</span>
-              <span className="chat-generation-status-elapsed">
-                已等待 {generationElapsedLabel}
-              </span>
-              <span className="chat-generation-status-detail">{generationDetail}</span>
-            </div>
-          ) : null}
         </div>
       </div>
 
@@ -1751,38 +1774,147 @@ function toChatToolCall(part: ChatToolPart): ChatToolCallCardProps {
   };
 }
 
-function getChatMessageBlocks(message: UIMessage): ChatMessageBlock[] {
-  const blocks: ChatMessageBlock[] = [];
-  let toolParts: ChatToolPart[] = [];
-
-  function flushToolParts() {
-    if (toolParts.length === 0) return;
-    blocks.push({ kind: "tools", key: `tools-${blocks.length}`, parts: toolParts });
-    toolParts = [];
+function sourceLabel(part: ChatSourcePart) {
+  if (part.type === "source-document") return part.title;
+  if (part.title?.trim()) return part.title;
+  try {
+    return new URL(part.url).hostname;
+  } catch {
+    return part.url;
   }
-
-  message.parts.forEach((part, index) => {
-    if (isToolUIPart(part)) {
-      toolParts.push(part);
-      return;
-    }
-    if (part.type === "text" && part.text.trim()) {
-      flushToolParts();
-      const previous = blocks[blocks.length - 1];
-      if (previous?.kind === "text") {
-        previous.text += part.text;
-      } else {
-        blocks.push({ kind: "text", key: `text-${index}`, text: part.text });
-      }
-    }
-  });
-  flushToolParts();
-  return blocks;
 }
 
-function MessageBubble({
+function handleExternalResource(event: React.MouseEvent<HTMLAnchorElement>, url: string) {
+  if (!/^https?:\/\//i.test(url)) return;
+  event.preventDefault();
+  void openExternal(url);
+}
+
+function ChatMessageReasoning({ isStreaming, text }: { isStreaming: boolean; text: string }) {
+  const [open, setOpen] = useState(isStreaming);
+  useEffect(() => {
+    if (isStreaming) setOpen(true);
+  }, [isStreaming]);
+
+  return (
+    <div className={`chat-message-reasoning ${open ? "is-open" : ""}`}>
+      <button
+        aria-expanded={open}
+        className="chat-message-reasoning-toggle"
+        onClick={() => setOpen((value) => !value)}
+        type="button"
+      >
+        <Brain aria-hidden="true" className="size-3.5" />
+        推理摘要
+        <ChevronDown aria-hidden="true" className="chat-message-reasoning-chevron size-3.5" />
+      </button>
+      {open ? (
+        <div className="chat-message-reasoning-text">
+          <Streamdown isAnimating={isStreaming} plugins={STREAMDOWN_PLUGINS}>
+            {text}
+          </Streamdown>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ChatMessageSources({ parts }: { parts: ChatSourcePart[] }) {
+  return (
+    <div className="chat-message-sources">
+      <p>来源</p>
+      <ul>
+        {parts.map((part) => (
+          <li key={part.sourceId}>
+            {part.type === "source-url" ? (
+              <a
+                className="chat-message-source is-link"
+                href={part.url}
+                onClick={(event) => handleExternalResource(event, part.url)}
+                rel="noreferrer"
+                target="_blank"
+                title={part.url}
+              >
+                <span className="chat-message-source-label">{sourceLabel(part)}</span>
+                <ExternalLink aria-hidden="true" className="size-3" />
+              </a>
+            ) : (
+              <span className="chat-message-source" title={part.filename}>
+                <span className="chat-message-source-label">{sourceLabel(part)}</span>
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ChatMessageFiles({ parts }: { parts: ChatFilePart[] }) {
+  return (
+    <div className="chat-message-files">
+      {parts.map((part, index) => {
+        const label = "filename" in part && part.filename ? part.filename : `文件 ${index + 1}`;
+        const key = `${part.type}-${part.url}-${index}`;
+        if (part.mediaType.startsWith("image/")) {
+          return (
+            <a
+              className="chat-message-image"
+              href={part.url}
+              key={key}
+              onClick={(event) => handleExternalResource(event, part.url)}
+              rel="noreferrer"
+              target="_blank"
+            >
+              <img alt={label} loading="lazy" src={part.url} />
+            </a>
+          );
+        }
+        return (
+          <a
+            className="chat-message-file"
+            href={part.url}
+            key={key}
+            onClick={(event) => handleExternalResource(event, part.url)}
+            rel="noreferrer"
+            target="_blank"
+          >
+            <FileText aria-hidden="true" className="size-4" />
+            <span>{label}</span>
+            <ExternalLink aria-hidden="true" className="size-3" />
+          </a>
+        );
+      })}
+    </div>
+  );
+}
+
+type ChatGenerationStatusProps = {
+  detail: string;
+  elapsedLabel: string;
+  phase: string;
+};
+
+function ChatGenerationStatus({ detail, elapsedLabel, phase }: ChatGenerationStatusProps) {
+  return (
+    <span
+      aria-live="polite"
+      className="chat-generation-status"
+      role="status"
+      title={detail || undefined}
+    >
+      <span aria-hidden="true" className="chat-generation-status-dot" />
+      <span className="chat-generation-status-label">{phase}</span>
+      <span className="chat-generation-status-elapsed">已等待 {elapsedLabel}</span>
+      {detail ? <span className="chat-generation-status-detail">{detail}</span> : null}
+    </span>
+  );
+}
+
+const MessageBubble = memo(function MessageBubble({
   message,
   isStreaming,
+  generationStatus,
   showTokenUsage,
   onApprovalResponse,
   cwd,
@@ -1790,6 +1922,7 @@ function MessageBubble({
 }: {
   message: UIMessage;
   isStreaming: boolean;
+  generationStatus?: ChatGenerationStatusProps;
   showTokenUsage: boolean;
   onApprovalResponse: (id: string, approved: boolean) => void;
   cwd: string;
@@ -1802,7 +1935,7 @@ function MessageBubble({
   const toolParts = message.parts.filter(isToolUIPart);
   const messageBlocks = getChatMessageBlocks(message);
   const pendingApprovalParts = toolParts.filter((part) => part.state === "approval-requested");
-  if (!isUser && !text.trim() && toolParts.length === 0) return null;
+  if (!isUser && messageBlocks.length === 0) return null;
   const usage = showTokenUsage && !isUser ? getMessageUsage(message) : undefined;
   const usageLabel = usage ? formatTokenUsage(usage) : null;
   const toolLimitReached = Boolean(
@@ -1812,6 +1945,7 @@ function MessageBubble({
     isUser &&
     (text.length > CHAT_MESSAGE_COLLAPSE_CHAR_LIMIT ||
       text.split("\n").length > CHAT_MESSAGE_COLLAPSE_LINE_LIMIT);
+  const showMessageActions = !generationStatus && (!isUser || Boolean(text.trim()));
 
   async function copyMessage() {
     if (!text.trim() || !navigator.clipboard) return;
@@ -1832,7 +1966,13 @@ function MessageBubble({
       <div className="chat-message-body">
         <div className="chat-message-meta">
           <strong>{isUser ? "你" : "ChatDesk"}</strong>
-          <span>{isUser ? "刚刚" : isStreaming ? "生成中" : "已完成"}</span>
+          {!isUser ? (
+            generationStatus ? (
+              <ChatGenerationStatus {...generationStatus} />
+            ) : (
+              <span>已完成</span>
+            )
+          ) : null}
         </div>
         <div className="chat-message-parts">
           {messageBlocks.map((block) => {
@@ -1847,6 +1987,17 @@ function MessageBubble({
                 </div>
               );
             }
+            if (block.kind === "reasoning") {
+              return (
+                <ChatMessageReasoning isStreaming={isStreaming} key={block.key} text={block.text} />
+              );
+            }
+            if (block.kind === "sources") {
+              return <ChatMessageSources key={block.key} parts={block.parts} />;
+            }
+            if (block.kind === "files") {
+              return <ChatMessageFiles key={block.key} parts={block.parts} />;
+            }
             const collapseBlock = isUser && shouldCollapse;
             return (
               <div
@@ -1854,7 +2005,7 @@ function MessageBubble({
                 key={block.key}
               >
                 <div className="chat-message-text">
-                  <Streamdown isAnimating={!isUser && isStreaming} plugins={{ code }}>
+                  <Streamdown isAnimating={!isUser && isStreaming} plugins={STREAMDOWN_PLUGINS}>
                     {block.text}
                   </Streamdown>
                 </div>
@@ -1919,7 +2070,7 @@ function MessageBubble({
             已达到执行轮数上限（30 轮），如需继续请发送一条新消息。
           </p>
         ) : null}
-        {(!isUser || text.trim()) && (
+        {showMessageActions ? (
           <div className="chat-message-actions">
             <Button
               aria-label={copied ? "已复制" : isUser ? "复制消息" : "复制回复"}
@@ -1931,20 +2082,15 @@ function MessageBubble({
             >
               {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
             </Button>
-            {!isUser && (
-              <>
-                <Button aria-label="重新生成" size="icon" type="button" variant="ghost">
-                  <RefreshCw className="size-3.5" />
-                </Button>
-                {usageLabel && <span className="chat-message-usage">{usageLabel}</span>}
-              </>
-            )}
+            {!isUser && usageLabel ? (
+              <span className="chat-message-usage">{usageLabel}</span>
+            ) : null}
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
-}
+});
 
 function messageText(message: UIMessage) {
   return message.parts
