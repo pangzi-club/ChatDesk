@@ -34,6 +34,7 @@ import {
   type WorkspaceCommit,
   type WorkspaceGitInfo,
   type WorkspaceProject,
+  workspaceGitQueryKey,
 } from "@/lib/workspaces";
 
 function WorkspacesPage() {
@@ -216,7 +217,7 @@ function WorkspaceDetailPage() {
   });
   const project = projectsQuery.data?.find((item) => item.id === projectId);
   const gitQuery = useQuery({
-    queryKey: ["workspace-git", project?.id],
+    queryKey: workspaceGitQueryKey(project?.id ?? ""),
     queryFn: () => loadWorkspaceGitInfo(project?.id ?? ""),
     enabled: Boolean(project),
     refetchInterval: 15_000,

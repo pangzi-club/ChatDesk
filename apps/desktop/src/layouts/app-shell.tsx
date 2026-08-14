@@ -132,6 +132,7 @@ import {
   removeWorkspaceProject,
   selectWorkspaceDirectory,
   type WorkspaceProject,
+  workspaceGitQueryKey,
 } from "@/lib/workspaces";
 
 const navItems = [
@@ -1482,7 +1483,7 @@ function ChatWorkspaceWindow({
   const [commitOpen, setCommitOpen] = useState(false);
   const queryClient = useQueryClient();
   const gitQuery = useQuery({
-    queryKey: ["workspace-git", activeTabWorkspaceId],
+    queryKey: workspaceGitQueryKey(activeTabWorkspaceId ?? ""),
     queryFn: () => loadServerWorkspaceGit(activeTabWorkspaceId ?? ""),
     enabled: Boolean(activeTabWorkspaceId),
     refetchInterval: 15_000,
@@ -1521,7 +1522,7 @@ function ChatWorkspaceWindow({
     setGitRefreshToken((value) => value + 1);
     if (!workspaceIdToRefresh) return;
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["workspace-git", workspaceIdToRefresh] }),
+      queryClient.invalidateQueries({ queryKey: workspaceGitQueryKey(workspaceIdToRefresh) }),
       queryClient.invalidateQueries({ queryKey: ["workspace-files", workspaceIdToRefresh] }),
     ]);
   }

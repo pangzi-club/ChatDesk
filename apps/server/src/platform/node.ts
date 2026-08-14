@@ -5,7 +5,14 @@ import path from "node:path";
 import { promisify } from "node:util";
 import type { SandboxMode } from "../protocol.ts";
 import { resolveCommandCwd, runSandboxedShell } from "../sandbox-exec.ts";
-import { collectGitSummary, commitGit, pushGit, readGitDiff, restoreGit } from "./git.ts";
+import {
+  collectGitSummary,
+  commitGit,
+  pushGit,
+  readGitDiff,
+  readGitStatus,
+  restoreGit,
+} from "./git.ts";
 import type {
   PlatformAdapter,
   PlatformCapabilities,
@@ -73,12 +80,7 @@ function capabilities(): PlatformCapabilities {
 
 async function inspectGit(root: string): Promise<WorkspaceGitInfo> {
   try {
-    const status = await execFileAsync("git", ["status", "--short", "--branch"], {
-      cwd: root,
-      timeout: 5_000,
-      maxBuffer: 2 * 1024 * 1024,
-    });
-    const parsed = parseGitStatus(status.stdout);
+    const parsed = await readGitStatus(root);
     const log = await execFileAsync(
       "git",
       ["log", "-10", "--date=iso-strict", "--format=%H%x1f%h%x1f%an%x1f%ad%x1f%s"],
@@ -87,7 +89,17 @@ async function inspectGit(root: string): Promise<WorkspaceGitInfo> {
     return {
       pathExists: true,
       isRepository: true,
-      status: parsed,
+      status: {
+        isRepository: parsed.isRepository,
+        branch: parsed.branch,
+        ahead: parsed.ahead,
+        behind: parsed.behind,
+        staged: parsed.staged,
+        modified: parsed.modified,
+        untracked: parsed.untracked,
+        conflicted: parsed.conflicted,
+        clean: parsed.clean,
+      },
       commits: parseGitCommits(log.stdout),
       error: null,
       summary: await collectGitSummary(root, parsed),
@@ -113,57 +125,6 @@ async function inspectGit(root: string): Promise<WorkspaceGitInfo> {
       summary: null,
     };
   }
-}
-
-function parseGitStatus(output: string) {
-  let branch: string | null = null;
-  let ahead = 0;
-  let behind = 0;
-  let staged = 0;
-  let modified = 0;
-  let untracked = 0;
-  let conflicted = 0;
-  for (const [index, line] of output.split(/\r?\n/).entries()) {
-    if (index === 0 && line.startsWith("## ")) {
-      const tracking = line.slice(3);
-      branch = tracking.split("...")[0].split(" [ahead")[0] || null;
-      const details = tracking.match(/\[(.*?)\]/)?.[1] ?? "";
-      for (const item of details.split(", ")) {
-        const [kind, count] = item.split(/\s+/);
-        if (kind === "ahead") ahead = Number(count) || 0;
-        if (kind === "behind") behind = Number(count) || 0;
-      }
-      continue;
-    }
-    if (line.length < 2) continue;
-    const indexStatus = line[0];
-    const worktreeStatus = line[1];
-    if (indexStatus === "?" && worktreeStatus === "?") {
-      untracked += 1;
-      continue;
-    }
-    if (
-      indexStatus === "U" ||
-      worktreeStatus === "U" ||
-      (indexStatus === "A" && worktreeStatus === "A")
-    ) {
-      conflicted += 1;
-      continue;
-    }
-    if (indexStatus !== " ") staged += 1;
-    if (worktreeStatus !== " ") modified += 1;
-  }
-  return {
-    isRepository: true,
-    branch,
-    ahead,
-    behind,
-    staged,
-    modified,
-    untracked,
-    conflicted,
-    clean: staged === 0 && modified === 0 && untracked === 0 && conflicted === 0,
-  };
 }
 
 function parseGitCommits(output: string) {

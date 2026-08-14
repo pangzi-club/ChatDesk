@@ -9,10 +9,25 @@ import type {
   WorkspaceGitSummary,
 } from "@chatdesk/shared";
 
-type GitStatus = {
+type GitStatusFile = {
+  status: WorkspaceGitFile["status"];
+  previousPath?: string;
+};
+
+type GitStatusValues = {
+  isRepository: true;
   branch: string | null;
   ahead: number;
   behind: number;
+  staged: number;
+  modified: number;
+  untracked: number;
+  conflicted: number;
+  clean: boolean;
+};
+
+export type GitStatusSnapshot = GitStatusValues & {
+  files: Map<string, GitStatusFile>;
 };
 
 const execFileAsync = promisify(execFile);
@@ -70,32 +85,33 @@ function statusForPath(status: string): WorkspaceGitFile["status"] {
   return "modified";
 }
 
-function parseStatusPaths(output: string) {
-  const result = new Map<string, WorkspaceGitFile["status"]>();
-  for (const line of output.split(/\r?\n/)) {
-    if (line.length < 3 || line.startsWith("## ")) continue;
-    const status = line.slice(0, 2);
-    const rawPath = line.slice(3);
-    const [pathValue] = rawPath.split(" -> ").reverse();
-    if (pathValue) result.set(pathValue, statusForPath(status));
+function parseBranchHeader(value: string) {
+  const tracking = value.slice(3);
+  const noCommits = tracking.match(/^No commits yet on (.+)$/);
+  const branch = noCommits?.[1] ?? tracking.split("...")[0].split(" [ahead")[0] ?? null;
+  let ahead = 0;
+  let behind = 0;
+  const details = tracking.match(/\[(.*?)\]/)?.[1] ?? "";
+  for (const item of details.split(", ")) {
+    const [kind, count] = item.split(/\s+/);
+    if (kind === "ahead") ahead = Number(count) || 0;
+    if (kind === "behind") behind = Number(count) || 0;
   }
-  return result;
+  return { branch, ahead, behind };
 }
 
 function parseNumstat(output: string) {
   return output
-    .split(/\r?\n/)
+    .split("\0")
     .filter(Boolean)
-    .flatMap((line) => {
-      const fields = line.split("\t");
+    .flatMap((record) => {
+      const fields = record.split("\t");
       if (fields.length < 3) return [];
       const additions = fields[0] === "-" ? null : Number(fields[0]);
       const deletions = fields[1] === "-" ? null : Number(fields[1]);
-      const pathValue = fields[2];
       return [
         {
-          path: fields[3] ?? pathValue,
-          previousPath: fields[3] ? pathValue : undefined,
+          path: fields[2],
           additions,
           deletions,
           binary: additions === null,
@@ -104,34 +120,89 @@ function parseNumstat(output: string) {
     });
 }
 
+export async function readGitStatus(root: string): Promise<GitStatusSnapshot> {
+  const result = await runGit(root, [
+    "status",
+    "--porcelain=v1",
+    "--branch",
+    "--untracked-files=all",
+    "-z",
+  ]);
+  const tokens = result.stdout.split("\0").filter(Boolean);
+  let branch: string | null = null;
+  let ahead = 0;
+  let behind = 0;
+  let staged = 0;
+  let modified = 0;
+  let untracked = 0;
+  let conflicted = 0;
+  const files = new Map<string, GitStatusFile>();
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token.startsWith("## ")) {
+      ({ branch, ahead, behind } = parseBranchHeader(token));
+      continue;
+    }
+    if (token.length < 4) continue;
+    const status = token.slice(0, 2);
+    const pathValue = token.slice(3);
+    const fileStatus = statusForPath(status);
+    let previousPath: string | undefined;
+    if (status.includes("R") || status.includes("C")) {
+      previousPath = tokens[index + 1];
+      index += 1;
+    }
+    files.set(pathValue, { status: fileStatus, previousPath });
+    if (status === "??") {
+      untracked += 1;
+      continue;
+    }
+    if (status[0] === "U" || status[1] === "U" || (status[0] === "A" && status[1] === "A")) {
+      conflicted += 1;
+      continue;
+    }
+    if (status[0] !== " ") staged += 1;
+    if (status[1] !== " ") modified += 1;
+  }
+
+  return {
+    isRepository: true,
+    branch,
+    ahead,
+    behind,
+    staged,
+    modified,
+    untracked,
+    conflicted,
+    clean: staged === 0 && modified === 0 && untracked === 0 && conflicted === 0,
+    files,
+  };
+}
+
 export async function collectGitSummary(
   root: string,
-  status: GitStatus,
+  status: GitStatusSnapshot,
 ): Promise<WorkspaceGitSummary> {
-  const statusOutput = await runGit(root, ["status", "--short", "--branch"]).catch(() => ({
-    stdout: "",
-  }));
-  const statuses = parseStatusPaths(statusOutput.stdout);
   const numstat = await runGit(root, [
     "diff",
     "--no-ext-diff",
-    "--find-renames",
+    "--no-renames",
     "--numstat",
+    "-z",
     "HEAD",
     "--",
   ]).catch(() => ({ stdout: "" }));
   const entries = new Map<string, WorkspaceGitFile>();
   for (const item of parseNumstat(numstat.stdout)) {
+    const statusEntry = status.files.get(item.path);
     entries.set(item.path, {
       ...item,
-      status: statuses.get(item.path) ?? (item.previousPath ? "renamed" : "modified"),
+      status: statusEntry?.status ?? "modified",
     });
   }
-  const untracked = await runGit(root, ["ls-files", "--others", "--exclude-standard", "-z"]).catch(
-    () => ({ stdout: "" }),
-  );
-  for (const relativePath of untracked.stdout.split("\0").filter(Boolean)) {
-    if (entries.has(relativePath)) continue;
+  for (const [relativePath, statusEntry] of status.files) {
+    if (statusEntry.status !== "untracked" || entries.has(relativePath)) continue;
     try {
       const content = await readFile(path.join(root, relativePath), "utf8");
       entries.set(relativePath, {
@@ -150,15 +221,30 @@ export async function collectGitSummary(
       });
     }
   }
-  for (const [filePath, fileStatus] of statuses) {
-    if (!entries.has(filePath) && fileStatus !== "untracked") {
+  for (const [filePath, statusEntry] of status.files) {
+    if (!entries.has(filePath) && statusEntry.status !== "untracked") {
       entries.set(filePath, {
         path: filePath,
-        status: fileStatus,
+        status: statusEntry.status,
         additions: 0,
         deletions: 0,
+        previousPath: statusEntry.previousPath,
       });
     }
+  }
+  for (const [filePath, statusEntry] of status.files) {
+    if (!statusEntry.previousPath) continue;
+    const current = entries.get(filePath);
+    const previous = entries.get(statusEntry.previousPath);
+    entries.set(filePath, {
+      path: filePath,
+      status: "renamed",
+      additions: current?.additions ?? 0,
+      deletions: previous?.deletions ?? current?.deletions ?? 0,
+      previousPath: statusEntry.previousPath,
+      binary: current?.binary || previous?.binary,
+    });
+    entries.delete(statusEntry.previousPath);
   }
   const allFiles = [...entries.values()];
   const files = allFiles.slice(0, MAX_GIT_FILES);
@@ -177,24 +263,30 @@ export async function collectGitSummary(
 
 export async function readGitDiff(root: string, relativePath: string): Promise<WorkspaceGitDiff> {
   const safePath = safeRelativePath(root, relativePath);
-  const statusOutput = await runGit(root, ["status", "--short", "--branch"]);
-  const statuses = parseStatusPaths(statusOutput.stdout);
+  const status = await readGitStatus(root);
+  const statusEntry = status.files.get(safePath);
   const numstat = await runGit(root, [
     "diff",
     "--no-ext-diff",
-    "--find-renames",
+    "--no-renames",
     "--numstat",
+    "-z",
     "HEAD",
     "--",
     safePath,
+    ...(statusEntry?.previousPath ? [statusEntry.previousPath] : []),
   ]).catch(() => ({ stdout: "" }));
-  const file = parseNumstat(numstat.stdout)[0];
-  const status = statuses.get(safePath) ?? (file?.previousPath ? "renamed" : "modified");
-  const additions = file?.additions ?? (status === "untracked" ? 0 : null);
-  const deletions = file?.deletions ?? 0;
+  const numstats = parseNumstat(numstat.stdout);
+  const file = numstats.find((item) => item.path === safePath);
+  const previousFile = statusEntry?.previousPath
+    ? numstats.find((item) => item.path === statusEntry.previousPath)
+    : undefined;
+  const fileStatus = statusEntry?.status ?? "modified";
+  const additions = file?.additions ?? (fileStatus === "untracked" ? 0 : null);
+  const deletions = file?.deletions ?? previousFile?.deletions ?? 0;
   let content = "";
   let binary = file?.binary;
-  if (status === "untracked") {
+  if (fileStatus === "untracked") {
     try {
       const metadata = await stat(path.join(root, safePath));
       if (metadata.size <= MAX_GIT_DIFF_BYTES) {
@@ -225,12 +317,12 @@ export async function readGitDiff(root: string, relativePath: string): Promise<W
   }
   const originalContent = binary
     ? undefined
-    : await readGitSnapshot(root, file?.previousPath ?? safePath);
+    : await readGitSnapshot(root, statusEntry?.previousPath ?? safePath);
   const modifiedContent = binary ? undefined : await readWorkingSnapshot(root, safePath);
   if (modifiedContent === null) truncated = true;
   return {
     path: safePath,
-    previousPath: file?.previousPath,
+    previousPath: statusEntry?.previousPath,
     content,
     originalContent,
     modifiedContent: modifiedContent ?? undefined,
@@ -244,30 +336,21 @@ export async function readGitDiff(root: string, relativePath: string): Promise<W
 export async function restoreGit(root: string, relativePath?: string): Promise<void> {
   if (relativePath?.trim()) {
     const safePath = safeRelativePath(root, relativePath);
-    const statusOutput = await runGit(root, ["status", "--short", "--", safePath]);
-    const status =
-      statusOutput.stdout
-        .split(/\r?\n/)
-        .find((line) => line && !line.startsWith("## "))
-        ?.slice(0, 2) ?? "";
-    if (status === "??") {
+    const status = await readGitStatus(root);
+    const statusEntry = status.files.get(safePath);
+    if (!statusEntry) return;
+    if (statusEntry.status === "untracked") {
       await runGit(root, ["clean", "-fd", "--", safePath]);
       return;
     }
-    if (status.startsWith("A")) {
+    if (statusEntry.status === "added") {
       await runGit(root, ["reset", "HEAD", "--", safePath]);
       await runGit(root, ["clean", "-fd", "--", safePath]);
       return;
     }
     const paths = [safePath];
-    if (status.includes("R")) {
-      const renameOutput = await runGit(root, ["status", "--short", "--", safePath]);
-      const rawPath = renameOutput.stdout
-        .split(/\r?\n/)
-        .find((line) => line && !line.startsWith("## "))
-        ?.slice(3);
-      const previousPath = rawPath?.split(" -> ")[0];
-      if (previousPath) paths.unshift(safeRelativePath(root, previousPath));
+    if (statusEntry.previousPath) {
+      paths.unshift(safeRelativePath(root, statusEntry.previousPath));
     }
     await runGit(root, ["restore", "--source=HEAD", "--staged", "--worktree", "--", ...paths]);
     return;

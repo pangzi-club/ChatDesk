@@ -144,7 +144,7 @@ import {
   type SkillDefinition,
   saveChatSkillSelection,
 } from "@/lib/skills";
-import { loadWorkspaceProjects } from "@/lib/workspaces";
+import { loadWorkspaceProjects, workspaceGitQueryKey } from "@/lib/workspaces";
 
 const EMPTY_STRING_ARRAY: string[] = [];
 const DEFAULT_WORKSPACE_LABEL = "Default Workspace";
@@ -597,7 +597,7 @@ function ChatPage() {
 
   const isGenerating = status === "submitted" || status === "streaming";
   const workspaceGitQuery = useQuery({
-    queryKey: ["chat-workspace-git", workspaceKey],
+    queryKey: workspaceGitQueryKey(workspaceKey),
     queryFn: () => loadServerWorkspaceGit(workspaceKey),
     enabled: Boolean(workspaceKey),
     refetchInterval: isGenerating ? 15_000 : false,

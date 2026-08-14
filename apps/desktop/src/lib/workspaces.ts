@@ -10,6 +10,10 @@ import { normalizeWorkspacePath } from "./workspace-path";
 
 export const WORKSPACE_PROJECTS_STORE_KEY = "workspace-projects";
 
+export function workspaceGitQueryKey(id: string) {
+  return ["workspace-git", id] as const;
+}
+
 export type WorkspaceProject = {
   id: string;
   path: string;

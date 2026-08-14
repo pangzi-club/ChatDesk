@@ -70,6 +70,34 @@ test("NodePlatformAdapter reports Git line changes and file diff", async () => {
   assert.equal(untrackedDiff.modifiedContent, "new line\n");
 });
 
+test("NodePlatformAdapter preserves Git status for renamed paths with spaces", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-platform-git-rename-"));
+  await execFileAsync("git", ["init", "-q", "-b", "main"], { cwd: root });
+  await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+  await execFileAsync("git", ["config", "user.name", "Test"], { cwd: root });
+  await writeFile(path.join(root, "old name.txt"), "before\n", "utf8");
+  await execFileAsync("git", ["add", "."], { cwd: root });
+  await execFileAsync("git", ["commit", "-q", "-m", "initial"], { cwd: root });
+  await execFileAsync("git", ["mv", "old name.txt", "new -> name.txt"], { cwd: root });
+  await writeFile(path.join(root, "new -> name.txt"), "before\nafter\n", "utf8");
+
+  const adapter = new NodePlatformAdapter();
+  const info = await adapter.inspectGit(root);
+  assert.deepEqual(
+    info.summary?.files.map((file) => [file.path, file.status, file.previousPath]),
+    [["new -> name.txt", "renamed", "old name.txt"]],
+  );
+  const diff = await adapter.readGitDiff(root, "new -> name.txt");
+  assert.equal(diff.previousPath, "old name.txt");
+  assert.equal(diff.originalContent, "before\n");
+  assert.equal(diff.modifiedContent, "before\nafter\n");
+
+  await adapter.restoreGit(root, "new -> name.txt");
+  assert.equal((await adapter.inspectGit(root)).summary?.files.length, 0);
+  await assert.rejects(() => readFile(path.join(root, "new -> name.txt")));
+  assert.equal(await readFile(path.join(root, "old name.txt"), "utf8"), "before\n");
+});
+
 test("NodePlatformAdapter restores individual and all Git changes", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-platform-git-restore-"));
   await execFileAsync("git", ["init", "-q", "-b", "main"], { cwd: root });
