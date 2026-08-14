@@ -75,9 +75,9 @@ describe("sandbox execution errors", () => {
   });
 
   it("allows only explicitly requested extra write targets", () => {
-    const profile = buildSeatbeltProfile("/tmp/workspace", [], [], ["/tmp/approved.txt"]);
-    expect(profile).toContain('(allow file-write* (literal "/tmp/approved.txt"))');
-    expect(profile).not.toContain('(allow file-write* (subpath "/tmp"))');
+    const profile = buildSeatbeltProfile("/tmp/workspace", [], [], ["/opt/chatdesk-approved.txt"]);
+    expect(profile).toContain('(allow file-write* (literal "/opt/chatdesk-approved.txt"))');
+    expect(profile).not.toContain('(allow file-write* (subpath "/opt"))');
   });
 
   it("runs structured read operations in the helper process", async () => {
