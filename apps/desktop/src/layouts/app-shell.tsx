@@ -1971,6 +1971,7 @@ function ChatWorkspaceWindow({
     >
       <div
         className="chat-workspace-window-tabs"
+        data-tauri-drag-region={split ? "deep" : undefined}
         onPointerDown={split ? undefined : (event) => beginInteraction(event, "move")}
         role="toolbar"
         aria-label="Chat 独立窗口"
