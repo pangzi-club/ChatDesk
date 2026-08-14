@@ -1480,8 +1480,9 @@ function ChatWorkspaceWindow({
   const [gitRefreshToken, setGitRefreshToken] = useState(0);
   const [restoreTarget, setRestoreTarget] = useState<{ path?: string; label: string } | null>(null);
   const [commitOpen, setCommitOpen] = useState(false);
+  const queryClient = useQueryClient();
   const gitQuery = useQuery({
-    queryKey: ["workspace-git", activeTabWorkspaceId, gitRefreshToken],
+    queryKey: ["workspace-git", activeTabWorkspaceId],
     queryFn: () => loadServerWorkspaceGit(activeTabWorkspaceId ?? ""),
     enabled: Boolean(activeTabWorkspaceId),
     refetchInterval: 15_000,
@@ -1514,13 +1515,24 @@ function ChatWorkspaceWindow({
     });
     return map;
   }, [directoryPaths, directoryQueries]);
+
+  async function refreshExplorer() {
+    const workspaceIdToRefresh = activeTabWorkspaceId;
+    setGitRefreshToken((value) => value + 1);
+    if (!workspaceIdToRefresh) return;
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["workspace-git", workspaceIdToRefresh] }),
+      queryClient.invalidateQueries({ queryKey: ["workspace-files", workspaceIdToRefresh] }),
+    ]);
+  }
+
   const restoreMutation = useMutation({
     mutationFn: (path?: string) =>
       restoreServerWorkspaceGit(activeTabWorkspaceId ?? workspaceId, path),
     onSuccess: () => {
       setRestoreTarget(null);
       setViewerError(null);
-      setGitRefreshToken((value) => value + 1);
+      void refreshExplorer();
     },
     onError: (error) => {
       setViewerError(error instanceof Error ? error.message : String(error));
@@ -2053,7 +2065,7 @@ function ChatWorkspaceWindow({
               <Button
                 aria-label="刷新 Explorer"
                 className="chat-workspace-window-add"
-                onClick={() => setGitRefreshToken((value) => value + 1)}
+                onClick={() => void refreshExplorer()}
                 size="icon"
                 title="刷新"
                 type="button"
@@ -2236,7 +2248,7 @@ function ChatWorkspaceWindow({
         deletions={gitSummary?.deletions ?? 0}
         filesChanged={gitSummary?.filesChanged ?? 0}
         onSuccess={() => {
-          setGitRefreshToken((value) => value + 1);
+          void refreshExplorer();
         }}
       />
     </div>
