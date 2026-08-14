@@ -166,7 +166,7 @@ Seatbelt 依赖 macOS 提供的系统能力。应用启动时应检测沙箱是�
   → 选择 tool（list / read / write）或触发 Shell
        ├─ 应用层：工作区路径校验
        ├─ 应用层：审批策略决定是否等待用户批准
-       └─ 系统层：Shell 走 sandbox-exec + Seatbelt profile
+       └─ 系统层：Shell 与受限结构化文件工具走 sandbox-exec + Seatbelt profile
   → 工具结果回到模型
   → 继续或结束
 ```
@@ -175,11 +175,11 @@ Seatbelt 依赖 macOS 提供的系统能力。应用启动时应检测沙箱是�
 
 | 场景 | 主要防线 |
 | --- | --- |
-| 结构化读写文件 | AI SDK 工具 + 路径归一化 + 写入审批 |
+| 结构化读写文件 | AI SDK 工具 + 路径归一化 + 写入审批 + Seatbelt helper |
 | 自由 Shell / 构建脚本 | Seatbelt（写路径与网络）+ Bash 越界审批 |
 | 用户体验 | 模式选择、待写入预览、工具调用卡片 |
 
-需要注意，Seatbelt 只约束**由 `sandbox-exec` 启动的子进程**。如果结构化文件写入由宿主进程直接完成，而不是通过沙箱中的 Shell 执行，就必须依靠应用层的路径校验和写入审批；如果用户明确批准了工作区外请求，重放时还要显式带上该批准，而不是仅仅改变 UI 状态。因此，工具边界、审批策略与进程沙箱并非替代关系，而是三道互补的防线。
+需要注意，Seatbelt 只约束**由 `sandbox-exec` 启动的子进程**。当前受限模式下，Shell 与 `list_dir`、`read_file`、`search_files`、`write_file`、`edit_file` 都通过受限 helper 或子进程执行；宿主进程仍负责路径归一化、参数校验和审批。明确切换到 Full access 时不使用 Seatbelt；明确批准工作区外的单次结构化写入时，helper profile 只额外放行该目标文件。工具边界、审批策略与进程沙箱仍是互补的防线。
 
 ---
 

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
+import { type Dirent, existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -80,7 +80,7 @@ export async function runSandboxedShell(
   };
 }
 
-export type SandboxReadRequest =
+export type SandboxFileRequest =
   | { operation: "list_dir"; workspace: string; path?: string; readablePaths?: string[] }
   | { operation: "read_file"; workspace: string; path: string; readablePaths?: string[] }
   | {
@@ -91,11 +91,32 @@ export type SandboxReadRequest =
       query?: string;
       maxResults?: number;
       readablePaths?: string[];
+    }
+  | {
+      operation: "write_file";
+      workspace: string;
+      path: string;
+      content: string;
+      allowOutside?: boolean;
+    }
+  | {
+      operation: "edit_file";
+      workspace: string;
+      path: string;
+      oldText: string;
+      newText: string;
+      allowOutside?: boolean;
     };
 
-export async function runSandboxedRead(
-  request: SandboxReadRequest,
-  options: { mode: SandboxMode; allowOutside?: boolean; timeoutMs?: number },
+export async function runSandboxedFile(
+  request: SandboxFileRequest,
+  options: {
+    mode: SandboxMode;
+    allowOutside?: boolean;
+    timeoutMs?: number;
+    readablePaths?: string[];
+    writablePaths?: string[];
+  },
 ) {
   const workspace = resolveDirectory(request.workspace);
   const timeout = options.timeoutMs ?? 120_000;
@@ -106,12 +127,20 @@ export async function runSandboxedRead(
   const nodeArgs = isPackaged
     ? []
     : ["--experimental-strip-types", ...(serverEntry ? [serverEntry] : [])];
+  const helperReadPaths = serverEntry ? collectHelperReadPaths(serverEntry) : [];
   const args =
     effectiveMode === "full"
       ? nodeArgs
       : [
           "-p",
-          buildSeatbeltProfile(workspace, request.readablePaths ?? []),
+          buildSeatbeltProfile(
+            workspace,
+            "readablePaths" in request
+              ? (request.readablePaths ?? [])
+              : (options.readablePaths ?? []),
+            helperReadPaths,
+            options.writablePaths ?? [],
+          ),
           process.execPath,
           ...nodeArgs,
         ];
@@ -131,7 +160,7 @@ export async function runSandboxedRead(
       cwd: workspace,
       env: {
         ...sandboxEnvironment(workspace),
-        CHATDESK_SANDBOX_READ: "1",
+        CHATDESK_SANDBOX_FILE: "1",
       },
       stdio: ["pipe", "pipe", "pipe"],
       detached: process.platform !== "win32",
@@ -161,7 +190,7 @@ export async function runSandboxedRead(
         result: response?.result,
         error:
           response?.error ||
-          (response?.result === undefined ? stderr || "只读 helper 执行失败" : undefined),
+          (response?.result === undefined ? stderr || "文件 helper 执行失败" : undefined),
         sandboxBlocked:
           response?.blocked === true ||
           (effectiveMode !== "full" && isSandboxBlockedOutput(`${stdout}\n${stderr}`)),
@@ -181,6 +210,92 @@ function resolveServerEntry() {
     path.resolve(process.cwd(), "src/server.ts"),
   ];
   return candidates.find((candidate) => existsSync(candidate));
+}
+
+function collectHelperReadPaths(serverEntry: string) {
+  const serverDirectory = path.resolve(path.dirname(serverEntry), "..");
+  const roots = [
+    serverDirectory,
+    path.resolve(serverDirectory, "node_modules"),
+    path.resolve(serverDirectory, "..", "..", "node_modules"),
+  ];
+  const paths = new Set<string>();
+  for (const root of roots) {
+    if (root.endsWith("node_modules")) collectNodeModuleReadPaths(root, paths, 0);
+    else addReadPath(root, paths);
+  }
+  return [...paths];
+}
+
+function collectNodeModuleReadPaths(root: string, paths: Set<string>, depth: number) {
+  if (depth > 2 || !existsSync(root)) return;
+  addReadPath(root, paths);
+  let entries: Dirent<string>[];
+  try {
+    entries = readdirSync(root, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (entry.name === ".bin") continue;
+    const entryPath = path.join(root, entry.name);
+    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+    addReadPath(entryPath, paths);
+    let resolved: string;
+    try {
+      resolved = realpathSync(entryPath);
+    } catch {
+      continue;
+    }
+    if (entry.name.startsWith("@")) {
+      collectScopedNodeModuleReadPaths(entryPath, resolved, paths);
+    } else {
+      addReadPath(entryPath, paths);
+      addPnpmStoreLinksRoot(resolved, paths);
+    }
+  }
+}
+
+function collectScopedNodeModuleReadPaths(
+  lexicalScope: string,
+  resolvedScope: string,
+  paths: Set<string>,
+) {
+  addReadPath(lexicalScope, paths);
+  let entries: Dirent<string>[];
+  try {
+    entries = readdirSync(resolvedScope, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (entry.name === ".bin") continue;
+    const packagePath = path.join(lexicalScope, entry.name);
+    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+    addReadPath(packagePath, paths);
+    try {
+      addPnpmStoreLinksRoot(realpathSync(packagePath), paths);
+    } catch {
+      // Ignore broken optional dependency links.
+    }
+  }
+}
+
+function addPnpmStoreLinksRoot(value: string, paths: Set<string>) {
+  const linksMarker = `${path.sep}links`;
+  const linksIndex = value.indexOf(linksMarker);
+  if (linksIndex >= 0) paths.add(value.slice(0, linksIndex + linksMarker.length));
+}
+
+function addReadPath(value: string, paths: Set<string>) {
+  if (!value.startsWith("/")) return;
+  paths.add(value);
+  try {
+    paths.add(realpathSync(value));
+    if (statSync(value).isFile()) paths.add(path.dirname(realpathSync(value)));
+  } catch {
+    // Keep the lexical path for a root that may be created later.
+  }
 }
 
 function resolveDirectory(value: string) {
@@ -278,6 +393,7 @@ export function buildSeatbeltProfile(
   workspace: string,
   readablePaths: string[] = [],
   additionalReadPaths: string[] = [],
+  additionalWritePaths: string[] = [],
 ) {
   const temp = realpathSync(os.tmpdir());
   const escapeValue = (value: string) => value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
@@ -312,6 +428,9 @@ export function buildSeatbeltProfile(
     ...configuredReadRoots,
     ...additionalReadPaths,
   ].filter((value, index, values) => values.indexOf(value) === index);
+  const writeTargets = additionalWritePaths
+    .map((value) => value.trim())
+    .filter((value, index, values) => value.startsWith("/") && values.indexOf(value) === index);
   return [
     "(version 1)",
     "(deny default)",
@@ -330,6 +449,7 @@ export function buildSeatbeltProfile(
     ...readRoots.map((value) => `(allow file-read* (subpath "${escapeValue(value)}"))`),
     `(allow file-write* (subpath "${escapeValue(workspace)}"))`,
     `(allow file-write* (subpath "${escapeValue(temp)}"))`,
+    ...writeTargets.map((value) => `(allow file-write* (literal "${escapeValue(value)}"))`),
     '(allow file-write* (literal "/dev/null"))',
     '(allow file-write* (literal "/dev/tty"))',
     "(deny network*)",

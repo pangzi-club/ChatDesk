@@ -8,7 +8,7 @@ import { z } from "zod";
 import type { SandboxMode } from "./protocol.ts";
 import {
   resolveCommandCwd,
-  runSandboxedRead,
+  runSandboxedFile,
   runSandboxedShell,
   SandboxBlockedError,
   SandboxPathError,
@@ -138,6 +138,10 @@ function resolveTarget(root: string, candidate: string, mode: SandboxMode, allow
   return withinRoot(root, trimmed);
 }
 
+function isWithinWorkspace(root: string, target: string) {
+  return target === root || target.startsWith(`${root}${path.sep}`);
+}
+
 function resolveReadableTarget(
   root: string,
   candidate: string,
@@ -206,7 +210,7 @@ async function listDirectory(
     readablePaths,
   );
   if (mode !== "full" && !allowOutside) {
-    const result = await runSandboxedRead(
+    const result = await runSandboxedFile(
       { operation: "list_dir", workspace: root, path: target, readablePaths },
       { mode },
     );
@@ -248,7 +252,7 @@ async function readTextFile(
   const root = rootPath(cwd);
   const target = resolveReadableTarget(root, relativePath, mode, allowOutside, readablePaths);
   if (mode !== "full" && !allowOutside) {
-    const result = await runSandboxedRead(
+    const result = await runSandboxedFile(
       { operation: "read_file", workspace: root, path: target, readablePaths },
       { mode },
     );
@@ -272,7 +276,7 @@ async function searchFiles(
   const root = rootPath(cwd);
   const start = resolveReadableTarget(root, options.path || ".", mode, allowOutside, readablePaths);
   if (mode !== "full" && !allowOutside) {
-    const result = await runSandboxedRead(
+    const result = await runSandboxedFile(
       { operation: "search_files", workspace: root, ...options, path: start, readablePaths },
       { mode },
     );
@@ -497,6 +501,26 @@ export function createWorkspaceTools(
         const write = async (allowOutside: boolean) => {
           const root = rootPath(cwd);
           const target = resolveTarget(root, relativePath, mode, allowOutside);
+          if (mode !== "full") {
+            const outsideWorkspace = !isWithinWorkspace(root, target);
+            const result = await runSandboxedFile(
+              {
+                operation: "write_file",
+                workspace: root,
+                path: target,
+                content,
+                allowOutside: outsideWorkspace,
+              },
+              {
+                mode,
+                readablePaths: outsideWorkspace ? [path.dirname(target)] : [],
+                writablePaths: outsideWorkspace ? [target] : [],
+              },
+            );
+            if (result.sandboxBlocked) throw new SandboxBlockedError(result.error);
+            if (!result.result) throw new Error(result.error);
+            return result.result as { path: string; bytes: number };
+          }
           await writeFile(target, content, "utf8");
           return { path: path.relative(root, target), bytes: Buffer.byteLength(content) };
         };
@@ -524,6 +548,27 @@ export function createWorkspaceTools(
         const edit = async (allowOutside: boolean) => {
           const root = rootPath(cwd);
           const target = resolveTarget(root, relativePath, mode, allowOutside);
+          if (mode !== "full") {
+            const outsideWorkspace = !isWithinWorkspace(root, target);
+            const result = await runSandboxedFile(
+              {
+                operation: "edit_file",
+                workspace: root,
+                path: target,
+                oldText,
+                newText,
+                allowOutside: outsideWorkspace,
+              },
+              {
+                mode,
+                readablePaths: outsideWorkspace ? [path.dirname(target)] : [],
+                writablePaths: outsideWorkspace ? [target] : [],
+              },
+            );
+            if (result.sandboxBlocked) throw new SandboxBlockedError(result.error);
+            if (!result.result) throw new Error(result.error);
+            return result.result as { path: string; changed: boolean };
+          }
           const content = await readFile(target, "utf8");
           const count = content.split(oldText).length - 1;
           if (count !== 1)

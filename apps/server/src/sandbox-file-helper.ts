@@ -1,20 +1,48 @@
 import { existsSync, realpathSync } from "node:fs";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const MAX_FILE_BYTES = 512 * 1024;
 const MAX_SEARCH_RESULTS = 500;
 const SKIPPED_DIRECTORIES = new Set([".git", "node_modules", "target", "dist"]);
 
-type Request = {
-  operation: "list_dir" | "read_file" | "search_files";
-  workspace: string;
-  path?: string;
-  pattern?: string;
-  query?: string;
-  maxResults?: number;
-  readablePaths?: string[];
-};
+type Request =
+  | {
+      operation: "list_dir";
+      workspace: string;
+      path?: string;
+      readablePaths?: string[];
+    }
+  | {
+      operation: "read_file";
+      workspace: string;
+      path: string;
+      readablePaths?: string[];
+    }
+  | {
+      operation: "search_files";
+      workspace: string;
+      path?: string;
+      pattern?: string;
+      query?: string;
+      maxResults?: number;
+      readablePaths?: string[];
+    }
+  | {
+      operation: "write_file";
+      workspace: string;
+      path: string;
+      content: string;
+      allowOutside?: boolean;
+    }
+  | {
+      operation: "edit_file";
+      workspace: string;
+      path: string;
+      oldText: string;
+      newText: string;
+      allowOutside?: boolean;
+    };
 
 function canonicalize(target: string) {
   const missing: string[] = [];
@@ -39,7 +67,15 @@ function displayPath(root: string, target: string) {
   return relative && !relative.startsWith("..") && !path.isAbsolute(relative) ? relative : target;
 }
 
-async function listDirectory(request: Request) {
+function writeTargetPath(request: Extract<Request, { operation: "write_file" | "edit_file" }>) {
+  const { root, target } = targetPath(request);
+  if (!request.allowOutside && target !== root && !target.startsWith(`${root}${path.sep}`)) {
+    throw new Error("写入路径必须位于 workspace 内");
+  }
+  return { root, target };
+}
+
+async function listDirectory(request: Extract<Request, { operation: "list_dir" }>) {
   const { root, target } = targetPath(request);
   const entries = await readdir(target, { withFileTypes: true });
   return {
@@ -55,7 +91,7 @@ async function listDirectory(request: Request) {
   };
 }
 
-async function readTextFile(request: Request) {
+async function readTextFile(request: Extract<Request, { operation: "read_file" }>) {
   const { root, target } = targetPath(request);
   const metadata = await stat(target);
   if (!metadata.isFile()) throw new Error("路径不是文件");
@@ -63,7 +99,7 @@ async function readTextFile(request: Request) {
   return { path: displayPath(root, target), content: await readFile(target, "utf8") };
 }
 
-async function searchFiles(request: Request) {
+async function searchFiles(request: Extract<Request, { operation: "search_files" }>) {
   const { root, target: start } = targetPath(request);
   const limit = Math.min(Math.max(request.maxResults ?? 100, 1), MAX_SEARCH_RESULTS);
   const pattern = request.pattern?.trim();
@@ -94,7 +130,24 @@ async function searchFiles(request: Request) {
   return { query: needle || undefined, pattern, matches, truncated: matches.length >= limit };
 }
 
-export async function runSandboxReadHelper() {
+async function writeTextFile(request: Extract<Request, { operation: "write_file" }>) {
+  const { root, target } = writeTargetPath(request);
+  await writeFile(target, request.content, "utf8");
+  return { path: displayPath(root, target), bytes: Buffer.byteLength(request.content) };
+}
+
+async function editTextFile(request: Extract<Request, { operation: "edit_file" }>) {
+  const { root, target } = writeTargetPath(request);
+  const content = await readFile(target, "utf8");
+  const count = content.split(request.oldText).length - 1;
+  if (count !== 1) {
+    throw new Error(count === 0 ? "未找到要替换的文本" : "oldText 必须只匹配一次");
+  }
+  await writeFile(target, content.replace(request.oldText, request.newText), "utf8");
+  return { path: displayPath(root, target), changed: true };
+}
+
+export async function runSandboxFileHelper() {
   const input = await new Promise<string>((resolve, reject) => {
     let value = "";
     process.stdin.setEncoding("utf8");
@@ -108,6 +161,10 @@ export async function runSandboxReadHelper() {
       ? await listDirectory(request)
       : request.operation === "read_file"
         ? await readTextFile(request)
-        : await searchFiles(request);
+        : request.operation === "search_files"
+          ? await searchFiles(request)
+          : request.operation === "write_file"
+            ? await writeTextFile(request)
+            : await editTextFile(request);
   process.stdout.write(JSON.stringify({ ok: true, result }));
 }

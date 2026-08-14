@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -6,7 +6,7 @@ import {
   buildSeatbeltProfile,
   isSandboxBlockedOutput,
   resolveCommandCwd,
-  runSandboxedRead,
+  runSandboxedFile,
   runSandboxedShell,
   SandboxPathError,
 } from "./sandbox-exec.ts";
@@ -74,29 +74,77 @@ describe("sandbox execution errors", () => {
     expect(profile).not.toContain("require-not");
   });
 
+  it("allows only explicitly requested extra write targets", () => {
+    const profile = buildSeatbeltProfile("/tmp/workspace", [], [], ["/tmp/approved.txt"]);
+    expect(profile).toContain('(allow file-write* (literal "/tmp/approved.txt"))');
+    expect(profile).not.toContain('(allow file-write* (subpath "/tmp"))');
+  });
+
   it("runs structured read operations in the helper process", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-sandbox-read-"));
     await mkdir(path.join(root, "node_modules", "aws4fetch"), { recursive: true });
     await writeFile(path.join(root, "node_modules", "aws4fetch", "README.md"), "aws4fetch", "utf8");
 
-    const file = await runSandboxedRead(
+    const file = await runSandboxedFile(
       { operation: "read_file", workspace: root, path: "node_modules/aws4fetch/README.md" },
       { mode: "full" },
     );
     expect(file.sandboxBlocked).toBe(false);
     expect(file.result).toMatchObject({ content: "aws4fetch" });
 
-    const directory = await runSandboxedRead(
+    const directory = await runSandboxedFile(
       { operation: "list_dir", workspace: root, path: "node_modules/aws4fetch" },
       { mode: "full" },
     );
     expect(directory.sandboxBlocked).toBe(false);
     expect(directory.result).toMatchObject({ entries: [{ name: "README.md" }] });
 
-    const search = await runSandboxedRead(
+    const search = await runSandboxedFile(
       { operation: "search_files", workspace: root, query: "aws4fetch" },
       { mode: "full" },
     );
     expect(search.result).toMatchObject({ matches: [] });
+  });
+
+  it("runs structured writes in the helper process", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-sandbox-write-"));
+    const target = path.join(root, "note.txt");
+    const write = await runSandboxedFile(
+      { operation: "write_file", workspace: root, path: target, content: "before\n" },
+      { mode: "full" },
+    );
+    expect(write.sandboxBlocked).toBe(false);
+    expect(write.result).toMatchObject({ path: "note.txt", bytes: 7 });
+
+    const edit = await runSandboxedFile(
+      {
+        operation: "edit_file",
+        workspace: root,
+        path: target,
+        oldText: "before",
+        newText: "after",
+      },
+      { mode: "full" },
+    );
+    expect(edit.sandboxBlocked).toBe(false);
+    expect(edit.result).toMatchObject({ path: "note.txt", changed: true });
+    await expect(readFile(target, "utf8")).resolves.toBe("after\n");
+  });
+
+  it("rejects helper writes outside the workspace", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-sandbox-write-root-"));
+    const outside = await mkdtemp(path.join(os.tmpdir(), "chatdesk-sandbox-write-outside-"));
+    const result = await runSandboxedFile(
+      {
+        operation: "write_file",
+        workspace: root,
+        path: path.join(outside, "blocked.txt"),
+        content: "no",
+      },
+      { mode: "full" },
+    );
+    expect(result.sandboxBlocked).toBe(false);
+    expect(result.result).toBeUndefined();
+    expect(result.error).toContain("写入路径必须位于 workspace 内");
   });
 });

@@ -1,7 +1,7 @@
 import { serve } from "@hono/node-server";
 import { createChatServer } from "./app.ts";
 import { loadServerConfig } from "./config.ts";
-import { runSandboxReadHelper } from "./sandbox-read-helper.ts";
+import { runSandboxFileHelper } from "./sandbox-file-helper.ts";
 
 type Shutdown = () => Promise<void> | void;
 
@@ -74,8 +74,8 @@ async function main() {
   process.once("SIGTERM", () => void shutdown());
 }
 
-if (process.env.CHATDESK_SANDBOX_READ === "1") {
-  void runSandboxReadHelper().catch((error) => {
+if (process.env.CHATDESK_SANDBOX_FILE === "1") {
+  void runSandboxFileHelper().catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
     const blocked = /(?:operation not permitted|sandbox|deny|permission denied)/i.test(message);
     process.stdout.write(JSON.stringify({ ok: false, blocked, error: message }));
