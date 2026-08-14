@@ -11,6 +11,29 @@ pnpm install
 pnpm desktop:build
 ```
 
+## GitHub Actions
+
+The `macOS packages` workflow builds native Intel (`x86_64-apple-darwin`) and
+Apple Silicon (`aarch64-apple-darwin`) packages on separate macOS runners. It
+runs for pushes to `main`, version tags, and manual workflow dispatches. Each
+run uploads the DMG and `.app.tar.gz` artifacts for 14 days. A `v*` tag also
+creates or updates a GitHub Release with those files. The workflow does not
+sign or notarize packages; configure the repository's Apple and Tauri signing
+secrets before distributing a release build.
+
+To publish a version, update the app versions, push the commit, then create and
+push a tag:
+
+```sh
+git tag v0.3.0
+git push origin v0.3.0
+```
+
+The tag starts the two architecture builds. The release job runs only after
+both builds finish successfully. Keep the tag version aligned with the
+versions in `package.json`, `apps/desktop/package.json`,
+`apps/desktop/src-tauri/tauri.conf.json`, and `apps/desktop/src-tauri/Cargo.toml`.
+
 `pnpm desktop:sidecars` first bundles the TypeScript Chat Server and its sandbox worker into separate CommonJS files, then uses `@yao-pkg/pkg` with source fallback to create the target-specific binaries. It also downloads the Chromium headless shell into `apps/desktop/src-tauri/resources/playwright-browsers`. The generated files are ignored by Git and must be rebuilt for every target platform.
 
 The pkg base-runtime cache defaults to `.cache/pkg`; set `PKG_CACHE_PATH` to share it between CI jobs.
