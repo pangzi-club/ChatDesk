@@ -32,7 +32,7 @@
   },
   "bundle": {
     "active": true,
-    "externalBin": ["binaries/chat-server"],
+    "externalBin": ["binaries/chat-server", "binaries/chat-server-sandbox"],
     "resources": ["resources/browser-worker*", "resources/playwright-browsers/**/*"],
     "targets": "all",
     "icon": [

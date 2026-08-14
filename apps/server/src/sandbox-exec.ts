@@ -124,6 +124,7 @@ export async function runSandboxedFile(
   const payload = JSON.stringify(request);
   const isPackaged = (process as NodeJS.Process & { pkg?: unknown }).pkg !== undefined;
   const helperEntry = isPackaged ? undefined : resolveSandboxFileEntry();
+  const helperExecutable = isPackaged ? resolvePackagedSandboxWorker() : process.execPath;
   const nodeArgs = isPackaged
     ? []
     : ["--experimental-strip-types", ...(helperEntry ? [helperEntry] : [])];
@@ -141,10 +142,10 @@ export async function runSandboxedFile(
             helperReadPaths,
             options.writablePaths ?? [],
           ),
-          process.execPath,
+          helperExecutable,
           ...nodeArgs,
         ];
-  const executable = effectiveMode === "full" ? process.execPath : "/usr/bin/sandbox-exec";
+  const executable = effectiveMode === "full" ? helperExecutable : "/usr/bin/sandbox-exec";
 
   if (effectiveMode !== "full" && process.platform !== "darwin") {
     throw new SandboxBlockedError("受限沙箱需要 macOS Seatbelt；当前平台不支持");
@@ -158,10 +159,7 @@ export async function runSandboxedFile(
   }>((resolve, reject) => {
     const child = spawn(executable, args, {
       cwd: workspace,
-      env: {
-        ...sandboxEnvironment(workspace),
-        CHATDESK_SANDBOX_FILE: "1",
-      },
+      env: sandboxEnvironment(workspace),
       stdio: ["pipe", "pipe", "pipe"],
       detached: process.platform !== "win32",
     });
@@ -210,6 +208,25 @@ function resolveSandboxFileEntry() {
     path.resolve(process.cwd(), "src/sandbox-file-entry.ts"),
   ];
   return candidates.find((candidate) => existsSync(candidate));
+}
+
+function resolvePackagedSandboxWorker() {
+  const executableDirectory = path.dirname(process.execPath);
+  const candidates = [
+    path.join(executableDirectory, "chat-server-sandbox"),
+    path.join(executableDirectory, "chat-server-sandbox.exe"),
+    path.join(executableDirectory, "binaries", "chat-server-sandbox"),
+    path.join(executableDirectory, "binaries", "chat-server-sandbox.exe"),
+    path.resolve(executableDirectory, "..", "resources", "chat-server-sandbox"),
+    path.resolve(executableDirectory, "..", "resources", "chat-server-sandbox.exe"),
+    path.resolve(executableDirectory, "..", "resources", "binaries", "chat-server-sandbox"),
+    path.resolve(executableDirectory, "..", "resources", "binaries", "chat-server-sandbox.exe"),
+  ];
+  const worker = candidates.find((candidate) => existsSync(candidate));
+  if (!worker) {
+    throw new SandboxBlockedError("找不到打包的 sandbox worker");
+  }
+  return worker;
 }
 
 function resolveDirectory(value: string) {

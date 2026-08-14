@@ -12,6 +12,7 @@ const resourcesDir = path.join(tauriRoot, "resources");
 const browserPath = path.join(resourcesDir, "playwright-browsers");
 const serverCacheDir = path.join(root, "apps/server/.cache");
 const serverBundlePath = path.join(serverCacheDir, "chat-server.cjs");
+const sandboxBundlePath = path.join(serverCacheDir, "chat-server-sandbox.cjs");
 const pkgCachePath = process.env.PKG_CACHE_PATH || path.join(root, ".cache/pkg");
 const localBinExtension = process.platform === "win32" ? ".cmd" : "";
 const localBinDir = path.join(desktopRoot, "node_modules/.bin");
@@ -45,6 +46,15 @@ await runTool("esbuild", [
   `--outfile=${serverBundlePath}`,
 ]);
 
+await runTool("esbuild", [
+  "apps/server/src/sandbox-file-entry.ts",
+  "--bundle",
+  "--platform=node",
+  "--format=cjs",
+  "--target=node22",
+  `--outfile=${sandboxBundlePath}`,
+]);
+
 await runTool(
   "pkg",
   [
@@ -56,6 +66,19 @@ await runTool(
     "undici",
     "--output",
     path.join(binariesDir, `chat-server-${targetTriple}${extension}`),
+  ],
+  { PKG_CACHE_PATH: pkgCachePath },
+);
+
+await runTool(
+  "pkg",
+  [
+    sandboxBundlePath,
+    "--target",
+    pkgTarget,
+    "--fallback-to-source",
+    "--output",
+    path.join(binariesDir, `chat-server-sandbox-${targetTriple}${extension}`),
   ],
   { PKG_CACHE_PATH: pkgCachePath },
 );

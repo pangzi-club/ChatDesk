@@ -74,18 +74,7 @@ async function main() {
   process.once("SIGTERM", () => void shutdown());
 }
 
-if (process.env.CHATDESK_SANDBOX_FILE === "1") {
-  void import("./sandbox-file-worker.ts")
-    .then(({ runSandboxFileWorker }) => runSandboxFileWorker())
-    .catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      const blocked = /(?:operation not permitted|sandbox|deny|permission denied)/i.test(message);
-      process.stdout.write(JSON.stringify({ ok: false, blocked, error: message }));
-      process.exitCode = 1;
-    });
-} else {
-  void main().catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-  });
-}
+void main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

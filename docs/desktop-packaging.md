@@ -1,6 +1,6 @@
 # Desktop Packaging
 
-The desktop release packages the Node chat server as a Tauri sidecar and the browser worker as a resource. End users do not need Node.js or pnpm.
+The desktop release packages the Node chat server and its sandbox worker as Tauri sidecars, and the browser worker as a resource. End users do not need Node.js or pnpm.
 
 ## Local build
 
@@ -11,7 +11,7 @@ pnpm install
 pnpm desktop:build
 ```
 
-`pnpm desktop:sidecars` first bundles the TypeScript Chat Server into a single CommonJS file, then uses `@yao-pkg/pkg` with source fallback to create the target-specific binaries. It also downloads the Chromium headless shell into `apps/desktop/src-tauri/resources/playwright-browsers`. The generated files are ignored by Git and must be rebuilt for every target platform.
+`pnpm desktop:sidecars` first bundles the TypeScript Chat Server and its sandbox worker into separate CommonJS files, then uses `@yao-pkg/pkg` with source fallback to create the target-specific binaries. It also downloads the Chromium headless shell into `apps/desktop/src-tauri/resources/playwright-browsers`. The generated files are ignored by Git and must be rebuilt for every target platform.
 
 The pkg base-runtime cache defaults to `.cache/pkg`; set `PKG_CACHE_PATH` to share it between CI jobs.
 
@@ -30,7 +30,7 @@ Cross-platform artifacts should be built on native CI runners. Set `TAURI_TARGET
 
 ## Runtime behavior
 
-Tauri starts `chat-server` with a loopback host, a per-launch token, and a data directory under `~/.chatdesk/chat-server` on macOS. The frontend obtains the token through the `chat_server_info` command. The browser worker prefers its packaged executable and falls back to the source Node worker only in development.
+Tauri starts `chat-server` with a loopback host, a per-launch token, and a data directory under `~/.chatdesk/chat-server` on macOS. The frontend obtains the token through the `chat_server_info` command. The package also contains a separate `chat-server-sandbox` sidecar dedicated to Seatbelt file operations. Development launches the TypeScript worker directly; production resolves the packaged worker beside the Chat Server binary, so the end-user installation does not depend on Node.js, pnpm, or `node_modules`.
 
 Window geometry is managed by `tauri-plugin-window-state` in the platform app configuration directory; this small UI preference is intentionally exempt from the `~/.chatdesk` data boundary.
 
