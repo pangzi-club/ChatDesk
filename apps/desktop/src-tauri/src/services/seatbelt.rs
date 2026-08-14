@@ -3,10 +3,16 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::models::sandbox::{SandboxInfo, SandboxMode, SandboxPermissions, ShellCommandResult};
+
+const MAX_OUTPUT_BYTES: usize = 2 * 1024 * 1024;
 
 pub fn sandbox_info() -> Result<SandboxInfo, String> {
     Ok(SandboxInfo {
@@ -98,6 +104,7 @@ fn run_unsandboxed(
 ) -> Result<ShellCommandResult, String> {
     let mut process = Command::new(shell);
     process.args(["-lc", command]).current_dir(workspace);
+    configure_process_environment(&mut process, workspace);
     run_process(&mut process, timeout)
 }
 
@@ -114,6 +121,7 @@ fn run_sandboxed(
     process
         .args(["-p", &profile, shell, "-lc", command])
         .current_dir(workspace);
+    configure_process_environment(&mut process, workspace);
     run_process(&mut process, timeout)
 }
 
@@ -142,33 +150,35 @@ fn run_process(command: &mut Command, timeout: Duration) -> Result<ShellCommandR
         .stderr
         .take()
         .ok_or_else(|| String::from("无法读取错误输出"))?;
-    let stdout_reader = thread::spawn(move || {
-        let mut bytes = Vec::new();
-        let _ = stdout.read_to_end(&mut bytes);
-        bytes
-    });
-    let stderr_reader = thread::spawn(move || {
-        let mut bytes = Vec::new();
-        let _ = stderr.read_to_end(&mut bytes);
-        bytes
-    });
+    let output_limit_hit = Arc::new(AtomicBool::new(false));
+    let stdout_limit = Arc::clone(&output_limit_hit);
+    let stderr_limit = Arc::clone(&output_limit_hit);
+    let stdout_reader = thread::spawn(move || read_limited(&mut stdout, stdout_limit));
+    let stderr_reader = thread::spawn(move || read_limited(&mut stderr, stderr_limit));
     let deadline = Instant::now() + timeout;
     let mut timed_out = false;
+    let mut stopped_for_output = false;
     let status = loop {
         if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
             break status;
         }
+        if output_limit_hit.load(Ordering::Relaxed) {
+            stopped_for_output = true;
+            terminate_process_tree(&mut child);
+            break child.wait().map_err(|error| error.to_string())?;
+        }
         if Instant::now() >= deadline {
             timed_out = true;
-            let _ = child.kill();
+            terminate_process_tree(&mut child);
             break child.wait().map_err(|error| error.to_string())?;
         }
         thread::sleep(Duration::from_millis(40));
     };
     let stdout = stdout_reader.join().unwrap_or_default();
     let stderr = stderr_reader.join().unwrap_or_default();
-    let mut out = String::from_utf8_lossy(&stdout).into_owned();
-    let stderr = String::from_utf8_lossy(&stderr);
+    let output_truncated = stopped_for_output || stdout.truncated || stderr.truncated;
+    let mut out = String::from_utf8_lossy(&stdout.bytes).into_owned();
+    let stderr = String::from_utf8_lossy(&stderr.bytes);
     if !stderr.is_empty() {
         if !out.is_empty() {
             out.push('\n');
@@ -182,8 +192,129 @@ fn run_process(command: &mut Command, timeout: Duration) -> Result<ShellCommandR
         }
         out.push_str("命令执行超时，进程已终止");
     }
+    if output_truncated {
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str("命令输出超过限制，进程已终止");
+    }
     Ok(ShellCommandResult {
         code: status.code().unwrap_or(-1),
         out,
     })
+}
+
+#[derive(Default)]
+struct LimitedOutput {
+    bytes: Vec<u8>,
+    truncated: bool,
+}
+
+fn read_limited(reader: &mut impl Read, output_limit_hit: Arc<AtomicBool>) -> LimitedOutput {
+    let mut bytes = Vec::with_capacity(MAX_OUTPUT_BYTES);
+    let mut buffer = [0_u8; 8192];
+    let mut truncated = false;
+    loop {
+        let Ok(size) = reader.read(&mut buffer) else {
+            break;
+        };
+        if size == 0 {
+            break;
+        }
+        let remaining = MAX_OUTPUT_BYTES.saturating_sub(bytes.len());
+        if size > remaining {
+            bytes.extend_from_slice(&buffer[..remaining]);
+            truncated = true;
+            output_limit_hit.store(true, Ordering::Relaxed);
+        } else {
+            bytes.extend_from_slice(&buffer[..size]);
+        }
+    }
+    LimitedOutput { bytes, truncated }
+}
+
+fn configure_process_environment(command: &mut Command, cwd: &Path) {
+    command.env_clear();
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    for key in [
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "TERM",
+        "COLORTERM",
+        "PATH",
+        "SHELL",
+        "TMPDIR",
+    ] {
+        if let Ok(value) = env::var(key) {
+            command.env(key, value);
+        }
+    }
+    command
+        .env(
+            "PATH",
+            env::var("PATH").unwrap_or_else(|_| String::from("/usr/local/bin:/usr/bin:/bin")),
+        )
+        .env(
+            "SHELL",
+            env::var("SHELL").unwrap_or_else(|_| String::from("/bin/sh")),
+        )
+        .env("TMPDIR", env::temp_dir())
+        .env("HOME", cwd);
+}
+
+fn terminate_process_tree(child: &mut std::process::Child) {
+    let pid = child.id();
+    #[cfg(unix)]
+    {
+        let _ = Command::new("/bin/kill")
+            .args(["-KILL", &format!("-{pid}")])
+            .status();
+    }
+    #[cfg(windows)]
+    {
+        let _ = Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .status();
+    }
+    let _ = child.kill();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn limits_captured_output() {
+        let mut input = Cursor::new(vec![b'x'; MAX_OUTPUT_BYTES + 1]);
+        let output = read_limited(&mut input, Arc::new(AtomicBool::new(false)));
+        assert_eq!(output.bytes.len(), MAX_OUTPUT_BYTES);
+        assert!(output.truncated);
+    }
+
+    #[test]
+    fn rejects_oversized_workspace_files() {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("chatdesk-workspace-test-{suffix}"));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("create test workspace");
+        let large = String::from_utf8(vec![b'x'; 512 * 1024 + 1]).expect("utf8");
+        fs::write(root.join("large.txt"), large.as_bytes()).expect("write large file");
+
+        let result = crate::services::workspace_fs::read_file(
+            root.to_string_lossy().into_owned(),
+            String::from("large.txt"),
+        );
+        assert!(result.is_err());
+        let _ = fs::remove_dir_all(root);
+    }
 }

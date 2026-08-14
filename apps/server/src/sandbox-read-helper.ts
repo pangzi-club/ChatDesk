@@ -4,7 +4,7 @@ import path from "node:path";
 
 const MAX_FILE_BYTES = 512 * 1024;
 const MAX_SEARCH_RESULTS = 500;
-const SKIPPED_DIRECTORIES = new Set([".git", "target", "dist"]);
+const SKIPPED_DIRECTORIES = new Set([".git", "node_modules", "target", "dist"]);
 
 type Request = {
   operation: "list_dir" | "read_file" | "search_files";

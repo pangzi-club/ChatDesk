@@ -6,6 +6,8 @@ use crate::models::sandbox::{
     WorkspaceSearchFilesResult, WorkspaceWriteFileResult,
 };
 
+const MAX_FILE_BYTES: u64 = 512 * 1024;
+
 pub fn list_dir(cwd: String, path: Option<String>) -> Result<WorkspaceListDirResult, String> {
     let root = resolve_cwd(&cwd)?;
     let target = resolve_existing_path(&root, Some(path.as_deref().unwrap_or(".")))?;
@@ -56,6 +58,10 @@ pub fn read_file(cwd: String, path: String) -> Result<WorkspaceReadFileResult, S
         ));
     }
 
+    let metadata = fs::metadata(&target).map_err(|error| format!("无法读取文件信息：{error}"))?;
+    if metadata.len() > MAX_FILE_BYTES {
+        return Err(String::from("文件超过 512 KB，未读取"));
+    }
     let content = fs::read_to_string(&target).map_err(|error| format!("无法读取文件：{error}"))?;
     Ok(WorkspaceReadFileResult {
         path: display_relative(&root, &target),
@@ -68,6 +74,9 @@ pub fn write_file(
     path: String,
     content: String,
 ) -> Result<WorkspaceWriteFileResult, String> {
+    if content.len() as u64 > MAX_FILE_BYTES {
+        return Err(String::from("文件超过 512 KB，未写入"));
+    }
     let root = resolve_cwd(&cwd)?;
     let target = resolve_writable_path(&root, &path)?;
 
@@ -97,12 +106,22 @@ pub fn edit_file(
             display_relative(&root, &target)
         ));
     }
+    let metadata = fs::metadata(&target).map_err(|error| format!("无法读取文件信息：{error}"))?;
+    if metadata.len() > MAX_FILE_BYTES {
+        return Err(String::from("文件超过 512 KB，未编辑"));
+    }
     let content = fs::read_to_string(&target).map_err(|error| format!("无法读取文件：{error}"))?;
+    if content.len() as u64 > MAX_FILE_BYTES {
+        return Err(String::from("文件超过 512 KB，未编辑"));
+    }
     let count = content.match_indices(&old_text).count();
     if count != 1 {
         return Err(format!("精确替换要求匹配 1 次，实际匹配 {count} 次"));
     }
     let next = content.replacen(&old_text, &new_text, 1);
+    if next.len() as u64 > MAX_FILE_BYTES {
+        return Err(String::from("文件超过 512 KB，未编辑"));
+    }
     fs::write(&target, next.as_bytes()).map_err(|error| format!("无法写入文件：{error}"))?;
     Ok(WorkspaceEditFileResult {
         path: display_relative(&root, &target),
@@ -177,6 +196,12 @@ fn collect_search_matches(
             continue;
         }
         if let Some(needle) = query {
+            let Ok(metadata) = fs::metadata(&path) else {
+                continue;
+            };
+            if metadata.len() > MAX_FILE_BYTES {
+                continue;
+            }
             let Ok(content) = fs::read_to_string(&path) else {
                 continue;
             };
@@ -334,4 +359,50 @@ fn display_relative(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
         .map(|value| value.to_string_lossy().replace('\\', "/"))
         .unwrap_or_else(|_| path.to_string_lossy().into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn test_root() -> PathBuf {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("chatdesk-workspace-fs-test-{suffix}"));
+        fs::create_dir_all(&root).expect("create test workspace");
+        root
+    }
+
+    #[test]
+    fn rejects_oversized_writes() {
+        let root = test_root();
+        let content = String::from_utf8(vec![b'x'; MAX_FILE_BYTES as usize + 1]).expect("utf8");
+        let result = write_file(
+            root.to_string_lossy().into_owned(),
+            String::from("large.txt"),
+            content,
+        );
+        assert!(result.is_err());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn search_skips_node_modules() {
+        let root = test_root();
+        fs::create_dir_all(root.join("node_modules/pkg")).expect("create dependency directory");
+        fs::write(root.join("node_modules/pkg/secret.txt"), "needle").expect("write dependency");
+        let result = search_files(
+            root.to_string_lossy().into_owned(),
+            None,
+            None,
+            Some(String::from("needle")),
+            None,
+        )
+        .expect("search workspace");
+        assert!(result.matches.is_empty());
+        let _ = fs::remove_dir_all(root);
+    }
 }

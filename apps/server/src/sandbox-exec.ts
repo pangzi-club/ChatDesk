@@ -1,14 +1,22 @@
-import { execFile, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 
 import type { SandboxMode } from "./protocol.ts";
 
-const execFileAsync = promisify(execFile);
 const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 const MAX_HELPER_OUTPUT_BYTES = 2 * 1024 * 1024;
+const SAFE_ENV_KEYS = [
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TERM",
+  "COLORTERM",
+  "PATH",
+  "SHELL",
+  "TMPDIR",
+] as const;
 
 export class SandboxBlockedError extends Error {
   readonly code = "sandbox_blocked" as const;
@@ -59,32 +67,17 @@ export async function runSandboxedShell(
     throw new SandboxBlockedError("受限沙箱需要 macOS Seatbelt；当前平台不支持");
   }
 
-  try {
-    const result = await execFileAsync(executable, args, {
-      cwd,
-      env: sandboxEnvironment(cwd),
-      timeout,
-      maxBuffer: MAX_OUTPUT_BYTES,
-      shell: false,
-    });
-    return {
-      code: 0,
-      out: `${result.stdout}${result.stderr}`.slice(0, MAX_OUTPUT_BYTES),
-      sandboxBlocked: false,
-    };
-  } catch (error) {
-    const failure = error as NodeJS.ErrnoException & {
-      stdout?: string;
-      stderr?: string;
-      code?: number | string;
-    };
-    const output = `${failure.stdout ?? ""}${failure.stderr ?? ""}`.slice(0, MAX_OUTPUT_BYTES);
-    return {
-      code: typeof failure.code === "number" ? failure.code : -1,
-      out: output || failure.message || "命令执行失败",
-      sandboxBlocked: effectiveMode !== "full" && isSandboxBlockedOutput(output),
-    };
-  }
+  const result = await runBoundedProcess(executable, args, {
+    cwd,
+    env: sandboxEnvironment(cwd),
+    timeout,
+    maxOutputBytes: MAX_OUTPUT_BYTES,
+  });
+  return {
+    code: result.code,
+    out: result.out,
+    sandboxBlocked: effectiveMode !== "full" && isSandboxBlockedOutput(result.out),
+  };
 }
 
 export type SandboxReadRequest =
@@ -138,15 +131,14 @@ export async function runSandboxedRead(
       cwd: workspace,
       env: {
         ...sandboxEnvironment(workspace),
-        PATH: process.env.PATH ?? "/usr/bin:/bin",
-        TMPDIR: process.env.TMPDIR ?? os.tmpdir(),
         CHATDESK_SANDBOX_READ: "1",
       },
       stdio: ["pipe", "pipe", "pipe"],
+      detached: process.platform !== "win32",
     });
     let stdout = "";
     let stderr = "";
-    const timer = setTimeout(() => child.kill("SIGKILL"), timeout);
+    const timer = setTimeout(() => killProcessTree(child), timeout);
     child.stdout.on("data", (chunk: Buffer) => {
       stdout = `${stdout}${chunk.toString()}`.slice(0, MAX_HELPER_OUTPUT_BYTES);
     });
@@ -202,10 +194,84 @@ function resolveDirectory(value: string) {
 }
 
 function sandboxEnvironment(cwd: string) {
-  return {
-    ...process.env,
-    HOME: cwd,
-  };
+  const env: NodeJS.ProcessEnv = {};
+  for (const key of SAFE_ENV_KEYS) {
+    const value = process.env[key];
+    if (value) env[key] = value;
+  }
+  env.PATH ||= "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+  env.TMPDIR ||= os.tmpdir();
+  env.SHELL ||= "/bin/sh";
+  env.HOME = cwd;
+  return env;
+}
+
+async function runBoundedProcess(
+  executable: string,
+  args: string[],
+  options: { cwd: string; env: NodeJS.ProcessEnv; timeout: number; maxOutputBytes: number },
+) {
+  return new Promise<{ code: number; out: string; timedOut: boolean }>((resolve, reject) => {
+    const child = spawn(executable, args, {
+      cwd: options.cwd,
+      env: options.env,
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: process.platform !== "win32",
+    });
+    let stdout = "";
+    let stderr = "";
+    let outputLimitHit = false;
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killProcessTree(child);
+    }, options.timeout);
+    const append = (target: "stdout" | "stderr", chunk: Buffer) => {
+      const current = target === "stdout" ? stdout : stderr;
+      const remaining = Math.max(options.maxOutputBytes - Buffer.byteLength(current), 0);
+      const text = chunk.subarray(0, remaining).toString();
+      if (target === "stdout") stdout += text;
+      else stderr += text;
+      if (chunk.byteLength > remaining) {
+        outputLimitHit = true;
+        killProcessTree(child);
+      }
+    };
+    child.stdout.on("data", (chunk: Buffer) => append("stdout", chunk));
+    child.stderr.on("data", (chunk: Buffer) => append("stderr", chunk));
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.once("close", (code) => {
+      clearTimeout(timer);
+      let out = `${stdout}${stderr}`;
+      if (Buffer.byteLength(out) > options.maxOutputBytes) {
+        out = Buffer.from(out).subarray(0, options.maxOutputBytes).toString();
+      }
+      if (timedOut) out = `${out}${out ? "\n" : ""}命令执行超时，进程已终止`;
+      if (outputLimitHit) out = `${out}${out ? "\n" : ""}命令输出超过限制，进程已终止`;
+      resolve({ code: code ?? -1, out: out || "命令执行失败", timedOut });
+    });
+  });
+}
+
+function killProcessTree(child: ReturnType<typeof spawn>) {
+  if (child.pid && process.platform === "win32") {
+    spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+      stdio: "ignore",
+    });
+    return;
+  }
+  if (child.pid && process.platform !== "win32") {
+    try {
+      process.kill(-child.pid, "SIGKILL");
+      return;
+    } catch {
+      // Fall back to killing the direct child when the process group is gone.
+    }
+  }
+  child.kill("SIGKILL");
 }
 
 export function buildSeatbeltProfile(
@@ -280,9 +346,10 @@ export function resolveCommandCwd(
   const candidate = requested?.trim();
   if (!candidate) return root;
   const resolved = path.resolve(root, candidate);
-  if (mode === "full" || allowOutside) return resolveDirectory(resolved);
-  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
+  const canonical = resolveDirectory(resolved);
+  if (mode === "full" || allowOutside) return canonical;
+  if (canonical !== root && !canonical.startsWith(`${root}${path.sep}`)) {
     throw new SandboxPathError("Bash cwd 必须是 workspace 内的相对路径或 workspace 内的绝对路径");
   }
-  return resolveDirectory(resolved);
+  return canonical;
 }
