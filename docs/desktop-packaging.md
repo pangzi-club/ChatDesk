@@ -4,7 +4,7 @@ The desktop release packages the Node chat server and its sandbox worker as Taur
 
 ## Local build
 
-Use Node.js 22 or newer, Rust, pnpm 11.21.0, and the platform's Tauri prerequisites.
+Use Node.js 22 or newer, Rust, pnpm 11.19.0, and the platform's Tauri prerequisites.
 
 ```sh
 pnpm install

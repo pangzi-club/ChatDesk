@@ -15,7 +15,7 @@ ChatDesk 是一个基于 Tauri、React 和 TypeScript 的本地 AI 工作台。�
 ## 环境要求
 
 - Node.js 22 或更高版本
-- pnpm 11.21.0（项目通过 `packageManager` 固定）
+- pnpm 11.19.0（项目通过 `packageManager` 固定）
 - 仅开发前端：无需 Rust
 - 构建桌面应用：需要 Rust、Tauri CLI 依赖和对应平台的构建工具，详见 [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)
 
@@ -23,7 +23,7 @@ ChatDesk 是一个基于 Tauri、React 和 TypeScript 的本地 AI 工作台。�
 
 ```sh
 corepack enable
-corepack prepare pnpm@11.21.0 --activate
+corepack prepare pnpm@11.19.0 --activate
 pnpm install
 pnpm dev
 ```
