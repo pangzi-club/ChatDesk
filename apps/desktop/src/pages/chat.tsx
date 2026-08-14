@@ -1423,43 +1423,45 @@ function ChatPage() {
         ) : null}
         {error && <p className="chat-error">{error.message}</p>}
         <div className="chat-workspace-bar">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                aria-label="选择工作区"
-                className="chat-workspace-picker"
-                title="选择工作区"
-                type="button"
+          {messages.length === 0 ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  aria-label="选择工作区"
+                  className="chat-workspace-picker"
+                  title="选择工作区"
+                  type="button"
+                >
+                  <Folder aria-hidden="true" className="size-3.5" />
+                  <span>{workspaceLabel}</span>
+                  <ChevronDown aria-hidden="true" className="size-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                className="chat-select-menu chat-workspace-select-menu"
+                side="top"
+                sideOffset={8}
               >
-                <Folder aria-hidden="true" className="size-3.5" />
-                <span>{workspaceLabel}</span>
-                <ChevronDown aria-hidden="true" className="size-3.5" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="start"
-              className="chat-select-menu chat-workspace-select-menu"
-              side="top"
-              sideOffset={8}
-            >
-              <DropdownMenuLabel>工作区</DropdownMenuLabel>
-              <DropdownMenuRadioGroup
-                value={workspaceKey || "default"}
-                onValueChange={selectWorkspace}
-              >
-                <DropdownMenuRadioItem value="default">
-                  <span className="chat-workspace-option-label">{DEFAULT_WORKSPACE_LABEL}</span>
-                </DropdownMenuRadioItem>
-                {workspaceProjects.map((project) => (
-                  <DropdownMenuRadioItem key={project.id} value={project.id}>
-                    <span className="chat-workspace-option-label">
-                      {pathBasename(project.path)}
-                    </span>
+                <DropdownMenuLabel>工作区</DropdownMenuLabel>
+                <DropdownMenuRadioGroup
+                  value={workspaceKey || "default"}
+                  onValueChange={selectWorkspace}
+                >
+                  <DropdownMenuRadioItem value="default">
+                    <span className="chat-workspace-option-label">{DEFAULT_WORKSPACE_LABEL}</span>
                   </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                  {workspaceProjects.map((project) => (
+                    <DropdownMenuRadioItem key={project.id} value={project.id}>
+                      <span className="chat-workspace-option-label">
+                        {pathBasename(project.path)}
+                      </span>
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
           <span>
             <Laptop aria-hidden="true" className="size-3.5" />
             本地

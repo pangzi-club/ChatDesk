@@ -701,7 +701,7 @@
   color: var(--chat-muted);
 }
 .chat-header-actions {
-  gap: 2px;
+  gap: 6px;
   transform: translateY(12px);
 }
 
@@ -2709,6 +2709,7 @@
   right: 48px;
   margin: 0;
   z-index: 20;
+  gap: 6px;
   transform: translateY(-50%);
 }
 
