@@ -6,9 +6,11 @@ import {
   Check,
   CircleAlert,
   CircleCheck,
+  Download,
   ExternalLink,
   Eye,
   EyeOff,
+  FolderOpen,
   Keyboard,
   KeyRound,
   LoaderCircle,
@@ -24,6 +26,7 @@ import {
   Server,
   ShieldCheck,
   Sparkles,
+  SquareTerminal,
   Trash2,
   Wrench,
   X,
@@ -86,9 +89,11 @@ import type { ChatServerProviderModel } from "@/lib/chat-server";
 import {
   canRestartChatServer,
   checkChatServer,
+  importDeveloperEnvironment,
   listChatServerModels,
   loadChatServerConfig,
   loadChatServerPort,
+  loadDeveloperEnvironment,
   restartChatServer,
   saveChatServerConfig,
   testChatServerModel,
@@ -237,6 +242,7 @@ function SettingsLayout() {
           <SettingsNavItem to="/settings/skills" icon={Sparkles} label="Skills" />
           <SettingsNavItem to="/settings/tools" icon={Wrench} label="Tools" />
           <SettingsNavItem to="/settings/sandbox" icon={ShieldCheck} label="沙箱" />
+          <SettingsNavItem to="/settings/environment" icon={SquareTerminal} label="环境" />
           <SettingsNavItem to="/settings/memory" icon={Brain} label="长期记忆" />
           <SettingsNavItem to="/settings/keys" icon={KeyRound} label="API Keys" />
           <SettingsNavItem to="/settings/tray" icon={PanelTop} label="托盘" />
@@ -794,7 +800,7 @@ function SandboxSettingsPage() {
   }
 
   async function addPath(value: string) {
-    const normalized = value.trim();
+    const normalized = value.trim().replace(/\/+$/, "") || "/";
     if (!normalized?.startsWith("/")) {
       setError("请输入绝对目录路径。");
       return;
@@ -902,6 +908,357 @@ function SandboxSettingsPage() {
           </>
         )}
       </section>
+    </>
+  );
+}
+
+const developmentToolLabels: Record<string, string> = {
+  node: "Node.js",
+  python3: "Python 3",
+  python: "Python",
+  go: "Go",
+  rustc: "Rust",
+  java: "Java",
+  javac: "Java compiler",
+  mvn: "Maven",
+  gradle: "Gradle",
+  kotlin: "Kotlin",
+  kotlinc: "Kotlin compiler",
+  dotnet: ".NET",
+  cmake: "CMake",
+  ninja: "Ninja",
+  clang: "Clang",
+  gcc: "GCC",
+  git: "Git",
+  gh: "GitHub CLI",
+  docker: "Docker",
+  kubectl: "Kubernetes CLI",
+  terraform: "Terraform",
+  tofu: "OpenTofu",
+  ruby: "Ruby",
+  php: "PHP",
+  composer: "Composer",
+  swift: "Swift",
+  xcodebuild: "Xcode",
+  pod: "CocoaPods",
+  flutter: "Flutter",
+  dart: "Dart",
+  adb: "Android Debug Bridge",
+};
+
+const developmentToolGroups = [
+  {
+    label: "JavaScript",
+    names: ["node", "npm", "npx", "pnpm", "yarn", "corepack", "bun", "deno"],
+  },
+  { label: "Python", names: ["python3", "python", "pip3", "pip", "uv", "poetry"] },
+  { label: "Go 与 Rust", names: ["go", "rustc", "cargo", "rustup"] },
+  {
+    label: "JVM 与 .NET",
+    names: ["java", "javac", "mvn", "gradle", "kotlin", "kotlinc", "dotnet"],
+  },
+  {
+    label: "编译与构建",
+    names: ["make", "cmake", "ninja", "clang", "clang++", "gcc", "g++"],
+  },
+  {
+    label: "版本控制与基础设施",
+    names: ["git", "gh", "docker", "kubectl", "helm", "terraform", "tofu"],
+  },
+  { label: "Ruby 与 PHP", names: ["ruby", "gem", "php", "composer"] },
+  {
+    label: "Apple 与移动端",
+    names: ["swift", "xcodebuild", "pod", "flutter", "dart", "adb"],
+  },
+] as const;
+
+function EnvironmentSettingsPage() {
+  const queryClient = useQueryClient();
+  const configQuery = useQuery({
+    queryKey: ["chat-server-chat-config"],
+    queryFn: () => loadChatServerConfig(),
+  });
+  const environmentQuery = useQuery({
+    queryKey: ["developer-environment"],
+    queryFn: () => loadDeveloperEnvironment(),
+  });
+  const [draft, setDraft] = useState<string[]>([]);
+  const [newPath, setNewPath] = useState("");
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+  const [importOpen, setImportOpen] = useState(false);
+  const [showUnavailable, setShowUnavailable] = useState(false);
+
+  useEffect(() => {
+    if (configQuery.data) setDraft(configQuery.data.developerToolPaths ?? []);
+  }, [configQuery.data]);
+
+  async function save(paths: string[], message: string) {
+    setError("");
+    const config = await saveChatServerConfig({ developerToolPaths: paths });
+    queryClient.setQueryData(["chat-server-chat-config"], config);
+    setDraft(config.developerToolPaths ?? paths);
+    await queryClient.invalidateQueries({ queryKey: ["developer-environment"] });
+    const rejected = paths.filter((directory) => !config.developerToolPaths.includes(directory));
+    if (rejected.length > 0) {
+      throw new Error("目录中未找到受支持且可执行的开发工具。");
+    }
+    setNotice(message);
+  }
+
+  const importMutation = useMutation({
+    mutationFn: async () => {
+      const imported = await importDeveloperEnvironment();
+      const merged = [...new Set([...draft, ...imported.paths])];
+      await save(merged, `已导入 ${imported.paths.length} 个开发工具目录。`);
+      return imported;
+    },
+    onSuccess: () => setImportOpen(false),
+    onError: (cause) => setError(describeError(cause)),
+  });
+
+  async function addPath(value: string) {
+    const normalized = value.trim().replace(/\/+$/, "") || "/";
+    if (!normalized.startsWith("/")) {
+      setError("请输入绝对目录路径。");
+      return;
+    }
+    if (draft.includes(normalized)) return;
+    setNewPath("");
+    try {
+      await save([...draft, normalized], "已添加开发工具目录。");
+    } catch (cause) {
+      setError(describeError(cause));
+    }
+  }
+
+  const isPending = configQuery.isPending || environmentQuery.isPending;
+  const isError = configQuery.isError || environmentQuery.isError;
+  const tools = environmentQuery.data?.tools ?? [];
+  const toolsByName = new Map(tools.map((tool) => [tool.name, tool]));
+  const availableCount = tools.filter((tool) => tool.available).length;
+  const visibleGroups = developmentToolGroups.flatMap((group) => {
+    const groupTools = group.names.flatMap((name) => {
+      const tool = toolsByName.get(name);
+      return tool && (showUnavailable || tool.available) ? [tool] : [];
+    });
+    return groupTools.length > 0 ? [{ ...group, tools: groupTools }] : [];
+  });
+
+  return (
+    <>
+      <SettingsHeading
+        eyebrow="Development"
+        title="环境"
+        description="管理受限终端可以调用的本地开发工具。工具目录只读，workspace 仍是唯一的默认写入范围。"
+      />
+
+      <section className="overflow-hidden rounded-lg border border-border bg-card">
+        <div className="flex flex-wrap items-start justify-between gap-4 border-border border-b px-5 py-4">
+          <div className="flex min-w-0 items-start gap-3">
+            <SquareTerminal className="mt-0.5 size-5 shrink-0 text-primary" />
+            <div className="min-w-0">
+              <h2 className="font-medium text-sm">开发工具</h2>
+              <p className="mt-1 truncate text-muted-foreground text-xs">
+                Shell：{environmentQuery.data?.shell ?? "正在检测"}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              aria-label="重新检测开发工具"
+              disabled={environmentQuery.isFetching}
+              onClick={() => void environmentQuery.refetch()}
+              size="icon"
+              title="重新检测"
+              type="button"
+              variant="outline"
+            >
+              <RefreshCw
+                className={`size-4 ${environmentQuery.isFetching ? "animate-spin" : ""}`}
+              />
+            </Button>
+            <Button onClick={() => setImportOpen(true)} size="sm" type="button">
+              <Download className="size-3.5" /> 从终端导入
+            </Button>
+          </div>
+        </div>
+        {!isPending && !isError && (
+          <div className="flex items-center justify-between gap-4 border-border border-b px-5 py-3">
+            <p className="text-muted-foreground text-xs">
+              已检测到 {availableCount} / {tools.length} 个常用命令
+            </p>
+            <label className="flex cursor-pointer items-center gap-2 text-xs" htmlFor="show-tools">
+              <span className="text-muted-foreground">显示未找到</span>
+              <Switch
+                checked={showUnavailable}
+                id="show-tools"
+                onCheckedChange={setShowUnavailable}
+              />
+            </label>
+          </div>
+        )}
+        {isPending ? (
+          <div className="grid gap-px bg-border sm:grid-cols-2" aria-busy="true" role="status">
+            {["node", "npm", "pnpm", "python3", "go", "cargo", "git", "docker"].map((name) => (
+              <div className="h-16 animate-pulse bg-card p-4" key={name}>
+                <div className="h-4 w-24 rounded bg-accent" />
+                <div className="mt-2 h-3 w-40 rounded bg-accent" />
+              </div>
+            ))}
+          </div>
+        ) : isError ? (
+          <div className="px-5 py-12 text-center text-sm">读取开发工具环境失败，请重新检测。</div>
+        ) : (
+          <div>
+            {visibleGroups.map((group) => (
+              <div className="border-border border-b last:border-b-0" key={group.label}>
+                <div className="bg-muted/35 px-5 py-2 font-medium text-[11px] text-muted-foreground uppercase">
+                  {group.label}
+                </div>
+                <div className="grid gap-px bg-border sm:grid-cols-2">
+                  {group.tools.map((tool) => (
+                    <div
+                      className="flex min-w-0 items-start gap-3 bg-card px-5 py-4"
+                      key={tool.name}
+                    >
+                      {tool.available ? (
+                        <CircleCheck className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                      ) : (
+                        <CircleAlert className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-sm">
+                            {developmentToolLabels[tool.name] ?? tool.name}
+                          </span>
+                          <Badge variant="secondary">{tool.available ? "可用" : "未找到"}</Badge>
+                        </div>
+                        <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
+                          {tool.executable ?? "未配置可执行目录"}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="mt-5 overflow-hidden rounded-lg border border-border bg-card">
+        <div className="border-border border-b px-5 py-4">
+          <h2 className="font-medium text-sm">可执行目录</h2>
+          <p className="mt-1 text-muted-foreground text-xs leading-5">
+            目录会加入受限终端 PATH，并仅授予读取和执行所需权限。
+          </p>
+        </div>
+        <div className="flex flex-col gap-2 border-border border-b p-5 sm:flex-row">
+          <Input
+            aria-label="开发工具绝对目录"
+            className="h-9 bg-background font-mono text-xs"
+            onChange={(event) => setNewPath(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void addPath(newPath);
+            }}
+            placeholder="例如 /Users/me/.local/bin"
+            value={newPath}
+          />
+          <Button onClick={() => void addPath(newPath)} size="sm" type="button" variant="outline">
+            <Plus className="size-3.5" /> 添加目录
+          </Button>
+          <Button
+            aria-label="选择开发工具目录"
+            onClick={async () => {
+              const selected = await pickDirectory();
+              if (selected) await addPath(selected);
+            }}
+            size="icon"
+            title="选择目录"
+            type="button"
+            variant="outline"
+          >
+            <FolderOpen className="size-4" />
+          </Button>
+        </div>
+        {draft.length === 0 ? (
+          <div className="px-5 py-10 text-center">
+            <SquareTerminal className="mx-auto size-8 text-muted-foreground" />
+            <p className="mt-3 font-medium text-sm">尚未配置开发工具目录</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-border">
+            {draft.map((directory) => {
+              const directoryTools = tools.filter((tool) => tool.directory === directory);
+              return (
+                <div className="flex min-w-0 items-center gap-3 px-5 py-3" key={directory}>
+                  <code className="min-w-0 flex-1 truncate text-xs">{directory}</code>
+                  <div className="hidden items-center gap-1 sm:flex">
+                    {directoryTools.map((tool) => (
+                      <Badge key={tool.name} variant="outline">
+                        {tool.name}
+                      </Badge>
+                    ))}
+                  </div>
+                  <Button
+                    aria-label={`移除 ${directory}`}
+                    onClick={async () => {
+                      try {
+                        await save(
+                          draft.filter((item) => item !== directory),
+                          "已移除开发工具目录。",
+                        );
+                      } catch (cause) {
+                        setError(describeError(cause));
+                      }
+                    }}
+                    size="icon"
+                    title="移除目录"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <Trash2 className="size-3.5 text-muted-foreground" />
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {(notice || error) && (
+          <div
+            className={`border-border border-t px-5 py-3 text-xs ${error ? "text-destructive" : "text-muted-foreground"}`}
+          >
+            {error || notice}
+          </div>
+        )}
+      </section>
+
+      <AlertDialog onOpenChange={setImportOpen} open={importOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>从终端导入开发工具？</AlertDialogTitle>
+            <AlertDialogDescription>
+              ChatDesk 会启动一次当前登录
+              Shell，并执行其启动配置。只解析常用开发工具的绝对可执行路径；不会保存其他环境变量、Token
+              或 API Key。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={importMutation.isPending}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={importMutation.isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                importMutation.mutate();
+              }}
+            >
+              {importMutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
+              确认导入
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
@@ -2671,6 +3028,7 @@ function PriceField({
 export {
   ApiKeysSettingsPage,
   ChatServerSettingsPage,
+  EnvironmentSettingsPage,
   McpSettingsPage,
   MemorySettingsPage,
   ModelsSettingsPage,

@@ -95,6 +95,7 @@ export type PlatformAdapter = {
     mode: SandboxMode,
     relativeCwd?: string,
     allowOutside?: boolean,
+    developerToolPaths?: string[],
   ): Promise<{ code: number; out: string }>;
   listViteProcesses(): Promise<ViteProcess[]>;
   killViteProcess(pid: number): Promise<void>;

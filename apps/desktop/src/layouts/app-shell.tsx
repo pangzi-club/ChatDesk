@@ -217,6 +217,12 @@ const commandItems = [
     keywords: ["设置", "sandbox", "沙箱", "读取白名单", "目录权限"],
   },
   {
+    to: "/settings/environment",
+    label: "环境",
+    icon: SquareTerminal,
+    keywords: ["设置", "环境", "environment", "path", "node", "pnpm", "python", "go"],
+  },
+  {
     to: "/settings/memory",
     label: "长期记忆",
     icon: Brain,

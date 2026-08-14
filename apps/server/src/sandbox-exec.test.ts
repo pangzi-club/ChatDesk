@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -57,6 +57,23 @@ describe("sandbox execution errors", () => {
     }
   });
 
+  it("keeps tool caches outside the workspace without exposing the real home", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-sandbox-cache-env-"));
+    const result = await runSandboxedShell(
+      'printf "%s\\n%s\\n%s" "$HOME" "$npm_config_cache" "$GOCACHE"',
+      { cwd: root, mode: "full" },
+    );
+    const [home, npmCache, goCache] = result.out.split("\n");
+
+    expect(home).toContain(path.join(os.tmpdir(), "chatdesk-sandbox-cache-"));
+    expect(home).not.toBe(os.homedir());
+    expect(home).not.toContain(root);
+    expect(npmCache).toContain(path.join(os.tmpdir(), "chatdesk-sandbox-cache-"));
+    expect(goCache).toContain(path.join(os.tmpdir(), "chatdesk-sandbox-cache-"));
+    expect(npmCache).not.toContain(root);
+    expect(goCache).not.toContain(root);
+  });
+
   it("terminates commands that exceed the output limit", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-sandbox-output-"));
     const command = `${JSON.stringify(process.execPath)} -e 'process.stdout.write("x".repeat(2500000))'`;
@@ -78,6 +95,45 @@ describe("sandbox execution errors", () => {
     const profile = buildSeatbeltProfile("/tmp/workspace", [], [], ["/opt/chatdesk-approved.txt"]);
     expect(profile).toContain('(allow file-write* (literal "/opt/chatdesk-approved.txt"))');
     expect(profile).not.toContain('(allow file-write* (subpath "/opt"))');
+  });
+
+  it("adds developer tool installs as read-only roots and keeps network permission separate", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-tool-workspace-"));
+    const runtime = await mkdtemp(path.join(process.cwd(), ".chatdesk-tool-runtime-"));
+    const bin = path.join(runtime, "bin");
+    try {
+      await mkdir(bin, { recursive: true });
+      await writeFile(path.join(bin, "node"), "#!/bin/sh\n", "utf8");
+      await chmod(path.join(bin, "node"), 0o755);
+
+      const profile = buildSeatbeltProfile(root, [], [], [], [bin], true);
+
+      expect(profile).toContain(`(allow file-read* (subpath "${runtime}"))`);
+      expect(profile).toContain("(allow network*)");
+      expect(profile).toContain(`(allow file-write* (subpath "${root}"))`);
+      expect(profile).not.toContain(`(allow file-write* (subpath "${runtime}"))`);
+    } finally {
+      await rm(runtime, { recursive: true });
+    }
+  });
+
+  it("prepends configured developer directories to the shell PATH", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-tool-path-"));
+    const bin = path.join(root, "tools");
+    await mkdir(bin);
+    await writeFile(path.join(bin, "node"), "#!/bin/sh\n", "utf8");
+    await chmod(path.join(bin, "node"), 0o755);
+    await writeFile(path.join(bin, "chatdesk-test-tool"), "#!/bin/sh\nprintf tool-ready\n", "utf8");
+    await chmod(path.join(bin, "chatdesk-test-tool"), 0o755);
+
+    const result = await runSandboxedShell("chatdesk-test-tool", {
+      cwd: root,
+      mode: "full",
+      developerToolPaths: [bin],
+    });
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("tool-ready");
   });
 
   it("runs structured read operations in the helper process", async () => {

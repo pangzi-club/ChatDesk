@@ -14,6 +14,10 @@ import { AutomationScheduler, AutomationStore } from "./automation-store.ts";
 import { ChatConfigStore } from "./chat-config.ts";
 import { closeClientTools } from "./client-tools.ts";
 import type { ServerConfig } from "./config.ts";
+import {
+  importDeveloperEnvironment,
+  inspectDeveloperEnvironment,
+} from "./developer-environment.ts";
 import { EventHub } from "./events.ts";
 import { normalizeGeneratedCommitMessage } from "./git-commit-message.ts";
 import { ImageGenerationStore } from "./image-generation-store.ts";
@@ -595,6 +599,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
           mode,
           typeof body.cwd === "string" ? body.cwd : undefined,
           body.allowOutside === true,
+          chatConfig.get().developerToolPaths,
         ),
       );
     } catch (error) {
@@ -687,6 +692,20 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   });
 
   app.get("/v1/chat-config", (c) => c.json(chatConfig.get()));
+  app.get("/v1/developer-environment", async (c) => {
+    try {
+      return c.json(await inspectDeveloperEnvironment(chatConfig.get().developerToolPaths));
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+  app.post("/v1/developer-environment/import", async (c) => {
+    try {
+      return c.json(await importDeveloperEnvironment());
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
   app.get("/v1/ai-usage", (c) => c.json(aiUsageLogs.list()));
   app.get("/v1/sandbox-reviews", (c) => c.json(runs.reviewLogs(c.req.query("sessionId"))));
   app.patch("/v1/chat-config", async (c) => {

@@ -356,6 +356,8 @@ describe("chat server", () => {
         apiKeys: { dataer: "secret" },
         selectedSkillIds: ["skill-a"],
         sandboxMode: "auto",
+        sandboxReadablePaths: ["/"],
+        developerToolPaths: ["relative/bin", "/usr/bin", "/usr/bin", "/"],
       }),
     });
     assert.equal(config.status, 200);
@@ -364,7 +366,10 @@ describe("chat server", () => {
     const loadedConfig = await server.app.request("http://localhost/v1/chat-config", {
       headers: auth(),
     });
-    assert.equal((await loadedConfig.json()).sandboxMode, "auto");
+    const loadedConfigData = await loadedConfig.json();
+    assert.equal(loadedConfigData.sandboxMode, "auto");
+    assert.deepEqual(loadedConfigData.sandboxReadablePaths, ["/"]);
+    assert.deepEqual(loadedConfigData.developerToolPaths, ["/usr/bin"]);
 
     const memory = await server.app.request("http://localhost/v1/memory", {
       method: "PUT",

@@ -6,6 +6,7 @@ import type {
   ChatServerProviderModel,
   ChatServerReviewerLog,
   ChatSession,
+  DeveloperEnvironmentStatus,
   HealthResponse,
   RunStartInput,
   SessionIndexItem,
@@ -75,6 +76,7 @@ export type {
   ChatServerProviderModel,
   ChatServerReviewerLog,
   ChatSession,
+  DeveloperEnvironmentStatus,
 };
 
 function isTauri() {
@@ -474,6 +476,14 @@ export async function loadChatServerConfig(port = CHAT_SERVER_DEFAULT_PORT) {
 
 export async function saveChatServerConfig(value: unknown, port = CHAT_SERVER_DEFAULT_PORT) {
   return createClient(port).saveConfig(value);
+}
+
+export async function loadDeveloperEnvironment(port = CHAT_SERVER_DEFAULT_PORT) {
+  return createClient(port).getDeveloperEnvironment();
+}
+
+export async function importDeveloperEnvironment(port = CHAT_SERVER_DEFAULT_PORT) {
+  return createClient(port).importDeveloperEnvironment();
 }
 
 export async function testChatServerModel(

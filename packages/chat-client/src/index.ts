@@ -5,6 +5,7 @@ import type {
   ChatServerProviderModel,
   ChatServerReviewerLog,
   ChatSession,
+  DeveloperEnvironmentStatus,
   HealthResponse,
   RunStartInput,
   ServerEvent,
@@ -220,6 +221,22 @@ export class ChatServerClient {
         body: JSON.stringify(value),
       },
       "Chat Server 配置保存失败",
+    );
+  }
+
+  getDeveloperEnvironment() {
+    return this.json<DeveloperEnvironmentStatus>(
+      "/v1/developer-environment",
+      undefined,
+      "开发工具环境加载失败",
+    );
+  }
+
+  importDeveloperEnvironment() {
+    return this.json<DeveloperEnvironmentStatus>(
+      "/v1/developer-environment/import",
+      { method: "POST" },
+      "开发工具环境导入失败",
     );
   }
 

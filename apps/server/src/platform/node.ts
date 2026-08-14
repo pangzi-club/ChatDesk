@@ -266,10 +266,11 @@ export class NodePlatformAdapter implements PlatformAdapter {
     mode: SandboxMode,
     relativeCwd?: string,
     allowOutside = false,
+    developerToolPaths: string[] = [],
   ) {
     const root = rootPath(rootValue);
     const cwd = resolveCommandCwd(root, relativeCwd, mode, allowOutside);
-    return runSandboxedShell(command, { cwd, mode, allowOutside });
+    return runSandboxedShell(command, { cwd, mode, allowOutside, developerToolPaths });
   }
 
   async listViteProcesses() {

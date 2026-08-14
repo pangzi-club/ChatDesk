@@ -1,6 +1,6 @@
 import { useChat } from "@ai-sdk/react";
 import { code } from "@streamdown/code";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type ChatTransport,
   DefaultChatTransport,
@@ -20,8 +20,10 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  CircleAlert,
   CircleStop,
   Copy,
+  Download,
   FilePlus2,
   Folder,
   Gauge,
@@ -30,6 +32,7 @@ import {
   Hammer,
   History,
   Laptop,
+  LoaderCircle,
   Mic,
   MoreHorizontal,
   Paperclip,
@@ -44,6 +47,7 @@ import {
   Upload,
   User,
   Wrench,
+  X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -99,10 +103,12 @@ import {
   chatServerHeaders,
   chatServerUrl,
   ensureChatServerSession,
+  importDeveloperEnvironment,
   initializeChatServer,
   loadChatServerConfig,
   loadChatServerPort,
   loadChatServerSystemPromptPreview,
+  loadDeveloperEnvironment,
   loadServerWorkspaceGit,
   saveChatServerConfig,
   stopChatServerRun,
@@ -133,6 +139,7 @@ import {
   saveChatToolsSettings,
 } from "@/lib/chat-tools";
 import { formatTokenUsage, getMessageUsage } from "@/lib/chat-usage";
+import { detectMissingDevelopmentTools } from "@/lib/developer-environment";
 import { openFileViewer } from "@/lib/file-viewer-events";
 import { loadMcpServers, saveMcpServers } from "@/lib/mcp";
 import { formatModelLabel, loadModels, type ModelConfig } from "@/lib/models";
@@ -260,6 +267,10 @@ function ChatPage() {
     queryKey: ["chat-sandbox-mode"],
     queryFn: loadChatSandboxMode,
   });
+  const developerEnvironmentQuery = useQuery({
+    queryKey: ["developer-environment"],
+    queryFn: () => loadDeveloperEnvironment(),
+  });
   const installedSkillIds = installedSkillsQuery.data ?? EMPTY_STRING_ARRAY;
   const savedChatSkillIds = chatSkillSelectionQuery.data ?? EMPTY_STRING_ARRAY;
   const { data: workspaceProjects = [] } = useQuery({
@@ -308,6 +319,8 @@ function ChatPage() {
   const [toolLogOpen, setToolLogOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
+  const [environmentImportOpen, setEnvironmentImportOpen] = useState(false);
+  const [dismissedEnvironmentGuide, setDismissedEnvironmentGuide] = useState("");
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [sandboxMode, setSandboxMode] = useState<ChatSandboxMode>(DEFAULT_CHAT_SANDBOX_MODE);
   const [chatDisplay, setChatDisplay] = useState<ChatDisplaySettings>(DEFAULT_CHAT_DISPLAY);
@@ -392,6 +405,36 @@ function ChatPage() {
         console.error("Chat request failed", chatError);
       },
     });
+  const detectedMissingTools = useMemo(() => {
+    for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+      const message = messages[messageIndex];
+      for (let partIndex = message.parts.length - 1; partIndex >= 0; partIndex -= 1) {
+        const part = message.parts[partIndex];
+        if (!isToolUIPart(part) || getToolName(part) !== "bash" || !("output" in part)) continue;
+        const missing = detectMissingDevelopmentTools(part.output);
+        if (missing.length > 0) return missing;
+      }
+    }
+    return [];
+  }, [messages]);
+  const unavailableDetectedTools = detectedMissingTools.filter((name) => {
+    const tool = developerEnvironmentQuery.data?.tools.find((item) => item.name === name);
+    return tool?.available !== true;
+  });
+  const environmentGuideKey = `${sessionId}:${unavailableDetectedTools.join(",")}`;
+  const environmentImportMutation = useMutation({
+    mutationFn: async () => {
+      const imported = await importDeveloperEnvironment();
+      const config = await loadChatServerConfig();
+      const paths = [...new Set([...(config.developerToolPaths ?? []), ...imported.paths])];
+      return saveChatServerConfig({ developerToolPaths: paths });
+    },
+    onSuccess: async (saved) => {
+      queryClient.setQueryData(["chat-server-chat-config"], saved);
+      await queryClient.invalidateQueries({ queryKey: ["developer-environment"] });
+      setEnvironmentImportOpen(false);
+    },
+  });
   const activeSessionRef = useRef(sessionId);
   activeSessionRef.current = sessionId;
   const chatStatusRef = useRef(status);
@@ -1253,6 +1296,42 @@ function ChatPage() {
               workspaceId={workspaceKey || undefined}
             />
           ))}
+          {developerEnvironmentQuery.data &&
+          unavailableDetectedTools.length > 0 &&
+          environmentGuideKey !== dismissedEnvironmentGuide ? (
+            <div
+              aria-live="polite"
+              className="mx-11 flex flex-col gap-3 border-border border-y bg-muted/35 px-4 py-3 sm:flex-row sm:items-center"
+            >
+              <CircleAlert className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-sm">本地开发工具尚未接入</p>
+                <p className="mt-0.5 text-muted-foreground text-xs">
+                  终端找不到 {unavailableDetectedTools.join("、")}。导入后可重新运行当前任务。
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                <Button onClick={() => setEnvironmentImportOpen(true)} size="sm" type="button">
+                  <Download className="size-3.5" /> 导入本机工具
+                </Button>
+                <Button asChild size="sm" type="button" variant="ghost">
+                  <Link to="/settings/environment">
+                    <Settings className="size-3.5" /> 环境设置
+                  </Link>
+                </Button>
+                <Button
+                  aria-label="关闭环境提示"
+                  onClick={() => setDismissedEnvironmentGuide(environmentGuideKey)}
+                  size="icon"
+                  title="关闭"
+                  type="button"
+                  variant="ghost"
+                >
+                  <X className="size-3.5" />
+                </Button>
+              </div>
+            </div>
+          ) : null}
           {isGenerating && !hasAssistantMessage && (
             <div className="chat-message assistant-message">
               <div className="chat-avatar assistant-avatar">
@@ -1603,6 +1682,50 @@ function ChatPage() {
             <AlertDialogCancel>取消</AlertDialogCancel>
             <AlertDialogAction variant="destructive" onClick={() => void confirmRemoveSession()}>
               删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        onOpenChange={(open) => {
+          if (open) environmentImportMutation.reset();
+          setEnvironmentImportOpen(open);
+        }}
+        open={environmentImportOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>导入本机开发工具？</AlertDialogTitle>
+            <AlertDialogDescription>
+              ChatDesk 会启动一次当前登录
+              Shell，并执行其启动配置。只解析白名单内开发工具的绝对路径；不会保存其他环境变量、Token
+              或 API Key。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {environmentImportMutation.isError ? (
+            <p className="text-destructive text-sm" role="alert">
+              {environmentImportMutation.error instanceof Error
+                ? environmentImportMutation.error.message
+                : "开发工具导入失败。"}
+            </p>
+          ) : null}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={environmentImportMutation.isPending}>
+              取消
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={environmentImportMutation.isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                environmentImportMutation.mutate();
+              }}
+            >
+              {environmentImportMutation.isPending ? (
+                <LoaderCircle className="size-4 animate-spin" />
+              ) : (
+                <Download className="size-4" />
+              )}
+              确认导入
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -86,6 +86,73 @@ export type ChatTokenUsage = {
   reasoningOutputTokens?: number;
 };
 
+export const DEVELOPMENT_TOOL_NAMES = [
+  "node",
+  "npm",
+  "npx",
+  "pnpm",
+  "yarn",
+  "corepack",
+  "bun",
+  "deno",
+  "python3",
+  "python",
+  "pip3",
+  "pip",
+  "uv",
+  "poetry",
+  "go",
+  "rustc",
+  "cargo",
+  "rustup",
+  "java",
+  "javac",
+  "mvn",
+  "gradle",
+  "kotlin",
+  "kotlinc",
+  "dotnet",
+  "make",
+  "cmake",
+  "ninja",
+  "clang",
+  "clang++",
+  "gcc",
+  "g++",
+  "git",
+  "gh",
+  "docker",
+  "kubectl",
+  "helm",
+  "terraform",
+  "tofu",
+  "ruby",
+  "gem",
+  "php",
+  "composer",
+  "swift",
+  "xcodebuild",
+  "pod",
+  "flutter",
+  "dart",
+  "adb",
+] as const;
+
+export type DevelopmentToolName = (typeof DEVELOPMENT_TOOL_NAMES)[number];
+
+export type DevelopmentToolStatus = {
+  name: DevelopmentToolName;
+  available: boolean;
+  executable?: string;
+  directory?: string;
+};
+
+export type DeveloperEnvironmentStatus = {
+  shell: string;
+  paths: string[];
+  tools: DevelopmentToolStatus[];
+};
+
 export type RunStartInput = {
   messages?: UIMessage[];
   message?: UIMessage;
@@ -128,6 +195,7 @@ export type ChatServerConfigData = {
   chatTools: Record<string, boolean>;
   sandboxMode: SandboxMode;
   sandboxReadablePaths: string[];
+  developerToolPaths: string[];
   approvalReviewerModelId?: string;
   mcpServers: unknown[];
   installedSkillIds: string[];

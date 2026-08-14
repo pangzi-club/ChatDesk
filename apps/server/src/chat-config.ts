@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ChatServerConfigData } from "@chatdesk/shared";
+import { isDeveloperToolDirectory } from "./developer-environment.ts";
 
 export type { ChatServerConfigData } from "@chatdesk/shared";
 
@@ -9,6 +10,7 @@ const DEFAULT_CONFIG: ChatServerConfigData = {
   chatTools: {},
   sandboxMode: "ask",
   sandboxReadablePaths: [],
+  developerToolPaths: [],
   approvalReviewerModelId: undefined,
   mcpServers: [],
   installedSkillIds: [],
@@ -50,6 +52,18 @@ function normalize(value: unknown): ChatServerConfigData {
               .map((item) => item.trim()),
           ),
         ].slice(0, 100)
+      : [],
+    developerToolPaths: Array.isArray(record.developerToolPaths)
+      ? [
+          ...new Set(
+            record.developerToolPaths
+              .filter(
+                (item): item is string =>
+                  typeof item === "string" && isDeveloperToolDirectory(item.trim()),
+              )
+              .map((item) => path.normalize(item.trim())),
+          ),
+        ].slice(0, 50)
       : [],
     approvalReviewerModelId: reviewerModelExists ? configuredReviewerModelId : undefined,
     mcpServers: Array.isArray(record.mcpServers) ? record.mcpServers : [],

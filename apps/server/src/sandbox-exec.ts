@@ -1,12 +1,16 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DEVELOPMENT_TOOL_NAMES } from "@chatdesk/shared";
 
+import { isDeveloperToolDirectory } from "./developer-environment.ts";
 import type { SandboxMode } from "./protocol.ts";
 
 const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 const MAX_HELPER_OUTPUT_BYTES = 2 * 1024 * 1024;
+const BASE_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
 const SAFE_ENV_KEYS = [
   "LANG",
   "LC_ALL",
@@ -51,6 +55,8 @@ export async function runSandboxedShell(
     allowOutside?: boolean;
     timeoutMs?: number;
     readablePaths?: string[];
+    developerToolPaths?: string[];
+    allowNetwork?: boolean;
   },
 ) {
   const cwd = resolveDirectory(options.cwd);
@@ -59,8 +65,21 @@ export async function runSandboxedShell(
   const effectiveMode = options.allowOutside ? "full" : options.mode;
   const args =
     effectiveMode === "full"
-      ? ["-lc", command]
-      : ["-p", buildSeatbeltProfile(cwd, options.readablePaths ?? []), shell, "-lc", command];
+      ? ["-c", command]
+      : [
+          "-p",
+          buildSeatbeltProfile(
+            cwd,
+            options.readablePaths ?? [],
+            [],
+            [],
+            options.developerToolPaths ?? [],
+            options.allowNetwork ?? false,
+          ),
+          shell,
+          "-c",
+          command,
+        ];
   const executable = effectiveMode === "full" ? shell : "/usr/bin/sandbox-exec";
 
   if (effectiveMode !== "full" && process.platform !== "darwin") {
@@ -69,7 +88,7 @@ export async function runSandboxedShell(
 
   const result = await runBoundedProcess(executable, args, {
     cwd,
-    env: sandboxEnvironment(cwd),
+    env: sandboxEnvironment(cwd, options.developerToolPaths),
     timeout,
     maxOutputBytes: MAX_OUTPUT_BYTES,
   });
@@ -239,16 +258,44 @@ function resolveDirectory(value: string) {
   }
 }
 
-function sandboxEnvironment(cwd: string) {
+function effectivePath(developerToolPaths: string[] = []) {
+  return [...developerToolPaths, ...BASE_PATH.split(path.delimiter)]
+    .map((value) => value.trim())
+    .filter(
+      (value, index, values) =>
+        (BASE_PATH.split(path.delimiter).includes(value) || isDeveloperToolDirectory(value)) &&
+        values.indexOf(value) === index,
+    )
+    .join(path.delimiter);
+}
+
+function sandboxEnvironment(cwd: string, developerToolPaths: string[] = []) {
   const env: NodeJS.ProcessEnv = {};
   for (const key of SAFE_ENV_KEYS) {
     const value = process.env[key];
     if (value) env[key] = value;
   }
-  env.PATH ||= "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+  env.PATH = effectivePath(developerToolPaths);
   env.TMPDIR ||= os.tmpdir();
   env.SHELL ||= "/bin/sh";
-  env.HOME = cwd;
+  const cacheRoot = path.join(
+    env.TMPDIR,
+    `chatdesk-sandbox-cache-${process.pid}`,
+    createHash("sha256").update(cwd).digest("hex").slice(0, 16),
+  );
+  env.HOME = path.join(cacheRoot, "home");
+  env.XDG_CACHE_HOME = path.join(cacheRoot, "xdg-cache");
+  env.XDG_DATA_HOME = path.join(cacheRoot, "xdg-data");
+  env.COREPACK_HOME = path.join(cacheRoot, "corepack");
+  env.npm_config_cache = path.join(cacheRoot, "npm");
+  env.npm_config_store_dir = path.join(cacheRoot, "pnpm-store");
+  env.PIP_CACHE_DIR = path.join(cacheRoot, "pip");
+  env.UV_CACHE_DIR = path.join(cacheRoot, "uv");
+  env.PYTHONPYCACHEPREFIX = path.join(cacheRoot, "python-bytecode");
+  env.GOCACHE = path.join(cacheRoot, "go-build");
+  env.GOMODCACHE = path.join(cacheRoot, "go-mod");
+  env.GOPATH = path.join(cacheRoot, "go-path");
+  env.GOTELEMETRY = "off";
   return env;
 }
 
@@ -325,6 +372,8 @@ export function buildSeatbeltProfile(
   readablePaths: string[] = [],
   additionalReadPaths: string[] = [],
   additionalWritePaths: string[] = [],
+  developerToolPaths: string[] = [],
+  allowNetwork = false,
 ) {
   const temp = realpathSync(os.tmpdir());
   const escapeValue = (value: string) => value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
@@ -342,7 +391,7 @@ export function buildSeatbeltProfile(
       return roots;
     })
     .filter((value, index, values) => values.indexOf(value) === index);
-  const pathRoots = (process.env.PATH ?? "")
+  const pathRoots = effectivePath(developerToolPaths)
     .split(path.delimiter)
     .map((value) => value.trim())
     .filter((value) => value.startsWith("/"));
@@ -356,6 +405,7 @@ export function buildSeatbeltProfile(
     "/private/etc",
     path.dirname(process.execPath),
     ...pathRoots,
+    ...resolveDeveloperToolReadRoots(developerToolPaths),
     ...configuredReadRoots,
     ...additionalReadPaths,
   ].filter((value, index, values) => values.indexOf(value) === index);
@@ -383,8 +433,40 @@ export function buildSeatbeltProfile(
     ...writeTargets.map((value) => `(allow file-write* (literal "${escapeValue(value)}"))`),
     '(allow file-write* (literal "/dev/null"))',
     '(allow file-write* (literal "/dev/tty"))',
-    "(deny network*)",
+    allowNetwork ? "(allow network*)" : "(deny network*)",
   ].join(" ");
+}
+
+function resolveDeveloperToolReadRoots(directories: string[]) {
+  const roots: string[] = [];
+  const add = (value: string) => {
+    if (path.isAbsolute(value) && !roots.includes(value)) roots.push(value);
+  };
+  for (const directory of directories) {
+    const candidate = directory.trim();
+    if (!isDeveloperToolDirectory(candidate)) continue;
+    add(candidate);
+    try {
+      add(realpathSync(candidate));
+    } catch {
+      continue;
+    }
+    for (const name of DEVELOPMENT_TOOL_NAMES) {
+      const executable = path.join(candidate, name);
+      if (!existsSync(executable)) continue;
+      try {
+        const resolved = realpathSync(executable);
+        const executableDirectory = path.dirname(resolved);
+        add(executableDirectory);
+        if (["bin", "sbin"].includes(path.basename(executableDirectory))) {
+          add(path.dirname(executableDirectory));
+        }
+      } catch {
+        // Ignore broken links; they cannot be executed and must not broaden the read policy.
+      }
+    }
+  }
+  return roots;
 }
 
 export function resolveCommandCwd(

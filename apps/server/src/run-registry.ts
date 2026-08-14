@@ -264,6 +264,7 @@ export class RunRegistry {
               ...createWorkspaceToolsForInput({
                 ...input,
                 sandboxReadablePaths: chatConfig.sandboxReadablePaths,
+                developerToolPaths: chatConfig.developerToolPaths,
                 cwd: effectiveCwd,
                 model,
                 sandboxMode,
@@ -296,6 +297,7 @@ export class RunRegistry {
           sessionId,
           runId,
           readablePaths: chatConfig.sandboxReadablePaths,
+          developerToolPaths: chatConfig.developerToolPaths,
           preflightResults,
         }),
         experimental_toolApprovalSecret: this.toolApprovalSecret,
@@ -418,6 +420,7 @@ function createToolApproval(options: {
   sessionId: string;
   runId: string;
   readablePaths: string[];
+  developerToolPaths: string[];
   preflightResults: WorkspaceToolPreflightMap;
 }) {
   const mode = options.mode;
@@ -449,6 +452,7 @@ function createToolApproval(options: {
         cwd: options.workspace,
         mode,
         readablePaths: options.readablePaths,
+        developerToolPaths: options.developerToolPaths,
       });
       options.preflightResults.set(toolCallId, preflight);
       if (preflight.status === "ok" || preflight.status === "error")
@@ -682,6 +686,7 @@ function createWorkspaceToolsForInput(
     approvedEscalationToolCallIds: Set<string>;
     onSandboxBlocked: Parameters<typeof createWorkspaceTools>[3];
     sandboxReadablePaths?: string[];
+    developerToolPaths?: string[];
     preflightResults: WorkspaceToolPreflightMap;
   },
 ) {
@@ -701,6 +706,7 @@ function createWorkspaceToolsForInput(
     input.onSandboxBlocked,
     input.sandboxReadablePaths,
     input.preflightResults,
+    input.developerToolPaths,
   );
   const selected = selectWorkspaceToolNames(names);
   return Object.fromEntries(selected.map((name) => [name, tools[name]]));

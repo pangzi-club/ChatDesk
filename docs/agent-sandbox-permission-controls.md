@@ -68,10 +68,19 @@ sandbox-exec -p "$PROFILE" \
 例如，可以为子进程设置最小化环境：
 
 ```text
-HOME=<workspace>/.sandbox-home
+HOME=$TMPDIR/chatdesk-sandbox-cache-<process>/<workspace-hash>/home
 TMPDIR=<workspace>/.sandbox-tmp
 PATH=/usr/bin:/bin
 ```
+
+### 本地开发工具的按需引导
+
+ChatDesk 不应在启动时静默读取用户的完整登录 Shell 环境。受限终端实际返回
+`command not found`，且缺失命令属于开发工具白名单时，聊天界面才显示环境引导。
+
+用户可以关闭提示或前往“设置 > 环境”手动配置。选择导入时必须先确认一次；确认后才启动一次
+登录 Shell。导入过程只提取白名单工具的绝对可执行路径，不持久化其他环境变量、Token 或 API
+Key。导入的目录只作为只读执行路径加入沙箱，不能扩大 workspace 的写入范围，也不能隐式开放网络。
 
 仅过滤 `rm`、`curl`、`sudo` 等命令名称并不可靠。命令可以通过脚本、解释器、符号链接或其他工具产生相同的副作用，真正的边界必须由操作系统强制执行。
 

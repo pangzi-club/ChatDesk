@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { type ToolSet, tool } from "ai";
 import { z } from "zod";
 import type { SandboxMode } from "./protocol.ts";
+import { classifySandboxBoundary } from "./sandbox-boundary-reviewer.ts";
 import {
   resolveCommandCwd,
   runSandboxedFile,
@@ -44,12 +45,28 @@ export type WorkspaceToolPreflight =
 
 export type WorkspaceToolPreflightMap = Map<string, WorkspaceToolPreflight>;
 
+export function resolveApprovedBashPermissions(
+  input: { command: string; cwd?: string },
+  workspace: string,
+  readablePaths: string[],
+  approved: boolean,
+) {
+  const assessment = classifySandboxBoundary({ toolName: "bash", input }, workspace, readablePaths);
+  return {
+    allowOutside:
+      approved &&
+      assessment.reasons.some((reason) => reason === "external-path" || reason === "external-cwd"),
+    allowNetwork: approved && assessment.reasons.includes("network"),
+  };
+}
+
 export async function preflightWorkspaceTool(options: {
   toolName: string;
   input: unknown;
   cwd: string;
   mode: SandboxMode;
   readablePaths?: string[];
+  developerToolPaths?: string[];
 }): Promise<WorkspaceToolPreflight> {
   const readablePaths = options.readablePaths ?? [];
   try {
@@ -86,6 +103,7 @@ export async function preflightWorkspaceTool(options: {
         cwd: commandCwd,
         mode: options.mode,
         readablePaths,
+        developerToolPaths: options.developerToolPaths,
       });
       if (result.sandboxBlocked) throw new SandboxBlockedError(result.out);
       return { status: "ok", result };
@@ -406,6 +424,7 @@ export function createWorkspaceTools(
   onSandboxBlocked?: SandboxEscalationHandler,
   readablePaths: string[] = [],
   preflightResults: WorkspaceToolPreflightMap = new Map(),
+  developerToolPaths: string[] = [],
 ): ToolSet {
   const pathScope =
     mode === "full"
@@ -603,25 +622,33 @@ export function createWorkspaceTools(
             out: string;
             sandboxBlocked: boolean;
           }>;
-        const run = async (allowOutside: boolean) => {
-          const commandCwd = resolveCommandCwd(cwd, requestedCwd, mode, allowOutside);
+        const approvedPermissions = resolveApprovedBashPermissions(
+          input,
+          cwd,
+          readablePaths,
+          approvedToolCallIds.has(toolCallId),
+        );
+        const run = async (permissions: { allowOutside: boolean; allowNetwork: boolean }) => {
+          const commandCwd = resolveCommandCwd(cwd, requestedCwd, mode, permissions.allowOutside);
           const result = await runSandboxedShell(command, {
             cwd: commandCwd,
             mode,
-            allowOutside,
+            allowOutside: permissions.allowOutside,
+            allowNetwork: permissions.allowNetwork,
             readablePaths,
+            developerToolPaths,
           });
           if (result.sandboxBlocked) throw new SandboxBlockedError(result.out);
           return result;
         };
         try {
-          return await run(approvedToolCallIds.has(toolCallId));
+          return await run(approvedPermissions);
         } catch (error) {
           return retryAfterSandboxReview(error, onSandboxBlocked, {
             toolName: "bash",
             toolCallId,
             input,
-            retry: () => run(true),
+            retry: () => run({ allowOutside: false, allowNetwork: true }),
           });
         }
       },
