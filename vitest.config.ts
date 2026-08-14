@@ -2,13 +2,11 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    environment: "node",
-    include: [
-      "apps/server/src/**/*.test.ts",
-      "apps/desktop/src/**/*.test.ts",
-      "packages/shared/src/**/*.test.ts",
-      "packages/chat-client/src/**/*.test.ts",
+    projects: [
+      "apps/server/vitest.config.ts",
+      "apps/desktop/vitest.config.ts",
+      "packages/shared/vitest.config.ts",
+      "packages/chat-client/vitest.config.ts",
     ],
-    exclude: ["scripts/**"],
   },
 });
