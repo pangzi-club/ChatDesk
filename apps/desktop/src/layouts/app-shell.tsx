@@ -115,6 +115,7 @@ import {
   loadChatSession,
 } from "@/lib/chat-store";
 import { subscribeFileViewerOpen } from "@/lib/file-viewer-events";
+import { subscribeImagePreviewOpen } from "@/lib/image-preview-events";
 import { openExternal } from "@/lib/platform";
 import { settingsStore } from "@/lib/settings-store";
 import {
@@ -543,6 +544,39 @@ function AppShell() {
           ...tab,
           title: getBrowserPreviewTitle(url),
           url,
+          refreshToken: Date.now(),
+        };
+        return {
+          ...current,
+          [key]: {
+            ...state,
+            open: true,
+            tabs: existing
+              ? state.tabs.map((item) => (item.id === existing.id ? updatedTab : item))
+              : [...state.tabs, updatedTab],
+            activeTabId: updatedTab.id,
+          },
+        };
+      });
+    });
+  }, [location.search]);
+
+  useEffect(() => {
+    return subscribeImagePreviewOpen((request) => {
+      const key = getChatWindowKey(location.search);
+      setChatWindowStates((current) => {
+        const state = current[key] ?? createChatWindowState();
+        const existing = [...state.tabs].reverse().find((tab) => tab.kind === "image");
+        const title = request.filename?.trim() || "图片预览";
+        const tab: ChatWindowTab = existing ?? {
+          id: createChatWindowTabId(),
+          title,
+          kind: "image",
+        };
+        const updatedTab = {
+          ...tab,
+          title,
+          url: request.url,
           refreshToken: Date.now(),
         };
         return {
@@ -1501,7 +1535,7 @@ function describeError(error: unknown) {
 type ChatWindowTab = {
   id: string;
   title: string;
-  kind?: "blank" | "workspace" | "git-diff" | "source" | "terminal" | "browser";
+  kind?: "blank" | "workspace" | "git-diff" | "source" | "terminal" | "browser" | "image";
   workspaceId?: string;
   cwd?: string;
   path?: string;
@@ -1593,6 +1627,7 @@ function ChatWorkspaceWindow({
       : null;
   const terminalTab = activeTab?.kind === "terminal" ? activeTab : null;
   const browserTab = activeTab?.kind === "browser" ? activeTab : null;
+  const imageTab = activeTab?.kind === "image" ? activeTab : null;
   const activeTabWorkspaceId = workspaceTab?.workspaceId;
   const [selectedPath, setSelectedPath] = useState(workspaceTab?.path ?? "");
   const [explorerView, setExplorerView] = useState<"files" | "git">(
@@ -2177,6 +2212,7 @@ function ChatWorkspaceWindow({
               >
                 {tab.kind === "terminal" ? <SquareTerminal className="size-3" /> : null}
                 {tab.kind === "browser" ? <Globe2 className="size-3" /> : null}
+                {tab.kind === "image" ? <Image className="size-3" /> : null}
                 <span>{tab.title}</span>
               </button>
               <button
@@ -2407,6 +2443,14 @@ function ChatWorkspaceWindow({
           refreshToken={browserTab.refreshToken}
           url={browserTab.url}
         />
+      ) : imageTab ? (
+        <div className="chat-image-preview">
+          {imageTab.url ? (
+            <img alt={imageTab.title} src={imageTab.url} />
+          ) : (
+            <p className="chat-image-preview-empty">无图片</p>
+          )}
+        </div>
       ) : (
         <div className="chat-workspace-window-empty" aria-live="polite">
           {state.tabs.length === 0 ? "窗口为空" : "空白占位窗口"}

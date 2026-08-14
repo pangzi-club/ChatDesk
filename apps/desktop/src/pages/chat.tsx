@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type ChatTransport,
   DefaultChatTransport,
+  type FileUIPart,
   getToolName,
   isToolUIPart,
   lastAssistantMessageIsCompleteWithApprovalResponses,
@@ -22,7 +23,6 @@ import {
   Copy,
   Download,
   ExternalLink,
-  FilePlus2,
   FileText,
   Folder,
   GitBranch,
@@ -49,6 +49,7 @@ import {
 } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { ChatAttachmentChips } from "@/components/chat-attachment-chips";
 import { ChatContextDialog } from "@/components/chat-context-dialog";
 import { ChatContextPopover } from "@/components/chat-context-popover";
 import { ChatMarkdown } from "@/components/chat-markdown";
@@ -80,6 +81,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  createPendingAttachment,
+  mergeChatAttachments,
+  type PendingAttachment,
+  uploadPendingAttachment,
+  validateAttachment,
+} from "@/lib/chat-attachments";
 import { materializeGeneratedImages } from "@/lib/chat-image-generation";
 import {
   type ChatMemoryStore,
@@ -147,6 +155,7 @@ import {
 import { formatTokenUsage, getMessageUsage } from "@/lib/chat-usage";
 import { detectMissingDevelopmentTools } from "@/lib/developer-environment";
 import { openFileViewer } from "@/lib/file-viewer-events";
+import { openImagePreview } from "@/lib/image-preview-events";
 import { loadMcpServers, saveMcpServers } from "@/lib/mcp";
 import { formatModelLabel, loadModels, type ModelConfig, sortModelsByName } from "@/lib/models";
 import { openExternal } from "@/lib/platform";
@@ -223,6 +232,15 @@ function scrollChatToBottom(element: HTMLDivElement) {
   element.style.scrollBehavior = previousBehavior;
 }
 
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
 function ChatPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -297,6 +315,12 @@ function ChatPage() {
   const skillsSelectionInitializedRef = useRef(false);
   const sessionCreatedAtRef = useRef(new Date().toISOString());
   const sessionAttachmentsRef = useRef<ChatAttachment[]>([]);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const pendingAttachmentsRef = useRef<PendingAttachment[]>([]);
+  pendingAttachmentsRef.current = pendingAttachments;
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const dragCounterRef = useRef(0);
   const suppressSaveRef = useRef(false);
   const pendingSessionRef = useRef<ChatSession | null>(null);
   const systemPromptRef = useRef<SystemPromptSnapshot | undefined>(undefined);
@@ -477,6 +501,11 @@ function ChatPage() {
       setSelectedSkillIds(savedChatSkillIds.filter((id) => installed.has(id)));
       sessionCreatedAtRef.current = new Date().toISOString();
       sessionAttachmentsRef.current = [];
+      for (const item of pendingAttachmentsRef.current) {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      }
+      setPendingAttachments([]);
+      pendingAttachmentsRef.current = [];
       pendingSessionRef.current = null;
       systemPromptRef.current = undefined;
       setSessionTitle("新对话");
@@ -982,15 +1011,164 @@ function ChatPage() {
     };
   }, []);
 
+  const addFiles = useCallback(
+    async (fileList: FileList | File[]) => {
+      const files = Array.from(fileList);
+      if (files.length === 0) return;
+      const current = pendingAttachmentsRef.current;
+      const accepted: PendingAttachment[] = [];
+      for (const file of files) {
+        const error = validateAttachment(file, current.length + accepted.length);
+        if (error) {
+          console.warn(error);
+          continue;
+        }
+        accepted.push(createPendingAttachment(file));
+      }
+      if (accepted.length === 0) return;
+      const next = [...current, ...accepted];
+      setPendingAttachments(next);
+      pendingAttachmentsRef.current = next;
+      const sessionIdValue = sessionId;
+      try {
+        await initializeChatServer();
+        await ensureChatServerSession(sessionIdValue, {
+          cwd: selectedCwd || undefined,
+          workspaceId: workspaceKey || undefined,
+        });
+      } catch (error) {
+        console.error("Failed to ensure chat server session for attachment upload", error);
+      }
+      for (const pending of accepted) {
+        uploadPendingAttachment(sessionIdValue, pending)
+          .then((attachment) => {
+            setPendingAttachments((prev) =>
+              prev.map((item) =>
+                item.localId === pending.localId
+                  ? {
+                      ...item,
+                      status: "ready" as const,
+                      attachmentId: attachment.id,
+                      path: attachment.path,
+                    }
+                  : item,
+              ),
+            );
+          })
+          .catch((error) => {
+            console.error("Failed to upload attachment", pending.fileName, error);
+            setPendingAttachments((prev) =>
+              prev.map((item) =>
+                item.localId === pending.localId
+                  ? { ...item, status: "error" as const, error: "上传失败" }
+                  : item,
+              ),
+            );
+          });
+      }
+    },
+    [sessionId, selectedCwd, workspaceKey],
+  );
+
+  const removePendingAttachment = useCallback((localId: string) => {
+    setPendingAttachments((prev) => {
+      const target = prev.find((item) => item.localId === localId);
+      if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((item) => item.localId !== localId);
+    });
+  }, []);
+
+  function handleDragEnter(event: React.DragEvent<HTMLDivElement>) {
+    if (!event.dataTransfer.types.includes("Files")) return;
+    event.preventDefault();
+    dragCounterRef.current += 1;
+    setIsDragOver(true);
+  }
+
+  function handleDragOver(event: React.DragEvent<HTMLDivElement>) {
+    if (!event.dataTransfer.types.includes("Files")) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  }
+
+  function handleDragLeave(event: React.DragEvent<HTMLDivElement>) {
+    if (!event.dataTransfer.types.includes("Files")) return;
+    event.preventDefault();
+    dragCounterRef.current -= 1;
+    if (dragCounterRef.current <= 0) {
+      dragCounterRef.current = 0;
+      setIsDragOver(false);
+    }
+  }
+
+  function handleDrop(event: React.DragEvent<HTMLDivElement>) {
+    if (!event.dataTransfer.types.includes("Files")) return;
+    event.preventDefault();
+    dragCounterRef.current = 0;
+    setIsDragOver(false);
+    if (event.dataTransfer.files.length > 0) {
+      void addFiles(event.dataTransfer.files);
+    }
+  }
+
   function submitMessage() {
     const text = input.trim();
-    if (!text || isGenerating) return;
+    const pending = pendingAttachmentsRef.current;
+    const hasUploading = pending.some((item) => item.status === "uploading");
+    if ((!text && pending.length === 0) || isGenerating || hasUploading) return;
+    const readyPending = pending.filter((item) => item.status === "ready");
+    if (readyPending.length > 0) {
+      const chatAttachments: ChatAttachment[] = readyPending.map((item) => ({
+        id: item.attachmentId ?? "",
+        kind: item.kind,
+        mediaType: item.mediaType,
+        fileName: item.fileName,
+        size: item.size,
+        path: item.path ?? "",
+        source: "upload",
+        createdAt: new Date().toISOString(),
+      }));
+      sessionAttachmentsRef.current = mergeChatAttachments(
+        sessionAttachmentsRef.current,
+        chatAttachments,
+      );
+    }
+    const filesToSend = readyPending.map((item) => item.file);
+    for (const item of pending) {
+      if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+    }
+    setPendingAttachments([]);
+    pendingAttachmentsRef.current = [];
     setInput("");
     setContextCompaction(null);
     shouldFollowScrollRef.current = true;
     liveDraftsRef.current.delete(sessionId);
     attachedStreamSessionRef.current = sessionId;
-    void sendMessage({ text });
+    if (filesToSend.length > 0) {
+      void (async () => {
+        const files: FileUIPart[] = [];
+        for (const file of filesToSend) {
+          try {
+            const dataUrl = await fileToDataUrl(file);
+            files.push({
+              type: "file",
+              mediaType: file.type || "application/octet-stream",
+              filename: file.name,
+              url: dataUrl,
+            });
+          } catch (error) {
+            console.error("Failed to convert file to data URL", file.name, error);
+          }
+        }
+        if (text) {
+          await sendMessage({ text, files });
+        } else {
+          await sendMessage({ files });
+        }
+      })();
+    } else {
+      void sendMessage({ text });
+    }
   }
 
   function stopCurrentRun() {
@@ -1082,12 +1260,25 @@ function ChatPage() {
   }
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: drag-and-drop file upload zone; keyboard users use the attach button
     <div
       className="chat-page"
       data-chat-empty={messages.length === 0 ? "true" : "false"}
       data-chat-font-size={chatDisplay.fontSize}
       data-chat-spacing={chatDisplay.spacing}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
+      {isDragOver && (
+        <div className="chat-drag-overlay">
+          <div className="chat-drag-overlay-card">
+            <Upload className="size-7" />
+            <p>松开以上传文件</p>
+          </div>
+        </div>
+      )}
       <header className="chat-header">
         <div className="chat-brand">
           <div className="chat-brand-mark">
@@ -1489,6 +1680,24 @@ function ChatPage() {
           </span>
         </div>
         <div className="chat-composer">
+          <input
+            aria-hidden="true"
+            className="chat-file-input"
+            multiple
+            onChange={(event) => {
+              if (event.target.files && event.target.files.length > 0) {
+                void addFiles(event.target.files);
+              }
+              event.target.value = "";
+            }}
+            ref={fileInputRef}
+            tabIndex={-1}
+            type="file"
+          />
+          <ChatAttachmentChips
+            attachments={pendingAttachments}
+            onRemove={removePendingAttachment}
+          />
           <textarea
             aria-label="输入消息"
             autoCapitalize="none"
@@ -1504,6 +1713,13 @@ function ChatPage() {
               isComposingRef.current = false;
             }}
             onKeyDown={handleKeyDown}
+            onPaste={(event) => {
+              const files = Array.from(event.clipboardData.files);
+              if (files.length > 0) {
+                event.preventDefault();
+                void addFiles(files);
+              }
+            }}
             placeholder="问问你的工作空间..."
             rows={2}
           />
@@ -1512,20 +1728,12 @@ function ChatPage() {
               <Button
                 aria-label="添加附件"
                 className="chat-tool-button !size-7"
+                onClick={() => fileInputRef.current?.click()}
                 size="icon"
                 type="button"
                 variant="ghost"
               >
                 <Paperclip className="size-4" />
-              </Button>
-              <Button
-                aria-label="添加文件"
-                className="chat-tool-button !size-7 hidden sm:inline-flex"
-                size="icon"
-                type="button"
-                variant="ghost"
-              >
-                <FilePlus2 className="size-4" />
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -1662,7 +1870,12 @@ function ChatPage() {
               <Button
                 aria-label={isGenerating ? "停止生成" : "发送消息"}
                 className="chat-send-button !size-9 !rounded-[10px]"
-                disabled={(!input.trim() || !selectedModel) && !isGenerating}
+                disabled={
+                  ((!input.trim() && !pendingAttachments.some((a) => a.status === "ready")) ||
+                    !selectedModel ||
+                    pendingAttachments.some((a) => a.status === "uploading")) &&
+                  !isGenerating
+                }
                 onClick={isGenerating ? stopCurrentRun : submitMessage}
                 size="icon"
                 type="button"
@@ -1877,16 +2090,21 @@ function ChatMessageFiles({ parts }: { parts: ChatFilePart[] }) {
         const key = `${part.type}-${part.url}-${index}`;
         if (part.mediaType.startsWith("image/")) {
           return (
-            <a
+            <button
               className="chat-message-image"
-              href={part.url}
               key={key}
-              onClick={(event) => handleExternalResource(event, part.url)}
-              rel="noreferrer"
-              target="_blank"
+              onClick={() =>
+                openImagePreview({
+                  url: part.url,
+                  filename: "filename" in part ? part.filename : undefined,
+                  mediaType: part.mediaType,
+                })
+              }
+              title={label}
+              type="button"
             >
               <img alt={label} loading="lazy" src={part.url} />
-            </a>
+            </button>
           );
         }
         return (
