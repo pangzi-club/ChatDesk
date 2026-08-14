@@ -22,6 +22,7 @@
 | | Skills | 可发现、可选用的提示词/流程包 |
 | | 内置工具 | web_search、web_fetch |
 | 任务编排 | Subagents | 派生子代理并行做独立子任务 |
+| | Todo 规划 | 复杂任务拆分为步骤并实时跟踪进度（todo_write） |
 | | 计划模式 | plan（只调研不落盘）与 apply（执行）分离 |
 | 安全 | 审批 | 敏感操作允许/拒绝/询问 |
 | | 权限规则 | 路径白名单、命令白名单 |
@@ -38,6 +39,7 @@
 
 ### ✅ 核心循环
 - **Agentic loop**：`run-registry.ts` 基于 Vercel AI SDK `streamText` + 工具调用 + `stopWhen(stepCountIs(30))`，支持多步工具调用直至完成。
+- **任务规划**：`todo-tool.ts` 提供 `todo_write` 工具（全量替换语义，免审批），系统提示词约定使用时机（3+ 非平凡步骤）与更新节奏（每完成一步即更新）；前端 `chat-todo-panel.tsx` 从消息流派生最新进度，在输入框上方与 git pill 并排展示，hover 查看逐条状态。
 - **中断/停止**：`AbortController`，`/runs/stop` 接口。
 - **流式输出**：UIMessage stream 双 tee（客户端流 + 服务端观察者），SSE 推送 `message.delta`。
 - **崩溃恢复**：`run-journal.ts` 在启动时恢复中断的 run 并标记 error。

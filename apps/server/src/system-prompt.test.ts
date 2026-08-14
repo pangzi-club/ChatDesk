@@ -22,20 +22,22 @@ describe("buildSystemPrompt", () => {
     const prompt = await buildSystemPrompt({
       cwd: workspace,
       workspaceToolInstructions: "工具规则",
+      todoToolInstructions: "任务规划规则",
       system: "Skills 规则",
       memory: "记忆规则",
     });
 
     assert.deepEqual(
       prompt.sections.map((section) => section.id),
-      ["workspace-tools", "agents", "system", "memory", "workspace"],
+      ["workspace-tools", "todo-tool", "agents", "system", "memory", "workspace"],
     );
-    assert.equal(prompt.sections[1].included, true);
+    const agentsSection = prompt.sections.find((section) => section.id === "agents");
+    assert.equal(agentsSection?.included, true);
     assert.match(
       prompt.text,
-      /工具规则[\s\S]*Workspace instructions from AGENTS\.md[\s\S]*遵守项目规则。[\s\S]*Skills 规则/,
+      /工具规则[\s\S]*任务规划规则[\s\S]*Workspace instructions from AGENTS\.md[\s\S]*遵守项目规则。[\s\S]*Skills 规则/,
     );
-    assert.equal(prompt.sections[1].path, path.join(workspace, "AGENTS.md"));
+    assert.equal(agentsSection?.path, path.join(workspace, "AGENTS.md"));
   });
 
   it("does not read a nested AGENTS.md and skips oversized files", async () => {

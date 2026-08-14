@@ -1,5 +1,10 @@
 import { useChat } from "@ai-sdk/react";
-import type { ChatContextCompaction, RunStartInput, SystemPromptSnapshot } from "@chatdesk/shared";
+import {
+  type ChatContextCompaction,
+  type RunStartInput,
+  type SystemPromptSnapshot,
+  TODO_TOOL_NAME,
+} from "@chatdesk/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type ChatTransport,
@@ -56,6 +61,7 @@ import { ChatMarkdown } from "@/components/chat-markdown";
 import { ChatMemoryDialog } from "@/components/chat-memory-dialog";
 import { ChatSettingsDialog } from "@/components/chat-settings-dialog";
 import { ChatSkillsPicker } from "@/components/chat-skills-picker";
+import { ChatTodoPanel } from "@/components/chat-todo-panel";
 import { type ChatToolCallCardProps, ChatToolCallGroup } from "@/components/chat-tool-call-card";
 import { ChatToolLogDialog } from "@/components/chat-tool-log-dialog";
 import { ChatToolsPicker } from "@/components/chat-tools-picker";
@@ -1595,40 +1601,43 @@ function ChatPage() {
       </div>
 
       <div className="chat-composer-wrap">
-        {workspaceGitQuery.data?.summary &&
-        workspaceGitQuery.data.isRepository &&
-        workspaceGitQuery.data.summary.filesChanged > 0 ? (
-          <button
-            className="chat-git-summary-float"
-            onClick={async () => {
-              const result = await workspaceGitQuery.refetch();
-              const firstFile = result.data?.summary?.files[0];
-              if (firstFile) {
-                openFileViewer({
-                  mode: "diff",
-                  path: firstFile.path,
-                  workspaceId: workspaceKey,
-                  cwd: selectedCwd,
-                });
-              }
-            }}
-            type="button"
-          >
-            <GitCommitHorizontal className="size-3.5" />
-            <span className="chat-git-summary-branch">
-              {workspaceGitQuery.data.summary.branch ?? "HEAD"}
-            </span>
-            <span className="chat-git-summary-add">
-              +{workspaceGitQuery.data.summary.insertions}
-            </span>
-            <span className="chat-git-summary-delete">
-              -{workspaceGitQuery.data.summary.deletions}
-            </span>
-            <span className="chat-git-summary-files">
-              · {workspaceGitQuery.data.summary.filesChanged} 个文件已修改
-            </span>
-          </button>
-        ) : null}
+        <div className="chat-composer-floats">
+          {workspaceGitQuery.data?.summary &&
+          workspaceGitQuery.data.isRepository &&
+          workspaceGitQuery.data.summary.filesChanged > 0 ? (
+            <button
+              className="chat-git-summary-float"
+              onClick={async () => {
+                const result = await workspaceGitQuery.refetch();
+                const firstFile = result.data?.summary?.files[0];
+                if (firstFile) {
+                  openFileViewer({
+                    mode: "diff",
+                    path: firstFile.path,
+                    workspaceId: workspaceKey,
+                    cwd: selectedCwd,
+                  });
+                }
+              }}
+              type="button"
+            >
+              <GitCommitHorizontal className="size-3.5" />
+              <span className="chat-git-summary-branch">
+                {workspaceGitQuery.data.summary.branch ?? "HEAD"}
+              </span>
+              <span className="chat-git-summary-add">
+                +{workspaceGitQuery.data.summary.insertions}
+              </span>
+              <span className="chat-git-summary-delete">
+                -{workspaceGitQuery.data.summary.deletions}
+              </span>
+              <span className="chat-git-summary-files">
+                · {workspaceGitQuery.data.summary.filesChanged} 个文件已修改
+              </span>
+            </button>
+          ) : null}
+          <ChatTodoPanel messages={messages} />
+        </div>
         {error && <p className="chat-error">{error.message}</p>}
         <div className="chat-workspace-bar">
           {messages.length === 0 ? (
@@ -2234,10 +2243,14 @@ const MessageBubble = memo(function MessageBubble({
         <div className="chat-message-parts">
           {messageBlocks.map((block) => {
             if (block.kind === "tools") {
+              const visibleParts = block.parts.filter(
+                (part) => getToolName(part) !== TODO_TOOL_NAME,
+              );
+              if (visibleParts.length === 0) return null;
               return (
                 <div className="chat-tool-calls" key={block.key}>
                   <ChatToolCallGroup
-                    calls={block.parts.map(toChatToolCall)}
+                    calls={visibleParts.map(toChatToolCall)}
                     cwd={cwd}
                     workspaceId={workspaceId}
                   />

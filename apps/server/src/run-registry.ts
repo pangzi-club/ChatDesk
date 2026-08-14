@@ -34,6 +34,7 @@ import {
 import { SandboxReviewLogStore } from "./sandbox-review-log.ts";
 import type { SessionStore } from "./store.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
+import { createTodoTool, TODO_TOOL_INSTRUCTIONS } from "./todo-tool.ts";
 import { hasWorkspace, selectWorkspaceToolNames } from "./tool-selection.ts";
 import {
   createWorkspaceTools,
@@ -241,6 +242,7 @@ export class RunRegistry {
       system: input.system,
       memory: input.memory,
       workspaceToolInstructions,
+      todoToolInstructions: TODO_TOOL_INSTRUCTIONS,
     });
     const session: ChatSession = {
       ...current,
@@ -284,6 +286,7 @@ export class RunRegistry {
         ...(system ? (model.responsive ? { instructions: system } : { system }) : {}),
         tools: model.supportsTools
           ? {
+              todo_write: createTodoTool(),
               ...(createClientTools(input.toolNames) ?? {}),
               ...createWorkspaceToolsForInput({
                 ...input,

@@ -38,6 +38,7 @@ export async function buildSystemPrompt(input: {
   system?: string;
   memory?: string;
   workspaceToolInstructions?: string;
+  todoToolInstructions?: string;
 }): Promise<SystemPrompt> {
   const cwd = input.cwd?.trim() || undefined;
   const agents = cwd ? await loadAgentsInstructions(cwd) : undefined;
@@ -47,6 +48,12 @@ export async function buildSystemPrompt(input: {
       label: "Workspace 工具规则",
       content: input.workspaceToolInstructions?.trim() ?? "",
       included: Boolean(input.workspaceToolInstructions?.trim()),
+    },
+    {
+      id: "todo-tool",
+      label: "任务规划规则",
+      content: input.todoToolInstructions?.trim() ?? "",
+      included: Boolean(input.todoToolInstructions?.trim()),
     },
     {
       id: "agents",

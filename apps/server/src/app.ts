@@ -30,6 +30,7 @@ import { RunRegistry, resolveEffectiveWorkspace } from "./run-registry.ts";
 import { scanSkills } from "./skills-store.ts";
 import { SessionStore } from "./store.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
+import { TODO_TOOL_INSTRUCTIONS } from "./todo-tool.ts";
 import { WorkspaceStore } from "./workspace-store.ts";
 
 const runInputSchema = z.object({
@@ -1113,6 +1114,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
           system: body.system,
           memory: body.memory,
           workspaceToolInstructions,
+          todoToolInstructions: TODO_TOOL_INSTRUCTIONS,
         }),
       );
     } catch (error) {

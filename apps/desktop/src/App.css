@@ -2697,15 +2697,21 @@
   margin: 0 auto;
   padding: 0 0 22px;
 }
-.chat-git-summary-float {
+.chat-composer-floats {
   position: absolute;
   right: 50%;
   bottom: calc(100% + 8px);
-  display: inline-flex;
+  display: flex;
   max-width: calc(100% - 16px);
   align-items: center;
-  gap: 7px;
+  justify-content: center;
+  gap: 8px;
   transform: translateX(50%);
+}
+.chat-git-summary-float {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   border: 1px solid color-mix(in srgb, var(--primary) 20%, var(--border));
   border-radius: 999px;
   background: color-mix(in srgb, var(--card) 92%, var(--muted));
@@ -2719,6 +2725,116 @@
 .chat-git-summary-float:hover {
   border-color: color-mix(in srgb, var(--primary) 32%, var(--border));
   color: var(--chat-ink);
+}
+.chat-todo-float {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid color-mix(in srgb, var(--primary) 20%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card) 92%, var(--muted));
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: var(--chat-muted);
+  font-size: 11px;
+  padding: 6px 11px;
+  white-space: nowrap;
+}
+.chat-todo-float:hover {
+  border-color: color-mix(in srgb, var(--primary) 32%, var(--border));
+  color: var(--chat-ink);
+}
+.chat-todo-float.is-done {
+  border-color: var(--border);
+  color: color-mix(in srgb, var(--chat-muted) 75%, transparent);
+}
+.chat-todo-float-count {
+  color: var(--primary);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.chat-todo-float.is-done .chat-todo-float-count {
+  color: inherit;
+  font-weight: 600;
+}
+.chat-todo-float-label {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-todo-float-details {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 240px;
+  max-width: 320px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--foreground) 14%, transparent);
+  padding: 10px 12px;
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  /* 离开 pill 后保留 200ms 再淡出，避免 pill 宽度变化导致鼠标滑出时明细层闪收。 */
+  transition:
+    opacity 120ms ease 200ms,
+    visibility 0s linear 320ms;
+}
+.chat-todo-float:hover .chat-todo-float-details {
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity 120ms ease,
+    visibility 0s;
+}
+.chat-todo-float-details-title {
+  margin: 0 0 8px;
+  color: var(--chat-ink);
+  font-size: 11px;
+  font-weight: 600;
+}
+.chat-todo-float-details-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.chat-todo-detail {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  color: var(--chat-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.chat-todo-detail.is-completed {
+  color: color-mix(in srgb, var(--chat-muted) 70%, transparent);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--chat-muted) 40%, transparent);
+}
+.chat-todo-detail.is-in_progress {
+  color: var(--chat-ink);
+}
+.chat-todo-detail-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  width: 12px;
+  height: 12px;
+}
+.chat-todo-detail-icon.is-done {
+  color: var(--primary);
+}
+.chat-todo-detail-icon.is-active {
+  color: var(--primary);
+}
+.chat-todo-detail-content {
+  min-width: 0;
+  word-break: break-word;
 }
 .chat-git-summary-branch {
   max-width: 120px;

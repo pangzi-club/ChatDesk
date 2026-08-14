@@ -194,6 +194,44 @@ export type RunStartInput = {
   toolNames?: string[];
 };
 
+export const TODO_TOOL_NAME = "todo_write";
+
+export const TODO_STATUSES = ["pending", "in_progress", "completed"] as const;
+
+export type TodoStatus = (typeof TODO_STATUSES)[number];
+
+export type TodoItem = {
+  content: string;
+  status: TodoStatus;
+  activeForm?: string;
+};
+
+/** 从未知输入中提取合法 todo 列表；非法时返回 null（供服务端工具与前端面板共用）。 */
+export function parseTodoList(value: unknown): TodoItem[] | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as { todos?: unknown };
+  if (!Array.isArray(record.todos) || record.todos.length === 0 || record.todos.length > 30) {
+    return null;
+  }
+  const items: TodoItem[] = [];
+  for (const entry of record.todos) {
+    if (!entry || typeof entry !== "object") return null;
+    const item = entry as { content?: unknown; status?: unknown; activeForm?: unknown };
+    if (typeof item.content !== "string" || !item.content.trim() || item.content.length > 200) {
+      return null;
+    }
+    if (typeof item.status !== "string" || !TODO_STATUSES.includes(item.status as TodoStatus)) {
+      return null;
+    }
+    const todo: TodoItem = { content: item.content, status: item.status as TodoStatus };
+    if (typeof item.activeForm === "string" && item.activeForm.trim().length <= 100) {
+      todo.activeForm = item.activeForm;
+    }
+    items.push(todo);
+  }
+  return items;
+}
+
 export type ServerEvent = {
   id: string;
   type:
