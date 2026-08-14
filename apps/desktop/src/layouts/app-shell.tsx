@@ -46,6 +46,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   type ComponentType,
   type KeyboardEvent,
@@ -148,6 +149,18 @@ const navItems = [
   label: string;
   icon: ComponentType<{ className?: string }>;
 }>;
+
+const WORKBENCH_MOTION_TRANSITION = { duration: 0.16, ease: "easeOut" } as const;
+const WORKBENCH_LAYOUT_TRANSITION = { duration: 0.18, ease: "easeOut" } as const;
+const REDUCED_MOTION_TRANSITION = { duration: 0 } as const;
+
+function getWorkbenchMotionTransition(shouldReduceMotion: boolean) {
+  return shouldReduceMotion ? REDUCED_MOTION_TRANSITION : WORKBENCH_MOTION_TRANSITION;
+}
+
+function getWorkbenchLayoutTransition(shouldReduceMotion: boolean) {
+  return shouldReduceMotion ? REDUCED_MOTION_TRANSITION : WORKBENCH_LAYOUT_TRANSITION;
+}
 
 const commandItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, keywords: ["仪表盘", "首页"] },
@@ -347,6 +360,12 @@ function AppShell() {
   const navigate = useNavigate();
   const isChatPage = location.pathname === "/chat";
   const chatWindowKey = getChatWindowKey(location.search);
+  const activeChatWindowState = chatWindowStates[chatWindowKey];
+  const isChatPanelOpen = isChatPage && Boolean(activeChatWindowState?.open);
+  const isChatPanelExpanded = isChatPage && Boolean(activeChatWindowState?.expanded);
+  const chatPanelSplitRatio = activeChatWindowState?.splitRatio ?? 0.5;
+  const shouldReduceMotion = Boolean(useReducedMotion());
+  const chatPanelTransition = getWorkbenchLayoutTransition(shouldReduceMotion);
   const chatUrlParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const chatSessionId = isChatPage ? chatUrlParams.get("sessionId") : null;
   const chatSessionQuery = useQuery({
@@ -573,40 +592,44 @@ function AppShell() {
               className={`app-shell-content relative flex min-w-0 flex-1 flex-col max-sm:w-[calc(100vw-4rem)] ${isChatPage ? "chat-page" : ""}`}
             >
               <div
-                className={`chat-split-layout ${isChatPage && chatWindowStates[chatWindowKey]?.open ? "is-open" : ""} ${isChatPage && chatWindowStates[chatWindowKey]?.expanded ? "is-expanded" : ""}`}
+                className={`chat-split-layout ${isChatPanelOpen ? "is-open" : ""} ${isChatPanelExpanded ? "is-expanded" : ""}`}
               >
-                {!chatWindowStates[chatWindowKey]?.expanded ? (
-                  <section
+                {!isChatPanelExpanded ? (
+                  <motion.section
+                    layout={!shouldReduceMotion}
                     className="min-h-0 flex-1 overflow-y-auto"
                     style={
-                      isChatPage && chatWindowStates[chatWindowKey]?.open
+                      isChatPanelOpen
                         ? {
-                            flexBasis: `${(1 - (chatWindowStates[chatWindowKey]?.splitRatio ?? 0.5)) * 100}%`,
+                            flexBasis: `${(1 - chatPanelSplitRatio) * 100}%`,
                           }
                         : undefined
                     }
+                    transition={chatPanelTransition}
                   >
                     <Outlet />
-                  </section>
+                  </motion.section>
                 ) : null}
-                {isChatPage && chatWindowStates[chatWindowKey]?.open ? (
-                  <>
-                    {!chatWindowStates[chatWindowKey]?.expanded ? (
-                      <ChatSplitDivider
-                        ratio={chatWindowStates[chatWindowKey]?.splitRatio ?? 0.5}
-                        onChange={(splitRatio) =>
-                          setChatWindowStates((current) => ({
-                            ...current,
-                            [chatWindowKey]: {
-                              ...(current[chatWindowKey] ?? createChatWindowState()),
-                              splitRatio,
-                            },
-                          }))
-                        }
-                      />
-                    ) : null}
+                <AnimatePresence initial={false}>
+                  {isChatPanelOpen && !isChatPanelExpanded ? (
+                    <ChatSplitDivider
+                      key="chat-split-divider"
+                      ratio={chatPanelSplitRatio}
+                      onChange={(splitRatio) =>
+                        setChatWindowStates((current) => ({
+                          ...current,
+                          [chatWindowKey]: {
+                            ...(current[chatWindowKey] ?? createChatWindowState()),
+                            splitRatio,
+                          },
+                        }))
+                      }
+                    />
+                  ) : null}
+                  {isChatPanelOpen ? (
                     <ChatWorkspaceWindow
-                      expanded={Boolean(chatWindowStates[chatWindowKey]?.expanded)}
+                      key="chat-workspace-window"
+                      expanded={isChatPanelExpanded}
                       maximizeShortcut={formatShortcut(shortcutSettings.chatSidebarMaximize)}
                       panelShortcut={formatShortcut(shortcutSettings.chatSidebar)}
                       split
@@ -636,15 +659,15 @@ function AppShell() {
                         setChatWindowStates((current) => ({ ...current, [chatWindowKey]: next }))
                       }
                     />
-                  </>
-                ) : null}
+                  ) : null}
+                </AnimatePresence>
               </div>
               <div
                 className={`absolute inset-x-0 top-0 z-10 flex h-8 items-center ${isChatPage ? "chat-top-actions-layer" : ""}`}
               >
                 <TitlebarDragRegion />
                 <TopActions
-                  isPanelOpen={isChatPage && Boolean(chatWindowStates[chatWindowKey]?.open)}
+                  isPanelOpen={isChatPanelOpen}
                   onTogglePanel={() => {
                     if (!isChatPage) return;
                     setChatWindowStates((current) => {
@@ -661,7 +684,7 @@ function AppShell() {
                     });
                   }}
                   panelShortcut={formatShortcut(shortcutSettings.chatSidebar)}
-                  showPanelToggle={isChatPage && !chatWindowStates[chatWindowKey]?.open}
+                  showPanelToggle={isChatPage && !isChatPanelOpen}
                 />
               </div>
             </div>
@@ -789,6 +812,9 @@ function WorkspaceConversationGroups() {
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
+  const shouldReduceMotion = Boolean(useReducedMotion());
+  const sidebarMotionTransition = getWorkbenchMotionTransition(shouldReduceMotion);
+  const sidebarLayoutTransition = getWorkbenchLayoutTransition(shouldReduceMotion);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set());
   const [collapseOverride, setCollapseOverride] = useState<Record<string, boolean>>(
     loadWorkspaceCollapseState,
@@ -1154,81 +1180,102 @@ function WorkspaceConversationGroups() {
                     </button>
                   ) : null}
                 </div>
-                {!isCollapsed ? (
-                  group.sessions.length > 0 ? (
-                    <div className="space-y-0.5">
-                      {visibleSessions.map((session) => {
-                        const isActive =
-                          location.pathname === "/chat" && activeSessionId === session.id;
-                        const sessionStatus = serverStatuses[session.id];
-                        const isRunning =
-                          sessionStatus === "submitted" || sessionStatus === "streaming";
-                        const isUnread = unreadSessionIds.has(session.id);
-
-                        return (
-                          <div
-                            className={`group flex h-7 w-full items-center rounded-md transition-colors ${
-                              isActive
-                                ? "bg-accent text-accent-foreground font-medium"
-                                : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-                            }`}
-                            key={session.id}
-                          >
-                            <button
-                              aria-current={isActive ? "page" : undefined}
-                              className={`flex min-w-0 flex-1 items-center rounded-md py-0 pr-1 text-left font-medium text-[13px] ${isRecent ? "pl-2" : "pl-8"} ${isActive ? "text-accent-foreground" : "text-foreground"}`}
-                              onClick={() => openSession(session.id)}
-                              title={session.title}
-                              type="button"
-                            >
-                              <span className="truncate">{session.title}</span>
-                              {isRunning ? (
-                                <LoaderCircle
-                                  aria-hidden="true"
-                                  className="ml-auto size-3.5 shrink-0 animate-spin text-primary"
-                                />
-                              ) : isUnread ? (
-                                <span
-                                  className="ml-auto size-1.5 shrink-0 rounded-full bg-primary"
-                                  title="未读消息"
-                                />
-                              ) : null}
-                            </button>
-                            <button
-                              aria-label={`删除${session.title}`}
-                              className="mr-1 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
-                              disabled={deleteSessionMutation.isPending}
-                              onClick={() => setSessionToDelete(session)}
-                              title="删除对话"
-                              type="button"
-                            >
-                              <Trash2 className="size-3" />
-                            </button>
-                          </div>
-                        );
-                      })}
-                      {hiddenCount > 0 && !isRecent ? (
-                        <button
-                          aria-expanded={isExpanded}
-                          className="flex h-7 w-full items-center gap-1 rounded-md pr-2 pl-8 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
-                          onClick={() => toggleExpanded(group.key)}
-                          type="button"
-                        >
-                          <ChevronDown
-                            className={`size-3.5 shrink-0 transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                          />
-                          <span>{isExpanded ? "收起" : `展开其余 ${hiddenCount} 条`}</span>
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <p
-                      className={`px-2 py-1 text-[12px] text-muted-foreground ${isRecent ? "pl-2" : "pl-8"}`}
+                <AnimatePresence initial={false}>
+                  {!isCollapsed ? (
+                    <motion.div
+                      animate={{ height: "auto", opacity: 1 }}
+                      className="overflow-hidden"
+                      exit={{ height: 0, opacity: 0 }}
+                      initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
+                      transition={sidebarLayoutTransition}
                     >
-                      暂无对话
-                    </p>
-                  )
-                ) : null}
+                      {group.sessions.length > 0 ? (
+                        <motion.div
+                          className="space-y-0.5"
+                          layout={!shouldReduceMotion}
+                          transition={sidebarLayoutTransition}
+                        >
+                          <AnimatePresence initial={false}>
+                            {visibleSessions.map((session) => {
+                              const isActive =
+                                location.pathname === "/chat" && activeSessionId === session.id;
+                              const sessionStatus = serverStatuses[session.id];
+                              const isRunning =
+                                sessionStatus === "submitted" || sessionStatus === "streaming";
+                              const isUnread = unreadSessionIds.has(session.id);
+
+                              return (
+                                <motion.div
+                                  animate={{ height: "1.75rem", opacity: 1 }}
+                                  className={`group flex h-7 w-full items-center overflow-hidden rounded-md transition-colors ${
+                                    isActive
+                                      ? "bg-accent text-accent-foreground font-medium"
+                                      : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                                  }`}
+                                  exit={{ height: 0, opacity: 0 }}
+                                  initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
+                                  key={session.id}
+                                  layout={!shouldReduceMotion}
+                                  transition={sidebarMotionTransition}
+                                >
+                                  <button
+                                    aria-current={isActive ? "page" : undefined}
+                                    className={`flex min-w-0 flex-1 items-center rounded-md py-0 pr-1 text-left font-medium text-[13px] ${isRecent ? "pl-2" : "pl-8"} ${isActive ? "text-accent-foreground" : "text-foreground"}`}
+                                    onClick={() => openSession(session.id)}
+                                    title={session.title}
+                                    type="button"
+                                  >
+                                    <span className="truncate">{session.title}</span>
+                                    {isRunning ? (
+                                      <LoaderCircle
+                                        aria-hidden="true"
+                                        className="ml-auto size-3.5 shrink-0 animate-spin text-primary"
+                                      />
+                                    ) : isUnread ? (
+                                      <span
+                                        className="ml-auto size-1.5 shrink-0 rounded-full bg-primary"
+                                        title="未读消息"
+                                      />
+                                    ) : null}
+                                  </button>
+                                  <button
+                                    aria-label={`删除${session.title}`}
+                                    className="mr-1 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+                                    disabled={deleteSessionMutation.isPending}
+                                    onClick={() => setSessionToDelete(session)}
+                                    title="删除对话"
+                                    type="button"
+                                  >
+                                    <Trash2 className="size-3" />
+                                  </button>
+                                </motion.div>
+                              );
+                            })}
+                          </AnimatePresence>
+                          {hiddenCount > 0 && !isRecent ? (
+                            <button
+                              aria-expanded={isExpanded}
+                              className="flex h-7 w-full items-center gap-1 rounded-md pr-2 pl-8 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+                              onClick={() => toggleExpanded(group.key)}
+                              type="button"
+                            >
+                              <ChevronDown
+                                className={`size-3.5 shrink-0 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                              />
+                              <span>{isExpanded ? "收起" : `展开其余 ${hiddenCount} 条`}</span>
+                            </button>
+                          ) : null}
+                        </motion.div>
+                      ) : (
+                        <p
+                          className={`px-2 py-1 text-[12px] text-muted-foreground ${isRecent ? "pl-2" : "pl-8"}`}
+                        >
+                          暂无对话
+                        </p>
+                      )}
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
               </div>
             );
           })}
@@ -1485,6 +1532,8 @@ function ChatWorkspaceWindow({
   const interactionRef = useRef<WindowInteraction | null>(null);
   const sidebarResizeRef = useRef<{ startX: number; initialWidth: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const shouldReduceMotion = Boolean(useReducedMotion());
+  const panelTransition = getWorkbenchLayoutTransition(shouldReduceMotion);
   const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
   const activeTabId = activeTab?.id;
   const workspaceTab =
@@ -1997,14 +2046,23 @@ function ChatWorkspaceWindow({
   }
 
   return (
-    <div
+    <motion.div
+      animate={
+        split
+          ? { flexBasis: expanded ? "100%" : `${state.splitRatio * 100}%`, opacity: 1 }
+          : undefined
+      }
       className={`chat-workspace-window ${split ? "is-split" : ""} ${expanded ? "is-expanded" : ""}`}
+      exit={split ? { flexBasis: "0%", opacity: 0 } : undefined}
+      initial={split && !shouldReduceMotion ? { flexBasis: "0%", opacity: 0 } : false}
+      layout={!shouldReduceMotion}
       ref={containerRef}
       style={
         split
           ? { flexBasis: expanded ? "100%" : `${state.splitRatio * 100}%` }
           : { height: state.height, right: state.right, top: state.top, width: state.width }
       }
+      transition={panelTransition}
     >
       <div
         className="chat-workspace-window-tabs"
@@ -2296,7 +2354,7 @@ function ChatWorkspaceWindow({
           void refreshExplorer();
         }}
       />
-    </div>
+    </motion.div>
   );
 }
 
@@ -2307,6 +2365,9 @@ function ChatSplitDivider({
   onChange: (ratio: number) => void;
   ratio: number;
 }) {
+  const shouldReduceMotion = Boolean(useReducedMotion());
+  const dividerTransition = getWorkbenchMotionTransition(shouldReduceMotion);
+
   function startResize(event: ReactPointerEvent) {
     event.preventDefault();
     event.stopPropagation();
@@ -2324,7 +2385,17 @@ function ChatSplitDivider({
     window.addEventListener("pointerup", handleUp);
   }
 
-  return <div aria-hidden="true" className="chat-split-divider" onPointerDown={startResize} />;
+  return (
+    <motion.div
+      animate={{ opacity: 1 }}
+      aria-hidden="true"
+      className="chat-split-divider"
+      exit={{ opacity: 0 }}
+      initial={shouldReduceMotion ? false : { opacity: 0 }}
+      onPointerDown={startResize}
+      transition={dividerTransition}
+    />
+  );
 }
 
 function clamp(value: number, min: number, max: number) {
