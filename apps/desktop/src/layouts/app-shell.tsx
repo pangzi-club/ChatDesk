@@ -1993,15 +1993,6 @@ function ChatWorkspaceWindow({
     window.addEventListener("pointerup", handleUp);
   }
 
-  function addTab() {
-    const nextTab = {
-      id: createChatWindowTabId(),
-      title: `空白窗口 ${state.tabs.length + 1}`,
-      kind: "blank" as const,
-    };
-    onChange({ ...state, tabs: [...state.tabs, nextTab], activeTabId: nextTab.id });
-  }
-
   function addGitDiffTab() {
     if (!workspaceId) return;
     const existing = state.tabs.find(
@@ -2114,10 +2105,6 @@ function ChatWorkspaceWindow({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" sideOffset={6}>
-            <DropdownMenuItem onSelect={addTab}>
-              <Plus className="size-3.5" />
-              空白窗口
-            </DropdownMenuItem>
             <DropdownMenuItem disabled={!workspaceId} onSelect={addGitDiffTab}>
               <FolderGit2 className="size-3.5" />
               Workspace Explorer
