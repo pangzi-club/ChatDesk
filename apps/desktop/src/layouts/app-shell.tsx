@@ -566,7 +566,9 @@ function AppShell() {
       const key = getChatWindowKey(location.search);
       setChatWindowStates((current) => {
         const state = current[key] ?? createChatWindowState();
-        const existing = [...state.tabs].reverse().find((tab) => tab.kind === "image");
+        const existing = [...state.tabs]
+          .reverse()
+          .find((tab) => tab.kind === "image" && tab.url === request.url);
         const title = request.filename?.trim() || "图片预览";
         const tab: ChatWindowTab = existing ?? {
           id: createChatWindowTabId(),
@@ -2208,6 +2210,7 @@ function ChatWorkspaceWindow({
               <button
                 className="chat-workspace-window-tab-select"
                 onClick={() => onChange({ ...state, activeTabId: tab.id })}
+                title={tab.title}
                 type="button"
               >
                 {tab.kind === "terminal" ? <SquareTerminal className="size-3" /> : null}

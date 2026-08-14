@@ -16,6 +16,7 @@ import {
 
 type ChatAttachmentChipsProps = {
   attachments: PendingAttachment[];
+  onPreview?: (attachment: PendingAttachment) => void;
   onRemove: (localId: string) => void;
 };
 
@@ -26,46 +27,72 @@ function kindIcon(kind: ChatAttachmentKind) {
   return <FileText className="size-3.5" />;
 }
 
-export function ChatAttachmentChips({ attachments, onRemove }: ChatAttachmentChipsProps) {
+export function ChatAttachmentChips({
+  attachments,
+  onPreview,
+  onRemove,
+}: ChatAttachmentChipsProps) {
   if (attachments.length === 0) return null;
   return (
     <div className="chat-attachment-chips">
-      {attachments.map((attachment) => (
-        <div
-          className="chat-attachment-chip"
-          data-status={attachment.status}
-          key={attachment.localId}
-        >
-          {attachment.previewUrl ? (
-            <img
-              alt={attachment.fileName}
-              className="chat-attachment-thumb"
-              src={attachment.previewUrl}
-            />
-          ) : (
-            <span className="chat-attachment-icon">{kindIcon(attachment.kind)}</span>
-          )}
+      {attachments.map((attachment) => {
+        const previewable = Boolean(attachment.previewUrl && onPreview);
+        const thumb = attachment.previewUrl ? (
+          <img
+            alt={attachment.fileName}
+            className="chat-attachment-thumb"
+            src={attachment.previewUrl}
+          />
+        ) : (
+          <span className="chat-attachment-icon">{kindIcon(attachment.kind)}</span>
+        );
+        const meta = (
           <span className="chat-attachment-meta">
             <span className="chat-attachment-name" title={attachment.fileName}>
               {attachment.fileName}
             </span>
             <span className="chat-attachment-size">{formatAttachmentSize(attachment.size)}</span>
           </span>
-          {attachment.status === "uploading" ? (
-            <LoaderCircle className="chat-attachment-spinner size-3.5 animate-spin" />
-          ) : attachment.status === "error" ? (
-            <AlertCircle className="chat-attachment-error-icon size-3.5" />
-          ) : null}
-          <button
-            aria-label={`移除 ${attachment.fileName}`}
-            className="chat-attachment-remove"
-            onClick={() => onRemove(attachment.localId)}
-            type="button"
+        );
+        return (
+          <div
+            className="chat-attachment-chip"
+            data-status={attachment.status}
+            key={attachment.localId}
           >
-            <X className="size-3" />
-          </button>
-        </div>
-      ))}
+            {previewable ? (
+              <button
+                aria-label={`预览 ${attachment.fileName}`}
+                className="chat-attachment-preview"
+                onClick={() => onPreview?.(attachment)}
+                title={`预览 ${attachment.fileName}`}
+                type="button"
+              >
+                {thumb}
+                {meta}
+              </button>
+            ) : (
+              <>
+                {thumb}
+                {meta}
+              </>
+            )}
+            {attachment.status === "uploading" ? (
+              <LoaderCircle className="chat-attachment-spinner size-3.5 animate-spin" />
+            ) : attachment.status === "error" ? (
+              <AlertCircle className="chat-attachment-error-icon size-3.5" />
+            ) : null}
+            <button
+              aria-label={`移除 ${attachment.fileName}`}
+              className="chat-attachment-remove"
+              onClick={() => onRemove(attachment.localId)}
+              type="button"
+            >
+              <X className="size-3" />
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -1696,6 +1696,14 @@ function ChatPage() {
           />
           <ChatAttachmentChips
             attachments={pendingAttachments}
+            onPreview={(attachment) => {
+              if (!attachment.previewUrl) return;
+              openImagePreview({
+                url: attachment.previewUrl,
+                filename: attachment.fileName,
+                mediaType: attachment.mediaType,
+              });
+            }}
             onRemove={removePendingAttachment}
           />
           <textarea
