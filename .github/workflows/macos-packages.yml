@@ -2,7 +2,7 @@ name: macOS packages
 
 on:
   push:
-    branches: [main]
+    branches: [release]
     tags: ["v*"]
   workflow_dispatch:
 

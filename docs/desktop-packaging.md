@@ -15,7 +15,7 @@ pnpm desktop:build
 
 The `macOS packages` workflow builds native Intel (`x86_64-apple-darwin`) and
 Apple Silicon (`aarch64-apple-darwin`) packages on separate macOS runners. It
-runs for pushes to `main`, version tags, and manual workflow dispatches. Each
+runs for pushes to `release`, version tags, and manual workflow dispatches. Each
 run uploads the DMG and `.app.tar.gz` artifacts for 14 days. A `v*` tag also
 creates or updates a GitHub Release with those files. The workflow does not
 sign or notarize packages; configure the repository's Apple and Tauri signing
