@@ -60,6 +60,7 @@ import {
   type SandboxBoundaryAssessment,
 } from "./sandbox-boundary-reviewer.ts";
 import { SandboxReviewLogStore } from "./sandbox-review-log.ts";
+import { withSseKeepAlive } from "./sse-keepalive.ts";
 import type { SessionStore } from "./store.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
 import { createTodoTool, TODO_TOOL_INSTRUCTIONS } from "./todo-tool.ts";
@@ -1023,7 +1024,7 @@ export class RunRegistry {
           reason: diagnosticError(reason),
         }),
       );
-      return createUIMessageStreamResponse({ stream: observedClientStream });
+      return withSseKeepAlive(createUIMessageStreamResponse({ stream: observedClientStream }));
     } catch (error) {
       this.active.delete(sessionId);
       const runSummary: ChatRunSummary = {
@@ -1152,6 +1153,32 @@ export class RunRegistry {
         aborted,
         forcedStopReason: metrics.forcedStopReason,
       });
+      if (completion.stopReason === "incomplete-response" && !aborted) {
+        if (!terminal.observed) {
+          metrics.failureMessage = "模型连接已结束，但未返回任何内容。请重试。";
+        } else if (!terminal.text.trim()) {
+          metrics.failureMessage = "模型没有返回可用的最终回复。请重试。";
+        }
+        await this.activityLogs
+          .append({
+            level: "error",
+            source: "Agent Run Diagnostic",
+            message: "模型响应流未完整结束",
+            details: JSON.stringify({
+              sessionId,
+              runId,
+              terminalObserved: terminal.observed,
+              finishReason: terminal.finishReason,
+              hasFinalText: Boolean(terminal.text.trim()),
+              stepCount: metrics.stepCount,
+              completedModelCallCount: metrics.modelCallCount,
+              assistantPartTypes: latestDraft.parts.map((part) => part.type),
+            }),
+          })
+          .catch((error) =>
+            console.error("Failed to persist incomplete response diagnostic", error),
+          );
+      }
       const runSummary: ChatRunSummary = {
         runId,
         outcome: completion.outcome,

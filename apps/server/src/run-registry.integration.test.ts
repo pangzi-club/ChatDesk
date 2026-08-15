@@ -454,6 +454,29 @@ describe("complete agent runs", () => {
     const eofSummary = await finishRun(eofRun);
     assert.equal(eofSummary.outcome, "error");
     assert.equal(eofSummary.stopReason, "incomplete-response");
+    const eofSession = await eofRun.store.get("session-1");
+    assert.equal(
+      eofSession?.messages.at(-1)?.parts.find((part) => part.type === "text")?.text,
+      "partial",
+    );
+    assert.ok(eofRun.activityLogs.list().some((entry) => entry.message === "模型响应流未完整结束"));
+  });
+
+  it("explains a model stream that closes without any content", async () => {
+    const current = await fixture([streamResult([])]);
+    const summary = await finishRun(current);
+    assert.equal(summary.outcome, "error");
+    assert.equal(summary.stopReason, "incomplete-response");
+
+    const session = await current.store.get("session-1");
+    assert.equal(
+      session?.messages.at(-1)?.parts.find((part) => part.type === "text")?.text,
+      "模型连接已结束，但未返回任何内容。请重试。",
+    );
+    const diagnostic = current.activityLogs
+      .list()
+      .find((entry) => entry.message === "模型响应流未完整结束");
+    assert.match(diagnostic?.details ?? "", /"terminalObserved":false/);
   });
 
   it("persists a user stop as a non-error outcome", async () => {
