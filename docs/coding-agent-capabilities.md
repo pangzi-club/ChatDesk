@@ -2,7 +2,7 @@
 
 > 目标：回答「apps/server 现在做的事情是不是就是 Claude Code / Codex 做的事」，以及还差什么。
 > 参照系：Claude Code、Codex CLI、Cursor 这类通用编码 agent。
-> 基于 `apps/server/src/` 当前实现逐一对照（2026-08-14）。
+> 基于 `apps/server/src/` 当前实现逐一对照（2026-08-15）。
 
 ## 一、通用编码 Agent 的能力全景
 
@@ -38,7 +38,7 @@
 对照上面的全景，apps/server 已经覆盖的部分：
 
 ### ✅ 核心循环
-- **Agentic loop**：`run-registry.ts` 基于 Vercel AI SDK `streamText` + 工具调用 + `stopWhen(stepCountIs(30))`，支持多步工具调用直至完成。
+- **Agentic loop**：`run-registry.ts` 基于 Vercel AI SDK `streamText` + 工具调用 + `stopWhen(stepCountIs(100))`，支持多步工具调用直至完成；单次模型请求对可重试故障最多重试 3 次。
 - **任务规划**：`todo-tool.ts` 提供 `todo_write` 工具（全量替换语义，免审批），系统提示词约定使用时机（3+ 非平凡步骤）与更新节奏（每完成一步即更新）；前端 `chat-todo-panel.tsx` 从消息流派生最新进度，在输入框上方与 git pill 并排展示，hover 查看逐条状态。
 - **中断/停止**：`AbortController`，`/runs/stop` 接口。
 - **流式输出**：UIMessage stream 双 tee（客户端流 + 服务端观察者），SSE 推送 `message.delta`。
@@ -46,7 +46,8 @@
 - **Plan Mode**：`/plan` 创建 session 级 `plan-<随机版本>.md`；plan mode 只允许读取 workspace 和 `plan_write`，计划通过 `plan.updated` SSE 实时刷新，确认后切换 apply。
 
 ### ✅ 环境感知
-- **文件工具**：`workspace-tools.ts` 提供 list_dir / read_file / write_file / edit_file / search_files，全部限制在 workspace 内（`withinRoot` 路径校验），512KB 文件上限。
+- **文件工具**：`workspace-tools.ts` 提供 list_dir / read_file / write_file / edit_file / search_files。受限模式默认限制在 workspace 或显式只读白名单内，读取单文件上限为 512KB。
+- **文件搜索**：`file-search.ts` 优先调用 ripgrep，支持 glob、大小写不敏感的固定文本搜索、命中行摘要和 `.gitignore`；没有 `rg` 时回退到 Git 文件清单与内置遍历。只启用终端而未启用 `search_files` 时，模型可直接通过 Bash 使用 `rg`。
 - **终端**：`bash` 工具，120s 超时，2MB 输出截断。
 - **浏览器**：`client-tools.ts` + `browser-runtime.ts`，隔离的 headless Chromium session，open / screenshot / click / eval / close 全套。
 
@@ -60,6 +61,30 @@
 - **MCP**：`mcp-runtime.ts` 支持 stdio 子进程 + remote HTTP 两种 transport，start / listTools / callTool / stop / test 全套，手写 JSON-RPC 2.0。
 - **Skills**：`skills-store.ts` 扫描 8 个目录（`~/.agents`、`~/.agent`、`~/.codex`、`~/.claude` 及对应 workspace 目录），解析 SKILL.md frontmatter，可多选启用并注入。
 - **内置工具**：web_search（responses 协议内置）、图片生成。
+
+### 内置工具目录
+
+下表记录 Chat 运行时直接注册的工具。MCP 工具由已连接的服务器动态提供，不属于固定内置清单。
+
+| 工具 | 用途与关键输入 | 前置条件 | 执行与权限 |
+|---|---|---|---|
+| `todo_write` | 全量更新任务步骤与状态 | Apply 模式、模型支持工具 | 服务端内存工具，不访问 workspace |
+| `plan_write` | 写入当前 session 的计划内容 | Plan 模式且存在 active plan | 服务端写入计划存储，不开放普通写文件工具 |
+| `list_dir` | 列出 `path` 下的文件和目录 | 已选择 workspace，并启用对应工具包 | 结构化文件 helper；受沙箱和读取白名单限制 |
+| `search_files` | 用 `pattern` glob 搜文件名，或用 `query` 搜内容；返回路径及首个命中行 | 已选择 workspace，并启用对应工具包 | 优先 ripgrep，内置实现回退；遵循 Git ignore，结果上限 500 |
+| `read_file` | 读取 `path` 文本内容 | 已选择 workspace，并启用对应工具包 | 结构化文件 helper；单文件上限 512KB |
+| `write_file` | 创建或完整覆盖 `path` | Apply 模式、已选择 workspace，并启用对应工具包 | 写操作进入沙箱审批路径 |
+| `edit_file` | 对 `path` 做唯一 `oldText` → `newText` 替换 | Apply 模式、已选择 workspace，并启用对应工具包 | 写操作进入沙箱审批路径；拒绝 0 次或多次匹配 |
+| `bash` | 在 workspace 中执行 `command` | 已选择 workspace，并启用“终端” | 默认 120 秒、2MB 输出上限；权限由 ask/auto/full 模式决定 |
+| `browser_open` | 打开 URL，创建或复用 browser session | 启用 Browser | 隔离 Headless Chromium，不继承用户登录态 |
+| `browser_screenshot` | 截取 browser session 页面 | 启用 Browser，已有 session | Headless Chromium |
+| `browser_click` | 按 CSS selector 点击页面元素 | 启用 Browser，已有 session | Headless Chromium |
+| `browser_eval` | 在页面执行受限长度的 JavaScript 表达式 | 启用 Browser，已有 session | Headless Chromium 页面上下文 |
+| `browser_close` | 关闭 browser session | 启用 Browser，已有 session | Headless Chromium |
+| `web_search` | 查询近期公开信息 | 启用 Web Search，模型使用 Responses API | OpenAI Responses provider 内置工具 |
+| `image_generation` | 按 prompt、宽高比和分辨率生成图片 | 启用 Image Generation，并配置 KIE API Key | 服务端 KIE 请求，等待任务完成后返回 URL |
+
+固定工具的参数 schema 以 `client-tools.ts`、`workspace-tools.ts`、`business-tools.ts`、`todo-tool.ts` 和 `plan-tool.ts` 为准；设置页工具包及可用性以 `apps/desktop/src/lib/chat-tools.ts` 为准。
 
 ### ✅ 模型与配置
 - 多模型配置（`chat-config.ts`），任意 OpenAI 兼容 baseUrl。
