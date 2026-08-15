@@ -26,6 +26,7 @@ export type UsageRecord = {
   model: string;
   usage: TokenUsage;
   messageCount: number;
+  authorityKey?: string;
 };
 
 export type UsageAggregate = {
@@ -122,12 +123,17 @@ function recordFromMessage(
   model: string,
   message: UIMessage | ArchiveMessage,
   fallbackDate: Date,
+  sessionId?: string,
 ): UsageRecord | null {
   if (message.role !== "assistant") return null;
   const usage =
     "parts" in message
       ? (getMessageUsage(message) ?? emptyTokenUsage())
       : (message.usage ?? emptyTokenUsage());
+  const runId =
+    "parts" in message && message.metadata && typeof message.metadata === "object"
+      ? (message.metadata as { runSummary?: { runId?: unknown } }).runSummary?.runId
+      : undefined;
   return {
     date: dateKey("createdAt" in message ? message.createdAt : undefined, fallbackDate),
     source,
@@ -135,7 +141,25 @@ function recordFromMessage(
     model,
     usage,
     messageCount: 1,
+    ...(sessionId && typeof runId === "string" ? { authorityKey: `${sessionId}:${runId}` } : {}),
   };
+}
+
+export function removeMessageAggregatesCoveredByCallLogs(
+  records: UsageRecord[],
+  logs: Array<{ sessionId?: string; runId?: string }>,
+) {
+  const authoritativeRuns = new Set(
+    logs.flatMap((entry) =>
+      entry.sessionId && entry.runId ? [`${entry.sessionId}:${entry.runId}`] : [],
+    ),
+  );
+  return records.filter(
+    (record) =>
+      record.source !== "native" ||
+      !record.authorityKey ||
+      !authoritativeRuns.has(record.authorityKey),
+  );
 }
 
 async function collectRecords(models: ModelConfig[]): Promise<UsageRecord[]> {
@@ -158,6 +182,7 @@ async function collectRecords(models: ModelConfig[]): Promise<UsageRecord[]> {
           model,
           message,
           new Date(session.updatedAt),
+          session.id,
         );
         if (record) records.push(record);
       }
@@ -226,6 +251,8 @@ async function collectRecords(models: ModelConfig[]): Promise<UsageRecord[]> {
   } catch {
     // Chat Server usage logs are optional while the local server is unavailable.
   }
+  const authoritativeRecords = removeMessageAggregatesCoveredByCallLogs(records, aiUsageLogs);
+  records.splice(0, records.length, ...authoritativeRecords);
   for (const entry of aiUsageLogs) {
     if (!entry.usage || !hasTokenUsage(entry.usage)) continue;
     const config =

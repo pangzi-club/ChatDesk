@@ -30,6 +30,6 @@ describe("shared chat contracts", () => {
     assert.equal(resolveModelContextWindow(256_000), 256_000);
     assert.equal(resolveContextCompactionThreshold(undefined), 96_000);
     assert.equal(resolveContextCompactionThreshold(80_000), 60_000);
-    assert.equal(resolveContextCompactionThreshold(1_000_000), 100_000);
+    assert.equal(resolveContextCompactionThreshold(1_000_000), 750_000);
   });
 });

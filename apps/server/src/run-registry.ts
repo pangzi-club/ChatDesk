@@ -4,9 +4,9 @@ import { MAX_AGENT_STEPS } from "@chatdesk/shared";
 import {
   convertToModelMessages,
   createUIMessageStreamResponse,
+  generateText,
   isToolUIPart,
-  type ModelMessage,
-  pruneMessages,
+  type LanguageModel,
   readUIMessageStream,
   stepCountIs,
   streamText,
@@ -14,6 +14,15 @@ import {
   type UIMessage,
   type UIMessageChunk,
 } from "ai";
+import type { ActivityLogStore } from "./activity-log-store.ts";
+import {
+  buildCheckpointPrompt,
+  CHECKPOINT_OUTPUT_TOKENS,
+  checkpointInstructions,
+  estimateAgentContextTokens,
+  retainRecentModelMessages,
+} from "./agent-context.ts";
+import { type AiUsageLogStore, normalizeAiUsage } from "./ai-usage-log.ts";
 import { createBusinessTools } from "./business-tools.ts";
 import type { ChatConfigStore } from "./chat-config.ts";
 import { createClientTools } from "./client-tools.ts";
@@ -25,7 +34,12 @@ import { createPlanWriteTool } from "./plan-tool.ts";
 import {
   type ChatContextCompaction,
   type ChatContextUsage,
+  type ChatPlanMode,
+  type ChatRunProgress,
+  type ChatRunStopReason,
+  type ChatRunSummary,
   type ChatSession,
+  type ChatTokenUsage,
   deriveTitle,
   type RunStartInput,
   resolveContextCompactionThreshold,
@@ -33,6 +47,13 @@ import {
   type SessionStatus,
 } from "./protocol.ts";
 import { RunJournal } from "./run-journal.ts";
+import {
+  decideRunStep,
+  evaluateRunCompletion,
+  PLAN_FINALIZATION_STEP,
+  ReadOnlyToolLoopTracker,
+  ReadOnlyToolResultDeduplicator,
+} from "./run-policy.ts";
 import {
   classifySandboxBoundary,
   reviewSandboxBoundary,
@@ -61,30 +82,36 @@ type ActiveRun = {
   done?: Promise<void>;
 };
 
+type TerminalRunState = {
+  observed: boolean;
+  text: string;
+  finishReason?: string;
+};
+
+type RunMetrics = {
+  stepCount: number;
+  modelCallCount: number;
+  toolCallCount: number;
+  duplicateToolCallCount: number;
+  compactionCount: number;
+  planWritten: boolean;
+  usage?: ChatTokenUsage;
+  forcedStopReason?: ChatRunStopReason;
+  failureMessage?: string;
+};
+
+class RunFailure extends Error {
+  readonly stopReason: ChatRunStopReason;
+
+  constructor(stopReason: ChatRunStopReason, message: string) {
+    super(message);
+    this.name = "RunFailure";
+    this.stopReason = stopReason;
+  }
+}
+
 export { MAX_AGENT_STEPS };
-export const MODEL_CALL_MAX_RETRIES = 3;
-
-export function estimateModelMessageTokens(messages: ModelMessage[]) {
-  return Math.ceil(JSON.stringify(messages).length / 4);
-}
-
-export function compactAgentContext(messages: ModelMessage[], thresholdTokens: number) {
-  const estimatedTokensBefore = estimateModelMessageTokens(messages);
-  if (estimatedTokensBefore <= thresholdTokens) return undefined;
-  const compactedMessages = pruneMessages({
-    messages,
-    reasoning: "all",
-    toolCalls: "before-last-3-messages",
-    emptyMessages: "remove",
-  });
-  const estimatedTokensAfter = estimateModelMessageTokens(compactedMessages);
-  if (estimatedTokensAfter >= estimatedTokensBefore) return undefined;
-  return { messages: compactedMessages, estimatedTokensBefore, estimatedTokensAfter };
-}
-
-export function reachedToolLimit(stepCount: number, finishReason: string | undefined) {
-  return stepCount >= MAX_AGENT_STEPS && finishReason === "tool-calls";
-}
+export const MODEL_CALL_MAX_RETRIES = 0;
 
 export function resolveEffectiveWorkspace(
   current: ChatSession,
@@ -103,6 +130,17 @@ function baseUrl(value: string) {
     .replace(/\/+$/, "")
     .replace(/\/chat\/completions$/i, "")
     .replace(/\/responses$/i, "");
+}
+
+function createConfiguredLanguageModel(model: import("./protocol.ts").ServerModelConfig) {
+  const provider = createOpenAI({
+    apiKey: model.apiKey,
+    baseURL: baseUrl(model.baseUrl),
+    fetch: isMiniMaxModel(model) ? createMiniMaxFetch(model) : createKimiFetch(model),
+  });
+  return model.responsive
+    ? provider.responses(model.name.trim())
+    : provider.chat(model.name.trim());
 }
 
 function assistantMessage(id: string, text: string): UIMessage {
@@ -222,6 +260,31 @@ function errorMessage(error: unknown) {
   }
 }
 
+function addUsage(current: ChatTokenUsage | undefined, next: ChatTokenUsage | undefined) {
+  if (!next) return current;
+  const result: ChatTokenUsage = {};
+  for (const key of [
+    "inputTokens",
+    "outputTokens",
+    "totalTokens",
+    "cacheReadTokens",
+    "cacheWriteTokens",
+    "reasoningOutputTokens",
+  ] as const) {
+    const left = current?.[key];
+    const right = next[key];
+    if (left !== undefined || right !== undefined) result[key] = (left ?? 0) + (right ?? 0);
+  }
+  return result;
+}
+
+function latestAssistantText(messages: UIMessage[]) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === "assistant") return messageText(messages[index]);
+  }
+  return "";
+}
+
 export class RunRegistry {
   private readonly active = new Map<string, ActiveRun>();
   private readonly statuses = new Map<string, SessionStatus>();
@@ -234,19 +297,30 @@ export class RunRegistry {
   private readonly toolApprovalSecret = randomUUID();
   private readonly resolveWorkspace: (id: string) => string | undefined;
   private readonly plans: PlanStore;
+  private readonly aiUsageLogs: AiUsageLogStore;
+  private readonly activityLogs: ActivityLogStore;
+  private readonly createLanguageModel?: (
+    model: import("./protocol.ts").ServerModelConfig,
+  ) => LanguageModel;
 
   constructor(
     store: SessionStore,
     events: EventHub,
     chatConfig: ChatConfigStore,
     plans: PlanStore,
+    aiUsageLogs: AiUsageLogStore,
+    activityLogs: ActivityLogStore,
     resolveWorkspace: (id: string) => string | undefined = () => undefined,
+    createLanguageModel?: (model: import("./protocol.ts").ServerModelConfig) => LanguageModel,
   ) {
     this.store = store;
     this.events = events;
     this.chatConfig = chatConfig;
     this.resolveWorkspace = resolveWorkspace;
     this.plans = plans;
+    this.aiUsageLogs = aiUsageLogs;
+    this.activityLogs = activityLogs;
+    this.createLanguageModel = createLanguageModel;
     this.journal = new RunJournal(store.root);
     this.reviewLog = new SandboxReviewLogStore(store.root);
   }
@@ -261,12 +335,32 @@ export class RunRegistry {
         (message) => message.id === (entry.messageId ?? entry.runId),
       );
       if (session && draft) {
-        const interruptedDraft = interruptRunMessage(draft, "Chat Server 重启，运行已中断");
+        const runSummary: ChatRunSummary = {
+          runId: entry.runId,
+          outcome: "error",
+          stopReason: "server-restarted",
+          stepCount: 0,
+          modelCallCount: 0,
+          toolCallCount: 0,
+          duplicateToolCallCount: 0,
+          compactionCount: 0,
+          planWritten: false,
+        };
+        const interruptedDraft = {
+          ...interruptRunMessage(draft, "Chat Server 重启，运行已中断"),
+          metadata: {
+            ...(isRecord(draft.metadata) ? draft.metadata : {}),
+            runSummary,
+          },
+        };
         const messages = mergeRunMessage(session.messages, interruptedDraft);
         await this.store.save({
           ...session,
           messages,
           updatedAt: new Date().toISOString(),
+        });
+        await this.logRunOutcome(runSummary).catch((error) => {
+          console.error("Failed to persist recovered Chat Server run outcome", error);
         });
       }
       await this.journal.clear(entry.runId);
@@ -411,67 +505,121 @@ export class RunRegistry {
     this.setStatus(sessionId, "submitted", runId);
 
     try {
-      const provider = createOpenAI({
-        apiKey: model.apiKey,
-        baseURL: baseUrl(model.baseUrl),
-        fetch: isMiniMaxModel(model) ? createMiniMaxFetch(model) : createKimiFetch(model),
-      });
-      const languageModel = model.responsive
-        ? provider.responses(model.name.trim())
-        : provider.chat(model.name.trim());
+      const languageModel = this.createLanguageModel
+        ? this.createLanguageModel(model)
+        : createConfiguredLanguageModel(model);
       const modelMessages = await convertToModelMessages(messages);
       const system = prompt.text;
-      let completedStepCount = 0;
+      const metrics: RunMetrics = {
+        stepCount: 0,
+        modelCallCount: 0,
+        toolCallCount: 0,
+        duplicateToolCallCount: 0,
+        compactionCount: 0,
+        planWritten: false,
+      };
+      const terminal: TerminalRunState = { observed: false, text: "" };
+      const duplicateResults = new ReadOnlyToolResultDeduplicator();
+      const loopTracker = new ReadOnlyToolLoopTracker();
       let contextCompaction: ChatContextCompaction | undefined;
       let contextUsage: ChatContextUsage | undefined;
+      let checkpoint = "";
+      let currentPlanContent = activePlan?.content ?? "";
       const contextCompactionThreshold = resolveContextCompactionThreshold(model.inputContext);
+      let invocationIndex = 0;
+      const publishProgress = (phase: ChatRunProgress["phase"]) => {
+        const currentStep =
+          planMode === "plan"
+            ? Math.min(metrics.stepCount + 1, PLAN_FINALIZATION_STEP)
+            : Math.min(metrics.stepCount + 1, MAX_AGENT_STEPS);
+        const runProgress: ChatRunProgress = {
+          runId,
+          phase,
+          stepCount: currentStep,
+          modelCallCount: metrics.modelCallCount,
+          toolCallCount: metrics.toolCallCount,
+          duplicateToolCallCount: metrics.duplicateToolCallCount,
+          compactionCount: metrics.compactionCount,
+          planWritten: metrics.planWritten,
+          planMode,
+          ...(planMode === "plan" ? { planStepLimit: PLAN_FINALIZATION_STEP } : {}),
+          ...(metrics.forcedStopReason ? { stopReason: metrics.forcedStopReason } : {}),
+        };
+        this.events.publish({ type: "run.progress", sessionId, runId, runProgress });
+      };
+      const recordModelCall =
+        (operation: string) =>
+        async (event: { callId: string; usage: unknown; modelId: string; responseId: string }) => {
+          metrics.modelCallCount += 1;
+          invocationIndex += 1;
+          const usage = normalizeAiUsage(event.usage);
+          metrics.usage = addUsage(metrics.usage, usage);
+          if (!usage) return;
+          await this.aiUsageLogs.append({
+            operation,
+            modelId: model.id || model.name,
+            provider: model.provider,
+            model: model.name,
+            sessionId,
+            runId,
+            callId: event.callId,
+            invocationIndex,
+            providerModelId: event.modelId,
+            responseId: event.responseId,
+            usage,
+          });
+        };
+      const workspaceTools = createWorkspaceToolsForInput({
+        ...input,
+        planMode,
+        sandboxReadablePaths: chatConfig.sandboxReadablePaths,
+        developerToolPaths: chatConfig.developerToolPaths,
+        cwd: effectiveCwd,
+        model,
+        sandboxMode,
+        approvedEscalationToolCallIds,
+        preflightResults,
+        onReadOnlyToolResult: (toolName, toolInput, output, toolCallId) =>
+          duplicateResults.compact(toolName, toolInput, output, toolCallId),
+        onSandboxBlocked: createSandboxEscalationHandler({
+          mode: sandboxMode,
+          workspace: session.cwd,
+          messages,
+          reviewerModel,
+          approvedEscalationToolCallIds,
+          reviewLog: this.reviewLog,
+          sessionId,
+          runId,
+        }),
+      });
+      const tools = model.supportsTools
+        ? {
+            ...(planMode === "plan"
+              ? {
+                  plan_write: createPlanWriteTool(
+                    this.plans,
+                    this.events,
+                    this.store,
+                    sessionId,
+                    planId as string,
+                  ),
+                }
+              : { todo_write: createTodoTool() }),
+            ...(planMode === "plan" ? {} : (createClientTools(input.toolNames) ?? {})),
+            ...workspaceTools,
+            ...(planMode === "plan"
+              ? {}
+              : selectTools(createBusinessTools(chatConfig.apiKeys), input.toolNames)),
+            ...(planMode !== "plan" && input.toolNames?.includes("web_search") && model.responsive
+              ? { web_search: openai.tools.webSearch({}) as unknown as ToolSet[string] }
+              : {}),
+          }
+        : undefined;
       const result = streamText({
         model: languageModel,
         messages: modelMessages,
         ...(system ? (model.responsive ? { instructions: system } : { system }) : {}),
-        tools: model.supportsTools
-          ? {
-              ...(planMode === "plan"
-                ? {
-                    plan_write: createPlanWriteTool(
-                      this.plans,
-                      this.events,
-                      this.store,
-                      sessionId,
-                      planId as string,
-                    ),
-                  }
-                : { todo_write: createTodoTool() }),
-              ...(planMode === "plan" ? {} : (createClientTools(input.toolNames) ?? {})),
-              ...createWorkspaceToolsForInput({
-                ...input,
-                planMode,
-                sandboxReadablePaths: chatConfig.sandboxReadablePaths,
-                developerToolPaths: chatConfig.developerToolPaths,
-                cwd: effectiveCwd,
-                model,
-                sandboxMode,
-                approvedEscalationToolCallIds,
-                preflightResults,
-                onSandboxBlocked: createSandboxEscalationHandler({
-                  mode: sandboxMode,
-                  workspace: session.cwd,
-                  messages,
-                  reviewerModel,
-                  approvedEscalationToolCallIds,
-                  reviewLog: this.reviewLog,
-                  sessionId,
-                  runId,
-                }),
-              }),
-              ...(planMode === "plan"
-                ? {}
-                : selectTools(createBusinessTools(chatConfig.apiKeys), input.toolNames)),
-              ...(planMode !== "plan" && input.toolNames?.includes("web_search") && model.responsive
-                ? { web_search: openai.tools.webSearch({}) as unknown as ToolSet[string] }
-                : {}),
-            }
-          : undefined,
+        tools,
         toolApproval: createToolApproval({
           mode: sandboxMode,
           workspace: session.cwd,
@@ -486,37 +634,136 @@ export class RunRegistry {
           preflightResults,
         }),
         experimental_toolApprovalSecret: this.toolApprovalSecret,
-        stopWhen: stepCountIs(MAX_AGENT_STEPS),
-        prepareStep: ({ messages: stepMessages, stepNumber }) => {
-          const compacted = compactAgentContext(stepMessages, contextCompactionThreshold);
-          if (!compacted) return undefined;
-          contextCompaction = {
-            count: (contextCompaction?.count ?? 0) + 1,
+        stopWhen: stepCountIs(planMode === "plan" ? 25 : MAX_AGENT_STEPS),
+        prepareStep: async ({ messages: stepMessages, stepNumber }) => {
+          if (planMode !== "plan" && stepNumber + 1 >= MAX_AGENT_STEPS) {
+            metrics.forcedStopReason = "step-limit";
+          }
+          const policy = decideRunStep({
+            planMode,
             stepNumber,
-            estimatedTokensBefore: compacted.estimatedTokensBefore,
-            estimatedTokensAfter: compacted.estimatedTokensAfter,
-          };
-          this.events.publish({
-            type: "context.compacted",
-            sessionId,
-            runId,
-            contextCompaction,
+            planWritten: metrics.planWritten,
+            forcedStopReason: metrics.forcedStopReason,
           });
-          contextUsage = {
-            inputTokens: compacted.estimatedTokensAfter,
-            source: "estimate",
-            stepNumber,
-          };
-          this.events.publish({
-            type: "context.usage",
-            sessionId,
-            runId,
-            contextUsage,
+          publishProgress(policy.phase);
+          let preparedMessages = stepMessages;
+          let preparedInstructions = checkpointInstructions({
+            base: system,
+            checkpoint,
+            planContent: planMode === "plan" ? currentPlanContent : undefined,
+            policyInstructions: policy.instructions,
           });
-          return { messages: compacted.messages };
+          const estimatedTokensBefore = estimateAgentContextTokens(
+            preparedMessages,
+            preparedInstructions,
+          );
+          if (estimatedTokensBefore > contextCompactionThreshold) {
+            publishProgress("compacting");
+            try {
+              if (planMode === "plan" && planId) {
+                currentPlanContent = (await this.plans.read(sessionId, planId)).content;
+              }
+              const checkpointResult = await generateText({
+                model: languageModel,
+                prompt: buildCheckpointPrompt({
+                  messages: preparedMessages,
+                  existingCheckpoint: checkpoint,
+                  planContent: planMode === "plan" ? currentPlanContent : undefined,
+                }),
+                maxOutputTokens: CHECKPOINT_OUTPUT_TOKENS,
+                maxRetries: MODEL_CALL_MAX_RETRIES,
+                abortSignal: controller.signal,
+                onLanguageModelCallEnd: recordModelCall("context-checkpoint"),
+              });
+              checkpoint = checkpointResult.text.trim();
+              if (!checkpoint) throw new Error("模型返回了空检查点");
+              preparedMessages = retainRecentModelMessages(preparedMessages);
+              preparedInstructions = checkpointInstructions({
+                base: system,
+                checkpoint,
+                planContent: planMode === "plan" ? currentPlanContent : undefined,
+                policyInstructions: policy.instructions,
+              });
+              const estimatedTokensAfter = estimateAgentContextTokens(
+                preparedMessages,
+                preparedInstructions,
+              );
+              if (estimatedTokensAfter >= contextCompactionThreshold) {
+                throw new RunFailure("context-limit", "生成检查点后上下文仍超过模型限制");
+              }
+              metrics.compactionCount += 1;
+              contextCompaction = {
+                count: metrics.compactionCount,
+                stepNumber,
+                estimatedTokensBefore,
+                estimatedTokensAfter,
+              };
+              this.events.publish({
+                type: "context.compacted",
+                sessionId,
+                runId,
+                contextCompaction,
+              });
+              contextUsage = {
+                inputTokens: estimatedTokensAfter,
+                source: "estimate",
+                stepNumber,
+              };
+              this.events.publish({
+                type: "context.usage",
+                sessionId,
+                runId,
+                contextUsage,
+              });
+              publishProgress(policy.phase);
+            } catch (error) {
+              const failure =
+                error instanceof RunFailure
+                  ? error
+                  : new RunFailure(
+                      "checkpoint-failed",
+                      `上下文检查点生成失败：${errorMessage(error)}`,
+                    );
+              metrics.forcedStopReason = failure.stopReason;
+              metrics.failureMessage = failure.message;
+              throw failure;
+            }
+          }
+          return {
+            messages: preparedMessages,
+            instructions: preparedInstructions,
+            ...(policy.activeTools
+              ? { activeTools: policy.activeTools as Array<keyof NonNullable<typeof tools>> }
+              : {}),
+            ...(policy.toolChoice ? { toolChoice: policy.toolChoice } : {}),
+          };
         },
-        onStepEnd: ({ stepNumber, usage }) => {
-          completedStepCount += 1;
+        onLanguageModelCallEnd: recordModelCall("chat-run"),
+        onStepEnd: ({ stepNumber, usage, toolCalls, toolResults }) => {
+          const completedToolResults = toolResults.filter(
+            (toolResult): toolResult is NonNullable<typeof toolResult> => toolResult !== undefined,
+          );
+          metrics.stepCount += 1;
+          metrics.toolCallCount += toolCalls.length;
+          if (
+            completedToolResults.some(
+              (toolResult) =>
+                toolResult.toolName === "plan_write" &&
+                typeof (toolResult.output as { characters?: unknown })?.characters === "number" &&
+                (toolResult.output as { characters: number }).characters > 0,
+            )
+          ) {
+            metrics.planWritten = true;
+          }
+          const loop = loopTracker.recordStep(
+            completedToolResults.map((toolResult) => ({
+              toolName: toolResult.toolName,
+              input: toolResult.input,
+              output: toolResult.output,
+            })),
+          );
+          metrics.duplicateToolCallCount = loopTracker.duplicateToolCallCount;
+          if (loop.loopDetected) metrics.forcedStopReason = "tool-loop";
           if (usage.inputTokens !== undefined) {
             contextUsage = {
               inputTokens: usage.inputTokens,
@@ -531,6 +778,11 @@ export class RunRegistry {
             });
           }
         },
+        onEnd: ({ text, finishReason }) => {
+          terminal.observed = true;
+          terminal.text = text;
+          terminal.finishReason = finishReason;
+        },
         abortSignal: controller.signal,
         maxRetries: MODEL_CALL_MAX_RETRIES,
       });
@@ -541,12 +793,10 @@ export class RunRegistry {
         generateMessageId: () => runId,
         messageMetadata: ({ part }) => {
           if (part.type !== "finish") return undefined;
-          const toolLimitReached = reachedToolLimit(completedStepCount, part.finishReason);
           return {
-            usage: part.totalUsage,
+            usage: metrics.usage ?? part.totalUsage,
             ...(contextUsage ? { contextUsage } : {}),
             ...(contextCompaction ? { contextCompaction } : {}),
-            ...(toolLimitReached ? { toolLimitReached: true, stopReason: "tool-limit" } : {}),
           };
         },
         onFinish: ({ messages: finishedMessages, isAborted }) => {
@@ -563,14 +813,46 @@ export class RunRegistry {
         observerStream,
         () => completedMessages,
         () => runAborted,
+        planMode,
+        metrics,
+        terminal,
       );
       void activeRun.done;
       return createUIMessageStreamResponse({ stream: clientStream });
     } catch (error) {
       this.active.delete(sessionId);
+      const runSummary: ChatRunSummary = {
+        runId,
+        outcome: "error",
+        stopReason: error instanceof RunFailure ? error.stopReason : "incomplete-response",
+        stepCount: 0,
+        modelCallCount: 0,
+        toolCallCount: 0,
+        duplicateToolCallCount: 0,
+        compactionCount: 0,
+        planWritten: false,
+      };
+      const failedDraft: UIMessage = {
+        ...assistantMessage(runId, `运行启动失败：${errorMessage(error)}`),
+        metadata: { runSummary },
+      };
+      this.drafts.set(sessionId, failedDraft);
+      await this.persistDraft(sessionId, failedDraft).catch((persistError) => {
+        console.error("Failed to persist Chat Server startup failure", persistError);
+      });
       this.drafts.delete(sessionId);
       await this.journal.clear(runId);
       this.setStatus(sessionId, "error", runId);
+      await this.logRunOutcome(runSummary).catch((logError) => {
+        console.error("Failed to persist Chat Server startup outcome", logError);
+      });
+      this.events.publish({
+        type: "run.error",
+        sessionId,
+        runId,
+        error: errorMessage(error),
+        runSummary,
+      });
       throw error;
     }
   }
@@ -589,6 +871,9 @@ export class RunRegistry {
     stream: ReadableStream<UIMessageChunk>,
     getCompletedMessages: () => UIMessage[] | undefined,
     getRunAborted: () => boolean,
+    planMode: ChatPlanMode,
+    metrics: RunMetrics,
+    terminal: TerminalRunState,
   ) {
     const sessionId = session.id;
     const lastMessage = session.messages[session.messages.length - 1];
@@ -640,7 +925,8 @@ export class RunRegistry {
         : latestDraft.parts.length > 0
           ? mergeRunMessage(session.messages, latestDraft)
           : session.messages;
-      if (getRunAborted()) {
+      const aborted = getRunAborted();
+      if (aborted) {
         let interrupted = false;
         persistedMessages = persistedMessages.map((message, index) => {
           if (interrupted || message.role !== "assistant") return message;
@@ -652,7 +938,41 @@ export class RunRegistry {
           return interruptRunMessage(message, "用户已停止运行");
         });
       }
-      const nextMessages = mergeLatestMessageMetadata(persistedMessages, latestMessageMetadata);
+      const completion = evaluateRunCompletion({
+        planMode,
+        planWritten: metrics.planWritten,
+        finalText: terminal.text,
+        finishReason: terminal.finishReason,
+        terminalObserved: terminal.observed,
+        aborted,
+        forcedStopReason: metrics.forcedStopReason,
+      });
+      const runSummary: ChatRunSummary = {
+        runId,
+        outcome: completion.outcome,
+        ...(completion.stopReason ? { stopReason: completion.stopReason } : {}),
+        stepCount: metrics.stepCount,
+        modelCallCount: metrics.modelCallCount,
+        toolCallCount: metrics.toolCallCount,
+        duplicateToolCallCount: metrics.duplicateToolCallCount,
+        compactionCount: metrics.compactionCount,
+        planWritten: metrics.planWritten,
+      };
+      if (completion.outcome === "error" && !latestAssistantText(persistedMessages).trim()) {
+        persistedMessages = mergeRunMessage(
+          persistedMessages,
+          assistantMessage(
+            runId,
+            metrics.failureMessage ??
+              `运行未完整结束：${completion.stopReason ?? "incomplete-response"}`,
+          ),
+        );
+      }
+      const nextMessages = mergeLatestMessageMetadata(persistedMessages, {
+        ...(isRecord(latestMessageMetadata) ? latestMessageMetadata : {}),
+        ...(metrics.usage ? { usage: metrics.usage } : {}),
+        runSummary,
+      });
       const current = (await this.store.get(sessionId)) ?? session;
       const updated: ChatSession = {
         ...current,
@@ -670,26 +990,81 @@ export class RunRegistry {
         messageId: finalMessage?.id,
         message: finalMessage,
       });
-      this.setStatus(sessionId, "ready", runId);
-      this.events.publish({ type: "run.done", sessionId, runId });
-    } catch (error) {
-      const message = errorMessage(error);
-      if (latestDraft.parts.length > 0) {
-        const interruptedDraft = interruptRunMessage(latestDraft, message);
-        this.drafts.set(sessionId, interruptedDraft);
-        await this.persistDraft(sessionId, interruptedDraft).catch((persistError) => {
-          console.error("Failed to persist interrupted Chat Server run", persistError);
-        });
+      await this.logRunOutcome(runSummary).catch((error) => {
+        console.error("Failed to persist Chat Server run outcome", error);
+      });
+      if (completion.outcome === "error") {
+        this.setStatus(sessionId, "error", runId);
         this.events.publish({
-          type: "message.updated",
+          type: "run.error",
           sessionId,
           runId,
-          messageId: interruptedDraft.id,
-          message: interruptedDraft,
+          error: `运行异常结束：${completion.stopReason ?? "incomplete-response"}`,
+          runSummary,
         });
+      } else {
+        this.setStatus(sessionId, "ready", runId);
+        this.events.publish({ type: "run.done", sessionId, runId, runSummary });
       }
-      this.setStatus(sessionId, "error", runId);
-      this.events.publish({ type: "run.error", sessionId, runId, error: message });
+    } catch (error) {
+      const message = errorMessage(error);
+      const stopped = controllerAborted(this.active.get(sessionId));
+      const stopReason = stopped
+        ? "user"
+        : error instanceof RunFailure
+          ? error.stopReason
+          : "incomplete-response";
+      const runSummary: ChatRunSummary = {
+        runId,
+        outcome: stopped ? "stopped" : "error",
+        stopReason,
+        stepCount: metrics.stepCount,
+        modelCallCount: metrics.modelCallCount,
+        toolCallCount: metrics.toolCallCount,
+        duplicateToolCallCount: metrics.duplicateToolCallCount,
+        compactionCount: metrics.compactionCount,
+        planWritten: metrics.planWritten,
+      };
+      let interruptedDraft = interruptRunMessage(latestDraft, message);
+      if (!messageText(interruptedDraft).trim()) {
+        interruptedDraft = {
+          ...interruptedDraft,
+          parts: [
+            ...interruptedDraft.parts,
+            { type: "text", text: stopped ? "运行已由用户停止。" : `运行异常结束：${message}` },
+          ],
+        };
+      }
+      interruptedDraft = {
+        ...interruptedDraft,
+        metadata: {
+          ...(isRecord(interruptedDraft.metadata) ? interruptedDraft.metadata : {}),
+          ...(metrics.usage ? { usage: metrics.usage } : {}),
+          runSummary,
+        },
+      };
+      this.drafts.set(sessionId, interruptedDraft);
+      await this.persistDraft(sessionId, interruptedDraft).catch((persistError) => {
+        console.error("Failed to persist interrupted Chat Server run", persistError);
+      });
+      this.events.publish({
+        type: "message.updated",
+        sessionId,
+        runId,
+        messageId: interruptedDraft.id,
+        message: interruptedDraft,
+      });
+      await this.logRunOutcome(runSummary).catch((logError) => {
+        console.error("Failed to persist Chat Server run outcome", logError);
+      });
+      this.setStatus(sessionId, stopped ? "ready" : "error", runId);
+      this.events.publish({
+        type: stopped ? "run.done" : "run.error",
+        sessionId,
+        runId,
+        ...(stopped ? {} : { error: message }),
+        runSummary,
+      });
     } finally {
       this.active.delete(sessionId);
       await this.journal.clear(runId).catch((error) => {
@@ -697,6 +1072,32 @@ export class RunRegistry {
       });
     }
   }
+
+  private async logRunOutcome(summary: ChatRunSummary) {
+    await this.activityLogs.append({
+      level:
+        summary.outcome === "error"
+          ? "error"
+          : summary.outcome === "stopped" || summary.outcome === "awaiting-user"
+            ? "warning"
+            : "success",
+      source: "Agent Run",
+      message: `运行 ${summary.runId} ${summary.outcome}`,
+      details: JSON.stringify({
+        runId: summary.runId,
+        stepCount: summary.stepCount,
+        modelCallCount: summary.modelCallCount,
+        toolCallCount: summary.toolCallCount,
+        duplicateToolCallCount: summary.duplicateToolCallCount,
+        compactionCount: summary.compactionCount,
+        stopReason: summary.stopReason,
+      }),
+    });
+  }
+}
+
+function controllerAborted(run: ActiveRun | undefined) {
+  return run?.controller.signal.aborted === true;
 }
 
 function createToolApproval(options: {
@@ -977,6 +1378,7 @@ function createWorkspaceToolsForInput(
     sandboxReadablePaths?: string[];
     developerToolPaths?: string[];
     preflightResults: WorkspaceToolPreflightMap;
+    onReadOnlyToolResult: NonNullable<Parameters<typeof createWorkspaceTools>[7]>;
   },
 ) {
   const cwd = input.cwd?.trim();
@@ -984,12 +1386,13 @@ function createWorkspaceToolsForInput(
   if (input.planMode === "plan") {
     const tools = createWorkspaceTools(
       cwd,
-      "ask",
+      input.sandboxMode ?? "ask",
       input.approvedEscalationToolCallIds,
       input.onSandboxBlocked,
       input.sandboxReadablePaths,
       input.preflightResults,
       input.developerToolPaths,
+      input.onReadOnlyToolResult,
     );
     const selected = selectPlanWorkspaceToolNames(input.toolNames ?? []);
     return Object.fromEntries(selected.map((name) => [name, tools[name]]));
@@ -1009,6 +1412,7 @@ function createWorkspaceToolsForInput(
     input.sandboxReadablePaths,
     input.preflightResults,
     input.developerToolPaths,
+    input.onReadOnlyToolResult,
   );
   const selected = selectWorkspaceToolNames(names);
   return Object.fromEntries(selected.map((name) => [name, tools[name]]));

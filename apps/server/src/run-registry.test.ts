@@ -1,72 +1,19 @@
 import assert from "node:assert/strict";
-import type { ModelMessage, UIMessage } from "ai";
+import type { UIMessage } from "ai";
 import { test } from "vitest";
 import {
-  compactAgentContext,
-  estimateModelMessageTokens,
   interruptRunMessage,
   MAX_AGENT_STEPS,
   MODEL_CALL_MAX_RETRIES,
   mergeLatestMessageMetadata,
   mergeRunMessage,
   normalizeCompletedMessages,
-  reachedToolLimit,
   runCheckpointFingerprint,
 } from "./run-registry.ts";
 
-test("allows long agent runs and retries transient model failures", () => {
+test("allows long agent runs without automatically retrying model failures", () => {
   assert.equal(MAX_AGENT_STEPS, 100);
-  assert.equal(MODEL_CALL_MAX_RETRIES, 3);
-  assert.equal(reachedToolLimit(100, "tool-calls"), true);
-  assert.equal(reachedToolLimit(99, "tool-calls"), false);
-  assert.equal(reachedToolLimit(100, "stop"), false);
-});
-
-test("compacts old reasoning and tool results after the token threshold", () => {
-  const messages = [
-    {
-      role: "assistant",
-      content: [
-        { type: "reasoning", text: "private reasoning" },
-        { type: "tool-call", toolCallId: "call-1", toolName: "read_file", input: {} },
-      ],
-    },
-    {
-      role: "tool",
-      content: [
-        {
-          type: "tool-result",
-          toolCallId: "call-1",
-          toolName: "read_file",
-          output: { type: "text", value: "large result".repeat(100) },
-        },
-      ],
-    },
-    { role: "user", content: [{ type: "text", text: "continue" }] },
-    { role: "assistant", content: [{ type: "text", text: "working" }] },
-    { role: "user", content: [{ type: "text", text: "finish" }] },
-  ] as ModelMessage[];
-
-  assert.equal(compactAgentContext(messages, estimateModelMessageTokens(messages)), undefined);
-
-  const result = compactAgentContext(messages, 1);
-  assert.ok(result);
-  assert.ok(result.estimatedTokensAfter < result.estimatedTokensBefore);
-  assert.equal(
-    result.messages.some(
-      (message) =>
-        Array.isArray(message.content) &&
-        message.content.some((part) => part.type === "tool-call" || part.type === "tool-result"),
-    ),
-    false,
-  );
-});
-
-test("does not report compaction when pruning cannot reduce context", () => {
-  const messages: ModelMessage[] = [
-    { role: "user", content: [{ type: "text", text: "plain conversation" }] },
-  ];
-  assert.equal(compactAgentContext(messages, 1), undefined);
+  assert.equal(MODEL_CALL_MAX_RETRIES, 0);
 });
 
 test("mergeLatestMessageMetadata persists usage on the latest assistant message", () => {

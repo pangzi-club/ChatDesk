@@ -5,8 +5,9 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 const MAX_FILE_BYTES = 512 * 1024;
-export const MAX_SEARCH_RESULTS = 500;
+export const MAX_SEARCH_RESULTS = 100;
 const MAX_SEARCH_OUTPUT_BYTES = 32 * 1024 * 1024;
+const MAX_SEARCH_RESULT_BYTES = 64 * 1024;
 const SKIPPED_DIRECTORIES = new Set([".git", "node_modules", "target", "dist"]);
 const execFileAsync = promisify(execFile);
 
@@ -29,6 +30,27 @@ export type FileSearchResult = {
   truncated: boolean;
   engine: "ripgrep" | "builtin";
 };
+
+function boundSearchResult(result: FileSearchResult): FileSearchResult {
+  const next = {
+    ...result,
+    matches: [...result.matches],
+    ...(result.contentMatches ? { contentMatches: [...result.contentMatches] } : {}),
+  };
+  while (
+    Buffer.byteLength(JSON.stringify(next)) > MAX_SEARCH_RESULT_BYTES &&
+    (next.contentMatches?.length || next.matches.length)
+  ) {
+    if ((next.contentMatches?.length ?? 0) >= next.matches.length) next.contentMatches?.pop();
+    else next.matches.pop();
+    next.truncated = true;
+  }
+  if (next.contentMatches) {
+    const visiblePaths = new Set(next.contentMatches.map((item) => item.path));
+    next.matches = next.matches.filter((item) => visiblePaths.has(item));
+  }
+  return next;
+}
 
 function displayPath(root: string, target: string) {
   const relative = path.relative(root, target);
@@ -280,14 +302,14 @@ export async function searchWorkspaceFiles(
     const allMatches = contentMatches
       ? [...new Set(contentMatches.map((item) => item.path))]
       : (ripgrep as string[]).sort((left, right) => left.localeCompare(right));
-    return {
+    return boundSearchResult({
       query: options.query?.trim() || undefined,
       pattern: options.pattern?.trim() || undefined,
       matches: allMatches.slice(0, limit),
       ...(contentMatches ? { contentMatches: contentMatches.slice(0, limit) } : {}),
       truncated: allMatches.length > limit,
       engine: "ripgrep",
-    };
+    });
   }
 
   const fallback = await builtinSearch(canonicalRoot, canonicalStart, options);
@@ -296,12 +318,12 @@ export async function searchWorkspaceFiles(
     (left, right) =>
       left.path.localeCompare(right.path) || left.line - right.line || left.column - right.column,
   );
-  return {
+  return boundSearchResult({
     query: options.query?.trim() || undefined,
     pattern: options.pattern?.trim() || undefined,
     matches: fallback.matches.slice(0, limit),
     ...(hasQuery ? { contentMatches: fallback.contentMatches.slice(0, limit) } : {}),
     truncated: fallback.matches.length > limit,
     engine: "builtin",
-  };
+  });
 }

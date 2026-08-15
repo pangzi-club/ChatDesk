@@ -1,8 +1,9 @@
 import { existsSync, realpathSync } from "node:fs";
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { type ToolSet, tool } from "ai";
 import { z } from "zod";
+import { type ReadFileOptions, type ReadFileResult, readTextFileRange } from "./file-read.ts";
 import { type FileSearchResult, MAX_SEARCH_RESULTS, searchWorkspaceFiles } from "./file-search.ts";
 import type { SandboxMode } from "./protocol.ts";
 import { classifySandboxBoundary } from "./sandbox-boundary-reviewer.ts";
@@ -14,7 +15,6 @@ import {
   SandboxPathError,
 } from "./sandbox-exec.ts";
 
-const MAX_FILE_BYTES = 512 * 1024;
 const SKIPPED_DIRECTORIES = new Set([".git", "node_modules", "target", "dist"]);
 
 type SandboxEscalationHandler = (toolCall: {
@@ -23,11 +23,16 @@ type SandboxEscalationHandler = (toolCall: {
   input: unknown;
   errorReason?: string;
 }) => Promise<{ approved: boolean; reason?: string }>;
+export type ReadOnlyToolResultHandler = (
+  toolName: "list_dir" | "search_files" | "read_file",
+  input: unknown,
+  output: unknown,
+  toolCallId: string,
+) => unknown;
 type DirectoryResult = {
   path: string;
   entries: Array<{ name: string; path: string; kind: "dir" | "file" | "other" }>;
 };
-type ReadFileResult = { path: string; content: string };
 export type WorkspaceToolPreflight =
   | { status: "ok"; result: unknown }
   | { status: "error"; error: unknown }
@@ -68,10 +73,17 @@ export async function preflightWorkspaceTool(options: {
       };
     }
     if (options.toolName === "read_file") {
-      const input = options.input as { path: string };
+      const input = options.input as { path: string } & ReadFileOptions;
       return {
         status: "ok",
-        result: await readTextFile(options.cwd, input.path, options.mode, false, readablePaths),
+        result: await readTextFile(
+          options.cwd,
+          input.path,
+          options.mode,
+          false,
+          readablePaths,
+          input,
+        ),
       };
     }
     if (options.toolName === "search_files") {
@@ -257,22 +269,20 @@ async function readTextFile(
   mode: SandboxMode,
   allowOutside = false,
   readablePaths: string[] = [],
+  options: ReadFileOptions = {},
 ): Promise<ReadFileResult> {
   const root = rootPath(cwd);
   const target = resolveReadableTarget(root, relativePath, mode, allowOutside, readablePaths);
   if (mode !== "full" && !allowOutside) {
     const result = await runSandboxedFile(
-      { operation: "read_file", workspace: root, path: target, readablePaths },
+      { operation: "read_file", workspace: root, path: target, readablePaths, ...options },
       { mode },
     );
     if (result.sandboxBlocked) throw new SandboxBlockedError(result.error);
     if (!result.result) throw new Error(result.error);
     return result.result as ReadFileResult;
   }
-  const metadata = await stat(target);
-  if (!metadata.isFile()) throw new Error("路径不是文件");
-  if (metadata.size > MAX_FILE_BYTES) throw new Error("文件超过 512 KB，未读取");
-  return { path: displayPath(root, target), content: await readFile(target, "utf8") };
+  return readTextFileRange(target, displayPath(root, target), options);
 }
 
 async function searchFiles(
@@ -312,6 +322,7 @@ export function createWorkspaceTools(
   readablePaths: string[] = [],
   preflightResults: WorkspaceToolPreflightMap = new Map(),
   developerToolPaths: string[] = [],
+  onReadOnlyToolResult?: ReadOnlyToolResultHandler,
 ): ToolSet {
   const pathScope =
     mode === "full"
@@ -326,47 +337,63 @@ export function createWorkspaceTools(
       execute: async ({ path: relativePath }, { toolCallId }) => {
         const input = { path: relativePath };
         const preflight = consumePreflight(preflightResults, toolCallId, approvedToolCallIds);
-        if (preflight) return resolvePreflight(preflight) as Promise<DirectoryResult>;
+        if (preflight) {
+          const output = await (resolvePreflight(preflight) as Promise<DirectoryResult>);
+          return onReadOnlyToolResult?.("list_dir", input, output, toolCallId) ?? output;
+        }
         try {
-          return await listDirectory(
+          const output = await listDirectory(
             cwd,
             relativePath,
             mode,
             approvedToolCallIds.has(toolCallId),
             readablePaths,
           );
+          return onReadOnlyToolResult?.("list_dir", input, output, toolCallId) ?? output;
         } catch (error) {
-          return retryAfterSandboxReview(error, onSandboxBlocked, {
+          const output = await retryAfterSandboxReview(error, onSandboxBlocked, {
             toolName: "list_dir",
             toolCallId,
             input,
             retry: () => listDirectory(cwd, relativePath, mode, true, readablePaths),
           });
+          return onReadOnlyToolResult?.("list_dir", input, output, toolCallId) ?? output;
         }
       },
     }),
     read_file: tool({
-      description: `读取文本文件。${pathScope}`,
-      inputSchema: z.object({ path: z.string().min(1) }),
-      execute: async ({ path: relativePath }, { toolCallId }) => {
-        const input = { path: relativePath };
+      description: `读取文本文件。单次最多 400 行和 64 KiB；结果截断时使用 startLine/endLine 继续读取。${pathScope}`,
+      inputSchema: z.object({
+        path: z.string().min(1),
+        startLine: z.number().int().positive().optional(),
+        endLine: z.number().int().positive().optional(),
+      }),
+      execute: async ({ path: relativePath, startLine, endLine }, { toolCallId }) => {
+        const input = { path: relativePath, startLine, endLine };
         const preflight = consumePreflight(preflightResults, toolCallId, approvedToolCallIds);
-        if (preflight) return resolvePreflight(preflight) as Promise<ReadFileResult>;
+        if (preflight) {
+          const output = await (resolvePreflight(preflight) as Promise<ReadFileResult>);
+          return onReadOnlyToolResult?.("read_file", input, output, toolCallId) ?? output;
+        }
         try {
-          return await readTextFile(
+          const output = await readTextFile(
             cwd,
             relativePath,
             mode,
             approvedToolCallIds.has(toolCallId),
             readablePaths,
+            { startLine, endLine },
           );
+          return onReadOnlyToolResult?.("read_file", input, output, toolCallId) ?? output;
         } catch (error) {
-          return retryAfterSandboxReview(error, onSandboxBlocked, {
+          const output = await retryAfterSandboxReview(error, onSandboxBlocked, {
             toolName: "read_file",
             toolCallId,
             input,
-            retry: () => readTextFile(cwd, relativePath, mode, true, readablePaths),
+            retry: () =>
+              readTextFile(cwd, relativePath, mode, true, readablePaths, { startLine, endLine }),
           });
+          return onReadOnlyToolResult?.("read_file", input, output, toolCallId) ?? output;
         }
       },
     }),
@@ -380,9 +407,12 @@ export function createWorkspaceTools(
       }),
       execute: async (options, { toolCallId }) => {
         const preflight = consumePreflight(preflightResults, toolCallId, approvedToolCallIds);
-        if (preflight) return resolvePreflight(preflight) as Promise<FileSearchResult>;
+        if (preflight) {
+          const output = await (resolvePreflight(preflight) as Promise<FileSearchResult>);
+          return onReadOnlyToolResult?.("search_files", options, output, toolCallId) ?? output;
+        }
         try {
-          return await searchFiles(
+          const output = await searchFiles(
             cwd,
             options,
             mode,
@@ -390,13 +420,15 @@ export function createWorkspaceTools(
             readablePaths,
             developerToolPaths,
           );
+          return onReadOnlyToolResult?.("search_files", options, output, toolCallId) ?? output;
         } catch (error) {
-          return retryAfterSandboxReview(error, onSandboxBlocked, {
+          const output = await retryAfterSandboxReview(error, onSandboxBlocked, {
             toolName: "search_files",
             toolCallId,
             input: options,
             retry: () => searchFiles(cwd, options, mode, true, readablePaths, developerToolPaths),
           });
+          return onReadOnlyToolResult?.("search_files", options, output, toolCallId) ?? output;
         }
       },
     }),

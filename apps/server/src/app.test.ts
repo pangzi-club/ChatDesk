@@ -573,6 +573,20 @@ describe("chat server", () => {
       recoveredTool && "errorText" in recoveredTool ? recoveredTool.errorText : undefined,
       "Chat Server 重启，运行已中断",
     );
+    assert.deepEqual(
+      (recovered?.messages[0]?.metadata as { runSummary?: unknown } | undefined)?.runSummary,
+      {
+        runId: "run-recovered",
+        outcome: "error",
+        stopReason: "server-restarted",
+        stepCount: 0,
+        modelCallCount: 0,
+        toolCallCount: 0,
+        duplicateToolCallCount: 0,
+        compactionCount: 0,
+        planWritten: false,
+      },
+    );
     assert.deepEqual(await journal.recover(), []);
   });
 });

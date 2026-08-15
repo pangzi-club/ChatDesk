@@ -1,9 +1,9 @@
 import { existsSync, realpathSync } from "node:fs";
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { readTextFileRange } from "./file-read.ts";
 import { searchWorkspaceFiles } from "./file-search.ts";
 
-const MAX_FILE_BYTES = 512 * 1024;
 const SKIPPED_DIRECTORIES = new Set([".git", "node_modules", "target", "dist"]);
 
 type Request =
@@ -17,6 +17,8 @@ type Request =
       operation: "read_file";
       workspace: string;
       path: string;
+      startLine?: number;
+      endLine?: number;
       readablePaths?: string[];
     }
   | {
@@ -94,10 +96,7 @@ async function listDirectory(request: Extract<Request, { operation: "list_dir" }
 
 async function readTextFile(request: Extract<Request, { operation: "read_file" }>) {
   const { root, target } = targetPath(request);
-  const metadata = await stat(target);
-  if (!metadata.isFile()) throw new Error("路径不是文件");
-  if (metadata.size > MAX_FILE_BYTES) throw new Error("文件超过 512 KB，未读取");
-  return { path: displayPath(root, target), content: await readFile(target, "utf8") };
+  return readTextFileRange(target, displayPath(root, target), request);
 }
 
 async function searchFiles(request: Extract<Request, { operation: "search_files" }>) {

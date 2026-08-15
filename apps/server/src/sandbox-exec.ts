@@ -101,7 +101,14 @@ export async function runSandboxedShell(
 
 export type SandboxFileRequest =
   | { operation: "list_dir"; workspace: string; path?: string; readablePaths?: string[] }
-  | { operation: "read_file"; workspace: string; path: string; readablePaths?: string[] }
+  | {
+      operation: "read_file";
+      workspace: string;
+      path: string;
+      startLine?: number;
+      endLine?: number;
+      readablePaths?: string[];
+    }
   | {
       operation: "search_files";
       workspace: string;

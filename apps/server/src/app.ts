@@ -310,7 +310,15 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   await imageGeneration.init();
   const workspaces = new WorkspaceStore(config.dataDir);
   await workspaces.init();
-  const runs = new RunRegistry(store, events, chatConfig, plans, (id) => workspaces.get(id)?.path);
+  const runs = new RunRegistry(
+    store,
+    events,
+    chatConfig,
+    plans,
+    aiUsageLogs,
+    activityLogs,
+    (id) => workspaces.get(id)?.path,
+  );
   const automations = new AutomationStore(config.dataDir);
   await automations.init();
   const automationScheduler = new AutomationScheduler(automations, (task, message) =>

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ChatSession, SessionIndexItem, SessionStatus } from "./protocol.ts";
@@ -33,7 +34,7 @@ async function readJson<T>(file: string, fallback: T): Promise<T> {
 }
 
 async function atomicWrite(file: string, contents: string) {
-  const temporary = `${file}.${process.pid}.tmp`;
+  const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
   await writeFile(temporary, contents, "utf8");
   await rename(temporary, file);
 }

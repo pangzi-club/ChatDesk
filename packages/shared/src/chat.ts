@@ -100,8 +100,37 @@ export type ChatTokenUsage = {
 };
 
 export const DEFAULT_MODEL_CONTEXT_WINDOW = 128_000;
-export const MAX_CONTEXT_COMPACTION_THRESHOLD = 100_000;
 export const CONTEXT_COMPACTION_RATIO = 0.75;
+
+export type ChatRunOutcome = "completed" | "awaiting-user" | "stopped" | "error";
+export type ChatRunStopReason =
+  | "user"
+  | "tool-loop"
+  | "step-limit"
+  | "incomplete-response"
+  | "checkpoint-failed"
+  | "context-limit"
+  | "server-restarted";
+export type ChatRunPhase = "working" | "compacting" | "finalizing";
+
+export type ChatRunSummary = {
+  runId: string;
+  outcome: ChatRunOutcome;
+  stopReason?: ChatRunStopReason;
+  stepCount: number;
+  modelCallCount: number;
+  toolCallCount: number;
+  duplicateToolCallCount: number;
+  compactionCount: number;
+  planWritten: boolean;
+};
+
+export type ChatRunProgress = Omit<ChatRunSummary, "outcome" | "stopReason"> & {
+  phase: ChatRunPhase;
+  planMode: ChatPlanMode;
+  planStepLimit?: number;
+  stopReason?: ChatRunStopReason;
+};
 
 export type ChatContextCompaction = {
   count: number;
@@ -123,10 +152,7 @@ export function resolveModelContextWindow(inputContext: number | undefined) {
 }
 
 export function resolveContextCompactionThreshold(inputContext: number | undefined) {
-  return Math.min(
-    Math.floor(resolveModelContextWindow(inputContext) * CONTEXT_COMPACTION_RATIO),
-    MAX_CONTEXT_COMPACTION_THRESHOLD,
-  );
+  return Math.floor(resolveModelContextWindow(inputContext) * CONTEXT_COMPACTION_RATIO);
 }
 
 export const DEVELOPMENT_TOOL_NAMES = [
@@ -261,6 +287,7 @@ export type ServerEvent = {
     | "message.updated"
     | "context.compacted"
     | "context.usage"
+    | "run.progress"
     | "run.error"
     | "run.done"
     | "plan.updated";
@@ -273,6 +300,8 @@ export type ServerEvent = {
   error?: string;
   contextCompaction?: ChatContextCompaction;
   contextUsage?: ChatContextUsage;
+  runProgress?: ChatRunProgress;
+  runSummary?: ChatRunSummary;
   planId?: string;
   planFileName?: string;
   planContent?: string;
@@ -335,6 +364,12 @@ export type ChatServerAiUsageLog = {
   modelId?: string;
   provider?: string;
   model?: string;
+  sessionId?: string;
+  runId?: string;
+  callId?: string;
+  invocationIndex?: number;
+  providerModelId?: string;
+  responseId?: string;
   usage: ChatTokenUsage;
 };
 

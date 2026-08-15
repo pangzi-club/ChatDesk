@@ -1,5 +1,5 @@
-import type { ChatContextCompaction, ChatContextUsage } from "@chatdesk/shared";
-import type { UIMessage } from "ai";
+import type { ChatContextCompaction, ChatContextUsage, ChatRunSummary } from "@chatdesk/shared";
+import { isToolUIPart, type UIMessage } from "ai";
 
 import {
   type ArchiveSession,
@@ -17,6 +17,7 @@ export type ChatMessageMetadata = {
   usage?: TokenUsage;
   contextUsage?: ChatContextUsage;
   contextCompaction?: ChatContextCompaction;
+  runSummary?: ChatRunSummary;
   toolLimitReached?: boolean;
   stopReason?: "tool-limit";
 };
@@ -178,6 +179,37 @@ export function getMessageContextUsage(message: UIMessage): ChatContextUsage | u
     source: "estimate",
     stepNumber: compaction.stepNumber,
   };
+}
+
+export function getMessageRunStateLabel(message: UIMessage) {
+  if (message.role !== "assistant") return undefined;
+  const summary = (message.metadata as ChatMessageMetadata | undefined)?.runSummary;
+  if (summary?.outcome === "completed") return "已完成";
+  if (summary?.outcome === "awaiting-user") return "等待你的回复";
+  if (summary?.outcome === "stopped") return "已停止";
+  if (summary?.outcome === "error") return "未完整结束";
+  const hasText = message.parts.some((part) => part.type === "text" && part.text.trim());
+  return !hasText && message.parts.some(isToolUIPart) ? "未完整结束" : "已完成";
+}
+
+export function getMessageRunErrorLabel(message: UIMessage) {
+  if (message.role !== "assistant") return undefined;
+  const summary = (message.metadata as ChatMessageMetadata | undefined)?.runSummary;
+  if (summary?.outcome !== "error") return undefined;
+  switch (summary.stopReason) {
+    case "tool-loop":
+      return "检测到重复工具循环，运行已停止。";
+    case "step-limit":
+      return "已达到运行步数上限，任务未完整结束。";
+    case "checkpoint-failed":
+      return "上下文检查点生成失败，运行已停止。";
+    case "context-limit":
+      return "模型上下文或输出长度达到限制，运行未完整结束。";
+    case "server-restarted":
+      return "Chat Server 重启中断了本次运行。";
+    default:
+      return "模型没有返回可用的最终回复。";
+  }
 }
 
 export function formatTokenUsage(usage: TokenUsage) {

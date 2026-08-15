@@ -37,6 +37,7 @@ export type ChatEventHandlers = {
   onMessageUpdated?: (event: ServerEvent & { type: "message.updated" }) => void;
   onContextCompacted?: (event: ServerEvent & { type: "context.compacted" }) => void;
   onContextUsage?: (event: ServerEvent & { type: "context.usage" }) => void;
+  onRunProgress?: (event: ServerEvent & { type: "run.progress" }) => void;
   onPlanUpdated?: (event: ServerEvent & { type: "plan.updated" }) => void;
 };
 
@@ -412,6 +413,9 @@ export class ChatServerClient {
         if (event.type === "context.usage") {
           handlers.onContextUsage?.(event as ServerEvent & { type: "context.usage" });
         }
+        if (event.type === "run.progress") {
+          handlers.onRunProgress?.(event as ServerEvent & { type: "run.progress" });
+        }
         if (event.type === "plan.updated") {
           handlers.onPlanUpdated?.(event as ServerEvent & { type: "plan.updated" });
         }
@@ -440,6 +444,7 @@ export class ChatServerClient {
         "message.updated",
         "context.compacted",
         "context.usage",
+        "run.progress",
         "run.error",
         "run.done",
         "plan.updated",

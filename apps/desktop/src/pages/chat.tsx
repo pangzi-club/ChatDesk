@@ -4,6 +4,7 @@ import {
   type ChatContextUsage,
   type ChatPlanMode,
   type ChatPlanSummary,
+  type ChatRunProgress,
   MAX_AGENT_STEPS,
   type RunStartInput,
   type SystemPromptSnapshot,
@@ -174,7 +175,13 @@ import {
   loadChatToolsSettings,
   saveChatToolsSettings,
 } from "@/lib/chat-tools";
-import { formatTokenUsage, getMessageContextUsage, getMessageUsage } from "@/lib/chat-usage";
+import {
+  formatTokenUsage,
+  getMessageContextUsage,
+  getMessageRunErrorLabel,
+  getMessageRunStateLabel,
+  getMessageUsage,
+} from "@/lib/chat-usage";
 import { detectMissingDevelopmentTools } from "@/lib/developer-environment";
 import { openFileViewer } from "@/lib/file-viewer-events";
 import { openImagePreview } from "@/lib/image-preview-events";
@@ -487,6 +494,7 @@ function ChatPage() {
   const liveDraftsRef = useRef(new Map<string, UIMessage>());
   const [contextCompaction, setContextCompaction] = useState<ChatContextCompaction | null>(null);
   const [liveContextUsage, setLiveContextUsage] = useState<ChatContextUsage | null>(null);
+  const [runProgress, setRunProgress] = useState<ChatRunProgress | null>(null);
 
   const startNewSession = useCallback(
     (nextWorkspaceId = "", nextWorkspaceCwd = "") => {
@@ -568,10 +576,14 @@ function ChatPage() {
     if (sessionId) attachedStreamSessionRef.current = null;
     setContextCompaction(null);
     setLiveContextUsage(null);
+    setRunProgress(null);
   }, [sessionId]);
 
   useEffect(() => {
-    if (status === "submitted") setContextCompaction(null);
+    if (status === "submitted") {
+      setContextCompaction(null);
+      setRunProgress(null);
+    }
   }, [status]);
 
   useEffect(() => {
@@ -638,6 +650,11 @@ function ChatPage() {
         onContextUsage: ({ sessionId: eventSessionId, contextUsage }) => {
           if (activeSessionRef.current === eventSessionId) {
             setLiveContextUsage(contextUsage);
+          }
+        },
+        onRunProgress: ({ sessionId: eventSessionId, runProgress: nextProgress }) => {
+          if (activeSessionRef.current === eventSessionId && nextProgress) {
+            setRunProgress(nextProgress);
           }
         },
         onPlanUpdated: ({
@@ -795,17 +812,29 @@ function ChatPage() {
     return () => window.clearInterval(intervalId);
   }, [isGenerating]);
 
-  const generationPhase = contextCompaction
-    ? "自动压缩上下文"
-    : effectiveStatus === "submitted"
-      ? "等待中"
-      : "生成中";
+  const generationPhase =
+    runProgress?.phase === "compacting"
+      ? "正在生成检查点"
+      : runProgress?.phase === "finalizing"
+        ? "正在收尾"
+        : runProgress?.planMode === "plan"
+          ? `计划调研 ${runProgress.stepCount}/${runProgress.planStepLimit ?? 24}`
+          : contextCompaction
+            ? "正在生成检查点"
+            : effectiveStatus === "submitted"
+              ? "等待中"
+              : "生成中";
   const generationElapsedLabel = formatGenerationElapsed(generationElapsedSeconds);
-  const generationDetail = contextCompaction
-    ? "已清理旧推理与工具结果，继续生成"
-    : generationElapsedSeconds >= 10
-      ? "响应较慢，仍在等待中"
-      : "";
+  const generationDetail =
+    runProgress?.phase === "compacting"
+      ? "正在保存目标、约束、事实和下一步"
+      : runProgress?.phase === "finalizing"
+        ? "工具已关闭，等待最终交接"
+        : contextCompaction
+          ? "已生成检查点，继续执行"
+          : generationElapsedSeconds >= 10
+            ? "响应较慢，仍在等待中"
+            : "";
   const lastMessage = messages[messages.length - 1];
   const latestPersistedContextUsage = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -2519,6 +2548,8 @@ const MessageBubble = memo(function MessageBubble({
     ? (message.metadata as { contextCompaction?: ChatContextCompaction } | undefined)
         ?.contextCompaction
     : undefined;
+  const completionLabel = getMessageRunStateLabel(message) ?? "已完成";
+  const runErrorLabel = getMessageRunErrorLabel(message);
   const shouldCollapse =
     isUser &&
     (text.length > CHAT_MESSAGE_COLLAPSE_CHAR_LIMIT ||
@@ -2553,9 +2584,9 @@ const MessageBubble = memo(function MessageBubble({
                   contextCompaction ? formatContextCompactionTitle(contextCompaction) : undefined
                 }
               >
-                {contextCompaction
-                  ? `已完成 · 已自动压缩上下文${contextCompaction.count > 1 ? ` ${contextCompaction.count} 次` : ""}`
-                  : "已完成"}
+                {contextCompaction && completionLabel === "已完成"
+                  ? `${completionLabel} · 已生成检查点${contextCompaction.count > 1 ? ` ${contextCompaction.count} 次` : ""}`
+                  : completionLabel}
               </span>
             )
           ) : null}
@@ -2658,6 +2689,7 @@ const MessageBubble = memo(function MessageBubble({
             已达到执行轮数上限（{MAX_AGENT_STEPS} 轮），如需继续请发送一条新消息。
           </p>
         ) : null}
+        {runErrorLabel ? <p className="mt-2 text-destructive text-xs">{runErrorLabel}</p> : null}
         {showMessageActions ? (
           <div className="chat-message-actions">
             <Button

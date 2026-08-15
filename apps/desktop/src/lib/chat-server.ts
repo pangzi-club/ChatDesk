@@ -5,6 +5,7 @@ import type {
   ChatIndexItem,
   ChatPlanMode,
   ChatPlanSummary,
+  ChatRunProgress,
   ChatServerAiUsageLog,
   ChatServerConfigData,
   ChatServerProviderModel,
@@ -725,6 +726,11 @@ export function subscribeChatServerEvents(
       runId?: string;
       contextUsage: ChatContextUsage;
     }) => void;
+    onRunProgress?: (event: {
+      sessionId: string;
+      runId?: string;
+      runProgress: ChatRunProgress;
+    }) => void;
     onPlanUpdated?: (event: {
       sessionId: string;
       planId?: string;
@@ -779,6 +785,15 @@ export function subscribeChatServerEvents(
             sessionId: event.sessionId,
             runId: event.runId,
             contextUsage: event.contextUsage,
+          });
+        }
+      },
+      onRunProgress: (event) => {
+        if (event.sessionId && event.runProgress) {
+          handlers.onRunProgress?.({
+            sessionId: event.sessionId,
+            runId: event.runId,
+            runProgress: event.runProgress,
           });
         }
       },
