@@ -528,7 +528,20 @@ describe("chat server", () => {
       title: "Interrupted",
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
-      messages: [],
+      messages: [
+        {
+          id: "assistant-recovered",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-read_file",
+              toolCallId: "tool-recovered",
+              state: "input-available",
+              input: { path: "README.md" },
+            },
+          ],
+        },
+      ],
       attachments: [],
     });
     const journal = new RunJournal(dataDir);
@@ -536,6 +549,7 @@ describe("chat server", () => {
       sessionId: "recovered-session",
       runId: "run-recovered",
       startedAt: "2026-01-01T00:00:00.000Z",
+      messageId: "assistant-recovered",
     });
 
     const server = await createChatServer({
@@ -549,6 +563,16 @@ describe("chat server", () => {
       headers: auth(),
     });
     assert.equal((await sessions.json())[0]?.status, "error");
+    const recovered = await server.store.get("recovered-session");
+    const recoveredTool = recovered?.messages[0]?.parts[0];
+    assert.equal(
+      recoveredTool && "state" in recoveredTool ? recoveredTool.state : undefined,
+      "output-error",
+    );
+    assert.equal(
+      recoveredTool && "errorText" in recoveredTool ? recoveredTool.errorText : undefined,
+      "Chat Server 重启，运行已中断",
+    );
     assert.deepEqual(await journal.recover(), []);
   });
 });

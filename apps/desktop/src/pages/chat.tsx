@@ -103,6 +103,7 @@ import {
   findActiveCommandTrigger,
 } from "@/lib/chat-commands";
 import { materializeGeneratedImages } from "@/lib/chat-image-generation";
+import { appendLiveDraftText, mergeLiveDraft } from "@/lib/chat-live-draft";
 import {
   type ChatMemoryStore,
   DEFAULT_CHAT_MEMORY,
@@ -127,6 +128,7 @@ import {
   saveChatSandboxMode,
 } from "@/lib/chat-sandbox";
 import {
+  type ChatServerSession,
   chatServerFetch,
   chatServerHeaders,
   chatServerUrl,
@@ -219,30 +221,6 @@ const EMPTY_CHAT_ACTIONS = [
     accent: "orange",
   },
 ] as const;
-
-type LiveDraft = {
-  runId: string;
-  text: string;
-};
-
-function mergeLiveDraft(messages: UIMessage[], draft: LiveDraft | undefined) {
-  if (!draft?.runId || !draft.text) return messages;
-  const assistant: UIMessage = {
-    id: draft.runId,
-    role: "assistant",
-    parts: [{ type: "text", text: draft.text }],
-  };
-  const existingIndex = messages.findIndex((message) => message.id === draft.runId);
-  if (existingIndex < 0) return [...messages, assistant];
-  return messages.map((message, index) =>
-    index === existingIndex
-      ? {
-          ...message,
-          parts: [...message.parts.filter((part) => part.type !== "text"), ...assistant.parts],
-        }
-      : message,
-  );
-}
 
 function scrollChatToBottom(element: HTMLDivElement) {
   const previousBehavior = element.style.scrollBehavior;
@@ -463,6 +441,14 @@ function ChatPage() {
         console.error("Chat request failed", chatError);
       },
     });
+  const [serverSessionStatuses, setServerSessionStatuses] = useState<
+    Record<string, ChatServerSession["status"]>
+  >({});
+  const serverSessionStatus = serverSessionStatuses[sessionId];
+  const localRunActive = status === "submitted" || status === "streaming";
+  const serverRunActive =
+    serverSessionStatus === "submitted" || serverSessionStatus === "streaming";
+  const effectiveStatus = localRunActive ? status : (serverSessionStatus ?? status);
   const detectedMissingTools = useMemo(() => {
     for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
       const message = messages[messageIndex];
@@ -495,10 +481,8 @@ function ChatPage() {
   });
   const activeSessionRef = useRef(sessionId);
   activeSessionRef.current = sessionId;
-  const chatStatusRef = useRef(status);
-  chatStatusRef.current = status;
   const attachedStreamSessionRef = useRef<string | null>(null);
-  const liveDraftsRef = useRef(new Map<string, LiveDraft>());
+  const liveDraftsRef = useRef(new Map<string, UIMessage>());
   const [contextCompaction, setContextCompaction] = useState<ChatContextCompaction | null>(null);
 
   const startNewSession = useCallback(
@@ -588,7 +572,7 @@ function ChatPage() {
 
   useEffect(() => {
     // Stop consuming the previous browser stream when switching chats. The server run remains
-    // active; its SSE deltas are retained so the response can be rendered when we return.
+    // active; its full message snapshots and text deltas restore the response when we return.
     const sessionToDetach = sessionId;
     return () => {
       if (sessionToDetach) stop();
@@ -601,38 +585,40 @@ function ChatPage() {
     void loadChatServerPort().then((port) => {
       if (!active) return;
       cleanup = subscribeChatServerEvents(port, {
-        onDelta: ({ sessionId: eventSessionId, runId, delta }) => {
-          const current = liveDraftsRef.current.get(eventSessionId) ?? {
-            runId: runId ?? `run-${eventSessionId}`,
-            text: "",
-          };
-          current.text += delta;
-          if (runId) current.runId = runId;
-          liveDraftsRef.current.set(eventSessionId, current);
+        onSnapshot: (sessions) => {
+          setServerSessionStatuses(
+            Object.fromEntries(sessions.map((session) => [session.id, session.status])),
+          );
+        },
+        onStatus: ({ sessionId: eventSessionId, status: eventStatus }) => {
+          setServerSessionStatuses((current) => ({
+            ...current,
+            [eventSessionId]: eventStatus,
+          }));
+        },
+        onDelta: ({ sessionId: eventSessionId, runId, messageId, delta }) => {
+          const next = appendLiveDraftText(
+            liveDraftsRef.current.get(eventSessionId),
+            messageId ?? runId ?? `run-${eventSessionId}`,
+            delta,
+          );
+          liveDraftsRef.current.set(eventSessionId, next);
 
           if (
             activeSessionRef.current === eventSessionId &&
-            attachedStreamSessionRef.current !== eventSessionId &&
-            chatStatusRef.current !== "submitted" &&
-            chatStatusRef.current !== "streaming"
+            attachedStreamSessionRef.current !== eventSessionId
           ) {
-            setMessages((messages) => mergeLiveDraft(messages, current));
+            setMessages((messages) => mergeLiveDraft(messages, next));
           }
         },
         onMessageUpdated: ({ sessionId: eventSessionId, message }) => {
-          const draft = liveDraftsRef.current.get(eventSessionId);
-          liveDraftsRef.current.delete(eventSessionId);
+          if (message) liveDraftsRef.current.set(eventSessionId, message);
           if (
             activeSessionRef.current === eventSessionId &&
             attachedStreamSessionRef.current !== eventSessionId &&
             message
           ) {
-            setMessages((messages) => {
-              const withoutDraft = messages.filter(
-                (item) => item.id !== draft?.runId && item.id !== message.id,
-              );
-              return [...withoutDraft, message];
-            });
+            setMessages((messages) => mergeLiveDraft(messages, message));
           }
         },
         onContextCompacted: ({ sessionId: eventSessionId, contextCompaction }) => {
@@ -747,7 +733,7 @@ function ChatPage() {
     savedChatSkillIds,
   ]);
 
-  const isGenerating = status === "submitted" || status === "streaming";
+  const isGenerating = localRunActive || serverRunActive;
   const workspaceGitQuery = useQuery({
     queryKey: workspaceGitQueryKey(workspaceKey),
     queryFn: () => loadServerWorkspaceGit(workspaceKey),
@@ -797,7 +783,7 @@ function ChatPage() {
 
   const generationPhase = contextCompaction
     ? "自动压缩上下文"
-    : status === "submitted"
+    : effectiveStatus === "submitted"
       ? "等待中"
       : "生成中";
   const generationElapsedLabel = formatGenerationElapsed(generationElapsedSeconds);
@@ -934,14 +920,12 @@ function ChatPage() {
     sessionCreatedAtRef.current = session.createdAt;
     sessionAttachmentsRef.current = session.attachments;
     const lastSessionMessage = session.messages[session.messages.length - 1];
-    if (lastSessionMessage?.role === "assistant") {
-      const draftText = messageText(lastSessionMessage);
-      if (lastSessionMessage.id && draftText) {
-        liveDraftsRef.current.set(session.id, {
-          runId: lastSessionMessage.id,
-          text: draftText,
-        });
-      }
+    if (
+      lastSessionMessage?.role === "assistant" &&
+      lastSessionMessage.id &&
+      !liveDraftsRef.current.has(session.id)
+    ) {
+      liveDraftsRef.current.set(session.id, lastSessionMessage);
     }
     shouldFollowScrollRef.current = true;
     setMessages(mergeLiveDraft(session.messages, liveDraftsRef.current.get(session.id)));
@@ -991,7 +975,13 @@ function ChatPage() {
   }, [chatSandboxModeQuery.data, chatSandboxModeQuery.isPending]);
 
   useEffect(() => {
-    if (status !== "ready" || messages.length === 0) return;
+    if (
+      status !== "ready" ||
+      serverRunActive ||
+      serverSessionStatus === "error" ||
+      messages.length === 0
+    )
+      return;
     if (suppressSaveRef.current) {
       suppressSaveRef.current = false;
       return;
@@ -1070,7 +1060,17 @@ function ChatPage() {
         console.error("Failed to save chat session", saveError);
       }
     })();
-  }, [messages, queryClient, selectedCwd, selectedModel, sessionId, status, setMessages]);
+  }, [
+    messages,
+    queryClient,
+    selectedCwd,
+    selectedModel,
+    serverRunActive,
+    serverSessionStatus,
+    sessionId,
+    status,
+    setMessages,
+  ]);
 
   useEffect(() => {
     const scrollElement = scrollRef.current;
@@ -1781,7 +1781,7 @@ function ChatPage() {
                     }
                   : undefined
               }
-              isStreaming={status === "streaming" && message.id === lastMessage?.id}
+              isStreaming={effectiveStatus === "streaming" && message.id === lastMessage?.id}
               showTokenUsage={chatDisplay.showTokenUsage}
               cwd={selectedCwd}
               workspaceId={workspaceKey || undefined}

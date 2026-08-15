@@ -5,6 +5,7 @@ export type RunJournalEntry = {
   sessionId: string;
   runId: string;
   startedAt: string;
+  messageId?: string;
 };
 
 const SAFE_ID = /^[a-zA-Z0-9-]{1,128}$/;
@@ -17,7 +18,11 @@ function isEntry(value: unknown): value is RunJournalEntry {
     SAFE_ID.test(entry.sessionId) &&
     typeof entry.runId === "string" &&
     SAFE_ID.test(entry.runId) &&
-    typeof entry.startedAt === "string"
+    typeof entry.startedAt === "string" &&
+    (entry.messageId === undefined ||
+      (typeof entry.messageId === "string" &&
+        entry.messageId.trim().length > 0 &&
+        entry.messageId.length <= 256))
   );
 }
 

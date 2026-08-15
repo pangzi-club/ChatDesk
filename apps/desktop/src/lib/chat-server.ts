@@ -707,7 +707,12 @@ export function subscribeChatServerEvents(
   handlers: {
     onSnapshot?: (sessions: ChatServerSession[]) => void;
     onStatus?: (event: { sessionId: string; status: ChatServerSession["status"] }) => void;
-    onDelta?: (event: { sessionId: string; runId?: string; delta: string }) => void;
+    onDelta?: (event: {
+      sessionId: string;
+      runId?: string;
+      messageId?: string;
+      delta: string;
+    }) => void;
     onMessageUpdated?: (event: { sessionId: string; runId?: string; message?: UIMessage }) => void;
     onContextCompacted?: (event: {
       sessionId: string;
@@ -739,6 +744,7 @@ export function subscribeChatServerEvents(
           handlers.onDelta?.({
             sessionId: event.sessionId,
             runId: event.runId,
+            messageId: event.messageId,
             delta: event.delta,
           });
         }

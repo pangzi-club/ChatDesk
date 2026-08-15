@@ -3,12 +3,15 @@ import { createOpenAI, openai } from "@ai-sdk/openai";
 import {
   convertToModelMessages,
   createUIMessageStreamResponse,
+  isToolUIPart,
   type ModelMessage,
   pruneMessages,
+  readUIMessageStream,
   stepCountIs,
   streamText,
   type ToolSet,
   type UIMessage,
+  type UIMessageChunk,
 } from "ai";
 import { createBusinessTools } from "./business-tools.ts";
 import type { ChatConfigStore } from "./chat-config.ts";
@@ -52,6 +55,7 @@ type ActiveRun = {
   id: string;
   sessionId: string;
   controller: AbortController;
+  done?: Promise<void>;
 };
 
 export const MAX_AGENT_STEPS = 30;
@@ -99,6 +103,65 @@ function baseUrl(value: string) {
 
 function assistantMessage(id: string, text: string): UIMessage {
   return { id, role: "assistant", parts: text ? [{ type: "text", text }] : [] };
+}
+
+function messageText(message: UIMessage) {
+  return message.parts
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("");
+}
+
+function normalizeRunMessage(message: UIMessage, runId: string): UIMessage {
+  return { ...message, id: message.id.trim() || runId, role: "assistant" };
+}
+
+export function mergeRunMessage(messages: UIMessage[], draft: UIMessage) {
+  const existingIndex = messages.findIndex((message) => message.id === draft.id);
+  if (existingIndex < 0) return [...messages, draft];
+  return messages.map((message, index) => (index === existingIndex ? draft : message));
+}
+
+export function runCheckpointFingerprint(message: UIMessage) {
+  const checkpointParts = message.parts.filter((part) => {
+    if (part.type === "step-start") return false;
+    if (part.type === "text" || part.type === "reasoning") return part.state !== "streaming";
+    if (isToolUIPart(part)) return part.state !== "input-streaming";
+    return true;
+  });
+  return checkpointParts.length > 0 ? JSON.stringify(checkpointParts) : "";
+}
+
+const INTERRUPTED_TOOL_STATES = new Set([
+  "input-streaming",
+  "input-available",
+  "approval-requested",
+  "approval-responded",
+]);
+
+export function interruptRunMessage(message: UIMessage, reason = "运行已中断") {
+  return {
+    ...message,
+    parts: message.parts.map((part): UIMessage["parts"][number] => {
+      if (part.type === "text" || part.type === "reasoning") {
+        return part.state === "streaming" ? { ...part, state: "done" } : part;
+      }
+      if (!isToolUIPart(part) || !INTERRUPTED_TOOL_STATES.has(part.state)) return part;
+      const rest = { ...part } as Record<string, unknown>;
+      delete rest.approval;
+      delete rest.output;
+      delete rest.preliminary;
+      return {
+        ...rest,
+        state: "output-error",
+        input: part.state === "input-streaming" ? undefined : part.input,
+        ...(part.state === "input-streaming" && part.input !== undefined
+          ? { rawInput: part.input }
+          : {}),
+        errorText: reason,
+      } as UIMessage["parts"][number];
+    }),
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -189,6 +252,19 @@ export class RunRegistry {
     const interrupted = await this.journal.recover();
     for (const entry of interrupted) {
       this.statuses.set(entry.sessionId, "error");
+      const session = await this.store.get(entry.sessionId);
+      const draft = session?.messages.find(
+        (message) => message.id === (entry.messageId ?? entry.runId),
+      );
+      if (session && draft) {
+        const interruptedDraft = interruptRunMessage(draft, "Chat Server 重启，运行已中断");
+        const messages = mergeRunMessage(session.messages, interruptedDraft);
+        await this.store.save({
+          ...session,
+          messages,
+          updatedAt: new Date().toISOString(),
+        });
+      }
       await this.journal.clear(entry.runId);
     }
   }
@@ -196,7 +272,21 @@ export class RunRegistry {
   async shutdown() {
     const runs = [...this.active.values()];
     for (const run of runs) run.controller.abort();
-    await Promise.all(runs.map((run) => this.journal.clear(run.id)));
+    await Promise.allSettled(runs.flatMap((run) => (run.done ? [run.done] : [])));
+    await Promise.all(
+      runs.map(async (run) => {
+        if (!run.done) {
+          const draft = this.drafts.get(run.sessionId);
+          if (draft?.parts.length) {
+            await this.persistDraft(
+              run.sessionId,
+              interruptRunMessage(draft, "Chat Server 已停止，运行已中断"),
+            );
+          }
+        }
+        await this.journal.clear(run.id);
+      }),
+    );
     this.drafts.clear();
   }
 
@@ -215,6 +305,28 @@ export class RunRegistry {
 
   draftMessage(sessionId: string) {
     return this.drafts.get(sessionId);
+  }
+
+  private async persistDraft(sessionId: string, draft: UIMessage) {
+    const current = await this.store.get(sessionId);
+    if (!current) return;
+    const messages = mergeRunMessage(current.messages, draft);
+    await this.store.save({
+      ...current,
+      messages,
+      title: deriveTitle(messages),
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  private async persistRunCheckpoint(
+    sessionId: string,
+    runId: string,
+    startedAt: string,
+    draft: UIMessage,
+  ) {
+    await this.journal.begin({ sessionId, runId, startedAt, messageId: draft.id });
+    await this.persistDraft(sessionId, draft);
   }
 
   private setStatus(sessionId: string, status: SessionStatus, runId?: string) {
@@ -289,7 +401,8 @@ export class RunRegistry {
     const runId = randomUUID();
     await this.journal.begin({ sessionId, runId, startedAt: now });
     const controller = new AbortController();
-    this.active.set(sessionId, { id: runId, sessionId, controller });
+    const activeRun: ActiveRun = { id: runId, sessionId, controller };
+    this.active.set(sessionId, activeRun);
     this.drafts.set(sessionId, assistantMessage(runId, ""));
     this.setStatus(sessionId, "submitted", runId);
 
@@ -392,8 +505,10 @@ export class RunRegistry {
         abortSignal: controller.signal,
       });
       let completedMessages: UIMessage[] | undefined;
+      let runAborted = false;
       const uiStream = result.toUIMessageStream({
         originalMessages: messages,
+        generateMessageId: () => runId,
         messageMetadata: ({ part }) => {
           if (part.type !== "finish") return undefined;
           const toolLimitReached = reachedToolLimit(completedStepCount, part.finishReason);
@@ -403,13 +518,22 @@ export class RunRegistry {
             ...(toolLimitReached ? { toolLimitReached: true, stopReason: "tool-limit" } : {}),
           };
         },
-        onFinish: ({ messages: finishedMessages }) => {
+        onFinish: ({ messages: finishedMessages, isAborted }) => {
           completedMessages = finishedMessages;
+          runAborted = isAborted;
         },
         onError: errorMessage,
       });
       const [clientStream, observerStream] = uiStream.tee();
-      void this.consume(session, runId, observerStream, () => completedMessages);
+      activeRun.done = this.consume(
+        session,
+        runId,
+        now,
+        observerStream,
+        () => completedMessages,
+        () => runAborted,
+      );
+      void activeRun.done;
       return createUIMessageStreamResponse({ stream: clientStream });
     } catch (error) {
       this.active.delete(sessionId);
@@ -430,60 +554,109 @@ export class RunRegistry {
   private async consume(
     session: ChatSession,
     runId: string,
-    stream: ReadableStream<unknown>,
+    startedAt: string,
+    stream: ReadableStream<UIMessageChunk>,
     getCompletedMessages: () => UIMessage[] | undefined,
+    getRunAborted: () => boolean,
   ) {
     const sessionId = session.id;
-    let assistantText = "";
+    const lastMessage = session.messages[session.messages.length - 1];
+    const resumedAssistant = lastMessage?.role === "assistant" ? lastMessage : undefined;
+    let latestDraft = resumedAssistant ?? assistantMessage(runId, "");
+    let assistantText = messageText(latestDraft);
+    let checkpointFingerprint = runCheckpointFingerprint(latestDraft);
     let latestMessageMetadata: unknown;
     this.setStatus(sessionId, "streaming", runId);
     try {
-      const reader = stream.getReader();
-      while (true) {
-        const next = await reader.read();
-        if (next.done) break;
-        const chunk = next.value as { type?: string; delta?: string; messageMetadata?: unknown };
-        if (chunk.messageMetadata !== undefined) {
-          latestMessageMetadata = chunk.messageMetadata;
-        }
-        if (chunk.type === "text-delta" && typeof chunk.delta === "string") {
-          assistantText += chunk.delta;
-          this.drafts.set(sessionId, assistantMessage(runId, assistantText));
+      for await (const message of readUIMessageStream({ message: resumedAssistant, stream })) {
+        const draft = normalizeRunMessage(message, runId);
+        latestDraft = draft;
+        this.drafts.set(sessionId, draft);
+        if (draft.metadata !== undefined) latestMessageMetadata = draft.metadata;
+
+        const nextAssistantText = messageText(draft);
+        if (
+          nextAssistantText.startsWith(assistantText) &&
+          nextAssistantText.length > assistantText.length
+        ) {
+          const delta = nextAssistantText.slice(assistantText.length);
           this.events.publish({
             type: "message.delta",
             sessionId,
             runId,
-            messageId: runId,
-            delta: chunk.delta,
+            messageId: draft.id,
+            delta,
+          });
+        }
+        assistantText = nextAssistantText;
+
+        const nextCheckpointFingerprint = runCheckpointFingerprint(draft);
+        if (nextCheckpointFingerprint && nextCheckpointFingerprint !== checkpointFingerprint) {
+          checkpointFingerprint = nextCheckpointFingerprint;
+          await this.persistRunCheckpoint(sessionId, runId, startedAt, draft);
+          this.events.publish({
+            type: "message.updated",
+            sessionId,
+            runId,
+            messageId: draft.id,
+            message: draft,
           });
         }
       }
       const completedMessages = getCompletedMessages();
-      const persistedMessages = completedMessages
+      let persistedMessages = completedMessages
         ? normalizeCompletedMessages(completedMessages, runId)
-        : assistantText
-          ? [...session.messages, assistantMessage(runId, assistantText)]
+        : latestDraft.parts.length > 0
+          ? mergeRunMessage(session.messages, latestDraft)
           : session.messages;
+      if (getRunAborted()) {
+        let interrupted = false;
+        persistedMessages = persistedMessages.map((message, index) => {
+          if (interrupted || message.role !== "assistant") return message;
+          const hasLaterAssistant = persistedMessages
+            .slice(index + 1)
+            .some((candidate) => candidate.role === "assistant");
+          if (hasLaterAssistant) return message;
+          interrupted = true;
+          return interruptRunMessage(message, "用户已停止运行");
+        });
+      }
       const nextMessages = mergeLatestMessageMetadata(persistedMessages, latestMessageMetadata);
+      const current = (await this.store.get(sessionId)) ?? session;
       const updated: ChatSession = {
-        ...session,
+        ...current,
         messages: nextMessages,
         updatedAt: new Date().toISOString(),
         title: deriveTitle(nextMessages),
       };
       await this.store.save(updated);
       this.drafts.delete(sessionId);
+      const finalMessage = nextMessages[nextMessages.length - 1];
       this.events.publish({
         type: "message.updated",
         sessionId,
         runId,
-        messageId: runId,
-        message: nextMessages[nextMessages.length - 1],
+        messageId: finalMessage?.id,
+        message: finalMessage,
       });
       this.setStatus(sessionId, "ready", runId);
       this.events.publish({ type: "run.done", sessionId, runId });
     } catch (error) {
       const message = errorMessage(error);
+      if (latestDraft.parts.length > 0) {
+        const interruptedDraft = interruptRunMessage(latestDraft, message);
+        this.drafts.set(sessionId, interruptedDraft);
+        await this.persistDraft(sessionId, interruptedDraft).catch((persistError) => {
+          console.error("Failed to persist interrupted Chat Server run", persistError);
+        });
+        this.events.publish({
+          type: "message.updated",
+          sessionId,
+          runId,
+          messageId: interruptedDraft.id,
+          message: interruptedDraft,
+        });
+      }
       this.setStatus(sessionId, "error", runId);
       this.events.publish({ type: "run.error", sessionId, runId, error: message });
     } finally {

@@ -1005,22 +1005,9 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     if (!session) return jsonError("会话不存在", 404);
     const draft = runs.draftMessage(session.id);
     if (!draft?.parts.length) return c.json(session);
-    const persisted = session.messages.find((message) => message.id === draft.id);
-    const draftWithMetadata = persisted
-      ? {
-          ...persisted,
-          parts: [
-            ...persisted.parts.filter((part) => part.type !== "text"),
-            ...draft.parts.filter((part) => part.type === "text"),
-          ],
-        }
-      : draft;
     return c.json({
       ...session,
-      messages: [
-        ...session.messages.filter((message) => message.id !== draft.id),
-        draftWithMetadata,
-      ],
+      messages: [...session.messages.filter((message) => message.id !== draft.id), draft],
     });
   });
 
