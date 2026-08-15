@@ -3648,13 +3648,18 @@
   line-height: 1.45;
 }
 .chat-tool-call-group-items {
+  max-height: 220px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: color-mix(in srgb, var(--chat-muted) 45%, transparent) transparent;
+  scrollbar-width: thin;
   border-top: 0;
 }
 .chat-tool-call-group-items .chat-tool-call {
   border-radius: 0;
 }
 .chat-tool-call.is-compact .chat-tool-call-summary {
-  padding: 7px 0;
+  padding: 4px 0;
   cursor: default;
 }
 .chat-tool-call.is-compact .chat-tool-call-status {
