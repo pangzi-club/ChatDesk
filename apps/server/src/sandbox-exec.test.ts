@@ -38,6 +38,18 @@ describe("sandbox execution errors", () => {
     expect(result.result).toMatchObject({ path: "chat.tsx" });
   });
 
+  it("respects a structured sandbox denial from the file helper", () => {
+    const result = resolveSandboxFileProcessOutput(
+      JSON.stringify({ ok: false, blocked: true, error: "operation not permitted" }),
+      "",
+      1,
+      true,
+    );
+
+    expect(result.sandboxBlocked).toBe(true);
+    expect(result.error).toBe("operation not permitted");
+  });
+
   it("still classifies unstructured Seatbelt stderr as sandbox blocked", () => {
     const result = resolveSandboxFileProcessOutput(
       "",
