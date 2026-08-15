@@ -260,6 +260,32 @@ function errorMessage(error: unknown) {
   }
 }
 
+function diagnosticError(error: unknown, depth = 0): unknown {
+  if (depth >= 3) return errorMessage(error);
+  if (!(error instanceof Error)) return errorMessage(error);
+  const value = error as Error & {
+    cause?: unknown;
+    code?: unknown;
+    status?: unknown;
+    statusCode?: unknown;
+    syscall?: unknown;
+    hostname?: unknown;
+    address?: unknown;
+  };
+  return {
+    name: value.name,
+    message: value.message,
+    ...(value.stack ? { stack: value.stack.slice(0, 8_000) } : {}),
+    ...(value.code !== undefined ? { code: value.code } : {}),
+    ...(value.status !== undefined ? { status: value.status } : {}),
+    ...(value.statusCode !== undefined ? { statusCode: value.statusCode } : {}),
+    ...(value.syscall !== undefined ? { syscall: value.syscall } : {}),
+    ...(value.hostname !== undefined ? { hostname: value.hostname } : {}),
+    ...(value.address !== undefined ? { address: value.address } : {}),
+    ...(value.cause !== undefined ? { cause: diagnosticError(value.cause, depth + 1) } : {}),
+  };
+}
+
 function addUsage(current: ChatTokenUsage | undefined, next: ChatTokenUsage | undefined) {
   if (!next) return current;
   const result: ChatTokenUsage = {};
@@ -527,6 +553,25 @@ export class RunRegistry {
       let currentPlanContent = activePlan?.content ?? "";
       const contextCompactionThreshold = resolveContextCompactionThreshold(model.inputContext);
       let invocationIndex = 0;
+      let modelAttemptCount = 0;
+      const activeModelCalls = new Map<
+        string,
+        { attempt: number; operation: string; startedAt: number }
+      >();
+      const logRunDiagnostic = async (
+        level: "info" | "success" | "warning" | "error",
+        message: string,
+        details: Record<string, unknown> = {},
+      ) => {
+        await this.activityLogs
+          .append({
+            level,
+            source: "Agent Run Diagnostic",
+            message,
+            details: JSON.stringify({ sessionId, runId, ...details }),
+          })
+          .catch((error) => console.error("Failed to persist run diagnostic", error));
+      };
       const publishProgress = (phase: ChatRunProgress["phase"]) => {
         const currentStep = Math.min(
           metrics.stepCount + 1,
@@ -548,24 +593,69 @@ export class RunRegistry {
       };
       const recordModelCall =
         (operation: string) =>
-        async (event: { callId: string; usage: unknown; modelId: string; responseId: string }) => {
+        async (event: {
+          callId: string;
+          usage: unknown;
+          modelId: string;
+          responseId: string;
+          finishReason?: unknown;
+          content?: ReadonlyArray<{ type?: unknown }>;
+          performance?: { responseTimeMs?: unknown; timeToFirstOutputMs?: unknown };
+        }) => {
           metrics.modelCallCount += 1;
           invocationIndex += 1;
           const usage = normalizeAiUsage(event.usage);
           metrics.usage = addUsage(metrics.usage, usage);
-          if (!usage) return;
-          await this.aiUsageLogs.append({
+          if (usage) {
+            await this.aiUsageLogs.append({
+              operation,
+              modelId: model.id || model.name,
+              provider: model.provider,
+              model: model.name,
+              sessionId,
+              runId,
+              callId: event.callId,
+              invocationIndex,
+              providerModelId: event.modelId,
+              responseId: event.responseId,
+              usage,
+            });
+          }
+          const attempt = activeModelCalls.get(event.callId);
+          activeModelCalls.delete(event.callId);
+          await logRunDiagnostic(
+            "success",
+            `模型调用 ${attempt?.attempt ?? invocationIndex} 结束`,
+            {
+              operation,
+              callId: event.callId,
+              responseId: event.responseId,
+              providerModelId: event.modelId,
+              finishReason: event.finishReason,
+              contentTypes: event.content?.map((part) => part.type),
+              responseTimeMs:
+                event.performance?.responseTimeMs ??
+                (attempt ? Date.now() - attempt.startedAt : undefined),
+              timeToFirstOutputMs: event.performance?.timeToFirstOutputMs,
+              usage,
+            },
+          );
+        };
+      const recordModelCallStart =
+        (operation: string) =>
+        async (event: { callId: string; provider: string; modelId: string }) => {
+          modelAttemptCount += 1;
+          activeModelCalls.set(event.callId, {
+            attempt: modelAttemptCount,
             operation,
-            modelId: model.id || model.name,
-            provider: model.provider,
-            model: model.name,
-            sessionId,
-            runId,
+            startedAt: Date.now(),
+          });
+          await logRunDiagnostic("info", `模型调用 ${modelAttemptCount} 开始`, {
+            operation,
             callId: event.callId,
-            invocationIndex,
+            provider: event.provider,
             providerModelId: event.modelId,
-            responseId: event.responseId,
-            usage,
+            nextStep: metrics.stepCount + 1,
           });
         };
       const workspaceTools = createWorkspaceToolsForInput({
@@ -672,6 +762,7 @@ export class RunRegistry {
                 maxOutputTokens: CHECKPOINT_OUTPUT_TOKENS,
                 maxRetries: MODEL_CALL_MAX_RETRIES,
                 abortSignal: controller.signal,
+                onLanguageModelCallStart: recordModelCallStart("context-checkpoint"),
                 onLanguageModelCallEnd: recordModelCall("context-checkpoint"),
               });
               checkpoint = checkpointResult.text.trim();
@@ -737,7 +828,47 @@ export class RunRegistry {
             ...(policy.toolChoice ? { toolChoice: policy.toolChoice } : {}),
           };
         },
+        onLanguageModelCallStart: recordModelCallStart("chat-run"),
         onLanguageModelCallEnd: recordModelCall("chat-run"),
+        onToolExecutionStart: async (event) => {
+          if (!event) return;
+          const { callId, toolCall } = event;
+          await logRunDiagnostic("info", `工具 ${toolCall.toolName} 开始`, {
+            callId,
+            toolCallId: toolCall.toolCallId,
+            toolName: toolCall.toolName,
+            step: metrics.stepCount + 1,
+          });
+        },
+        onToolExecutionEnd: async (event) => {
+          if (!event) return;
+          const { callId, toolCall, toolExecutionMs, toolOutput } = event;
+          const outcome = toolOutput?.type ?? "missing";
+          const failed = outcome === "tool-error";
+          const toolError = toolOutput && "error" in toolOutput ? toolOutput.error : undefined;
+          await logRunDiagnostic(failed ? "error" : "success", `工具 ${toolCall.toolName} 结束`, {
+            callId,
+            toolCallId: toolCall.toolCallId,
+            toolName: toolCall.toolName,
+            toolExecutionMs,
+            outcome,
+            ...(failed ? { error: diagnosticError(toolError) } : {}),
+          });
+        },
+        onError: async ({ error }) => {
+          await logRunDiagnostic("error", "模型流式响应错误", {
+            step: metrics.stepCount + 1,
+            modelAttemptCount,
+            completedModelCallCount: metrics.modelCallCount,
+            pendingModelCalls: [...activeModelCalls.entries()].map(([callId, value]) => ({
+              callId,
+              attempt: value.attempt,
+              operation: value.operation,
+              elapsedMs: Date.now() - value.startedAt,
+            })),
+            error: diagnosticError(error),
+          });
+        },
         onStepEnd: ({ stepNumber, usage, toolCalls, toolResults }) => {
           const completedToolResults = toolResults.filter(
             (toolResult): toolResult is NonNullable<typeof toolResult> => toolResult !== undefined,
@@ -1024,6 +1155,21 @@ export class RunRegistry {
         compactionCount: metrics.compactionCount,
         planWritten: metrics.planWritten,
       };
+      await this.activityLogs
+        .append({
+          level: stopped ? "warning" : "error",
+          source: "Agent Run Diagnostic",
+          message: stopped ? "运行消费已停止" : "运行消费异常",
+          details: JSON.stringify({
+            sessionId,
+            runId,
+            stepCount: metrics.stepCount,
+            modelCallCount: metrics.modelCallCount,
+            toolCallCount: metrics.toolCallCount,
+            error: diagnosticError(error),
+          }),
+        })
+        .catch((logError) => console.error("Failed to persist run diagnostic", logError));
       let interruptedDraft = interruptRunMessage(latestDraft, message);
       if (!messageText(interruptedDraft).trim()) {
         interruptedDraft = {

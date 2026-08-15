@@ -27,6 +27,7 @@ function isLog(value: unknown): value is ActivityLog {
 export class ActivityLogStore {
   private readonly file: string;
   private value: ActivityLog[] = [];
+  private writeQueue: Promise<void> = Promise.resolve();
 
   constructor(dataDir: string) {
     this.file = path.join(dataDir, "activity-logs.json");
@@ -48,14 +49,24 @@ export class ActivityLogStore {
 
   async append(input: Omit<ActivityLog, "id" | "timestamp">) {
     const next: ActivityLog = { ...input, id: randomUUID(), timestamp: new Date().toISOString() };
-    this.value = [next, ...this.value].slice(0, 500);
-    await this.save();
+    await this.enqueue(async () => {
+      this.value = [next, ...this.value].slice(0, 500);
+      await this.save();
+    });
     return structuredClone(next);
   }
 
   async clear() {
-    this.value = [];
-    await this.save();
+    await this.enqueue(async () => {
+      this.value = [];
+      await this.save();
+    });
+  }
+
+  private async enqueue(operation: () => Promise<void>) {
+    const next = this.writeQueue.catch(() => undefined).then(operation);
+    this.writeQueue = next;
+    await next;
   }
 
   private async save() {

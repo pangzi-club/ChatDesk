@@ -168,6 +168,7 @@ async function fixture(
     store,
     events,
     usageLogs,
+    activityLogs,
     plans,
     plan,
     model,
@@ -195,6 +196,25 @@ async function finishRun(fixtureValue: Awaited<ReturnType<typeof fixture>>) {
 }
 
 describe("complete agent runs", () => {
+  it("records model lifecycle and streaming errors without prompt contents", async () => {
+    const current = await fixture([
+      streamResult([
+        { type: "stream-start", warnings: [] },
+        { type: "error", error: new TypeError("Load failed") },
+      ]),
+    ]);
+    const summary = await finishRun(current);
+    assert.equal(summary.outcome, "error");
+
+    const diagnostics = current.activityLogs
+      .list()
+      .filter((entry) => entry.source === "Agent Run Diagnostic");
+    assert.ok(diagnostics.some((entry) => /模型调用 1 开始/.test(entry.message)));
+    const streamError = diagnostics.find((entry) => entry.message === "模型流式响应错误");
+    assert.match(streamError?.details ?? "", /Load failed/);
+    assert.doesNotMatch(streamError?.details ?? "", /make a plan/);
+  });
+
   it("persists an awaiting-user outcome for a plan question", async () => {
     const current = await fixture([textResult("需要确认部署区域。", "response-question")]);
     const summary = await finishRun(current);
