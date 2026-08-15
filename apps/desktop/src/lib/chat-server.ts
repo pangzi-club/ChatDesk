@@ -1,6 +1,7 @@
 import { ChatServerClient, ChatServerError } from "@chatdesk/chat-client";
 import type {
   ChatContextCompaction,
+  ChatContextUsage,
   ChatIndexItem,
   ChatPlanMode,
   ChatPlanSummary,
@@ -719,6 +720,11 @@ export function subscribeChatServerEvents(
       runId?: string;
       contextCompaction: ChatContextCompaction;
     }) => void;
+    onContextUsage?: (event: {
+      sessionId: string;
+      runId?: string;
+      contextUsage: ChatContextUsage;
+    }) => void;
     onPlanUpdated?: (event: {
       sessionId: string;
       planId?: string;
@@ -764,6 +770,15 @@ export function subscribeChatServerEvents(
             sessionId: event.sessionId,
             runId: event.runId,
             contextCompaction: event.contextCompaction,
+          });
+        }
+      },
+      onContextUsage: (event) => {
+        if (event.sessionId && event.contextUsage) {
+          handlers.onContextUsage?.({
+            sessionId: event.sessionId,
+            runId: event.runId,
+            contextUsage: event.contextUsage,
           });
         }
       },

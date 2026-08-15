@@ -71,6 +71,7 @@ describe("ChatServerClient", () => {
     const snapshots: string[] = [];
     const deltas: string[] = [];
     const compactions: number[] = [];
+    const contextUsages: number[] = [];
     const client = new ChatServerClient({
       baseUrl: "http://localhost",
       token: "sse-token",
@@ -85,6 +86,7 @@ describe("ChatServerClient", () => {
       onDelta: (event) => deltas.push(event.delta ?? ""),
       onContextCompacted: (event) =>
         compactions.push(event.contextCompaction?.estimatedTokensBefore ?? 0),
+      onContextUsage: (event) => contextUsages.push(event.contextUsage?.inputTokens ?? 0),
     });
     listeners.get("snapshot")?.({ data: "[]" });
     listeners.get("message.delta")?.({
@@ -110,10 +112,20 @@ describe("ChatServerClient", () => {
         timestamp: new Date().toISOString(),
       }),
     });
+    listeners.get("context.usage")?.({
+      data: JSON.stringify({
+        id: "event-3",
+        type: "context.usage",
+        sessionId: "session-1",
+        contextUsage: { inputTokens: 48_500, source: "provider", stepNumber: 2 },
+        timestamp: new Date().toISOString(),
+      }),
+    });
     cleanup();
 
     assert.deepEqual(snapshots, ["0"]);
     assert.deepEqual(deltas, ["hello"]);
     assert.deepEqual(compactions, [120_000]);
+    assert.deepEqual(contextUsages, [48_500]);
   });
 });

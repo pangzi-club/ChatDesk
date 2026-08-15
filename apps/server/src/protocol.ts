@@ -1,6 +1,7 @@
 export type {
   ChatAttachment,
   ChatContextCompaction,
+  ChatContextUsage,
   ChatPlanMode,
   ChatPlanSummary,
   ChatSession,

@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 type ChatContextPopoverProps = {
   inputContext?: number;
   inputTokens?: number;
+  isEstimated?: boolean;
   isGenerating: boolean;
   modelName?: string;
 };
@@ -29,6 +30,7 @@ function formatExactContextCount(value: number | undefined) {
 export function ChatContextPopover({
   inputContext,
   inputTokens,
+  isEstimated = false,
   isGenerating,
   modelName,
 }: ChatContextPopoverProps) {
@@ -68,7 +70,10 @@ export function ChatContextPopover({
         </div>
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2.5 px-4 py-3 text-xs">
           <dt className="text-muted-foreground">当前输入</dt>
-          <dd className="truncate text-right font-mono">{formatExactContextCount(inputTokens)}</dd>
+          <dd className="truncate text-right font-mono">
+            {formatExactContextCount(inputTokens)}
+            {inputTokens !== undefined && isEstimated ? "（估算）" : ""}
+          </dd>
           <dt className="text-muted-foreground">模型窗口</dt>
           <dd className="truncate text-right font-mono">
             {formatExactContextCount(contextWindow)}
@@ -88,7 +93,9 @@ export function ChatContextPopover({
             ? "本轮仍在生成，完成后更新实际输入用量。"
             : inputTokens === undefined
               ? "完成一次模型请求后显示实际输入用量。"
-              : "输入用量来自最近一次已完成的模型请求。"}
+              : isEstimated
+                ? "压缩后估算值；下一次模型请求完成后更新为实际用量。"
+                : "输入用量来自最近一次已完成的模型请求。"}
         </p>
       </PopoverContent>
     </Popover>

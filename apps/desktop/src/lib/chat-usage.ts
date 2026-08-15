@@ -1,3 +1,4 @@
+import type { ChatContextCompaction, ChatContextUsage } from "@chatdesk/shared";
 import type { UIMessage } from "ai";
 
 import {
@@ -14,6 +15,8 @@ export type TokenUsage = ArchiveTokenUsage;
 
 export type ChatMessageMetadata = {
   usage?: TokenUsage;
+  contextUsage?: ChatContextUsage;
+  contextCompaction?: ChatContextCompaction;
   toolLimitReached?: boolean;
   stopReason?: "tool-limit";
 };
@@ -150,6 +153,31 @@ export function getMessageUsage(message: UIMessage): TokenUsage | undefined {
   const usage = metadata?.usage;
   if (!usage || typeof usage !== "object") return undefined;
   return hasTokenUsage(usage) ? usage : undefined;
+}
+
+export function getMessageContextUsage(message: UIMessage): ChatContextUsage | undefined {
+  const metadata = message.metadata as ChatMessageMetadata | undefined;
+  const contextUsage = metadata?.contextUsage;
+  if (
+    contextUsage &&
+    typeof contextUsage.inputTokens === "number" &&
+    Number.isFinite(contextUsage.inputTokens)
+  ) {
+    return contextUsage;
+  }
+  const compaction = metadata?.contextCompaction;
+  if (
+    !compaction ||
+    typeof compaction.estimatedTokensAfter !== "number" ||
+    !Number.isFinite(compaction.estimatedTokensAfter)
+  ) {
+    return undefined;
+  }
+  return {
+    inputTokens: compaction.estimatedTokensAfter,
+    source: "estimate",
+    stepNumber: compaction.stepNumber,
+  };
 }
 
 export function formatTokenUsage(usage: TokenUsage) {

@@ -1,6 +1,7 @@
 import { useChat } from "@ai-sdk/react";
 import {
   type ChatContextCompaction,
+  type ChatContextUsage,
   type ChatPlanMode,
   type ChatPlanSummary,
   MAX_AGENT_STEPS,
@@ -173,7 +174,7 @@ import {
   loadChatToolsSettings,
   saveChatToolsSettings,
 } from "@/lib/chat-tools";
-import { formatTokenUsage, getMessageUsage } from "@/lib/chat-usage";
+import { formatTokenUsage, getMessageContextUsage, getMessageUsage } from "@/lib/chat-usage";
 import { detectMissingDevelopmentTools } from "@/lib/developer-environment";
 import { openFileViewer } from "@/lib/file-viewer-events";
 import { openImagePreview } from "@/lib/image-preview-events";
@@ -485,6 +486,7 @@ function ChatPage() {
   const attachedStreamSessionRef = useRef<string | null>(null);
   const liveDraftsRef = useRef(new Map<string, UIMessage>());
   const [contextCompaction, setContextCompaction] = useState<ChatContextCompaction | null>(null);
+  const [liveContextUsage, setLiveContextUsage] = useState<ChatContextUsage | null>(null);
 
   const startNewSession = useCallback(
     (nextWorkspaceId = "", nextWorkspaceCwd = "") => {
@@ -565,6 +567,7 @@ function ChatPage() {
   useEffect(() => {
     if (sessionId) attachedStreamSessionRef.current = null;
     setContextCompaction(null);
+    setLiveContextUsage(null);
   }, [sessionId]);
 
   useEffect(() => {
@@ -625,6 +628,16 @@ function ChatPage() {
         onContextCompacted: ({ sessionId: eventSessionId, contextCompaction }) => {
           if (activeSessionRef.current === eventSessionId) {
             setContextCompaction(contextCompaction);
+            setLiveContextUsage({
+              inputTokens: contextCompaction.estimatedTokensAfter,
+              source: "estimate",
+              stepNumber: contextCompaction.stepNumber,
+            });
+          }
+        },
+        onContextUsage: ({ sessionId: eventSessionId, contextUsage }) => {
+          if (activeSessionRef.current === eventSessionId) {
+            setLiveContextUsage(contextUsage);
           }
         },
         onPlanUpdated: ({
@@ -794,13 +807,14 @@ function ChatPage() {
       ? "响应较慢，仍在等待中"
       : "";
   const lastMessage = messages[messages.length - 1];
-  const latestContextUsage = useMemo(() => {
+  const latestPersistedContextUsage = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const usage = getMessageUsage(messages[index]);
-      if (usage?.inputTokens !== undefined) return usage;
+      const usage = getMessageContextUsage(messages[index]);
+      if (usage) return usage;
     }
     return undefined;
   }, [messages]);
+  const currentContextUsage = liveContextUsage ?? latestPersistedContextUsage;
   const hasAssistantMessage =
     lastMessage?.role === "assistant" && getChatMessageBlocks(lastMessage).length > 0;
   useEffect(() => {
@@ -2176,7 +2190,8 @@ function ChatPage() {
             <div className="chat-composer-actions">
               <ChatContextPopover
                 inputContext={selectedModel?.inputContext}
-                inputTokens={latestContextUsage?.inputTokens}
+                inputTokens={currentContextUsage?.inputTokens}
+                isEstimated={currentContextUsage?.source === "estimate"}
                 isGenerating={isGenerating}
                 modelName={selectedModel?.name}
               />

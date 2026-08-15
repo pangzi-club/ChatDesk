@@ -110,6 +110,12 @@ export type ChatContextCompaction = {
   estimatedTokensAfter: number;
 };
 
+export type ChatContextUsage = {
+  inputTokens: number;
+  source: "provider" | "estimate";
+  stepNumber: number;
+};
+
 export function resolveModelContextWindow(inputContext: number | undefined) {
   return inputContext && Number.isFinite(inputContext) && inputContext > 0
     ? inputContext
@@ -254,6 +260,7 @@ export type ServerEvent = {
     | "message.delta"
     | "message.updated"
     | "context.compacted"
+    | "context.usage"
     | "run.error"
     | "run.done"
     | "plan.updated";
@@ -265,6 +272,7 @@ export type ServerEvent = {
   message?: UIMessage;
   error?: string;
   contextCompaction?: ChatContextCompaction;
+  contextUsage?: ChatContextUsage;
   planId?: string;
   planFileName?: string;
   planContent?: string;

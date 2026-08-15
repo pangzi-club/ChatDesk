@@ -36,6 +36,7 @@ export type ChatEventHandlers = {
   onDelta?: (event: ServerEvent & { type: "message.delta" }) => void;
   onMessageUpdated?: (event: ServerEvent & { type: "message.updated" }) => void;
   onContextCompacted?: (event: ServerEvent & { type: "context.compacted" }) => void;
+  onContextUsage?: (event: ServerEvent & { type: "context.usage" }) => void;
   onPlanUpdated?: (event: ServerEvent & { type: "plan.updated" }) => void;
 };
 
@@ -408,6 +409,9 @@ export class ChatServerClient {
         if (event.type === "context.compacted") {
           handlers.onContextCompacted?.(event as ServerEvent & { type: "context.compacted" });
         }
+        if (event.type === "context.usage") {
+          handlers.onContextUsage?.(event as ServerEvent & { type: "context.usage" });
+        }
         if (event.type === "plan.updated") {
           handlers.onPlanUpdated?.(event as ServerEvent & { type: "plan.updated" });
         }
@@ -435,6 +439,7 @@ export class ChatServerClient {
         "message.delta",
         "message.updated",
         "context.compacted",
+        "context.usage",
         "run.error",
         "run.done",
         "plan.updated",

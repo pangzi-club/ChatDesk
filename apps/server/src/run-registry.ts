@@ -24,6 +24,7 @@ import type { PlanStore } from "./plan-store.ts";
 import { createPlanWriteTool } from "./plan-tool.ts";
 import {
   type ChatContextCompaction,
+  type ChatContextUsage,
   type ChatSession,
   deriveTitle,
   type RunStartInput,
@@ -422,6 +423,7 @@ export class RunRegistry {
       const system = prompt.text;
       let completedStepCount = 0;
       let contextCompaction: ChatContextCompaction | undefined;
+      let contextUsage: ChatContextUsage | undefined;
       const contextCompactionThreshold = resolveContextCompactionThreshold(model.inputContext);
       const result = streamText({
         model: languageModel,
@@ -500,10 +502,34 @@ export class RunRegistry {
             runId,
             contextCompaction,
           });
+          contextUsage = {
+            inputTokens: compacted.estimatedTokensAfter,
+            source: "estimate",
+            stepNumber,
+          };
+          this.events.publish({
+            type: "context.usage",
+            sessionId,
+            runId,
+            contextUsage,
+          });
           return { messages: compacted.messages };
         },
-        onStepEnd: () => {
+        onStepEnd: ({ stepNumber, usage }) => {
           completedStepCount += 1;
+          if (usage.inputTokens !== undefined) {
+            contextUsage = {
+              inputTokens: usage.inputTokens,
+              source: "provider",
+              stepNumber,
+            };
+            this.events.publish({
+              type: "context.usage",
+              sessionId,
+              runId,
+              contextUsage,
+            });
+          }
         },
         abortSignal: controller.signal,
         maxRetries: MODEL_CALL_MAX_RETRIES,
@@ -518,6 +544,7 @@ export class RunRegistry {
           const toolLimitReached = reachedToolLimit(completedStepCount, part.finishReason);
           return {
             usage: part.totalUsage,
+            ...(contextUsage ? { contextUsage } : {}),
             ...(contextCompaction ? { contextCompaction } : {}),
             ...(toolLimitReached ? { toolLimitReached: true, stopReason: "tool-limit" } : {}),
           };
