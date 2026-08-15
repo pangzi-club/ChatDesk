@@ -818,7 +818,7 @@ function ChatPage() {
       : runProgress?.phase === "finalizing"
         ? "正在收尾"
         : runProgress?.planMode === "plan"
-          ? `计划调研 ${runProgress.stepCount}/${runProgress.planStepLimit ?? 24}`
+          ? "正在制定计划"
           : contextCompaction
             ? "正在生成检查点"
             : effectiveStatus === "submitted"

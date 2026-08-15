@@ -9,22 +9,30 @@ import {
 } from "./run-policy.ts";
 
 describe("run policy", () => {
-  it("warns at plan step 20 and restricts steps 24 and 25", () => {
+  it("warns near the internal plan limit and reserves the final step for handoff", () => {
     assert.match(
-      decideRunStep({ planMode: "plan", stepNumber: 19, planWritten: false }).instructions ?? "",
+      decideRunStep({ planMode: "plan", stepNumber: 89, planWritten: false }).instructions ?? "",
       /接近上限/,
     );
     assert.equal(
-      decideRunStep({ planMode: "plan", stepNumber: 20, planWritten: false }).instructions,
+      decideRunStep({ planMode: "plan", stepNumber: 90, planWritten: false }).instructions,
       undefined,
     );
     assert.deepEqual(
-      decideRunStep({ planMode: "plan", stepNumber: 23, planWritten: false }).activeTools,
+      decideRunStep({ planMode: "plan", stepNumber: 98, planWritten: false }).activeTools,
       ["plan_write"],
     );
     assert.equal(
-      decideRunStep({ planMode: "plan", stepNumber: 24, planWritten: true }).toolChoice,
+      decideRunStep({ planMode: "plan", stepNumber: 99, planWritten: false }).toolChoice,
       "none",
+    );
+    assert.match(
+      decideRunStep({ planMode: "plan", stepNumber: 99, planWritten: false }).instructions ?? "",
+      /不得声称计划已写入或已完成/,
+    );
+    assert.match(
+      decideRunStep({ planMode: "plan", stepNumber: 99, planWritten: true }).instructions ?? "",
+      /计划已写入/,
     );
   });
 

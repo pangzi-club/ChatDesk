@@ -50,7 +50,7 @@ import { RunJournal } from "./run-journal.ts";
 import {
   decideRunStep,
   evaluateRunCompletion,
-  PLAN_FINALIZATION_STEP,
+  PLAN_MAX_STEPS,
   ReadOnlyToolLoopTracker,
   ReadOnlyToolResultDeduplicator,
 } from "./run-policy.ts";
@@ -528,10 +528,10 @@ export class RunRegistry {
       const contextCompactionThreshold = resolveContextCompactionThreshold(model.inputContext);
       let invocationIndex = 0;
       const publishProgress = (phase: ChatRunProgress["phase"]) => {
-        const currentStep =
-          planMode === "plan"
-            ? Math.min(metrics.stepCount + 1, PLAN_FINALIZATION_STEP)
-            : Math.min(metrics.stepCount + 1, MAX_AGENT_STEPS);
+        const currentStep = Math.min(
+          metrics.stepCount + 1,
+          planMode === "plan" ? PLAN_MAX_STEPS : MAX_AGENT_STEPS,
+        );
         const runProgress: ChatRunProgress = {
           runId,
           phase,
@@ -542,7 +542,6 @@ export class RunRegistry {
           compactionCount: metrics.compactionCount,
           planWritten: metrics.planWritten,
           planMode,
-          ...(planMode === "plan" ? { planStepLimit: PLAN_FINALIZATION_STEP } : {}),
           ...(metrics.forcedStopReason ? { stopReason: metrics.forcedStopReason } : {}),
         };
         this.events.publish({ type: "run.progress", sessionId, runId, runProgress });
@@ -634,7 +633,7 @@ export class RunRegistry {
           preflightResults,
         }),
         experimental_toolApprovalSecret: this.toolApprovalSecret,
-        stopWhen: stepCountIs(planMode === "plan" ? 25 : MAX_AGENT_STEPS),
+        stopWhen: stepCountIs(planMode === "plan" ? PLAN_MAX_STEPS : MAX_AGENT_STEPS),
         prepareStep: async ({ messages: stepMessages, stepNumber }) => {
           if (planMode !== "plan" && stepNumber + 1 >= MAX_AGENT_STEPS) {
             metrics.forcedStopReason = "step-limit";

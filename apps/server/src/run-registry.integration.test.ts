@@ -242,6 +242,26 @@ describe("complete agent runs", () => {
     assert.equal(summary.planWritten, false);
   });
 
+  it("uses the 100th plan step for an honest text-only handoff", async () => {
+    const results = [
+      ...Array.from({ length: 99 }, (_, index) =>
+        toolResult(`empty-plan-${index}`, "plan_write", { content: "" }),
+      ),
+      textResult("计划尚未完成；需要确认部署区域。", "response-plan-limit"),
+    ];
+    const current = await fixture(results);
+    const summary = await finishRun(current);
+    assert.equal(summary.outcome, "awaiting-user");
+    assert.equal(summary.planWritten, false);
+    assert.equal(summary.stepCount, 100);
+    assert.deepEqual(
+      current.model.doStreamCalls[98]?.tools?.map((tool) => tool.name),
+      ["plan_write"],
+    );
+    assert.equal(current.model.doStreamCalls[99]?.tools, undefined);
+    assert.equal((await current.plans.read("session-1", current.plan.id)).content, "");
+  }, 15_000);
+
   it("stops repeated reads on the third unchanged result and records tool-loop", async () => {
     const current = await fixture([
       toolResult("read-1", "read_file", { path: "source.txt" }),

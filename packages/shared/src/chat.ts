@@ -128,7 +128,6 @@ export type ChatRunSummary = {
 export type ChatRunProgress = Omit<ChatRunSummary, "outcome" | "stopReason"> & {
   phase: ChatRunPhase;
   planMode: ChatPlanMode;
-  planStepLimit?: number;
   stopReason?: ChatRunStopReason;
 };
 

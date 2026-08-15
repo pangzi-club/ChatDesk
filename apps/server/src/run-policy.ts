@@ -3,9 +3,9 @@ import path from "node:path";
 import type { ChatPlanMode, ChatRunOutcome, ChatRunPhase, ChatRunStopReason } from "./protocol.ts";
 import { MAX_AGENT_STEPS } from "./protocol.ts";
 
-export const PLAN_WARNING_STEP = 20;
-export const PLAN_FINALIZATION_STEP = 24;
-export const PLAN_MAX_STEPS = 25;
+export const PLAN_WARNING_STEP = 90;
+export const PLAN_FINALIZATION_STEP = 99;
+export const PLAN_MAX_STEPS = 100;
 export const READ_ONLY_LOOP_LIMIT = 3;
 
 const READ_ONLY_TOOLS = new Set(["list_dir", "search_files", "read_file"]);
@@ -52,10 +52,19 @@ export function decideRunStep(options: {
     };
   }
   if (options.planMode === "plan") {
-    if (options.planWritten || step >= PLAN_MAX_STEPS) {
+    if (options.planWritten) {
       return {
         phase: "finalizing",
         instructions: "计划已写入。不得再调用工具；请向用户简洁说明计划已完成。",
+        activeTools: [],
+        toolChoice: "none",
+      };
+    }
+    if (step >= PLAN_MAX_STEPS) {
+      return {
+        phase: "finalizing",
+        instructions:
+          "计划尚未写入且运行已进入最终交接。不得再调用工具；请直接提出一个必须由用户回答的阻塞问题，并说明计划尚未完成。不得声称计划已写入或已完成。",
         activeTools: [],
         toolChoice: "none",
       };

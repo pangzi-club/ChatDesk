@@ -138,7 +138,6 @@ describe("ChatServerClient", () => {
           compactionCount: 0,
           planWritten: false,
           planMode: "plan",
-          planStepLimit: 24,
         },
         timestamp: new Date().toISOString(),
       }),
