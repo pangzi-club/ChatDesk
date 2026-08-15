@@ -129,6 +129,7 @@ import {
   getChatMessageBlocks,
 } from "@/lib/chat-message-blocks";
 import {
+  findLatestPlanWriteAnchor,
   findLatestPlanWriteContent,
   isPlanExecutionReady,
   lastAssistantMessageHasCompletedPlanInput,
@@ -227,6 +228,12 @@ const CHAT_MESSAGE_COLLAPSE_CHAR_LIMIT = 1200;
 const CHAT_MESSAGE_COLLAPSE_LINE_LIMIT = 18;
 const CHAT_STREAM_UPDATE_THROTTLE_MS = 50;
 type PlanTransitionState = "idle" | "entering" | "exiting";
+type ChatPlanAttachment = {
+  fileName: string;
+  isGenerating: boolean;
+  onOpen: () => void;
+  toolCallId: string;
+};
 const EMPTY_CHAT_ACTIONS = [
   {
     label: "探索并理解代码",
@@ -941,6 +948,7 @@ function ChatPage() {
             : "";
   const lastMessage = messages[messages.length - 1];
   const livePlanDraft = useMemo(() => findLatestPlanWriteContent(messages), [messages]);
+  const latestPlanWriteAnchor = useMemo(() => findLatestPlanWriteAnchor(messages), [messages]);
   const planWriteObserved = useMemo(() => latestAssistantHasPlanWrite(messages), [messages]);
   const planReady = Boolean(
     activePlan &&
@@ -954,6 +962,35 @@ function ChatPage() {
     !input.trim() &&
     pendingAttachments.length === 0;
   const showPlanStartAction = canExecutePlan;
+  const showPlanAttachment = Boolean(
+    activePlan &&
+      latestPlanWriteAnchor &&
+      (activePlanHasContent || (planMode === "plan" && isGenerating && planWriteObserved)),
+  );
+  const openActivePlan = useCallback(() => {
+    if (!activePlan) return;
+    if (livePlanDraft !== undefined) {
+      openPlanViewer({
+        sessionId,
+        planId: activePlan.id,
+        fileName: activePlan.fileName,
+        content: livePlanDraft,
+        canExecute: canExecutePlan,
+      });
+      return;
+    }
+    void loadChatPlan(sessionId, activePlan.id)
+      .then((plan) =>
+        openPlanViewer({
+          sessionId,
+          planId: plan.id,
+          fileName: plan.fileName,
+          content: plan.content,
+          canExecute: canExecutePlan,
+        }),
+      )
+      .catch((error) => console.error("Failed to open chat plan", error));
+  }, [activePlan, canExecutePlan, livePlanDraft, sessionId]);
 
   useEffect(() => {
     if (!activePlan) return;
@@ -2017,6 +2054,16 @@ function ChatPage() {
               onApprovalResponse={respondToApproval}
               onPlanUserInputResponse={respondToPlanUserInput}
               planInputEnabled={planMode === "plan" && planTransition === "idle"}
+              planAttachment={
+                showPlanAttachment && activePlan && latestPlanWriteAnchor?.messageId === message.id
+                  ? {
+                      fileName: activePlan.fileName,
+                      isGenerating: isGenerating && planMode === "plan",
+                      onOpen: openActivePlan,
+                      toolCallId: latestPlanWriteAnchor.toolCallId,
+                    }
+                  : undefined
+              }
               generationStatus={
                 isGenerating && message.role === "assistant" && message.id === lastMessage?.id
                   ? {
@@ -2032,47 +2079,6 @@ function ChatPage() {
               workspaceId={workspaceKey || undefined}
             />
           ))}
-          {activePlan &&
-          (activePlanHasContent || (planMode === "plan" && isGenerating && planWriteObserved)) ? (
-            <div className="chat-plan-indicator">
-              <Button
-                aria-label={`打开 ${activePlan.fileName}`}
-                className="chat-plan-indicator-button"
-                onClick={() => {
-                  if (livePlanDraft !== undefined) {
-                    openPlanViewer({
-                      sessionId,
-                      planId: activePlan.id,
-                      fileName: activePlan.fileName,
-                      content: livePlanDraft,
-                      canExecute: canExecutePlan,
-                    });
-                    return;
-                  }
-                  void loadChatPlan(sessionId, activePlan.id)
-                    .then((plan) =>
-                      openPlanViewer({
-                        sessionId,
-                        planId: plan.id,
-                        fileName: plan.fileName,
-                        content: plan.content,
-                        canExecute: canExecutePlan,
-                      }),
-                    )
-                    .catch((error) => console.error("Failed to open chat plan", error));
-                }}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                <FileText className="size-3.5" />
-                {activePlan.fileName}
-                {isGenerating && planMode === "plan" ? (
-                  <LoaderCircle aria-hidden="true" className="size-3 animate-spin" />
-                ) : null}
-              </Button>
-            </div>
-          ) : null}
           {developerEnvironmentQuery.data &&
           unavailableDetectedTools.length > 0 &&
           environmentGuideKey !== dismissedEnvironmentGuide ? (
@@ -2762,6 +2768,7 @@ const MessageBubble = memo(function MessageBubble({
   onApprovalResponse,
   onPlanUserInputResponse,
   planInputEnabled,
+  planAttachment,
   cwd,
   workspaceId,
 }: {
@@ -2772,6 +2779,7 @@ const MessageBubble = memo(function MessageBubble({
   onApprovalResponse: (id: string, approved: boolean) => void;
   onPlanUserInputResponse: (toolCallId: string, output: PlanUserInputResponse) => Promise<void>;
   planInputEnabled: boolean;
+  planAttachment?: ChatPlanAttachment;
   cwd: string;
   workspaceId?: string;
 }) {
@@ -2862,7 +2870,16 @@ const MessageBubble = memo(function MessageBubble({
                   getToolName(part) !== TODO_TOOL_NAME &&
                   !questionnaireCallIds.has(part.toolCallId),
               );
-              if (visibleParts.length === 0 && questionnaires.length === 0) return null;
+              const containsPlanAttachment = Boolean(
+                planAttachment &&
+                  block.parts.some((part) => part.toolCallId === planAttachment.toolCallId),
+              );
+              if (
+                visibleParts.length === 0 &&
+                questionnaires.length === 0 &&
+                !containsPlanAttachment
+              )
+                return null;
               return (
                 <div className="chat-message-tool-block" key={block.key}>
                   {visibleParts.length > 0 ? (
@@ -2895,6 +2912,24 @@ const MessageBubble = memo(function MessageBubble({
                       response={response ?? undefined}
                     />
                   ))}
+                  {containsPlanAttachment && planAttachment ? (
+                    <div className="chat-plan-indicator">
+                      <Button
+                        aria-label={`打开 ${planAttachment.fileName}`}
+                        className="chat-plan-indicator-button"
+                        onClick={planAttachment.onOpen}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        <FileText className="size-3.5" />
+                        <span>{planAttachment.fileName}</span>
+                        {planAttachment.isGenerating ? (
+                          <LoaderCircle aria-hidden="true" className="size-3 animate-spin" />
+                        ) : null}
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               );
             }

@@ -68,6 +68,5 @@ export function extractWorkspaceToolSummary(toolName: string, input: unknown, ou
     toolName === "bash" && typeof outputRecord.code === "number"
       ? ` · exit ${outputRecord.code}`
       : "";
-  const truncated = outputRecord.truncated === true ? " · 已截断" : "";
-  return `${details}${code}${truncated}`;
+  return `${details}${code}`;
 }

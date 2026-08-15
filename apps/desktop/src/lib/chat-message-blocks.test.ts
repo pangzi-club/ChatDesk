@@ -61,4 +61,27 @@ describe("getChatMessageBlocks", () => {
       { kind: "reasoning", key: "reasoning-1", text: "First. Second." },
     ]);
   });
+
+  it("keeps the final answer immediately after the plan_write tool block", () => {
+    const message = {
+      id: "assistant-plan",
+      role: "assistant",
+      parts: [
+        {
+          type: "tool-plan_write",
+          toolCallId: "plan-call",
+          state: "output-available",
+          input: { content: "# Plan" },
+          output: { characters: 6 },
+        },
+        { type: "step-start" },
+        { type: "text", text: "The plan is ready." },
+      ],
+    } as UIMessage;
+
+    const blocks = getChatMessageBlocks(message);
+
+    expect(blocks.map((block) => block.kind)).toEqual(["tools", "text"]);
+    expect(blocks[1]).toMatchObject({ kind: "text", text: "The plan is ready." });
+  });
 });

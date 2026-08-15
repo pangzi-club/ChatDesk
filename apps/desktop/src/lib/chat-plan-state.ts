@@ -28,6 +28,19 @@ export function findLatestPlanWriteContent(messages: UIMessage[]) {
   return undefined;
 }
 
+export function findLatestPlanWriteAnchor(messages: UIMessage[]) {
+  for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+    const message = messages[messageIndex];
+    if (message?.role !== "assistant") continue;
+    for (let partIndex = message.parts.length - 1; partIndex >= 0; partIndex -= 1) {
+      const part = message.parts[partIndex];
+      if (!isToolUIPart(part) || getToolName(part) !== "plan_write") continue;
+      return { messageId: message.id, toolCallId: part.toolCallId };
+    }
+  }
+  return undefined;
+}
+
 export function latestAssistantHasPlanWrite(messages: UIMessage[]) {
   const message = messages[messages.length - 1];
   return Boolean(

@@ -2,6 +2,7 @@ import type { ChatRunSummary } from "@chatdesk/shared";
 import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
 import {
+  findLatestPlanWriteAnchor,
   findLatestPlanWriteContent,
   isPlanExecutionReady,
   lastAssistantMessageHasCompletedPlanInput,
@@ -54,6 +55,45 @@ describe("chat plan state", () => {
         { id: "assistant-text", role: "assistant", parts: [{ type: "text", text: "调研中" }] },
       ]),
     ).toBe(false);
+  });
+
+  it("anchors the active plan to the latest plan_write tool call", () => {
+    const messages: UIMessage[] = [
+      {
+        id: "assistant-plan-old",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-plan_write",
+            toolCallId: "plan-call-old",
+            state: "output-available",
+            input: { content: "# Old plan" },
+            output: { characters: 10 },
+          },
+        ],
+      },
+      { id: "user-follow-up", role: "user", parts: [{ type: "text", text: "revise it" }] },
+      {
+        id: "assistant-plan-latest",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-plan_write",
+            toolCallId: "plan-call-latest",
+            state: "output-available",
+            input: { content: "# Latest plan" },
+            output: { characters: 13 },
+          },
+          { type: "text", text: "Plan updated." },
+        ],
+      },
+      { id: "user-after-plan", role: "user", parts: [{ type: "text", text: "thanks" }] },
+    ];
+
+    expect(findLatestPlanWriteAnchor(messages)).toEqual({
+      messageId: "assistant-plan-latest",
+      toolCallId: "plan-call-latest",
+    });
   });
 
   it("only enables execution from the completed server run summary", () => {

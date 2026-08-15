@@ -30,24 +30,24 @@ describe("chat tool call group summaries", () => {
     ).toContain("读取文件");
   });
 
-  it("summarizes repeated calls with the tool name and total count", () => {
+  it("shows the last repeated call in the summary", () => {
     expect(
       getChatToolGroupSummary([
         toolCall({ input: { path: "a.ts" } }),
         toolCall({ input: { path: "b.ts" } }),
         toolCall({ input: { path: "c.ts" } }),
       ]),
-    ).toBe("读取文件");
+    ).toBe("读取文件 · c.ts");
   });
 
-  it("summarizes mixed calls using distinct tool names instead of the last call", () => {
+  it("shows the last mixed call instead of aggregating tool names", () => {
     expect(
       getChatToolGroupSummary([
         toolCall({ toolName: "search_files" }),
         toolCall({ toolName: "read_file" }),
-        toolCall({ toolName: "bash" }),
+        toolCall({ toolName: "bash", input: { command: "pnpm check" } }),
       ]),
-    ).toBe("搜索文件、读取文件等");
+    ).toBe("终端 · Bash · pnpm check");
   });
 
   it("aggregates status across the group instead of trusting the last call", () => {
@@ -99,6 +99,12 @@ describe("chat tool call workspace file targets", () => {
         {},
       ),
     ).toBe(" · chat-tool-call-card.tsx");
+  });
+
+  it("omits truncation metadata from tool summaries", () => {
+    expect(
+      extractWorkspaceToolSummary("read_file", { path: "src/index.ts" }, { truncated: true }),
+    ).toBe(" · index.ts");
   });
 
   it("keeps long edit_file paths intact in the summary", () => {

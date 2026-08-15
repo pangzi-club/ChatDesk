@@ -14,6 +14,7 @@ import {
   UserRoundCheck,
   Wrench,
 } from "lucide-react";
+import { ScrollArea as ScrollAreaPrimitive } from "radix-ui";
 import { useMemo, useState } from "react";
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -127,17 +128,8 @@ function isToolCallFailed(call: ChatToolCallCardProps) {
 }
 
 export function getChatToolGroupSummary(calls: ChatToolCallCardProps[]) {
-  const firstCall = calls[0];
-  if (!firstCall) return "";
-  if (calls.length === 1) return getChatToolSummary(firstCall);
-
-  const toolNames = [...new Set(calls.map((call) => getChatToolTitle(call.toolName)))];
-  if (toolNames.length === 1) return toolNames[0];
-
-  const visibleToolNames = toolNames.slice(0, 2).join("、");
-  const remainingToolCount = toolNames.length - 2;
-  const toolLabel = remainingToolCount > 0 ? `${visibleToolNames}等` : visibleToolNames;
-  return toolLabel;
+  const lastCall = calls[calls.length - 1];
+  return lastCall ? getChatToolSummary(lastCall) : "";
 }
 
 export function getChatToolGroupStatus(calls: ChatToolCallCardProps[]) {
@@ -572,11 +564,7 @@ export function ChatToolCallGroup({
   cwd,
 }: ChatToolCallGroupProps) {
   const [open, setOpen] = useState(false);
-  const reversedCalls = [...calls].reverse();
-  const activeCall =
-    reversedCalls.find(isToolCallRunning) ??
-    reversedCalls.find(isToolCallPending) ??
-    calls[calls.length - 1];
+  const activeCall = calls[calls.length - 1];
   if (!activeCall) return null;
   const running = calls.some(isToolCallRunning);
   const pending = calls.some(isToolCallPending);
@@ -622,17 +610,25 @@ export function ChatToolCallGroup({
         <ChevronDown className={`chat-tool-call-chevron ${open ? "is-open" : ""}`} />
       </button>
       {open ? (
-        <div className="chat-tool-call-group-items">
-          {calls.map((call) => (
-            <ChatToolCallCard
-              key={call.id ?? call.toolName}
-              {...call}
-              compact
-              cwd={cwd}
-              workspaceId={workspaceId}
-            />
-          ))}
-        </div>
+        <ScrollAreaPrimitive.Root className="chat-tool-call-group-items" type="always">
+          <ScrollAreaPrimitive.Viewport className="chat-tool-call-group-viewport">
+            {calls.map((call) => (
+              <ChatToolCallCard
+                key={call.id ?? call.toolName}
+                {...call}
+                compact
+                cwd={cwd}
+                workspaceId={workspaceId}
+              />
+            ))}
+          </ScrollAreaPrimitive.Viewport>
+          <ScrollAreaPrimitive.Scrollbar
+            className="chat-tool-call-group-scrollbar"
+            orientation="vertical"
+          >
+            <ScrollAreaPrimitive.Thumb className="chat-tool-call-group-scrollbar-thumb" />
+          </ScrollAreaPrimitive.Scrollbar>
+        </ScrollAreaPrimitive.Root>
       ) : null}
     </div>
   );

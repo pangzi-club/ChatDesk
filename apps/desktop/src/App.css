@@ -2789,8 +2789,7 @@
 }
 .chat-plan-indicator {
   display: flex;
-  justify-content: center;
-  margin: 12px 0 4px;
+  justify-content: flex-start;
 }
 .chat-plan-indicator-button {
   gap: 6px;
@@ -3867,14 +3866,29 @@
   cursor: pointer;
 }
 .chat-tool-call-group-items {
-  max-height: 220px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-color: color-mix(in srgb, var(--chat-muted) 45%, transparent) transparent;
-  scrollbar-width: thin;
+  position: relative;
+  overflow: hidden;
   border: 1px solid var(--chat-line);
   border-radius: 8px;
-  padding: 4px 10px;
+}
+.chat-tool-call-group-viewport {
+  max-height: 220px;
+  overscroll-behavior: contain;
+  padding: 4px 14px 4px 10px;
+}
+.chat-tool-call-group-scrollbar {
+  display: flex;
+  width: 10px;
+  padding: 2px;
+  background: color-mix(in srgb, var(--chat-muted) 8%, transparent);
+  touch-action: none;
+  user-select: none;
+}
+.chat-tool-call-group-scrollbar-thumb {
+  position: relative;
+  flex: 1;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--chat-muted) 45%, transparent);
 }
 .chat-tool-call-group-items .chat-tool-call {
   border-radius: 0;
