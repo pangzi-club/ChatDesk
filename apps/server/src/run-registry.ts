@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createOpenAI, openai } from "@ai-sdk/openai";
+import { MAX_AGENT_STEPS } from "@chatdesk/shared";
 import {
   convertToModelMessages,
   createUIMessageStreamResponse,
@@ -44,6 +45,7 @@ import {
   hasWorkspace,
   selectPlanWorkspaceToolNames,
   selectWorkspaceToolNames,
+  workspaceSearchInstructions,
 } from "./tool-selection.ts";
 import {
   createWorkspaceTools,
@@ -58,7 +60,8 @@ type ActiveRun = {
   done?: Promise<void>;
 };
 
-export const MAX_AGENT_STEPS = 30;
+export { MAX_AGENT_STEPS };
+export const MODEL_CALL_MAX_RETRIES = 3;
 
 export function estimateModelMessageTokens(messages: ModelMessage[]) {
   return Math.ceil(JSON.stringify(messages).length / 4);
@@ -364,7 +367,7 @@ export class RunRegistry {
     const now = new Date().toISOString();
     const effectiveCwd = resolveEffectiveWorkspace(current, input, this.resolveWorkspace);
     const workspaceToolInstructions = effectiveCwd
-      ? "本地源码检索规则：按文件名或关键词查找时必须使用 search_files，它支持 query 关键词并遵循 workspace 的 Git 排除规则；不要通过 bash 执行递归 grep、find 或 rg，尤其不要扫描 node_modules、.git、dist、target。"
+      ? workspaceSearchInstructions(input.toolNames ?? [])
       : "";
     const activePlan = planId ? await this.plans.read(sessionId, planId).catch(() => null) : null;
     const planInstructions =
@@ -503,6 +506,7 @@ export class RunRegistry {
           completedStepCount += 1;
         },
         abortSignal: controller.signal,
+        maxRetries: MODEL_CALL_MAX_RETRIES,
       });
       let completedMessages: UIMessage[] | undefined;
       let runAborted = false;

@@ -3,6 +3,7 @@ import {
   type ChatContextCompaction,
   type ChatPlanMode,
   type ChatPlanSummary,
+  MAX_AGENT_STEPS,
   type RunStartInput,
   type SystemPromptSnapshot,
   TODO_TOOL_NAME,
@@ -2639,7 +2640,7 @@ const MessageBubble = memo(function MessageBubble({
         ) : null}
         {toolLimitReached ? (
           <p className="mt-2 text-primary text-xs">
-            已达到执行轮数上限（30 轮），如需继续请发送一条新消息。
+            已达到执行轮数上限（{MAX_AGENT_STEPS} 轮），如需继续请发送一条新消息。
           </p>
         ) : null}
         {showMessageActions ? (

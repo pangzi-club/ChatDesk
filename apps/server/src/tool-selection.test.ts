@@ -4,6 +4,7 @@ import {
   hasWorkspace,
   selectPlanWorkspaceToolNames,
   selectWorkspaceToolNames,
+  workspaceSearchInstructions,
 } from "./tool-selection.ts";
 
 describe("workspace tool selection", () => {
@@ -30,5 +31,15 @@ describe("workspace tool selection", () => {
       selectPlanWorkspaceToolNames(["list_dir", "read_file", "write_file", "edit_file", "bash"]),
       ["list_dir", "read_file"],
     );
+  });
+
+  it("only requires the dedicated search tool when it is actually available", () => {
+    assert.match(
+      workspaceSearchInstructions(["search_files", "terminal"]),
+      /优先使用 search_files/,
+    );
+    assert.doesNotMatch(workspaceSearchInstructions(["search_files", "terminal"]), /可通过 Bash/);
+    assert.match(workspaceSearchInstructions(["terminal"]), /可通过 Bash 使用 rg/);
+    assert.equal(workspaceSearchInstructions(["read_file"]), "");
   });
 });

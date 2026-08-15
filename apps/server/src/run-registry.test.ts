@@ -6,6 +6,7 @@ import {
   estimateModelMessageTokens,
   interruptRunMessage,
   MAX_AGENT_STEPS,
+  MODEL_CALL_MAX_RETRIES,
   mergeLatestMessageMetadata,
   mergeRunMessage,
   normalizeCompletedMessages,
@@ -13,11 +14,12 @@ import {
   runCheckpointFingerprint,
 } from "./run-registry.ts";
 
-test("uses 30 steps as the tool loop limit", () => {
-  assert.equal(MAX_AGENT_STEPS, 30);
-  assert.equal(reachedToolLimit(30, "tool-calls"), true);
-  assert.equal(reachedToolLimit(29, "tool-calls"), false);
-  assert.equal(reachedToolLimit(30, "stop"), false);
+test("allows long agent runs and retries transient model failures", () => {
+  assert.equal(MAX_AGENT_STEPS, 100);
+  assert.equal(MODEL_CALL_MAX_RETRIES, 3);
+  assert.equal(reachedToolLimit(100, "tool-calls"), true);
+  assert.equal(reachedToolLimit(99, "tool-calls"), false);
+  assert.equal(reachedToolLimit(100, "stop"), false);
 });
 
 test("compacts old reasoning and tool results after the token threshold", () => {

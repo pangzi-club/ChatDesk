@@ -1,6 +1,7 @@
 import type { UIMessage } from "ai";
 
 export const CHAT_SCHEMA_VERSION = 2 as const;
+export const MAX_AGENT_STEPS = 100;
 export const SESSION_STATUSES = ["idle", "submitted", "streaming", "error", "ready"] as const;
 
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
@@ -156,6 +157,7 @@ export const DEVELOPMENT_TOOL_NAMES = [
   "gcc",
   "g++",
   "git",
+  "rg",
   "gh",
   "docker",
   "kubectl",

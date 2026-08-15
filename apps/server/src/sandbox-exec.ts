@@ -110,6 +110,7 @@ export type SandboxFileRequest =
       query?: string;
       maxResults?: number;
       readablePaths?: string[];
+      developerToolPaths?: string[];
     }
   | {
       operation: "write_file";
@@ -192,6 +193,7 @@ export async function runSandboxedFile(
               : (options.readablePaths ?? []),
             helperReadPaths,
             options.writablePaths ?? [],
+            "developerToolPaths" in request ? (request.developerToolPaths ?? []) : [],
           ),
           helperExecutable,
           ...nodeArgs,
@@ -210,7 +212,10 @@ export async function runSandboxedFile(
   }>((resolve, reject) => {
     const child = spawn(executable, args, {
       cwd: workspace,
-      env: sandboxEnvironment(workspace),
+      env: sandboxEnvironment(
+        workspace,
+        "developerToolPaths" in request ? (request.developerToolPaths ?? []) : [],
+      ),
       stdio: ["pipe", "pipe", "pipe"],
       detached: process.platform !== "win32",
     });

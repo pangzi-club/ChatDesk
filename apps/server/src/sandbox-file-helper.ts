@@ -1,9 +1,9 @@
 import { existsSync, realpathSync } from "node:fs";
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { searchWorkspaceFiles } from "./file-search.ts";
 
 const MAX_FILE_BYTES = 512 * 1024;
-const MAX_SEARCH_RESULTS = 500;
 const SKIPPED_DIRECTORIES = new Set([".git", "node_modules", "target", "dist"]);
 
 type Request =
@@ -27,6 +27,7 @@ type Request =
       query?: string;
       maxResults?: number;
       readablePaths?: string[];
+      developerToolPaths?: string[];
     }
   | {
       operation: "write_file";
@@ -101,33 +102,7 @@ async function readTextFile(request: Extract<Request, { operation: "read_file" }
 
 async function searchFiles(request: Extract<Request, { operation: "search_files" }>) {
   const { root, target: start } = targetPath(request);
-  const limit = Math.min(Math.max(request.maxResults ?? 100, 1), MAX_SEARCH_RESULTS);
-  const pattern = request.pattern?.trim();
-  const needle = request.query?.trim().toLowerCase();
-  const matches: string[] = [];
-  const matchesName = (file: string) =>
-    !pattern ||
-    new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$$`, "i").test(
-      path.basename(file),
-    );
-  const visit = async (directory: string): Promise<void> => {
-    if (matches.length >= limit) return;
-    for (const entry of await readdir(directory, { withFileTypes: true })) {
-      if (matches.length >= limit) return;
-      const target = path.join(directory, entry.name);
-      if (entry.isDirectory()) {
-        if (!SKIPPED_DIRECTORIES.has(entry.name)) await visit(target);
-        continue;
-      }
-      if (!entry.isFile() || !matchesName(target)) continue;
-      const metadata = await stat(target);
-      if (metadata.size > MAX_FILE_BYTES) continue;
-      if (needle && !(await readFile(target, "utf8")).toLowerCase().includes(needle)) continue;
-      matches.push(displayPath(root, target));
-    }
-  };
-  await visit(start);
-  return { query: needle || undefined, pattern, matches, truncated: matches.length >= limit };
+  return searchWorkspaceFiles(root, start, request);
 }
 
 async function writeTextFile(request: Extract<Request, { operation: "write_file" }>) {

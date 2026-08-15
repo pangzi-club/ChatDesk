@@ -1,0 +1,69 @@
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
+import { describe, expect, it } from "vitest";
+import { searchWorkspaceFiles } from "./file-search.ts";
+
+const execFileAsync = promisify(execFile);
+
+async function createGitWorkspace() {
+  const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-file-search-"));
+  await mkdir(path.join(root, "src", "nested"), { recursive: true });
+  await mkdir(path.join(root, "ignored"), { recursive: true });
+  await writeFile(path.join(root, ".gitignore"), "ignored/\n", "utf8");
+  await writeFile(path.join(root, "src", "main.ts"), "const SearchNeedle = true;\n", "utf8");
+  await writeFile(
+    path.join(root, "src", "nested", "other.ts"),
+    "export const searchNeedle = false;\n",
+    "utf8",
+  );
+  await writeFile(path.join(root, "README.md"), "SearchNeedle docs\n", "utf8");
+  await writeFile(path.join(root, "ignored", "secret.ts"), "SearchNeedle ignored\n", "utf8");
+  await execFileAsync("git", ["init", "-q"], { cwd: root });
+  return root;
+}
+
+describe("workspace file search", () => {
+  it("supports recursive globs, Git ignores, and content previews", async () => {
+    const root = await createGitWorkspace();
+    const result = await searchWorkspaceFiles(root, root, {
+      pattern: "**/*.ts",
+      query: "searchneedle",
+    });
+
+    expect(result.matches).toEqual(["src/main.ts", "src/nested/other.ts"]);
+    expect(result.matches).not.toContain("ignored/secret.ts");
+    expect(result.contentMatches).toEqual([
+      {
+        path: "src/main.ts",
+        line: 1,
+        column: 7,
+        preview: "const SearchNeedle = true;",
+      },
+      {
+        path: "src/nested/other.ts",
+        line: 1,
+        column: 14,
+        preview: "export const searchNeedle = false;",
+      },
+    ]);
+  });
+
+  it("searches a single file and reports truncation accurately", async () => {
+    const root = await createGitWorkspace();
+    const single = await searchWorkspaceFiles(root, path.join(root, "README.md"), {
+      query: "searchneedle",
+    });
+    const truncated = await searchWorkspaceFiles(root, root, {
+      pattern: "**/*.ts",
+      maxResults: 1,
+    });
+
+    expect(single.matches).toEqual(["README.md"]);
+    expect(single.contentMatches?.[0]).toMatchObject({ path: "README.md", line: 1, column: 1 });
+    expect(truncated.matches).toHaveLength(1);
+    expect(truncated.truncated).toBe(true);
+  });
+});

@@ -32,6 +32,7 @@ import { scanSkills } from "./skills-store.ts";
 import { SessionStore } from "./store.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
 import { TODO_TOOL_INSTRUCTIONS } from "./todo-tool.ts";
+import { workspaceSearchInstructions } from "./tool-selection.ts";
 import { WorkspaceStore } from "./workspace-store.ts";
 
 const runInputSchema = z.object({
@@ -1138,7 +1139,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
       const current = session ?? ({ cwd: undefined } as ChatSession);
       const cwd = resolveEffectiveWorkspace(current, body, (id) => workspaces.get(id)?.path);
       const workspaceToolInstructions = cwd
-        ? "本地源码检索规则：按文件名或关键词查找时必须使用 search_files，它支持 query 关键词并遵循 workspace 的 Git 排除规则；不要通过 bash 执行递归 grep、find 或 rg，尤其不要扫描 node_modules、.git、dist、target。"
+        ? workspaceSearchInstructions(body.toolNames ?? [])
         : "";
       return c.json(
         await buildSystemPrompt({
