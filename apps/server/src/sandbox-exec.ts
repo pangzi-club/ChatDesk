@@ -127,6 +127,38 @@ export type SandboxFileRequest =
       allowOutside?: boolean;
     };
 
+type SandboxFileResponse = {
+  ok?: boolean;
+  result?: unknown;
+  error?: string;
+  blocked?: boolean;
+};
+
+export function resolveSandboxFileProcessOutput(
+  stdout: string,
+  stderr: string,
+  code: number,
+  sandboxed: boolean,
+) {
+  let response: SandboxFileResponse | undefined;
+  try {
+    const parsed = JSON.parse(stdout) as unknown;
+    if (parsed && typeof parsed === "object") response = parsed as SandboxFileResponse;
+  } catch {
+    response = undefined;
+  }
+  return {
+    code,
+    result: response?.result,
+    error:
+      response?.error ||
+      (response?.result === undefined ? stderr || "文件 helper 执行失败" : undefined),
+    sandboxBlocked:
+      response?.blocked === true ||
+      (response === undefined && sandboxed && isSandboxBlockedOutput(stderr)),
+  };
+}
+
 export async function runSandboxedFile(
   request: SandboxFileRequest,
   options: {
@@ -194,24 +226,9 @@ export async function runSandboxedFile(
     child.once("error", reject);
     child.once("close", (code) => {
       clearTimeout(timer);
-      let response:
-        | { ok?: boolean; result?: unknown; error?: string; blocked?: boolean }
-        | undefined;
-      try {
-        response = JSON.parse(stdout) as typeof response;
-      } catch {
-        response = undefined;
-      }
-      resolve({
-        code: code ?? -1,
-        result: response?.result,
-        error:
-          response?.error ||
-          (response?.result === undefined ? stderr || "文件 helper 执行失败" : undefined),
-        sandboxBlocked:
-          response?.blocked === true ||
-          (effectiveMode !== "full" && isSandboxBlockedOutput(`${stdout}\n${stderr}`)),
-      });
+      resolve(
+        resolveSandboxFileProcessOutput(stdout, stderr, code ?? -1, effectiveMode !== "full"),
+      );
     });
     child.stdin.end(payload);
   });

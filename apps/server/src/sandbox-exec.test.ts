@@ -6,6 +6,7 @@ import {
   buildSeatbeltProfile,
   isSandboxBlockedOutput,
   resolveCommandCwd,
+  resolveSandboxFileProcessOutput,
   runSandboxedFile,
   runSandboxedShell,
   SandboxPathError,
@@ -19,6 +20,33 @@ describe("sandbox execution errors", () => {
     );
     expect(isSandboxBlockedOutput("command failed: exit status 1")).toBe(false);
     expect(isSandboxBlockedOutput("permission denied by application")).toBe(false);
+  });
+
+  it("does not classify successful file content as a sandbox denial", () => {
+    const stdout = JSON.stringify({
+      ok: true,
+      result: {
+        path: "chat.tsx",
+        content: "CHAT_SANDBOX_MODE_DESCRIPTIONS\nconst action = 'Deny';",
+      },
+    });
+
+    const result = resolveSandboxFileProcessOutput(stdout, "", 0, true);
+
+    expect(isSandboxBlockedOutput(stdout)).toBe(true);
+    expect(result.sandboxBlocked).toBe(false);
+    expect(result.result).toMatchObject({ path: "chat.tsx" });
+  });
+
+  it("still classifies unstructured Seatbelt stderr as sandbox blocked", () => {
+    const result = resolveSandboxFileProcessOutput(
+      "",
+      "sandbox-exec: deny file-read-data",
+      1,
+      true,
+    );
+
+    expect(result.sandboxBlocked).toBe(true);
   });
 
   it("uses a stable error code for invalid boundary paths", () => {
