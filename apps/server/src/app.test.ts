@@ -562,7 +562,8 @@ describe("chat server", () => {
     const sessions = await server.app.request("http://localhost/v1/sessions", {
       headers: auth(),
     });
-    assert.equal((await sessions.json())[0]?.status, "error");
+    const sessionList = await sessions.json();
+    assert.equal(sessionList[0]?.status, "error");
     const recovered = await server.store.get("recovered-session");
     const recoveredTool = recovered?.messages[0]?.parts[0];
     assert.equal(
@@ -587,6 +588,17 @@ describe("chat server", () => {
         planWritten: false,
       },
     );
+    assert.deepEqual(sessionList[0]?.lastRunSummary, {
+      runId: "run-recovered",
+      outcome: "error",
+      stopReason: "server-restarted",
+      stepCount: 0,
+      modelCallCount: 0,
+      toolCallCount: 0,
+      duplicateToolCallCount: 0,
+      compactionCount: 0,
+      planWritten: false,
+    });
     assert.deepEqual(await journal.recover(), []);
   });
 });

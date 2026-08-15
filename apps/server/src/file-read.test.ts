@@ -32,8 +32,19 @@ describe("read file ranges", () => {
     });
     await assert.rejects(() => readTextFileRange(file, "fixture.txt", { startLine: 0 }));
     await assert.rejects(() =>
-      readTextFileRange(file, "fixture.txt", { startLine: 1, endLine: 401 }),
+      readTextFileRange(file, "fixture.txt", { startLine: 3, endLine: 2 }),
     );
+  });
+
+  it("reads more than 400 lines when the output fits within the byte limit", async () => {
+    const content = Array.from({ length: 500 }, (_, index) => `line ${index + 1}`).join("\n");
+    const file = await fixture(content);
+    const result = await readTextFileRange(file, "fixture.txt");
+    assert.equal(result.content, content);
+    assert.equal(result.startLine, 1);
+    assert.equal(result.endLine, 500);
+    assert.equal(result.totalLines, 500);
+    assert.equal(result.truncated, false);
   });
 
   it("truncates a long unicode line at a valid UTF-8 boundary", async () => {

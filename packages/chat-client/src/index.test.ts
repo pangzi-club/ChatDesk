@@ -73,6 +73,7 @@ describe("ChatServerClient", () => {
     const compactions: number[] = [];
     const contextUsages: number[] = [];
     const progressSteps: number[] = [];
+    const completedRuns: string[] = [];
     const client = new ChatServerClient({
       baseUrl: "http://localhost",
       token: "sse-token",
@@ -89,6 +90,7 @@ describe("ChatServerClient", () => {
         compactions.push(event.contextCompaction?.estimatedTokensBefore ?? 0),
       onContextUsage: (event) => contextUsages.push(event.contextUsage?.inputTokens ?? 0),
       onRunProgress: (event) => progressSteps.push(event.runProgress?.stepCount ?? 0),
+      onRunDone: (event) => completedRuns.push(event.runSummary?.outcome ?? "missing"),
     });
     listeners.get("snapshot")?.({ data: "[]" });
     listeners.get("message.delta")?.({
@@ -142,6 +144,24 @@ describe("ChatServerClient", () => {
         timestamp: new Date().toISOString(),
       }),
     });
+    listeners.get("run.done")?.({
+      data: JSON.stringify({
+        id: "event-5",
+        type: "run.done",
+        sessionId: "session-1",
+        runSummary: {
+          runId: "run-1",
+          outcome: "completed",
+          stepCount: 18,
+          modelCallCount: 18,
+          toolCallCount: 17,
+          duplicateToolCallCount: 0,
+          compactionCount: 0,
+          planWritten: true,
+        },
+        timestamp: new Date().toISOString(),
+      }),
+    });
     cleanup();
 
     assert.deepEqual(snapshots, ["0"]);
@@ -149,5 +169,6 @@ describe("ChatServerClient", () => {
     assert.deepEqual(compactions, [120_000]);
     assert.deepEqual(contextUsages, [48_500]);
     assert.deepEqual(progressSteps, [18]);
+    assert.deepEqual(completedRuns, ["completed"]);
   });
 });

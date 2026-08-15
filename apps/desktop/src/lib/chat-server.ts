@@ -6,6 +6,7 @@ import type {
   ChatPlanMode,
   ChatPlanSummary,
   ChatRunProgress,
+  ChatRunSummary,
   ChatServerAiUsageLog,
   ChatServerConfigData,
   ChatServerProviderModel,
@@ -731,6 +732,7 @@ export function subscribeChatServerEvents(
       runId?: string;
       runProgress: ChatRunProgress;
     }) => void;
+    onRunFinished?: (event: { sessionId: string; runSummary: ChatRunSummary }) => void;
     onPlanUpdated?: (event: {
       sessionId: string;
       planId?: string;
@@ -794,6 +796,22 @@ export function subscribeChatServerEvents(
             sessionId: event.sessionId,
             runId: event.runId,
             runProgress: event.runProgress,
+          });
+        }
+      },
+      onRunDone: (event) => {
+        if (event.sessionId && event.runSummary) {
+          handlers.onRunFinished?.({
+            sessionId: event.sessionId,
+            runSummary: event.runSummary,
+          });
+        }
+      },
+      onRunError: (event) => {
+        if (event.sessionId && event.runSummary) {
+          handlers.onRunFinished?.({
+            sessionId: event.sessionId,
+            runSummary: event.runSummary,
           });
         }
       },

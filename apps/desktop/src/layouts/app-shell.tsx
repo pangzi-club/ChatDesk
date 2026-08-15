@@ -66,6 +66,7 @@ import {
   useNavigate,
 } from "react-router-dom";
 import { ChatBrowser } from "@/components/chat-browser";
+import { ChatMarkdown } from "@/components/chat-markdown";
 import { ChatTerminal } from "@/components/chat-terminal";
 import { FileViewer } from "@/components/file-viewer";
 import { GitCommitDialog } from "@/components/git-commit-dialog";
@@ -1847,18 +1848,6 @@ function ChatWorkspaceWindow({
     setViewerError(null);
   }, [activeTabId, workspaceTab?.explorerView, workspaceTab?.kind, workspaceTab?.path]);
 
-  useEffect(() => {
-    if (!planTab) return;
-    const value = planQuery.data;
-    if (!value) return;
-    setEditorContent({
-      path: value.fileName,
-      mode: "source",
-      content: planTab.content ?? value.content,
-    });
-    setViewerError(null);
-  }, [planQuery.data, planTab]);
-
   // Refreshing Git intentionally reloads the selected editor snapshot as well as the sidebar.
   // biome-ignore lint/correctness/useExhaustiveDependencies: refresh intentionally reloads current editor content.
   useEffect(() => {
@@ -1947,6 +1936,24 @@ function ChatWorkspaceWindow({
           tabs: state.tabs.map((tab) =>
             tab.id === planTab.id
               ? { ...tab, title: plan.fileName, planId: plan.id, content: plan.content }
+              : tab,
+          ),
+        });
+      })
+      .catch((error) => setViewerError(error instanceof Error ? error.message : String(error)));
+  }
+
+  function refreshPlan() {
+    if (!planTab) return;
+    void planQuery
+      .refetch()
+      .then(({ data }) => {
+        if (!data) return;
+        onChange({
+          ...state,
+          tabs: state.tabs.map((tab) =>
+            tab.id === planTab.id
+              ? { ...tab, title: data.fileName, planId: data.id, content: data.content }
               : tab,
           ),
         });
@@ -2449,7 +2456,7 @@ function ChatWorkspaceWindow({
               <Button
                 aria-label="刷新计划"
                 className="chat-workspace-window-add"
-                onClick={() => void planQuery.refetch()}
+                onClick={refreshPlan}
                 size="icon"
                 title="刷新计划"
                 type="button"
@@ -2460,7 +2467,26 @@ function ChatWorkspaceWindow({
             </span>
           </header>
           <div className="chat-explorer-editor-pane">
-            <div className="chat-explorer-editor">{editorView}</div>
+            <div className="chat-plan-preview">
+              {viewerError ? (
+                <div className="chat-workspace-window-empty text-destructive">{viewerError}</div>
+              ) : planQuery.isLoading && planTab.content === undefined ? (
+                <div aria-label="加载计划" className="chat-plan-preview-skeleton" role="status">
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                </div>
+              ) : (planTab.content ?? planQuery.data?.content ?? "").trim() ? (
+                <div className="chat-message-text chat-plan-preview-content">
+                  <ChatMarkdown isAnimating={false}>
+                    {planTab.content ?? planQuery.data?.content ?? ""}
+                  </ChatMarkdown>
+                </div>
+              ) : (
+                <div className="chat-workspace-window-empty">计划正在生成...</div>
+              )}
+            </div>
           </div>
         </div>
       ) : workspaceTab ? (

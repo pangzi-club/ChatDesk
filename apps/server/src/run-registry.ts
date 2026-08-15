@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createOpenAI, openai } from "@ai-sdk/openai";
-import { MAX_AGENT_STEPS } from "@chatdesk/shared";
+import { MAX_AGENT_STEPS, PLAN_USER_INPUT_TOOL_NAME } from "@chatdesk/shared";
 import {
   convertToModelMessages,
   createUIMessageStreamResponse,
@@ -31,6 +31,7 @@ import { createKimiFetch } from "./kimi.ts";
 import { createMiniMaxFetch, isMiniMaxModel } from "./minimax.ts";
 import type { PlanStore } from "./plan-store.ts";
 import { createPlanWriteTool } from "./plan-tool.ts";
+import { createPlanUserInputTool, PLAN_USER_INPUT_INSTRUCTIONS } from "./plan-user-input-tool.ts";
 import {
   type ChatContextCompaction,
   type ChatContextUsage,
@@ -96,6 +97,7 @@ type RunMetrics = {
   duplicateToolCallCount: number;
   compactionCount: number;
   planWritten: boolean;
+  userInputRequested: boolean;
   usage?: ChatTokenUsage;
   forcedStopReason?: ChatRunStopReason;
   failureMessage?: string;
@@ -151,6 +153,17 @@ function createConfiguredLanguageModel(model: import("./protocol.ts").ServerMode
   return model.responsive
     ? provider.responses(model.name.trim())
     : provider.chat(model.name.trim());
+}
+
+export function supportsRequiredToolChoice(
+  model: Pick<
+    import("./protocol.ts").ServerModelConfig,
+    "baseUrl" | "name" | "provider" | "responsive"
+  >,
+) {
+  if (!model.responsive) return true;
+  const identity = `${model.provider} ${model.baseUrl} ${model.name}`.toLowerCase();
+  return !identity.includes("deepseek");
 }
 
 function assistantMessage(id: string, text: string): UIMessage {
@@ -534,7 +547,10 @@ export class RunRegistry {
     const activePlan = planId ? await this.plans.read(sessionId, planId).catch(() => null) : null;
     const planInstructions =
       planMode === "plan"
-        ? "当前处于计划模式：只能调研和提问，不能修改 workspace 代码。需求明确后必须使用 plan_write 更新完整计划；用户回答问题后再次更新计划。"
+        ? [
+            "当前处于计划模式：只能调研和提问，不能修改 workspace 代码。需求明确后必须使用 plan_write 更新完整计划；用户回答问题后再次更新计划。",
+            PLAN_USER_INPUT_INSTRUCTIONS,
+          ].join("\n\n")
         : activePlan
           ? `用户已确认执行以下计划：\n\n${activePlan.content}`
           : "";
@@ -584,6 +600,7 @@ export class RunRegistry {
         duplicateToolCallCount: 0,
         compactionCount: 0,
         planWritten: false,
+        userInputRequested: false,
       };
       const terminal: TerminalRunState = { observed: false, text: "" };
       const duplicateResults = new ReadOnlyToolResultDeduplicator();
@@ -733,6 +750,7 @@ export class RunRegistry {
                     sessionId,
                     planId as string,
                   ),
+                  [PLAN_USER_INPUT_TOOL_NAME]: createPlanUserInputTool(),
                 }
               : { todo_write: createTodoTool() }),
             ...(planMode === "plan" ? {} : (createClientTools(input.toolNames) ?? {})),
@@ -773,6 +791,7 @@ export class RunRegistry {
             planMode,
             stepNumber,
             planWritten: metrics.planWritten,
+            requiredToolChoiceSupported: supportsRequiredToolChoice(model),
             forcedStopReason: metrics.forcedStopReason,
           });
           publishProgress(policy.phase);
@@ -946,6 +965,9 @@ export class RunRegistry {
             )
           ) {
             metrics.planWritten = true;
+          }
+          if (toolCalls.some((toolCall) => toolCall?.toolName === PLAN_USER_INPUT_TOOL_NAME)) {
+            metrics.userInputRequested = true;
           }
           const loop = loopTracker.recordStep(
             completedToolResults.map((toolResult) => ({
@@ -1147,6 +1169,7 @@ export class RunRegistry {
       const completion = evaluateRunCompletion({
         planMode,
         planWritten: metrics.planWritten,
+        userInputRequested: metrics.userInputRequested,
         finalText: terminal.text,
         finishReason: terminal.finishReason,
         terminalObserved: terminal.observed,

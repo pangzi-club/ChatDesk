@@ -8,6 +8,128 @@ export type SessionStatus = (typeof SESSION_STATUSES)[number];
 export type SandboxMode = "ask" | "auto" | "full";
 export type ChatPlanMode = "plan" | "apply";
 
+export const PLAN_USER_INPUT_TOOL_NAME = "request_user_input";
+
+export type PlanUserInputOption = {
+  id: string;
+  label: string;
+  description?: string;
+};
+
+export type PlanUserInputQuestion = {
+  id: string;
+  header: string;
+  question: string;
+  options: PlanUserInputOption[];
+  recommendedOptionId: string;
+};
+
+export type PlanUserInputRequest = {
+  questions: PlanUserInputQuestion[];
+};
+
+export type PlanUserInputAnswer = {
+  questionId: string;
+  answer: string;
+  optionId?: string;
+  custom: boolean;
+};
+
+export type PlanUserInputResponse = {
+  answers: PlanUserInputAnswer[];
+};
+
+function boundedString(value: unknown, maxLength: number) {
+  return typeof value === "string" && value.trim() && value.length <= maxLength
+    ? value.trim()
+    : null;
+}
+
+export function parsePlanUserInputRequest(value: unknown): PlanUserInputRequest | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const questions = (value as { questions?: unknown }).questions;
+  if (!Array.isArray(questions) || questions.length < 1 || questions.length > 3) return null;
+
+  const questionIds = new Set<string>();
+  const parsedQuestions: PlanUserInputQuestion[] = [];
+  for (const value of questions) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const question = value as Record<string, unknown>;
+    const id = boundedString(question.id, 64);
+    const header = boundedString(question.header, 32);
+    const prompt = boundedString(question.question, 500);
+    if (!id || !header || !prompt || questionIds.has(id)) return null;
+    if (
+      !Array.isArray(question.options) ||
+      question.options.length < 2 ||
+      question.options.length > 4
+    )
+      return null;
+
+    const optionIds = new Set<string>();
+    const options: PlanUserInputOption[] = [];
+    for (const value of question.options) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+      const option = value as Record<string, unknown>;
+      const optionId = boundedString(option.id, 64);
+      const label = boundedString(option.label, 120);
+      if (!optionId || !label || optionIds.has(optionId)) return null;
+      const description =
+        option.description === undefined ? undefined : boundedString(option.description, 240);
+      if (option.description !== undefined && !description) return null;
+      optionIds.add(optionId);
+      options.push({ id: optionId, label, ...(description ? { description } : {}) });
+    }
+
+    const recommendedOptionId = boundedString(question.recommendedOptionId, 64);
+    if (!recommendedOptionId || !optionIds.has(recommendedOptionId)) return null;
+    questionIds.add(id);
+    parsedQuestions.push({
+      id,
+      header,
+      question: prompt,
+      options,
+      recommendedOptionId,
+    });
+  }
+  return { questions: parsedQuestions };
+}
+
+export function parsePlanUserInputResponse(value: unknown): PlanUserInputResponse | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const answers = (value as { answers?: unknown }).answers;
+  if (!Array.isArray(answers) || answers.length < 1 || answers.length > 3) return null;
+  const questionIds = new Set<string>();
+  const parsedAnswers: PlanUserInputAnswer[] = [];
+  for (const value of answers) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const answer = value as Record<string, unknown>;
+    const questionId = boundedString(answer.questionId, 64);
+    const text = boundedString(answer.answer, 1_000);
+    if (!questionId || !text || questionIds.has(questionId) || typeof answer.custom !== "boolean")
+      return null;
+    const optionId = answer.optionId === undefined ? undefined : boundedString(answer.optionId, 64);
+    if ((!answer.custom && !optionId) || (answer.custom && answer.optionId !== undefined))
+      return null;
+    questionIds.add(questionId);
+    parsedAnswers.push({
+      questionId,
+      answer: text,
+      ...(optionId ? { optionId } : {}),
+      custom: answer.custom,
+    });
+  }
+  return { answers: parsedAnswers };
+}
+
+export function sortPlanUserInputOptions(question: PlanUserInputQuestion) {
+  return [...question.options].sort((left, right) => {
+    if (left.id === question.recommendedOptionId) return -1;
+    if (right.id === question.recommendedOptionId) return 1;
+    return 0;
+  });
+}
+
 export type ChatPlanSummary = {
   id: string;
   fileName: string;
@@ -76,6 +198,7 @@ export type ChatIndexItem = Pick<
 
 export type SessionIndexItem = ChatIndexItem & {
   status: SessionStatus;
+  lastRunSummary?: ChatRunSummary;
 };
 
 export type ServerModelConfig = {

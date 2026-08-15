@@ -290,13 +290,14 @@ describe("complete agent runs", () => {
     assert.equal(current.registry.activeCount(), 0);
     const session = await current.store.get("session-1");
     const summary = session?.messages.at(-1)?.metadata as { runSummary?: ChatRunSummary };
-    assert.equal(summary.runSummary?.outcome, "awaiting-user");
+    assert.equal(summary.runSummary?.outcome, "error");
   });
 
-  it("persists an awaiting-user outcome for a plan question", async () => {
+  it("rejects a plain-text plan question as incomplete", async () => {
     const current = await fixture([textResult("需要确认部署区域。", "response-question")]);
     const summary = await finishRun(current);
-    assert.equal(summary.outcome, "awaiting-user");
+    assert.equal(summary.outcome, "error");
+    assert.equal(summary.stopReason, "incomplete-response");
     assert.equal(summary.planWritten, false);
     assert.equal(summary.modelCallCount, 1);
     assert.equal(current.usageLogs.list().length, 1);
@@ -310,7 +311,37 @@ describe("complete agent runs", () => {
       reasoningOutputTokens: 1,
     });
     assert.ok(current.events.published.some((event) => event.type === "run.progress"));
-    assert.ok(current.events.published.some((event) => event.type === "run.done"));
+    assert.ok(current.events.published.some((event) => event.type === "run.error"));
+  });
+
+  it("persists a structured plan question without requiring final text", async () => {
+    const current = await fixture([
+      toolResult("question", "request_user_input", {
+        questions: [
+          {
+            id: "region",
+            header: "部署区域",
+            question: "请选择部署区域",
+            recommendedOptionId: "cn",
+            options: [
+              { id: "cn", label: "中国大陆" },
+              { id: "global", label: "全球" },
+            ],
+          },
+        ],
+      }),
+    ]);
+    const summary = await finishRun(current);
+    assert.equal(summary.outcome, "awaiting-user");
+    assert.equal(summary.planWritten, false);
+    assert.equal(summary.toolCallCount, 1);
+    assert.equal(summary.modelCallCount, 1);
+    assert.equal(current.usageLogs.list().length, 1);
+    const session = await current.store.get("session-1");
+    assert.equal(
+      session?.messages.at(-1)?.parts.some((part) => part.type.includes("request_user_input")),
+      true,
+    );
   });
 
   it("requires non-empty plan_write followed by a text-only final step", async () => {
@@ -336,16 +367,29 @@ describe("complete agent runs", () => {
       textResult("计划内容仍需确认。", "response-empty-plan"),
     ]);
     const summary = await finishRun(current);
-    assert.equal(summary.outcome, "awaiting-user");
+    assert.equal(summary.outcome, "error");
     assert.equal(summary.planWritten, false);
   });
 
-  it("uses the 100th plan step for an honest text-only handoff", async () => {
+  it("requires a structured decision on the final plan step", async () => {
     const results = [
       ...Array.from({ length: 99 }, (_, index) =>
         toolResult(`empty-plan-${index}`, "plan_write", { content: "" }),
       ),
-      textResult("计划尚未完成；需要确认部署区域。", "response-plan-limit"),
+      toolResult("question", "request_user_input", {
+        questions: [
+          {
+            id: "region",
+            header: "部署区域",
+            question: "请选择部署区域",
+            recommendedOptionId: "cn",
+            options: [
+              { id: "cn", label: "中国大陆" },
+              { id: "global", label: "全球" },
+            ],
+          },
+        ],
+      }),
     ];
     const current = await fixture(results);
     const summary = await finishRun(current);
@@ -354,9 +398,12 @@ describe("complete agent runs", () => {
     assert.equal(summary.stepCount, 100);
     assert.deepEqual(
       current.model.doStreamCalls[98]?.tools?.map((tool) => tool.name),
-      ["plan_write"],
+      ["plan_write", "request_user_input"],
     );
-    assert.equal(current.model.doStreamCalls[99]?.tools, undefined);
+    assert.deepEqual(
+      current.model.doStreamCalls[99]?.tools?.map((tool) => tool.name),
+      ["plan_write", "request_user_input"],
+    );
     assert.equal((await current.plans.read("session-1", current.plan.id)).content, "");
   }, 15_000);
 
@@ -376,7 +423,7 @@ describe("complete agent runs", () => {
     assert.equal(summary.planWritten, true);
     assert.deepEqual(
       current.model.doStreamCalls[3]?.tools?.map((tool) => tool.name),
-      ["plan_write"],
+      ["plan_write", "request_user_input"],
     );
     assert.ok(current.events.published.some((event) => event.type === "run.error"));
   });
@@ -392,14 +439,32 @@ describe("complete agent runs", () => {
         },
       ],
     }));
-    const current = await fixture([textResult("需要确认发布窗口。", "response-after-checkpoint")], {
-      inputContext: 8_000,
-      messages,
-      planContent: "# Current plan\n\nPreserve this exact body.",
-      doGenerate: checkpointResult(
-        "Goal\nContinue the plan\n\nUser constraints\nPreserve evidence\n\nConfirmed facts and sources\nNone\n\nFiles and queries checked\nNone\n\nDecisions made\nNone\n\nOpen questions\nRelease window\n\nNext step\nAsk user",
-      ),
-    });
+    const current = await fixture(
+      [
+        toolResult("question", "request_user_input", {
+          questions: [
+            {
+              id: "release-window",
+              header: "发布窗口",
+              question: "请选择发布窗口",
+              recommendedOptionId: "weekday",
+              options: [
+                { id: "weekday", label: "工作日" },
+                { id: "weekend", label: "周末" },
+              ],
+            },
+          ],
+        }),
+      ],
+      {
+        inputContext: 8_000,
+        messages,
+        planContent: "# Current plan\n\nPreserve this exact body.",
+        doGenerate: checkpointResult(
+          "Goal\nContinue the plan\n\nUser constraints\nPreserve evidence\n\nConfirmed facts and sources\nNone\n\nFiles and queries checked\nNone\n\nDecisions made\nNone\n\nOpen questions\nRelease window\n\nNext step\nAsk user",
+        ),
+      },
+    );
     const summary = await finishRun(current);
     assert.equal(summary.outcome, "awaiting-user");
     assert.equal(summary.compactionCount, 1);

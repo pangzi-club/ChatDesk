@@ -14,24 +14,26 @@ export type RunPolicyDecision = {
   phase: ChatRunPhase;
   instructions?: string;
   activeTools?: string[];
-  toolChoice?: "auto" | "none";
+  toolChoice?: "auto" | "none" | "required";
 };
 
 export function decideRunStep(options: {
   planMode: ChatPlanMode;
   stepNumber: number;
   planWritten: boolean;
+  requiredToolChoiceSupported?: boolean;
   forcedStopReason?: ChatRunStopReason;
 }): RunPolicyDecision {
   const step = options.stepNumber + 1;
+  const requiredToolChoice = options.requiredToolChoiceSupported === false ? "auto" : "required";
   if (options.forcedStopReason) {
     if (options.planMode === "plan" && !options.planWritten) {
       return {
         phase: "finalizing",
         instructions:
-          "检测到重复调研。不得继续读取或搜索；现在只能调用 plan_write 写入完整计划，或直接输出一个必须由用户回答的阻塞问题。",
-        activeTools: ["plan_write"],
-        toolChoice: "auto",
+          "检测到重复调研。不得继续读取或搜索；现在只能调用 plan_write 写入完整计划，或调用 request_user_input 提交必须由用户回答的阻塞问题。",
+        activeTools: ["plan_write", "request_user_input"],
+        toolChoice: requiredToolChoice,
       };
     }
     return {
@@ -64,18 +66,18 @@ export function decideRunStep(options: {
       return {
         phase: "finalizing",
         instructions:
-          "计划尚未写入且运行已进入最终交接。不得再调用工具；请直接提出一个必须由用户回答的阻塞问题，并说明计划尚未完成。不得声称计划已写入或已完成。",
-        activeTools: [],
-        toolChoice: "none",
+          "计划尚未写入且已达到最终步骤。必须立即调用 plan_write 写入完整计划，或调用 request_user_input 提交必须由用户回答的阻塞问题；不得输出普通文本问题。",
+        activeTools: ["plan_write", "request_user_input"],
+        toolChoice: requiredToolChoice,
       };
     }
     if (step >= PLAN_FINALIZATION_STEP) {
       return {
         phase: "finalizing",
         instructions:
-          "已达到计划调研预算。不得继续读取或搜索；现在只能调用 plan_write 写入完整计划，或直接输出一个必须由用户回答的阻塞问题。",
-        activeTools: ["plan_write"],
-        toolChoice: "auto",
+          "已达到计划调研预算。不得继续读取或搜索；现在只能调用 plan_write 写入完整计划，或调用 request_user_input 提交必须由用户回答的阻塞问题。",
+        activeTools: ["plan_write", "request_user_input"],
+        toolChoice: requiredToolChoice,
       };
     }
     if (step === PLAN_WARNING_STEP) {
@@ -83,15 +85,20 @@ export function decideRunStep(options: {
         phase: "working",
         instructions:
           "计划调研接近上限。只检查尚未确认且会改变实现方案的事实；准备调用 plan_write，或提出阻塞问题。",
+        toolChoice: requiredToolChoice,
       };
     }
   }
-  return { phase: "working" };
+  return {
+    phase: "working",
+    ...(options.planMode === "plan" ? { toolChoice: requiredToolChoice } : {}),
+  };
 }
 
 export function evaluateRunCompletion(options: {
   planMode: ChatPlanMode;
   planWritten: boolean;
+  userInputRequested?: boolean;
   finalText: string;
   finishReason?: string;
   terminalObserved: boolean;
@@ -99,6 +106,9 @@ export function evaluateRunCompletion(options: {
   forcedStopReason?: ChatRunStopReason;
 }): { outcome: ChatRunOutcome; stopReason?: ChatRunStopReason } {
   if (options.aborted) return { outcome: "stopped", stopReason: "user" };
+  if (options.planMode === "plan" && options.userInputRequested) {
+    return { outcome: "awaiting-user" };
+  }
   if (!options.terminalObserved || !options.finalText.trim()) {
     return { outcome: "error", stopReason: options.forcedStopReason ?? "incomplete-response" };
   }
@@ -114,7 +124,7 @@ export function evaluateRunCompletion(options: {
     return { outcome: "error", stopReason: options.forcedStopReason };
   }
   if (options.planMode === "plan" && !options.planWritten) {
-    return { outcome: "awaiting-user" };
+    return { outcome: "error", stopReason: "incomplete-response" };
   }
   return { outcome: "completed" };
 }

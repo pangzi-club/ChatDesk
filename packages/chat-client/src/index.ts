@@ -38,6 +38,8 @@ export type ChatEventHandlers = {
   onContextCompacted?: (event: ServerEvent & { type: "context.compacted" }) => void;
   onContextUsage?: (event: ServerEvent & { type: "context.usage" }) => void;
   onRunProgress?: (event: ServerEvent & { type: "run.progress" }) => void;
+  onRunDone?: (event: ServerEvent & { type: "run.done" }) => void;
+  onRunError?: (event: ServerEvent & { type: "run.error" }) => void;
   onPlanUpdated?: (event: ServerEvent & { type: "plan.updated" }) => void;
 };
 
@@ -415,6 +417,12 @@ export class ChatServerClient {
         }
         if (event.type === "run.progress") {
           handlers.onRunProgress?.(event as ServerEvent & { type: "run.progress" });
+        }
+        if (event.type === "run.done") {
+          handlers.onRunDone?.(event as ServerEvent & { type: "run.done" });
+        }
+        if (event.type === "run.error") {
+          handlers.onRunError?.(event as ServerEvent & { type: "run.error" });
         }
         if (event.type === "plan.updated") {
           handlers.onPlanUpdated?.(event as ServerEvent & { type: "plan.updated" });

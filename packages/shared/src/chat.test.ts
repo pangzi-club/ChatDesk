@@ -4,8 +4,11 @@ import {
   DEFAULT_MODEL_CONTEXT_WINDOW,
   deriveTitle,
   isSessionStatus,
+  parsePlanUserInputRequest,
+  parsePlanUserInputResponse,
   resolveContextCompactionThreshold,
   resolveModelContextWindow,
+  sortPlanUserInputOptions,
 } from "./chat.ts";
 
 describe("shared chat contracts", () => {
@@ -31,5 +34,67 @@ describe("shared chat contracts", () => {
     assert.equal(resolveContextCompactionThreshold(undefined), 96_000);
     assert.equal(resolveContextCompactionThreshold(80_000), 60_000);
     assert.equal(resolveContextCompactionThreshold(1_000_000), 750_000);
+  });
+
+  it("validates plan questions and sorts the recommended option first", () => {
+    const request = parsePlanUserInputRequest({
+      questions: [
+        {
+          id: "preview",
+          header: "计划预览",
+          question: "怎样展示？",
+          recommendedOptionId: "rendered",
+          options: [
+            { id: "source", label: "源码" },
+            { id: "rendered", label: "Markdown 预览", description: "更易阅读" },
+          ],
+        },
+      ],
+    });
+    assert.ok(request);
+    assert.deepEqual(
+      sortPlanUserInputOptions(request.questions[0]).map((option) => option.id),
+      ["rendered", "source"],
+    );
+    assert.equal(
+      parsePlanUserInputRequest({
+        questions: [
+          {
+            id: "bad",
+            header: "无效",
+            question: "推荐项不存在？",
+            recommendedOptionId: "missing",
+            options: [
+              { id: "a", label: "A" },
+              { id: "b", label: "B" },
+            ],
+          },
+        ],
+      }),
+      null,
+    );
+  });
+
+  it("validates preset and custom plan answers", () => {
+    assert.deepEqual(
+      parsePlanUserInputResponse({
+        answers: [
+          { questionId: "one", optionId: "a", answer: "选项 A", custom: false },
+          { questionId: "two", answer: "手动答案", custom: true },
+        ],
+      }),
+      {
+        answers: [
+          { questionId: "one", optionId: "a", answer: "选项 A", custom: false },
+          { questionId: "two", answer: "手动答案", custom: true },
+        ],
+      },
+    );
+    assert.equal(
+      parsePlanUserInputResponse({
+        answers: [{ questionId: "one", answer: "缺少选项", custom: false }],
+      }),
+      null,
+    );
   });
 });

@@ -9,11 +9,33 @@ import {
   mergeRunMessage,
   normalizeCompletedMessages,
   runCheckpointFingerprint,
+  supportsRequiredToolChoice,
 } from "./run-registry.ts";
 
 test("allows long agent runs without automatically retrying model failures", () => {
   assert.equal(MAX_AGENT_STEPS, 100);
   assert.equal(MODEL_CALL_MAX_RETRIES, 0);
+});
+
+test("avoids required tool choice for DeepSeek Responses models", () => {
+  assert.equal(
+    supportsRequiredToolChoice({
+      provider: "深度求索 / DeepSeek",
+      baseUrl: "https://api.deepseek.com",
+      name: "deepseek-v4-flash",
+      responsive: true,
+    }),
+    false,
+  );
+  assert.equal(
+    supportsRequiredToolChoice({
+      provider: "OpenAI",
+      baseUrl: "https://api.openai.com/v1",
+      name: "gpt-5",
+      responsive: true,
+    }),
+    true,
+  );
 });
 
 test("mergeLatestMessageMetadata persists usage on the latest assistant message", () => {

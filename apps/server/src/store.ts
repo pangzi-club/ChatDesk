@@ -25,6 +25,16 @@ function isSession(value: unknown): value is ChatSession {
   );
 }
 
+function latestRunSummary(session: ChatSession) {
+  for (let index = session.messages.length - 1; index >= 0; index -= 1) {
+    const metadata = session.messages[index]?.metadata;
+    if (!metadata || typeof metadata !== "object") continue;
+    const runSummary = (metadata as { runSummary?: SessionIndexItem["lastRunSummary"] }).runSummary;
+    if (runSummary) return runSummary;
+  }
+  return undefined;
+}
+
 async function readJson<T>(file: string, fallback: T): Promise<T> {
   try {
     return JSON.parse(await readFile(file, "utf8")) as T;
@@ -69,6 +79,7 @@ export class SessionStore {
         workspaceId: session.workspaceId,
         cwd: session.cwd,
         status: statuses.get(session.id) ?? "idle",
+        lastRunSummary: latestRunSummary(session),
       });
     }
     return sessions.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));

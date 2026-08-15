@@ -5,7 +5,12 @@ import {
   type ChatPlanMode,
   type ChatPlanSummary,
   type ChatRunProgress,
+  type ChatRunSummary,
   MAX_AGENT_STEPS,
+  PLAN_USER_INPUT_TOOL_NAME,
+  type PlanUserInputResponse,
+  parsePlanUserInputRequest,
+  parsePlanUserInputResponse,
   type RunStartInput,
   type SystemPromptSnapshot,
   TODO_TOOL_NAME,
@@ -43,6 +48,7 @@ import {
   Mic,
   MoreHorizontal,
   Paperclip,
+  Play,
   Plus,
   RefreshCw,
   SearchCode,
@@ -65,6 +71,7 @@ import { ChatContextPopover } from "@/components/chat-context-popover";
 import { ChatGitSummary } from "@/components/chat-git-summary";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { ChatMemoryDialog } from "@/components/chat-memory-dialog";
+import { ChatPlanQuestionnaire } from "@/components/chat-plan-questionnaire";
 import { ChatSettingsDialog } from "@/components/chat-settings-dialog";
 import { ChatSkillsPicker } from "@/components/chat-skills-picker";
 import { ChatTodoPanel } from "@/components/chat-todo-panel";
@@ -121,6 +128,12 @@ import {
   type ChatToolPart,
   getChatMessageBlocks,
 } from "@/lib/chat-message-blocks";
+import {
+  findLatestPlanWriteContent,
+  isPlanExecutionReady,
+  lastAssistantMessageHasCompletedPlanInput,
+  latestAssistantHasPlanWrite,
+} from "@/lib/chat-plan-state";
 import {
   CHAT_SANDBOX_MODE_DESCRIPTIONS,
   CHAT_SANDBOX_MODE_LABELS,
@@ -452,6 +465,7 @@ function ChatPage() {
   );
   const {
     addToolApprovalResponse,
+    addToolOutput,
     clearError,
     error,
     messages,
@@ -463,7 +477,9 @@ function ChatPage() {
     id: sessionId,
     transport,
     throttle: CHAT_STREAM_UPDATE_THROTTLE_MS,
-    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
+    sendAutomaticallyWhen: ({ messages }) =>
+      lastAssistantMessageIsCompleteWithApprovalResponses({ messages }) ||
+      lastAssistantMessageHasCompletedPlanInput(messages),
     onError: (chatError) => {
       attachedStreamSessionRef.current = null;
       if (isRecoverableChatTransportError(chatError)) {
@@ -487,6 +503,7 @@ function ChatPage() {
   const [serverSessionStatuses, setServerSessionStatuses] = useState<
     Record<string, ChatServerSession["status"]>
   >({});
+  const [serverRunSummaries, setServerRunSummaries] = useState<Record<string, ChatRunSummary>>({});
   const serverSessionStatus = serverSessionStatuses[sessionId];
   const localRunActive = status === "submitted" || status === "streaming";
   const serverRunActive =
@@ -659,6 +676,13 @@ function ChatPage() {
           setServerSessionStatuses(
             Object.fromEntries(sessions.map((session) => [session.id, session.status])),
           );
+          setServerRunSummaries(
+            Object.fromEntries(
+              sessions.flatMap((session) =>
+                session.lastRunSummary ? [[session.id, session.lastRunSummary]] : [],
+              ),
+            ),
+          );
         },
         onStatus: ({ sessionId: eventSessionId, status: eventStatus }) => {
           setServerSessionStatuses((current) => ({
@@ -710,6 +734,15 @@ function ChatPage() {
           if (activeSessionRef.current === eventSessionId && nextProgress) {
             setRunProgress(nextProgress);
           }
+        },
+        onRunFinished: ({ sessionId: eventSessionId, runSummary }) => {
+          if (activeSessionRef.current === eventSessionId) {
+            attachedStreamSessionRef.current = null;
+          }
+          setServerRunSummaries((current) => ({
+            ...current,
+            [eventSessionId]: runSummary,
+          }));
         },
         onPlanUpdated: ({
           sessionId: eventSessionId,
@@ -818,7 +851,8 @@ function ChatPage() {
     savedChatSkillIds,
   ]);
 
-  const isGenerating = localRunActive || serverRunActive;
+  const isGenerating =
+    serverRunActive || (localRunActive && attachedStreamSessionRef.current === sessionId);
   const workspaceGitQuery = useQuery({
     queryKey: workspaceGitQueryKey(workspaceKey),
     queryFn: () => loadServerWorkspaceGit(workspaceKey),
@@ -890,6 +924,28 @@ function ChatPage() {
             ? "响应较慢，仍在等待中"
             : "";
   const lastMessage = messages[messages.length - 1];
+  const livePlanDraft = useMemo(() => findLatestPlanWriteContent(messages), [messages]);
+  const planWriteObserved = useMemo(() => latestAssistantHasPlanWrite(messages), [messages]);
+  const planReady = Boolean(
+    activePlan &&
+      isPlanExecutionReady(planMode, activePlanHasContent, serverRunSummaries[sessionId]),
+  );
+  const showPlanStartAction =
+    planReady &&
+    Boolean(selectedModel) &&
+    !input.trim() &&
+    pendingAttachments.length === 0 &&
+    !isGenerating;
+
+  useEffect(() => {
+    if (!activePlan || livePlanDraft === undefined) return;
+    updatePlanViewer({
+      sessionId,
+      planId: activePlan.id,
+      fileName: activePlan.fileName,
+      content: livePlanDraft,
+    });
+  }, [activePlan, livePlanDraft, sessionId]);
   const latestPersistedContextUsage = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
       const usage = getMessageContextUsage(messages[index]);
@@ -1473,6 +1529,17 @@ function ChatPage() {
     [addToolApprovalResponse],
   );
 
+  const respondToPlanUserInput = useCallback(
+    (toolCallId: string, output: PlanUserInputResponse) => {
+      void addToolOutput({
+        tool: PLAN_USER_INPUT_TOOL_NAME,
+        toolCallId,
+        output,
+      });
+    },
+    [addToolOutput],
+  );
+
   function openSession(item: ChatIndexItem) {
     if (item.id === sessionId) return;
     setSearchParams(
@@ -1871,6 +1938,7 @@ function ChatPage() {
               key={message.id}
               message={message}
               onApprovalResponse={respondToApproval}
+              onPlanUserInputResponse={respondToPlanUserInput}
               generationStatus={
                 isGenerating && message.role === "assistant" && message.id === lastMessage?.id
                   ? {
@@ -1886,12 +1954,22 @@ function ChatPage() {
               workspaceId={workspaceKey || undefined}
             />
           ))}
-          {activePlan && activePlanHasContent ? (
+          {activePlan &&
+          (activePlanHasContent || (planMode === "plan" && isGenerating && planWriteObserved)) ? (
             <div className="chat-plan-indicator">
               <Button
                 aria-label={`打开 ${activePlan.fileName}`}
                 className="chat-plan-indicator-button"
                 onClick={() => {
+                  if (livePlanDraft !== undefined) {
+                    openPlanViewer({
+                      sessionId,
+                      planId: activePlan.id,
+                      fileName: activePlan.fileName,
+                      content: livePlanDraft,
+                    });
+                    return;
+                  }
                   void loadChatPlan(sessionId, activePlan.id)
                     .then((plan) =>
                       openPlanViewer({
@@ -1909,6 +1987,9 @@ function ChatPage() {
               >
                 <FileText className="size-3.5" />
                 {activePlan.fileName}
+                {isGenerating && planMode === "plan" ? (
+                  <LoaderCircle aria-hidden="true" className="size-3 animate-spin" />
+                ) : null}
               </Button>
             </div>
           ) : null}
@@ -1995,16 +2076,15 @@ function ChatPage() {
             />
           ) : null}
           <ChatTodoPanel messages={messages} />
-          {planMode === "plan" && activePlan && activePlanHasContent ? (
+          {showPlanStartAction ? (
             <Button
               aria-label="开始计划"
-              className="chat-plan-apply-button"
-              disabled={isGenerating}
+              className="chat-plan-start-float"
               onClick={confirmPlanExecution}
-              size="sm"
+              title="开始计划"
               type="button"
             >
-              <ArrowUp className="size-3.5" />
+              <Play aria-hidden="true" className="size-3.5 fill-current" />
               开始计划
             </Button>
           ) : null}
@@ -2144,6 +2224,7 @@ function ChatPage() {
                 className="chat-tool-button !size-7"
                 onClick={() => fileInputRef.current?.click()}
                 size="icon"
+                title="添加附件"
                 type="button"
                 variant="ghost"
               >
@@ -2307,6 +2388,7 @@ function ChatPage() {
                 }
                 onClick={isGenerating ? stopCurrentRun : submitMessage}
                 size="icon"
+                title={isGenerating ? "停止生成" : "发送消息"}
                 type="button"
               >
                 {isGenerating ? <CircleStop className="size-4" /> : <ArrowUp className="size-4" />}
@@ -2583,6 +2665,7 @@ const MessageBubble = memo(function MessageBubble({
   generationStatus,
   showTokenUsage,
   onApprovalResponse,
+  onPlanUserInputResponse,
   cwd,
   workspaceId,
 }: {
@@ -2591,6 +2674,7 @@ const MessageBubble = memo(function MessageBubble({
   generationStatus?: ChatGenerationStatusProps;
   showTokenUsage: boolean;
   onApprovalResponse: (id: string, approved: boolean) => void;
+  onPlanUserInputResponse: (toolCallId: string, output: PlanUserInputResponse) => void;
   cwd: string;
   workspaceId?: string;
 }) {
@@ -2657,17 +2741,51 @@ const MessageBubble = memo(function MessageBubble({
         <div className="chat-message-parts">
           {messageBlocks.map((block) => {
             if (block.kind === "tools") {
-              const visibleParts = block.parts.filter(
-                (part) => getToolName(part) !== TODO_TOOL_NAME,
+              const questionnaires = block.parts.flatMap((part) => {
+                if (getToolName(part) !== PLAN_USER_INPUT_TOOL_NAME || !("input" in part))
+                  return [];
+                const request = parsePlanUserInputRequest(part.input);
+                if (!request) return [];
+                const response =
+                  part.state === "output-available" && "output" in part
+                    ? parsePlanUserInputResponse(part.output)
+                    : undefined;
+                if (part.state === "output-available" && !response) return [];
+                if (
+                  !["input-streaming", "input-available", "output-available"].includes(part.state)
+                )
+                  return [];
+                return [{ part, request, response }];
+              });
+              const questionnaireCallIds = new Set(
+                questionnaires.map(({ part }) => part.toolCallId),
               );
-              if (visibleParts.length === 0) return null;
+              const visibleParts = block.parts.filter(
+                (part) =>
+                  getToolName(part) !== TODO_TOOL_NAME &&
+                  !questionnaireCallIds.has(part.toolCallId),
+              );
+              if (visibleParts.length === 0 && questionnaires.length === 0) return null;
               return (
-                <div className="chat-tool-calls" key={block.key}>
-                  <ChatToolCallGroup
-                    calls={visibleParts.map(toChatToolCall)}
-                    cwd={cwd}
-                    workspaceId={workspaceId}
-                  />
+                <div className="chat-message-tool-block" key={block.key}>
+                  {visibleParts.length > 0 ? (
+                    <div className="chat-tool-calls">
+                      <ChatToolCallGroup
+                        calls={visibleParts.map(toChatToolCall)}
+                        cwd={cwd}
+                        workspaceId={workspaceId}
+                      />
+                    </div>
+                  ) : null}
+                  {questionnaires.map(({ part, request, response }) => (
+                    <ChatPlanQuestionnaire
+                      disabled={part.state !== "input-available"}
+                      key={part.toolCallId}
+                      onSubmit={(output) => onPlanUserInputResponse(part.toolCallId, output)}
+                      request={request}
+                      response={response ?? undefined}
+                    />
+                  ))}
                 </div>
               );
             }

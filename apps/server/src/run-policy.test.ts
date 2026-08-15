@@ -10,9 +10,26 @@ import {
 
 describe("run policy", () => {
   it("warns near the internal plan limit and reserves the final step for handoff", () => {
+    assert.equal(
+      decideRunStep({ planMode: "plan", stepNumber: 0, planWritten: false }).toolChoice,
+      "required",
+    );
+    assert.equal(
+      decideRunStep({
+        planMode: "plan",
+        stepNumber: 0,
+        planWritten: false,
+        requiredToolChoiceSupported: false,
+      }).toolChoice,
+      "auto",
+    );
     assert.match(
       decideRunStep({ planMode: "plan", stepNumber: 89, planWritten: false }).instructions ?? "",
       /接近上限/,
+    );
+    assert.equal(
+      decideRunStep({ planMode: "plan", stepNumber: 89, planWritten: false }).toolChoice,
+      "required",
     );
     assert.equal(
       decideRunStep({ planMode: "plan", stepNumber: 90, planWritten: false }).instructions,
@@ -20,15 +37,15 @@ describe("run policy", () => {
     );
     assert.deepEqual(
       decideRunStep({ planMode: "plan", stepNumber: 98, planWritten: false }).activeTools,
-      ["plan_write"],
+      ["plan_write", "request_user_input"],
     );
     assert.equal(
       decideRunStep({ planMode: "plan", stepNumber: 99, planWritten: false }).toolChoice,
-      "none",
+      "required",
     );
     assert.match(
       decideRunStep({ planMode: "plan", stepNumber: 99, planWritten: false }).instructions ?? "",
-      /不得声称计划已写入或已完成/,
+      /不得输出普通文本问题/,
     );
     assert.match(
       decideRunStep({ planMode: "plan", stepNumber: 99, planWritten: true }).instructions ?? "",
@@ -48,12 +65,24 @@ describe("run policy", () => {
       }).outcome,
       "completed",
     );
-    assert.equal(
+    assert.deepEqual(
       evaluateRunCompletion({
         planMode: "plan",
         planWritten: false,
         finalText: "需要确认部署区域",
         finishReason: "stop",
+        terminalObserved: true,
+        aborted: false,
+      }),
+      { outcome: "error", stopReason: "incomplete-response" },
+    );
+    assert.equal(
+      evaluateRunCompletion({
+        planMode: "plan",
+        planWritten: false,
+        userInputRequested: true,
+        finalText: "",
+        finishReason: "tool-calls",
         terminalObserved: true,
         aborted: false,
       }).outcome,

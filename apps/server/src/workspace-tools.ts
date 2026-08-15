@@ -362,7 +362,7 @@ export function createWorkspaceTools(
       },
     }),
     read_file: tool({
-      description: `读取文本文件。单次最多 400 行和 64 KiB；结果截断时使用 startLine/endLine 继续读取。${pathScope}`,
+      description: `读取文本文件。单次最多返回 64 KiB；结果截断时使用 startLine/endLine 继续读取。${pathScope}`,
       inputSchema: z.object({
         path: z.string().min(1),
         startLine: z.number().int().positive().optional(),

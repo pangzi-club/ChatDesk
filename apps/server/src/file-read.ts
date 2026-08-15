@@ -1,7 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 
 export const MAX_READ_OUTPUT_BYTES = 64 * 1024;
-export const MAX_READ_LINES = 400;
 
 export type ReadFileOptions = {
   startLine?: number;
@@ -52,12 +51,9 @@ export async function readTextFileRange(
   if (!Number.isInteger(startLine) || startLine < 1 || startLine > lines.length) {
     throw new Error(`startLine 必须在 1-${lines.length} 之间`);
   }
-  const requestedEnd = options.endLine ?? Math.min(lines.length, startLine + MAX_READ_LINES - 1);
+  const requestedEnd = options.endLine ?? lines.length;
   if (!Number.isInteger(requestedEnd) || requestedEnd < startLine) {
     throw new Error("endLine 必须大于或等于 startLine");
-  }
-  if (requestedEnd - startLine + 1 > MAX_READ_LINES) {
-    throw new Error(`单次最多读取 ${MAX_READ_LINES} 行`);
   }
   const requestedActualEnd = Math.min(requestedEnd, lines.length);
   const output: string[] = [];
