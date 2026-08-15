@@ -100,6 +100,11 @@ type RunMetrics = {
   failureMessage?: string;
 };
 
+export type ModelStreamTimeout = {
+  firstChunkMs: number;
+  chunkMs: number;
+};
+
 class RunFailure extends Error {
   readonly stopReason: ChatRunStopReason;
 
@@ -112,6 +117,10 @@ class RunFailure extends Error {
 
 export { MAX_AGENT_STEPS };
 export const MODEL_CALL_MAX_RETRIES = 0;
+export const MODEL_STREAM_TIMEOUT: ModelStreamTimeout = {
+  firstChunkMs: 120_000,
+  chunkMs: 90_000,
+};
 
 export function resolveEffectiveWorkspace(
   current: ChatSession,
@@ -286,6 +295,34 @@ function diagnosticError(error: unknown, depth = 0): unknown {
   };
 }
 
+function observeStreamCancellation<T>(
+  stream: ReadableStream<T>,
+  onCancel: (reason: unknown) => void | Promise<void>,
+) {
+  const reader = stream.getReader();
+  let finished = false;
+  return new ReadableStream<T>({
+    async pull(controller) {
+      try {
+        const result = await reader.read();
+        if (result.done) {
+          finished = true;
+          controller.close();
+          return;
+        }
+        controller.enqueue(result.value);
+      } catch (error) {
+        finished = true;
+        controller.error(error);
+      }
+    },
+    cancel(reason) {
+      if (!finished) void Promise.resolve(onCancel(reason)).catch(() => undefined);
+      void reader.cancel(reason).catch(() => undefined);
+    },
+  });
+}
+
 function addUsage(current: ChatTokenUsage | undefined, next: ChatTokenUsage | undefined) {
   if (!next) return current;
   const result: ChatTokenUsage = {};
@@ -328,6 +365,7 @@ export class RunRegistry {
   private readonly createLanguageModel?: (
     model: import("./protocol.ts").ServerModelConfig,
   ) => LanguageModel;
+  private readonly modelStreamTimeout: ModelStreamTimeout;
 
   constructor(
     store: SessionStore,
@@ -338,6 +376,7 @@ export class RunRegistry {
     activityLogs: ActivityLogStore,
     resolveWorkspace: (id: string) => string | undefined = () => undefined,
     createLanguageModel?: (model: import("./protocol.ts").ServerModelConfig) => LanguageModel,
+    modelStreamTimeout: ModelStreamTimeout = MODEL_STREAM_TIMEOUT,
   ) {
     this.store = store;
     this.events = events;
@@ -347,6 +386,7 @@ export class RunRegistry {
     this.aiUsageLogs = aiUsageLogs;
     this.activityLogs = activityLogs;
     this.createLanguageModel = createLanguageModel;
+    this.modelStreamTimeout = modelStreamTimeout;
     this.journal = new RunJournal(store.root);
     this.reviewLog = new SandboxReviewLogStore(store.root);
   }
@@ -869,6 +909,27 @@ export class RunRegistry {
             error: diagnosticError(error),
           });
         },
+        onAbort: async ({ steps }) => {
+          const userAborted = controller.signal.aborted;
+          if (!userAborted) {
+            metrics.failureMessage = "模型流式响应超时或被上游中止";
+          }
+          await logRunDiagnostic(
+            userAborted ? "warning" : "error",
+            userAborted ? "模型流式响应已由用户中止" : "模型流式响应超时或中止",
+            {
+              completedStepCount: steps.length,
+              completedModelCallCount: metrics.modelCallCount,
+              pendingModelCalls: [...activeModelCalls.entries()].map(([callId, value]) => ({
+                callId,
+                attempt: value.attempt,
+                operation: value.operation,
+                elapsedMs: Date.now() - value.startedAt,
+              })),
+              timeout: this.modelStreamTimeout,
+            },
+          );
+        },
         onStepEnd: ({ stepNumber, usage, toolCalls, toolResults }) => {
           const completedToolResults = toolResults.filter(
             (toolResult): toolResult is NonNullable<typeof toolResult> => toolResult !== undefined,
@@ -914,6 +975,7 @@ export class RunRegistry {
           terminal.finishReason = finishReason;
         },
         abortSignal: controller.signal,
+        timeout: this.modelStreamTimeout,
         maxRetries: MODEL_CALL_MAX_RETRIES,
       });
       let completedMessages: UIMessage[] | undefined;
@@ -948,7 +1010,20 @@ export class RunRegistry {
         terminal,
       );
       void activeRun.done;
-      return createUIMessageStreamResponse({ stream: clientStream });
+      const observedClientStream = observeStreamCancellation(clientStream, (reason) =>
+        logRunDiagnostic("warning", "客户端响应流已取消", {
+          elapsedMs: Date.now() - Date.parse(now),
+          completedModelCallCount: metrics.modelCallCount,
+          pendingModelCalls: [...activeModelCalls.entries()].map(([callId, value]) => ({
+            callId,
+            attempt: value.attempt,
+            operation: value.operation,
+            elapsedMs: Date.now() - value.startedAt,
+          })),
+          reason: diagnosticError(reason),
+        }),
+      );
+      return createUIMessageStreamResponse({ stream: observedClientStream });
     } catch (error) {
       this.active.delete(sessionId);
       const runSummary: ChatRunSummary = {
@@ -1055,7 +1130,7 @@ export class RunRegistry {
         : latestDraft.parts.length > 0
           ? mergeRunMessage(session.messages, latestDraft)
           : session.messages;
-      const aborted = getRunAborted();
+      const aborted = getRunAborted() && controllerAborted(this.active.get(sessionId));
       if (aborted) {
         let interrupted = false;
         persistedMessages = persistedMessages.map((message, index) => {

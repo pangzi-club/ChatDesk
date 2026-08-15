@@ -131,6 +131,7 @@ import {
   saveChatSandboxMode,
 } from "@/lib/chat-sandbox";
 import {
+  appendServerActivityLog,
   type ChatServerSession,
   chatServerFetch,
   chatServerHeaders,
@@ -175,6 +176,10 @@ import {
   loadChatToolsSettings,
   saveChatToolsSettings,
 } from "@/lib/chat-tools";
+import {
+  isRecoverableChatTransportError,
+  serializeChatTransportError,
+} from "@/lib/chat-transport-diagnostics";
 import {
   formatTokenUsage,
   getMessageContextUsage,
@@ -425,6 +430,11 @@ function ChatPage() {
     () => mcpServers.filter((server) => server.enabledByDefault).map((server) => server.id),
     [mcpServers],
   );
+  const activeSessionRef = useRef(sessionId);
+  activeSessionRef.current = sessionId;
+  const attachedStreamSessionRef = useRef<string | null>(null);
+  const liveDraftsRef = useRef(new Map<string, UIMessage>());
+  const transportStartedAtRef = useRef<number | null>(null);
   const transport = useMemo(
     () =>
       createModelTransport(
@@ -440,16 +450,40 @@ function ChatPage() {
       ),
     [getPromptInput, selectedMcpIds, selectedModel, selectedSkillIds, sessionId],
   );
-  const { addToolApprovalResponse, error, messages, sendMessage, setMessages, status, stop } =
-    useChat({
-      id: sessionId,
-      transport,
-      throttle: CHAT_STREAM_UPDATE_THROTTLE_MS,
-      sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
-      onError: (chatError) => {
-        console.error("Chat request failed", chatError);
-      },
-    });
+  const {
+    addToolApprovalResponse,
+    clearError,
+    error,
+    messages,
+    sendMessage,
+    setMessages,
+    status,
+    stop,
+  } = useChat({
+    id: sessionId,
+    transport,
+    throttle: CHAT_STREAM_UPDATE_THROTTLE_MS,
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
+    onError: (chatError) => {
+      attachedStreamSessionRef.current = null;
+      if (isRecoverableChatTransportError(chatError)) {
+        const startedAt = transportStartedAtRef.current;
+        void appendServerActivityLog({
+          level: "error",
+          source: "Chat Transport Diagnostic",
+          message: "聊天响应流读取失败",
+          details: JSON.stringify({
+            sessionId,
+            elapsedMs: startedAt === null ? undefined : Date.now() - startedAt,
+            online: navigator.onLine,
+            visibilityState: document.visibilityState,
+            error: serializeChatTransportError(chatError),
+          }),
+        }).catch((logError) => console.error("Failed to persist chat transport error", logError));
+      }
+      console.error("Chat request failed", chatError);
+    },
+  });
   const [serverSessionStatuses, setServerSessionStatuses] = useState<
     Record<string, ChatServerSession["status"]>
   >({});
@@ -458,6 +492,30 @@ function ChatPage() {
   const serverRunActive =
     serverSessionStatus === "submitted" || serverSessionStatus === "streaming";
   const effectiveStatus = localRunActive ? status : (serverSessionStatus ?? status);
+  const recoverableTransportError = isRecoverableChatTransportError(error);
+  useEffect(() => {
+    if (!recoverableTransportError) return;
+    let active = true;
+    attachedStreamSessionRef.current = null;
+    void loadChatSession(sessionId)
+      .then((session) => {
+        if (!active || activeSessionRef.current !== sessionId || !session) return;
+        const lastAssistant = [...session.messages]
+          .reverse()
+          .find((message) => message.role === "assistant");
+        if (lastAssistant) liveDraftsRef.current.set(sessionId, lastAssistant);
+        setMessages(mergeLiveDraft(session.messages, liveDraftsRef.current.get(sessionId)));
+        clearError();
+      })
+      .catch((loadError) => console.error("Failed to recover chat after stream error", loadError));
+    return () => {
+      active = false;
+    };
+  }, [clearError, recoverableTransportError, sessionId, setMessages]);
+
+  useEffect(() => {
+    if (!localRunActive && !serverRunActive) transportStartedAtRef.current = null;
+  }, [localRunActive, serverRunActive]);
   const detectedMissingTools = useMemo(() => {
     for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
       const message = messages[messageIndex];
@@ -488,10 +546,6 @@ function ChatPage() {
       setEnvironmentImportOpen(false);
     },
   });
-  const activeSessionRef = useRef(sessionId);
-  activeSessionRef.current = sessionId;
-  const attachedStreamSessionRef = useRef<string | null>(null);
-  const liveDraftsRef = useRef(new Map<string, UIMessage>());
   const [contextCompaction, setContextCompaction] = useState<ChatContextCompaction | null>(null);
   const [liveContextUsage, setLiveContextUsage] = useState<ChatContextUsage | null>(null);
   const [runProgress, setRunProgress] = useState<ChatRunProgress | null>(null);
@@ -1373,6 +1427,7 @@ function ChatPage() {
     shouldFollowScrollRef.current = true;
     liveDraftsRef.current.delete(sessionId);
     attachedStreamSessionRef.current = sessionId;
+    transportStartedAtRef.current = Date.now();
     if (filesToSend.length > 0) {
       void (async () => {
         const files: FileUIPart[] = [];
@@ -1954,7 +2009,15 @@ function ChatPage() {
             </Button>
           ) : null}
         </div>
-        {error && <p className="chat-error">{error.message}</p>}
+        {error ? (
+          <p className="chat-error">
+            {recoverableTransportError
+              ? serverRunActive
+                ? "响应连接已中断，正在从后台任务恢复…"
+                : "与 Chat Server 的连接已中断，请稍后重试。"
+              : error.message}
+          </p>
+        ) : null}
         <div className="chat-workspace-bar">
           {messages.length === 0 ? (
             <DropdownMenu>

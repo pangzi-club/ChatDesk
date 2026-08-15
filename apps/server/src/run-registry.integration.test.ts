@@ -30,8 +30,11 @@ function usage() {
   };
 }
 
-function streamResult(chunks: MockStreamPart[]): MockStreamResult {
-  return { stream: simulateReadableStream({ chunks }) };
+function streamResult(
+  chunks: MockStreamPart[],
+  timing: { initialDelayInMs?: number; chunkDelayInMs?: number } = {},
+): MockStreamResult {
+  return { stream: simulateReadableStream({ chunks, ...timing }) };
 }
 
 function textResult(
@@ -93,6 +96,7 @@ async function fixture(
     doGenerate?: MockGenerateResult | MockLanguageModelV4["doGenerate"];
     planMode?: "plan" | "apply";
     planContent?: string;
+    modelStreamTimeout?: { firstChunkMs: number; chunkMs: number };
   } = {},
 ) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "chatdesk-run-"));
@@ -161,6 +165,7 @@ async function fixture(
     activityLogs,
     () => undefined,
     () => model,
+    options.modelStreamTimeout,
   );
   await registry.initialize();
   return {
@@ -213,6 +218,79 @@ describe("complete agent runs", () => {
     const streamError = diagnostics.find((entry) => entry.message === "模型流式响应错误");
     assert.match(streamError?.details ?? "", /Load failed/);
     assert.doesNotMatch(streamError?.details ?? "", /make a plan/);
+  });
+
+  it("ends a model stream that does not produce its first chunk in time", async () => {
+    const current = await fixture(
+      [
+        streamResult(
+          [
+            { type: "stream-start", warnings: [] },
+            { type: "response-metadata", id: "late-response", modelId: "mock-model" },
+            { type: "text-start", id: "late-text" },
+            { type: "text-delta", id: "late-text", delta: "too late" },
+          ],
+          { initialDelayInMs: 40 },
+        ),
+      ],
+      { modelStreamTimeout: { firstChunkMs: 5, chunkMs: 5 } },
+    );
+
+    const summary = await finishRun(current);
+    assert.equal(summary.outcome, "error");
+    const streamError = current.activityLogs
+      .list()
+      .find((entry) => entry.message === "模型流式响应超时或中止");
+    assert.match(streamError?.details ?? "", /timeout/i);
+  });
+
+  it("records client stream cancellation without cancelling the server run", async () => {
+    const current = await fixture([
+      streamResult(
+        [
+          { type: "stream-start", warnings: [] },
+          {
+            type: "response-metadata",
+            id: "delayed-response",
+            modelId: "mock-model",
+          },
+          { type: "text-start", id: "delayed-text" },
+          { type: "text-delta", id: "delayed-text", delta: "partial" },
+          { type: "text-end", id: "delayed-text" },
+          { type: "finish", finishReason: { unified: "stop", raw: "stop" }, usage: usage() },
+        ],
+        { chunkDelayInMs: 40 },
+      ),
+    ]);
+    const response = await current.registry.start("session-1", {
+      modelId: "mock",
+      planMode: current.planMode,
+      planId: current.plan.id,
+      toolNames: ["read_file"],
+    });
+    const reader = response.body?.getReader();
+    assert.ok(reader);
+    await reader.read();
+    await reader.cancel(new TypeError("Load failed"));
+
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if (current.activityLogs.list().some((entry) => entry.message === "客户端响应流已取消"))
+        break;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    const cancellation = current.activityLogs
+      .list()
+      .find((entry) => entry.message === "客户端响应流已取消");
+    assert.match(cancellation?.details ?? "", /Load failed/);
+    assert.doesNotMatch(cancellation?.details ?? "", /make a plan/);
+
+    for (let attempt = 0; attempt < 1_000 && current.registry.activeCount() > 0; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    assert.equal(current.registry.activeCount(), 0);
+    const session = await current.store.get("session-1");
+    const summary = session?.messages.at(-1)?.metadata as { runSummary?: ChatRunSummary };
+    assert.equal(summary.runSummary?.outcome, "awaiting-user");
   });
 
   it("persists an awaiting-user outcome for a plan question", async () => {
