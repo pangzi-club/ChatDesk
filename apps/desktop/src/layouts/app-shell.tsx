@@ -914,6 +914,8 @@ function WorkspaceConversationGroups() {
     null,
   );
   const [workspaceSort, setWorkspaceSort] = useState<WorkspaceSort>(loadWorkspaceSort);
+  const [desktopStateRestored, setDesktopStateRestored] = useState(() => !isTauri());
+  const [sidebarMotionEnabled, setSidebarMotionEnabled] = useState(false);
   const chatIndexQuery = useQuery({
     queryKey: ["chat-index"],
     queryFn: loadChatIndex,
@@ -941,6 +943,8 @@ function WorkspaceConversationGroups() {
   );
   const isPending = chatIndexQuery.isPending || workspaceProjectsQuery.isPending;
   const isError = chatIndexQuery.isError || workspaceProjectsQuery.isError;
+  // 首屏列表渲染与桌面状态恢复完成前，跳过 Sidebar 菜单的入场动画，保留展开/收起动画。
+  const suppressSidebarEntrance = shouldReduceMotion || !sidebarMotionEnabled;
   const deleteSessionMutation = useMutation({
     mutationFn: (item: ChatIndexItem) => deleteChatSession(item.id),
     onSuccess: async (_, item) => {
@@ -1025,9 +1029,19 @@ function WorkspaceConversationGroups() {
           );
         }
         if (isWorkspaceSort(sort)) setWorkspaceSort(sort);
+        setDesktopStateRestored(true);
       })
-      .catch((error) => console.error("Failed to load desktop navigation state", error));
+      .catch((error) => {
+        console.error("Failed to load desktop navigation state", error);
+        setDesktopStateRestored(true);
+      });
   }, []);
+
+  useEffect(() => {
+    if (!desktopStateRestored || isPending || isError) return;
+    const frame = requestAnimationFrame(() => setSidebarMotionEnabled(true));
+    return () => cancelAnimationFrame(frame);
+  }, [desktopStateRestored, isPending, isError]);
 
   useEffect(() => {
     const cleanup = subscribeChatServerEvents(serverPort, {
@@ -1270,14 +1284,22 @@ function WorkspaceConversationGroups() {
                       animate={{ height: "auto", opacity: 1 }}
                       className="overflow-hidden"
                       exit={{ height: 0, opacity: 0 }}
-                      initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
-                      transition={sidebarLayoutTransition}
+                      initial={suppressSidebarEntrance ? false : { height: 0, opacity: 0 }}
+                      transition={
+                        suppressSidebarEntrance
+                          ? REDUCED_MOTION_TRANSITION
+                          : sidebarLayoutTransition
+                      }
                     >
                       {group.sessions.length > 0 ? (
                         <motion.div
                           className="space-y-0.5"
-                          layout={!shouldReduceMotion}
-                          transition={sidebarLayoutTransition}
+                          layout={!suppressSidebarEntrance}
+                          transition={
+                            suppressSidebarEntrance
+                              ? REDUCED_MOTION_TRANSITION
+                              : sidebarLayoutTransition
+                          }
                         >
                           <AnimatePresence initial={false}>
                             {visibleSessions.map((session) => {
@@ -1297,10 +1319,16 @@ function WorkspaceConversationGroups() {
                                       : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
                                   }`}
                                   exit={{ height: 0, opacity: 0 }}
-                                  initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
+                                  initial={
+                                    suppressSidebarEntrance ? false : { height: 0, opacity: 0 }
+                                  }
                                   key={session.id}
-                                  layout={!shouldReduceMotion}
-                                  transition={sidebarMotionTransition}
+                                  layout={!suppressSidebarEntrance}
+                                  transition={
+                                    suppressSidebarEntrance
+                                      ? REDUCED_MOTION_TRANSITION
+                                      : sidebarMotionTransition
+                                  }
                                 >
                                   <button
                                     aria-current={isActive ? "page" : undefined}
