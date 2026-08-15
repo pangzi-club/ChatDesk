@@ -3,6 +3,7 @@ import {
   type ChatToolCallCardProps,
   getChatToolGroupStatus,
   getChatToolGroupSummary,
+  getChatToolRunningSummary,
 } from "./chat-tool-call-card";
 import {
   extractWorkspaceToolSummary,
@@ -33,7 +34,7 @@ describe("chat tool call group summaries", () => {
         toolCall({ input: { path: "b.ts" } }),
         toolCall({ input: { path: "c.ts" } }),
       ]),
-    ).toBe("本地开发 · 读取文件");
+    ).toBe("读取文件");
   });
 
   it("summarizes mixed calls using distinct tool names instead of the last call", () => {
@@ -43,7 +44,7 @@ describe("chat tool call group summaries", () => {
         toolCall({ toolName: "read_file" }),
         toolCall({ toolName: "bash" }),
       ]),
-    ).toBe("本地开发 · 搜索文件、本地开发 · 读取文件等");
+    ).toBe("搜索文件、读取文件等");
   });
 
   it("aggregates status across the group instead of trusting the last call", () => {
@@ -52,13 +53,21 @@ describe("chat tool call group summaries", () => {
         toolCall({ state: "output-error", errorText: "failed" }),
         toolCall({ state: "output-available" }),
       ]),
-    ).toBe("部分失败");
+    ).toBe("已完成");
     expect(
       getChatToolGroupStatus([
         toolCall({ state: "output-available" }),
         toolCall({ state: "input-streaming" }),
       ]),
     ).toBe("执行中");
+  });
+
+  it("describes a running call as an active action", () => {
+    expect(
+      getChatToolRunningSummary(
+        toolCall({ state: "input-streaming", input: { path: "package.json" } }),
+      ),
+    ).toBe("正在读取文件 · package.json");
   });
 });
 

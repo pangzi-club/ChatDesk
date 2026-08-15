@@ -10,7 +10,6 @@ import {
   type LucideIcon,
   MousePointerClick,
   Search,
-  ShieldAlert,
   Terminal,
   UserRoundCheck,
   Wrench,
@@ -106,13 +105,16 @@ export function getChatToolSummary(call: ChatToolCallCardProps) {
   return `${title}${query ? ` · ${query}` : ""}${workspaceSummary}`;
 }
 
+export function getChatToolRunningSummary(call: ChatToolCallCardProps) {
+  return `正在${getChatToolSummary(call)}`;
+}
+
 function isToolCallPending(call: ChatToolCallCardProps) {
-  return (
-    call.preliminary ||
-    call.state === "input-streaming" ||
-    call.state === "input-available" ||
-    call.state === "approval-requested"
-  );
+  return isToolCallRunning(call) || call.state === "approval-requested";
+}
+
+function isToolCallRunning(call: ChatToolCallCardProps) {
+  return call.preliminary || call.state === "input-streaming" || call.state === "input-available";
 }
 
 function getToolCallError(call: ChatToolCallCardProps) {
@@ -150,7 +152,6 @@ export function getChatToolGroupStatus(calls: ChatToolCallCardProps[]) {
   if (failedCalls.length === calls.length) {
     return calls.every((call) => call.state === "output-denied") ? "已拒绝" : "失败";
   }
-  if (failedCalls.length > 0) return "部分失败";
   return "已完成";
 }
 
@@ -266,17 +267,11 @@ function statusLabel(options: {
   return state;
 }
 
-function isSandboxFailure(errorText: string | undefined) {
-  return Boolean(errorText && /沙箱|sandbox/i.test(errorText));
-}
-
 function renderToolIcon(options: {
   pending: boolean;
   toolIcon: LucideIcon;
-  sandboxFailure?: boolean;
   manualApproval?: boolean;
 }) {
-  if (options.sandboxFailure) return <ShieldAlert className="size-3.5" />;
   if (options.manualApproval) return <UserRoundCheck className="size-3.5" />;
   if (options.pending) return <LoaderCircle className="size-3.5 animate-spin" />;
   const ToolIcon = options.toolIcon;
@@ -302,7 +297,6 @@ export function ChatToolCallCard({
   const fileTarget = resolveWorkspaceToolFileTarget(toolName, input, output);
   const resolvedError = errorText || outputError;
   const failed = state === "output-error" || Boolean(resolvedError);
-  const sandboxFailure = failed && isSandboxFailure(resolvedError);
   const manualApproval = state === "approval-requested" && !approval?.isAutomatic;
   const webSearch =
     toolName === "web_search" || toolName === "web_search_preview"
@@ -342,12 +336,9 @@ export function ChatToolCallCard({
     }
     return null;
   }, [failed, isImageGeneration, output]);
-  const pending =
-    !failed &&
-    (preliminary ||
-      state === "input-streaming" ||
-      state === "input-available" ||
-      state === "approval-requested");
+  const running =
+    !failed && (preliminary || state === "input-streaming" || state === "input-available");
+  const pending = running || (!failed && state === "approval-requested");
   const denied = state === "output-denied";
   const status = statusLabel({
     toolName,
@@ -364,6 +355,17 @@ export function ChatToolCallCard({
     : "";
   const workspaceTitle = workspaceSummary ? `${title}${workspaceSummary}` : undefined;
   const ToolIcon = getChatToolIcon(toolName);
+  const summaryTitle = running
+    ? getChatToolRunningSummary({
+        toolName,
+        state,
+        input,
+        output,
+        errorText,
+        approval,
+        preliminary,
+      })
+    : title;
 
   function openToolFile() {
     if (!fileTarget) return;
@@ -404,13 +406,22 @@ export function ChatToolCallCard({
         tabIndex={compact ? undefined : 0}
       >
         <span
-          className={`chat-tool-call-icon ${sandboxFailure ? "is-sandbox" : ""} ${manualApproval ? "is-manual" : ""}`}
-          title={sandboxFailure ? "沙箱拒绝" : manualApproval ? "等待人工确认" : undefined}
+          className={`chat-tool-call-icon ${manualApproval ? "is-manual" : ""}`}
+          title={
+            manualApproval
+              ? "等待人工确认"
+              : failed
+                ? "调用失败"
+                : denied
+                  ? "调用被拒绝"
+                  : running
+                    ? "调用中"
+                    : undefined
+          }
         >
           {renderToolIcon({
-            pending,
+            pending: running,
             toolIcon: ToolIcon,
-            sandboxFailure,
             manualApproval,
           })}
         </span>
@@ -418,14 +429,14 @@ export function ChatToolCallCard({
           className="chat-tool-call-title"
           title={isImageGeneration ? imageMeta?.fileName : workspaceTitle}
         >
-          <span className="chat-tool-call-title-name">{title}</span>
-          {summaryQuery ? (
+          <span className="chat-tool-call-title-name">{summaryTitle}</span>
+          {!running && summaryQuery ? (
             <span className="chat-tool-call-title-detail"> · {summaryQuery}</span>
           ) : null}
-          {isImageGeneration && imageMeta?.fileName ? (
+          {!running && isImageGeneration && imageMeta?.fileName ? (
             <span className="chat-tool-call-title-detail"> · {imageMeta.fileName}</span>
           ) : null}
-          {workspaceSummary ? (
+          {!running && workspaceSummary ? (
             fileTarget ? (
               <>
                 <span className="chat-tool-call-title-detail"> · </span>
@@ -555,20 +566,22 @@ export function ChatToolCallCard({
 
 export function ChatToolCallGroup({ calls, workspaceId, cwd }: ChatToolCallGroupProps) {
   const [open, setOpen] = useState(false);
-  const activeCall = [...calls].reverse().find(isToolCallPending) ?? calls[calls.length - 1];
+  const reversedCalls = [...calls].reverse();
+  const activeCall =
+    reversedCalls.find(isToolCallRunning) ??
+    reversedCalls.find(isToolCallPending) ??
+    calls[calls.length - 1];
   if (!activeCall) return null;
+  const running = calls.some(isToolCallRunning);
   const pending = calls.some(isToolCallPending);
   const hasError =
-    !pending &&
-    (calls.some(isToolCallFailed) || calls.some((call) => call.state === "output-denied"));
-  const activeError = getToolCallError(activeCall);
-  const sandboxFailure =
-    (activeCall.state === "output-error" || Boolean(activeError)) && isSandboxFailure(activeError);
+    !pending && calls.every((call) => isToolCallFailed(call) || call.state === "output-denied");
   const manualApproval =
     activeCall.state === "approval-requested" && !activeCall.approval?.isAutomatic;
   const ToolIcon = calls.length === 1 ? getChatToolIcon(activeCall.toolName) : Wrench;
   const summary = getChatToolGroupSummary(calls);
   const status = getChatToolGroupStatus(calls);
+  const displaySummary = running ? getChatToolRunningSummary(activeCall) : summary;
 
   return (
     <div
@@ -581,17 +594,24 @@ export function ChatToolCallGroup({ calls, workspaceId, cwd }: ChatToolCallGroup
         type="button"
       >
         <span
-          className={`chat-tool-call-icon ${sandboxFailure ? "is-sandbox" : ""} ${manualApproval ? "is-manual" : ""}`}
-          title={sandboxFailure ? "沙箱拒绝" : manualApproval ? "等待人工确认" : undefined}
+          className={`chat-tool-call-icon ${manualApproval ? "is-manual" : ""}`}
+          title={
+            manualApproval
+              ? "等待人工确认"
+              : hasError
+                ? "包含失败的调用"
+                : running
+                  ? "调用中"
+                  : undefined
+          }
         >
           {renderToolIcon({
-            pending,
+            pending: running,
             toolIcon: ToolIcon,
-            sandboxFailure,
             manualApproval,
           })}
         </span>
-        <span className="chat-tool-call-title">{summary}</span>
+        <span className="chat-tool-call-title">{displaySummary}</span>
         {calls.length > 1 ? <span className="chat-tool-call-count">{calls.length} 次</span> : null}
         <span className="chat-tool-call-status">{status}</span>
         <ChevronDown className={`chat-tool-call-chevron ${open ? "is-open" : ""}`} />

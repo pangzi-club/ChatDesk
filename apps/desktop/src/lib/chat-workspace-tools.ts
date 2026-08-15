@@ -4,11 +4,11 @@ import { z } from "zod";
 export type ChatWorkspaceToolContext = { getCwd: () => string };
 
 export const CHAT_WORKSPACE_TOOL_DISPLAY_NAMES: Record<string, string> = {
-  list_dir: "本地开发 · 列出目录",
-  search_files: "本地开发 · 搜索文件",
-  read_file: "本地开发 · 读取文件",
-  write_file: "本地开发 · 写入文件",
-  edit_file: "本地开发 · 编辑文件",
+  list_dir: "列出目录",
+  search_files: "搜索文件",
+  read_file: "读取文件",
+  write_file: "写入文件",
+  edit_file: "编辑文件",
   bash: "终端 · Bash",
 };
 
