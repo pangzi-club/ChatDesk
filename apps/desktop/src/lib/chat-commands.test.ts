@@ -42,10 +42,11 @@ describe("findActiveCommandTrigger", () => {
 
 describe("filterChatCommands", () => {
   it("returns all commands for an empty query", () => {
-    expect(filterChatCommands("").map((command) => command.name)).toEqual(["/test"]);
+    expect(filterChatCommands("").map((command) => command.name)).toEqual(["/plan", "/test"]);
   });
 
   it("filters by prefix with or without the leading slash", () => {
+    expect(filterChatCommands("plan").map((command) => command.name)).toEqual(["/plan"]);
     expect(filterChatCommands("te").map((command) => command.name)).toEqual(["/test"]);
     expect(filterChatCommands("/test").map((command) => command.name)).toEqual(["/test"]);
     expect(filterChatCommands("/x")).toEqual([]);

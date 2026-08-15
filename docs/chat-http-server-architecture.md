@@ -76,6 +76,7 @@ Node HTTP Server
 - 维护会话元数据：`id`、`title`、时间戳、`modelId`、`workspaceId` / `cwd`、MCP / skills 选择等；
 - 维护消息列表（至少支持 UI 可渲染的消息结构）；
 - 维护会话附件（文件本体 + 会话级元数据 + 消息级 file part），详见 [chat-attachments.md](chat-attachments.md)；
+- 维护会话级计划：每次进入 plan mode 创建 `sessions/<id>/plan-<随机版本>.md`，计划摘要保存在 session 元数据，文件不进入 workspace/Git；
 - 成为运行时的 session 真相源；与现有磁盘索引的同步策略需明确（由 server 写盘，或经宿主落盘）。
 
 ### 3.3 Run（多路并发生成）
@@ -94,6 +95,7 @@ Node HTTP Server
 
 - `session.status`：侧栏「进行中」依赖此事件；
 - `message.delta` / `message.updated`：增量或整段消息更新；
+- `plan.updated`：`plan_write` 原子更新计划后推送完整 Markdown，桌面侧栏无需重新加载即可刷新；
 - `tool.request` / `tool.result`：工具调用过程（若工具经宿主执行）；
 - `run.error` / `run.done`：失败与完成；
 - （可选）token usage / 耗时等元数据。
@@ -134,6 +136,7 @@ Server 负责「何时调工具、如何把结果写回模型」；工具的真�
 - 完整断线续流（`reconnectToStream`）；
 - 将全部工具执行完全移出宿主；
 - 替换现有归档 / History 体系（可继续读现有 archive，与 live runtime 分离）。
+- 计划文件的用户直接编辑（当前由模型 `plan_write` 管理，UI 只读）。
 
 ## 4. 当前代码位置
 

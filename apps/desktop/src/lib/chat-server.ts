@@ -2,6 +2,8 @@ import { ChatServerClient, ChatServerError } from "@chatdesk/chat-client";
 import type {
   ChatContextCompaction,
   ChatIndexItem,
+  ChatPlanMode,
+  ChatPlanSummary,
   ChatServerAiUsageLog,
   ChatServerConfigData,
   ChatServerProviderModel,
@@ -81,6 +83,7 @@ export type {
   ChatSession,
   DeveloperEnvironmentStatus,
 };
+export type ChatPlan = ChatPlanSummary & { content: string };
 
 function isTauri() {
   return tauriIsTauri() || (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window);
@@ -606,6 +609,55 @@ export async function ensureChatServerSession(
   await createClient(port).ensureSession(sessionId, options);
 }
 
+export async function createChatPlan(sessionId: string, port = CHAT_SERVER_DEFAULT_PORT) {
+  const response = await chatServerRequest(
+    `/v1/sessions/${encodeURIComponent(sessionId)}/plans`,
+    { method: "POST" },
+    port,
+  );
+  return (await response.json()) as ChatPlan;
+}
+
+export async function updateChatPlanMode(
+  sessionId: string,
+  planMode: ChatPlanMode,
+  activePlanId?: string,
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  const response = await chatServerRequest(
+    `/v1/sessions/${encodeURIComponent(sessionId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planMode, activePlanId }),
+    },
+    port,
+  );
+  return (await response.json()) as ChatSession;
+}
+
+export async function loadChatPlans(sessionId: string, port = CHAT_SERVER_DEFAULT_PORT) {
+  const response = await chatServerRequest(
+    `/v1/sessions/${encodeURIComponent(sessionId)}/plans`,
+    undefined,
+    port,
+  );
+  return (await response.json()) as ChatPlanSummary[];
+}
+
+export async function loadChatPlan(
+  sessionId: string,
+  planId: string,
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  const response = await chatServerRequest(
+    `/v1/sessions/${encodeURIComponent(sessionId)}/plans/${encodeURIComponent(planId)}`,
+    undefined,
+    port,
+  );
+  return (await response.json()) as ChatPlan;
+}
+
 export async function loadChatServerSession<T extends ChatSession>(
   sessionId: string,
   port = CHAT_SERVER_DEFAULT_PORT,
@@ -662,6 +714,13 @@ export function subscribeChatServerEvents(
       runId?: string;
       contextCompaction: ChatContextCompaction;
     }) => void;
+    onPlanUpdated?: (event: {
+      sessionId: string;
+      planId?: string;
+      planFileName?: string;
+      planContent?: string;
+      planUpdatedAt?: string;
+    }) => void;
   },
 ) {
   let closed = false;
@@ -699,6 +758,17 @@ export function subscribeChatServerEvents(
             sessionId: event.sessionId,
             runId: event.runId,
             contextCompaction: event.contextCompaction,
+          });
+        }
+      },
+      onPlanUpdated: (event) => {
+        if (event.sessionId) {
+          handlers.onPlanUpdated?.({
+            sessionId: event.sessionId,
+            planId: event.planId,
+            planFileName: event.planFileName,
+            planContent: event.planContent,
+            planUpdatedAt: event.planUpdatedAt,
           });
         }
       },

@@ -17,3 +17,8 @@ export function selectWorkspaceToolNames(toolNames: Iterable<string>): string[] 
     (name) => requested.has(name) || (name === "bash" && requested.has("terminal")),
   );
 }
+
+export function selectPlanWorkspaceToolNames(toolNames: Iterable<string>): string[] {
+  const requested = new Set(toolNames);
+  return ["list_dir", "search_files", "read_file"].filter((name) => requested.has(name));
+}

@@ -5,6 +5,14 @@ export const SESSION_STATUSES = ["idle", "submitted", "streaming", "error", "rea
 
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
 export type SandboxMode = "ask" | "auto" | "full";
+export type ChatPlanMode = "plan" | "apply";
+
+export type ChatPlanSummary = {
+  id: string;
+  fileName: string;
+  createdAt: string;
+  updatedAt: string;
+};
 
 export type ChatAttachmentKind = "image" | "video" | "audio" | "file";
 export type ChatAttachmentSource = "upload" | "generated" | "remote";
@@ -52,6 +60,9 @@ export type ChatSession = {
   systemPrompt?: SystemPromptSnapshot;
   messages: UIMessage[];
   attachments: ChatAttachment[];
+  planMode?: ChatPlanMode;
+  activePlanId?: string;
+  plans?: ChatPlanSummary[];
 };
 
 export type ChatIndexItem = Pick<
@@ -192,6 +203,8 @@ export type RunStartInput = {
   skillIds?: string[];
   title?: string;
   toolNames?: string[];
+  planMode?: ChatPlanMode;
+  planId?: string;
 };
 
 export const TODO_TOOL_NAME = "todo_write";
@@ -240,7 +253,8 @@ export type ServerEvent = {
     | "message.updated"
     | "context.compacted"
     | "run.error"
-    | "run.done";
+    | "run.done"
+    | "plan.updated";
   sessionId: string;
   runId?: string;
   status?: SessionStatus;
@@ -249,6 +263,10 @@ export type ServerEvent = {
   message?: UIMessage;
   error?: string;
   contextCompaction?: ChatContextCompaction;
+  planId?: string;
+  planFileName?: string;
+  planContent?: string;
+  planUpdatedAt?: string;
   timestamp: string;
 };
 

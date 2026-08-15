@@ -3,7 +3,10 @@ export type ChatCommand = {
   description: string;
 };
 
-export const CHAT_COMMANDS: ChatCommand[] = [{ name: "/test", description: "测试命令" }];
+export const CHAT_COMMANDS: ChatCommand[] = [
+  { name: "/plan", description: "进入计划模式" },
+  { name: "/test", description: "测试命令" },
+];
 
 // 命令必须由行首或空白字符引导，"/" 后到光标位置不能包含空白。
 const COMMAND_TRIGGER_PATTERN = /(?:^|\s)\/(\S*)$/;

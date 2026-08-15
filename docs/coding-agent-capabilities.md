@@ -23,7 +23,7 @@
 | | 内置工具 | web_search、web_fetch |
 | 任务编排 | Subagents | 派生子代理并行做独立子任务 |
 | | Todo 规划 | 复杂任务拆分为步骤并实时跟踪进度（todo_write） |
-| | 计划模式 | plan（只调研不落盘）与 apply（执行）分离 |
+| | 计划模式 | plan（只调研、只更新 session 计划文件）与 apply（执行）分离 |
 | 安全 | 审批 | 敏感操作允许/拒绝/询问 |
 | | 权限规则 | 路径白名单、命令白名单 |
 | | 沙箱 | 隔离执行环境，限制副作用 |
@@ -43,6 +43,7 @@
 - **中断/停止**：`AbortController`，`/runs/stop` 接口。
 - **流式输出**：UIMessage stream 双 tee（客户端流 + 服务端观察者），SSE 推送 `message.delta`。
 - **崩溃恢复**：`run-journal.ts` 在启动时恢复中断的 run 并标记 error。
+- **Plan Mode**：`/plan` 创建 session 级 `plan-<随机版本>.md`；plan mode 只允许读取 workspace 和 `plan_write`，计划通过 `plan.updated` SSE 实时刷新，确认后切换 apply。
 
 ### ✅ 环境感知
 - **文件工具**：`workspace-tools.ts` 提供 list_dir / read_file / write_file / edit_file / search_files，全部限制在 workspace 内（`withinRoot` 路径校验），512KB 文件上限。
@@ -109,11 +110,7 @@
    - 支持「回滚到某次变更前」。
    - 依赖：run 生命周期事件已存在（`run.done` / `run.error`），接入成本低。
 
-4. **计划模式（Plan / Apply 分离）**
-   - 进入 plan 模式时只允许只读工具（read/search/list），产出计划；确认后切 apply 模式执行。
-   - 收益：减少误操作，接近 Claude Code 的默认行为。
-
-5. **Web Fetch 工具**
+4. **Web Fetch 工具**
    - 已有 web_search，缺 `web_fetch`（打开 URL 读正文）。对调研类任务很常用。
 
 6. **终端交互增强**

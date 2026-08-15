@@ -1,6 +1,8 @@
 export type {
   ChatAttachment,
   ChatContextCompaction,
+  ChatPlanMode,
+  ChatPlanSummary,
   ChatSession,
   ChatTokenUsage,
   HealthResponse,

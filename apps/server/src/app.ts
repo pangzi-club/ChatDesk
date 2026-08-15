@@ -24,6 +24,7 @@ import { ImageGenerationStore } from "./image-generation-store.ts";
 import { McpRuntime } from "./mcp-runtime.ts";
 import { MemoryStore } from "./memory-store.ts";
 import { listProviderModels, testModelConnection } from "./model-test.ts";
+import { PlanStore } from "./plan-store.ts";
 import { nodePlatform } from "./platform/index.ts";
 import type { ChatSession, RunStartInput } from "./protocol.ts";
 import { RunRegistry, resolveEffectiveWorkspace } from "./run-registry.ts";
@@ -59,6 +60,11 @@ const runInputSchema = z.object({
   skillIds: z.array(z.string()).max(100).optional(),
   title: z.string().optional(),
   toolNames: z.array(z.string()).max(100).optional(),
+  planMode: z.enum(["plan", "apply"]).optional(),
+  planId: z
+    .string()
+    .regex(/^[a-z0-9]{8}$/)
+    .optional(),
 });
 
 const modelTestSchema = z.object({
@@ -287,6 +293,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   await chatConfig.init();
   const memory = new MemoryStore(config.dataDir);
   await memory.init();
+  const plans = new PlanStore(config.dataDir);
   const archive = new ArchiveStore(config.dataDir);
   await archive.init();
   const activityLogs = new ActivityLogStore(config.dataDir);
@@ -302,7 +309,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   await imageGeneration.init();
   const workspaces = new WorkspaceStore(config.dataDir);
   await workspaces.init();
-  const runs = new RunRegistry(store, events, chatConfig, (id) => workspaces.get(id)?.path);
+  const runs = new RunRegistry(store, events, chatConfig, plans, (id) => workspaces.get(id)?.path);
   const automations = new AutomationStore(config.dataDir);
   await automations.init();
   const automationScheduler = new AutomationScheduler(automations, (task, message) =>
@@ -1038,6 +1045,44 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
       return c.json(next);
     } catch (error) {
       return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+
+  app.post("/v1/sessions/:id/plans", async (c) => {
+    try {
+      const session = await store.get(c.req.param("id"));
+      if (!session) return jsonError("会话不存在", 404);
+      const summary = await plans.create(session.id);
+      const next = {
+        ...session,
+        planMode: "plan" as const,
+        activePlanId: summary.id,
+        plans: [summary, ...(session.plans ?? [])],
+      };
+      await store.save(next);
+      return c.json({ ...summary, content: "" }, 201);
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+
+  app.get("/v1/sessions/:id/plans", async (c) => {
+    try {
+      const session = await store.get(c.req.param("id"));
+      if (!session) return jsonError("会话不存在", 404);
+      return c.json(await plans.list(session.id));
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+
+  app.get("/v1/sessions/:id/plans/:planId", async (c) => {
+    try {
+      const session = await store.get(c.req.param("id"));
+      if (!session) return jsonError("会话不存在", 404);
+      return c.json(await plans.read(session.id, c.req.param("planId")));
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error), 404);
     }
   });
 

@@ -2768,6 +2768,28 @@
   color: inherit;
   font-weight: 600;
 }
+.chat-plan-apply-button {
+  border-radius: 8px;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--primary) 18%, transparent);
+  white-space: nowrap;
+}
+.chat-plan-indicator {
+  display: flex;
+  justify-content: center;
+  margin: 12px 0 4px;
+}
+.chat-plan-indicator-button {
+  gap: 6px;
+  max-width: min(100%, 360px);
+  overflow: hidden;
+  border-radius: 7px;
+  color: var(--chat-muted);
+  font-size: 11px;
+}
+.chat-plan-indicator-button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .chat-todo-float-label {
   max-width: 180px;
   overflow: hidden;
@@ -3153,6 +3175,33 @@
 .chat-composer-tools {
   flex: 1;
   flex-wrap: wrap;
+}
+.chat-plan-mode-chip {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--border));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--primary) 8%, var(--card));
+  padding: 0 4px 0 8px;
+  color: var(--primary);
+  font-size: 11px;
+}
+.chat-plan-mode-exit {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+}
+.chat-plan-mode-exit:hover,
+.chat-plan-mode-exit:focus-visible {
+  background: color-mix(in srgb, var(--primary) 14%, var(--card));
 }
 .chat-composer-actions {
   flex: 0 0 auto;

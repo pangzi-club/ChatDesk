@@ -16,6 +16,8 @@ import { createClientTools } from "./client-tools.ts";
 import type { EventHub } from "./events.ts";
 import { createKimiFetch } from "./kimi.ts";
 import { createMiniMaxFetch, isMiniMaxModel } from "./minimax.ts";
+import type { PlanStore } from "./plan-store.ts";
+import { createPlanWriteTool } from "./plan-tool.ts";
 import {
   type ChatContextCompaction,
   type ChatSession,
@@ -35,7 +37,11 @@ import { SandboxReviewLogStore } from "./sandbox-review-log.ts";
 import type { SessionStore } from "./store.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
 import { createTodoTool, TODO_TOOL_INSTRUCTIONS } from "./todo-tool.ts";
-import { hasWorkspace, selectWorkspaceToolNames } from "./tool-selection.ts";
+import {
+  hasWorkspace,
+  selectPlanWorkspaceToolNames,
+  selectWorkspaceToolNames,
+} from "./tool-selection.ts";
 import {
   createWorkspaceTools,
   preflightWorkspaceTool,
@@ -160,17 +166,20 @@ export class RunRegistry {
   private readonly reviewLog: SandboxReviewLogStore;
   private readonly toolApprovalSecret = randomUUID();
   private readonly resolveWorkspace: (id: string) => string | undefined;
+  private readonly plans: PlanStore;
 
   constructor(
     store: SessionStore,
     events: EventHub,
     chatConfig: ChatConfigStore,
+    plans: PlanStore,
     resolveWorkspace: (id: string) => string | undefined = () => undefined,
   ) {
     this.store = store;
     this.events = events;
     this.chatConfig = chatConfig;
     this.resolveWorkspace = resolveWorkspace;
+    this.plans = plans;
     this.journal = new RunJournal(store.root);
     this.reviewLog = new SandboxReviewLogStore(store.root);
   }
@@ -223,6 +232,14 @@ export class RunRegistry {
 
     const current = await this.store.get(sessionId);
     if (!current) throw new Error("会话不存在");
+    const planMode = input.planMode ?? current.planMode ?? "apply";
+    const planId = input.planId ?? current.activePlanId;
+    if (
+      planMode === "plan" &&
+      (!planId || !(current.plans ?? []).some((plan) => plan.id === planId))
+    ) {
+      throw new Error("计划模式缺少有效的 active plan");
+    }
     const sandboxMode = input.sandboxMode ?? chatConfig.sandboxMode ?? "ask";
     const approvedEscalationToolCallIds = collectApprovedToolCallIds(input.messages ?? []);
     const preflightResults: WorkspaceToolPreflightMap = new Map();
@@ -237,11 +254,19 @@ export class RunRegistry {
     const workspaceToolInstructions = effectiveCwd
       ? "本地源码检索规则：按文件名或关键词查找时必须使用 search_files，它支持 query 关键词并遵循 workspace 的 Git 排除规则；不要通过 bash 执行递归 grep、find 或 rg，尤其不要扫描 node_modules、.git、dist、target。"
       : "";
+    const activePlan = planId ? await this.plans.read(sessionId, planId).catch(() => null) : null;
+    const planInstructions =
+      planMode === "plan"
+        ? "当前处于计划模式：只能调研和提问，不能修改 workspace 代码。需求明确后必须使用 plan_write 更新完整计划；用户回答问题后再次更新计划。"
+        : activePlan
+          ? `用户已确认执行以下计划：\n\n${activePlan.content}`
+          : "";
     const prompt = await buildSystemPrompt({
       cwd: effectiveCwd,
       system: input.system,
       memory: input.memory,
       workspaceToolInstructions,
+      planInstructions,
       todoToolInstructions: TODO_TOOL_INSTRUCTIONS,
     });
     const session: ChatSession = {
@@ -256,6 +281,8 @@ export class RunRegistry {
       skillIds: input.skillIds ?? current.skillIds,
       systemPrompt: prompt,
       messages,
+      planMode,
+      activePlanId: planId,
     };
     await this.store.save(session);
 
@@ -286,10 +313,21 @@ export class RunRegistry {
         ...(system ? (model.responsive ? { instructions: system } : { system }) : {}),
         tools: model.supportsTools
           ? {
-              todo_write: createTodoTool(),
-              ...(createClientTools(input.toolNames) ?? {}),
+              ...(planMode === "plan"
+                ? {
+                    plan_write: createPlanWriteTool(
+                      this.plans,
+                      this.events,
+                      this.store,
+                      sessionId,
+                      planId as string,
+                    ),
+                  }
+                : { todo_write: createTodoTool() }),
+              ...(planMode === "plan" ? {} : (createClientTools(input.toolNames) ?? {})),
               ...createWorkspaceToolsForInput({
                 ...input,
+                planMode,
                 sandboxReadablePaths: chatConfig.sandboxReadablePaths,
                 developerToolPaths: chatConfig.developerToolPaths,
                 cwd: effectiveCwd,
@@ -308,8 +346,10 @@ export class RunRegistry {
                   runId,
                 }),
               }),
-              ...selectTools(createBusinessTools(chatConfig.apiKeys), input.toolNames),
-              ...(input.toolNames?.includes("web_search") && model.responsive
+              ...(planMode === "plan"
+                ? {}
+                : selectTools(createBusinessTools(chatConfig.apiKeys), input.toolNames)),
+              ...(planMode !== "plan" && input.toolNames?.includes("web_search") && model.responsive
                 ? { web_search: openai.tools.webSearch({}) as unknown as ToolSet[string] }
                 : {}),
             }
@@ -737,6 +777,19 @@ function createWorkspaceToolsForInput(
 ) {
   const cwd = input.cwd?.trim();
   if (!hasWorkspace(cwd)) return {};
+  if (input.planMode === "plan") {
+    const tools = createWorkspaceTools(
+      cwd,
+      "ask",
+      input.approvedEscalationToolCallIds,
+      input.onSandboxBlocked,
+      input.sandboxReadablePaths,
+      input.preflightResults,
+      input.developerToolPaths,
+    );
+    const selected = selectPlanWorkspaceToolNames(input.toolNames ?? []);
+    return Object.fromEntries(selected.map((name) => [name, tools[name]]));
+  }
   const names = new Set(input.toolNames ?? []);
   if (
     !["list_dir", "search_files", "read_file", "write_file", "edit_file", "terminal", "bash"].some(

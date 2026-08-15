@@ -1,6 +1,8 @@
 import { useChat } from "@ai-sdk/react";
 import {
   type ChatContextCompaction,
+  type ChatPlanMode,
+  type ChatPlanSummary,
   type RunStartInput,
   type SystemPromptSnapshot,
   TODO_TOOL_NAME,
@@ -128,9 +130,12 @@ import {
   chatServerFetch,
   chatServerHeaders,
   chatServerUrl,
+  createChatPlan,
   ensureChatServerSession,
   importDeveloperEnvironment,
   initializeChatServer,
+  loadChatPlan,
+  loadChatPlans,
   loadChatServerConfig,
   loadChatServerPort,
   loadChatServerSystemPromptPreview,
@@ -139,6 +144,7 @@ import {
   saveChatServerConfig,
   stopChatServerRun,
   subscribeChatServerEvents,
+  updateChatPlanMode,
 } from "@/lib/chat-server";
 import {
   type ChatDisplaySettings,
@@ -170,6 +176,7 @@ import { openFileViewer } from "@/lib/file-viewer-events";
 import { openImagePreview } from "@/lib/image-preview-events";
 import { loadMcpServers, saveMcpServers } from "@/lib/mcp";
 import { formatModelLabel, loadModels, type ModelConfig, sortModelsByName } from "@/lib/models";
+import { openPlanViewer, updatePlanViewer } from "@/lib/plan-viewer-events";
 import { openExternal } from "@/lib/platform";
 import {
   formatSkillsSystemHint,
@@ -315,6 +322,10 @@ function ChatPage() {
   const sortedModels = sortModelsByName(models);
   const [selectedModelId, setSelectedModelId] = useState("");
   const [input, setInput] = useState("");
+  const [planMode, setPlanMode] = useState<ChatPlanMode>("apply");
+  const [activePlanId, setActivePlanId] = useState<string | undefined>();
+  const [activePlanHasContent, setActivePlanHasContent] = useState(false);
+  const [plans, setPlans] = useState<ChatPlanSummary[]>([]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [commandCaret, setCommandCaret] = useState(0);
   const [commandIndex, setCommandIndex] = useState(0);
@@ -366,14 +377,20 @@ function ChatPage() {
   const [generationElapsedSeconds, setGenerationElapsedSeconds] = useState(0);
   const workspaceRef = useRef("");
   const sandboxModeRef = useRef<ChatSandboxMode>(DEFAULT_CHAT_SANDBOX_MODE);
+  const planModeRef = useRef<ChatPlanMode>("apply");
+  const activePlanIdRef = useRef<string | undefined>(undefined);
+  const planCreationRequestRef = useRef(0);
   const selectedCwd =
     workspaceProjects.find((project) => project.id === workspaceKey)?.path ?? sessionCwd;
   const workspaceLabel = selectedCwd ? pathBasename(selectedCwd) : DEFAULT_WORKSPACE_LABEL;
   workspaceRef.current = selectedCwd;
   sandboxModeRef.current = sandboxMode;
+  planModeRef.current = planMode;
+  activePlanIdRef.current = activePlanId;
   const selectedModel = models.find((model) => model.id === selectedModelId) ?? models[0];
   const selectedModelRef = useRef(selectedModel);
   selectedModelRef.current = selectedModel;
+  const activePlan = plans.find((plan) => plan.id === activePlanId);
 
   useEffect(() => {
     return () => {
@@ -430,6 +447,8 @@ function ChatPage() {
         () => sandboxModeRef.current,
         () => skillsRef.current.filter((skill) => selectedSkillIds.includes(skill.id)),
         () => selectedMcpIds,
+        () => planModeRef.current,
+        () => activePlanIdRef.current,
         getPromptInput,
       ),
     [getPromptInput, selectedMcpIds, selectedModel, selectedSkillIds, sessionId],
@@ -516,6 +535,10 @@ function ChatPage() {
       setSelectedSkillIds(savedChatSkillIds.filter((id) => installed.has(id)));
       sessionCreatedAtRef.current = new Date().toISOString();
       sessionAttachmentsRef.current = [];
+      setPlanMode("apply");
+      setActivePlanId(undefined);
+      setActivePlanHasContent(false);
+      setPlans([]);
       for (const item of pendingAttachmentsRef.current) {
         if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
       }
@@ -615,6 +638,37 @@ function ChatPage() {
         onContextCompacted: ({ sessionId: eventSessionId, contextCompaction }) => {
           if (activeSessionRef.current === eventSessionId) {
             setContextCompaction(contextCompaction);
+          }
+        },
+        onPlanUpdated: ({
+          sessionId: eventSessionId,
+          planId,
+          planFileName,
+          planContent,
+          planUpdatedAt,
+        }) => {
+          if (activeSessionRef.current !== eventSessionId || !planId) return;
+          setPlans((current) =>
+            current.map((plan) =>
+              plan.id === planId
+                ? {
+                    ...plan,
+                    fileName: planFileName ?? plan.fileName,
+                    updatedAt: planUpdatedAt ?? plan.updatedAt,
+                  }
+                : plan,
+            ),
+          );
+          if (planContent !== undefined) {
+            if (activePlanIdRef.current === planId) {
+              setActivePlanHasContent(Boolean(planContent.trim()));
+            }
+            updatePlanViewer({
+              sessionId: eventSessionId,
+              planId,
+              fileName: planFileName ?? `plan-${planId}.md`,
+              content: planContent,
+            });
           }
         },
       });
@@ -899,6 +953,28 @@ function ChatPage() {
     if (session.modelId) setSelectedModelId(session.modelId);
     const sessionSkillIds = session.skillIds ?? savedChatSkillIds;
     setSelectedSkillIds(sessionSkillIds.filter((id) => installedSkillIds.includes(id)));
+    setPlanMode(session.planMode ?? "apply");
+    setActivePlanId(session.activePlanId);
+    setActivePlanHasContent(false);
+    setPlans(session.plans ?? []);
+    void loadChatPlans(session.id)
+      .then((nextPlans) => {
+        if (activeSessionRef.current === session.id) setPlans(nextPlans);
+      })
+      .catch((error) => console.error("Failed to load chat plans", error));
+    if (session.activePlanId) {
+      const restoredPlanId = session.activePlanId;
+      void loadChatPlan(session.id, restoredPlanId)
+        .then((plan) => {
+          if (
+            activeSessionRef.current === session.id &&
+            activePlanIdRef.current === restoredPlanId
+          ) {
+            setActivePlanHasContent(Boolean(plan.content.trim()));
+          }
+        })
+        .catch((error) => console.error("Failed to load active chat plan", error));
+    }
   }, [
     chatSkillSelectionQuery.isPending,
     installedSkillIds,
@@ -1126,11 +1202,105 @@ function ChatPage() {
     }
   }
 
+  async function enterPlanMode() {
+    if (isGenerating) return;
+    const requestId = ++planCreationRequestRef.current;
+    const previousMode = planModeRef.current;
+    const previousPlanId = activePlanIdRef.current;
+    const previousHasContent = activePlanHasContent;
+    planModeRef.current = "plan";
+    activePlanIdRef.current = undefined;
+    setPlanMode("plan");
+    setActivePlanId(undefined);
+    setActivePlanHasContent(false);
+    try {
+      await initializeChatServer();
+      await ensureChatServerSession(sessionId, {
+        cwd: selectedCwd || undefined,
+        workspaceId: workspaceKey || undefined,
+      });
+      const plan = await createChatPlan(sessionId);
+      const summary: ChatPlanSummary = {
+        id: plan.id,
+        fileName: plan.fileName,
+        createdAt: plan.createdAt,
+        updatedAt: plan.updatedAt,
+      };
+      setPlans((current) => [summary, ...current.filter((item) => item.id !== summary.id)]);
+      void queryClient.invalidateQueries({ queryKey: ["chat-plans", sessionId] });
+      if (planCreationRequestRef.current !== requestId) {
+        if ((planModeRef.current as ChatPlanMode) === "apply") {
+          void updateChatPlanMode(sessionId, "apply", plan.id).catch((planError) =>
+            console.error("Failed to keep plan mode closed", planError),
+          );
+        }
+        return;
+      }
+      activePlanIdRef.current = plan.id;
+      setActivePlanId(plan.id);
+      setActivePlanHasContent(false);
+      if (planModeRef.current !== "plan") {
+        void updateChatPlanMode(sessionId, "apply", plan.id).catch((planError) =>
+          console.error("Failed to keep plan mode closed", planError),
+        );
+      }
+    } catch (planError) {
+      if (planCreationRequestRef.current !== requestId) return;
+      planModeRef.current = previousMode;
+      activePlanIdRef.current = previousPlanId;
+      setPlanMode(previousMode);
+      setActivePlanId(previousPlanId);
+      setActivePlanHasContent(previousHasContent);
+      console.error("Failed to enter plan mode", planError);
+    }
+  }
+
+  function exitPlanMode() {
+    planCreationRequestRef.current += 1;
+    planModeRef.current = "apply";
+    setPlanMode("apply");
+    void updateChatPlanMode(sessionId, "apply", activePlanIdRef.current).catch((planError) =>
+      console.error("Failed to exit plan mode", planError),
+    );
+  }
+
+  function isPlanConfirmation(text: string) {
+    return /^(开始执行|确认执行|按计划执行|开始实施|执行计划|apply)$/i.test(text.trim());
+  }
+
+  function confirmPlanExecution() {
+    if (!activePlanIdRef.current || isGenerating) return;
+    planModeRef.current = "apply";
+    setPlanMode("apply");
+    setInput("");
+    sendMessage({ text: "确认开始执行当前计划，请按计划修改代码并完成必要验证。" });
+  }
+
   function submitMessage() {
     const text = input.trim();
     const pending = pendingAttachmentsRef.current;
     const hasUploading = pending.some((item) => item.status === "uploading");
-    if ((!text && pending.length === 0) || isGenerating || hasUploading) return;
+    if (isGenerating || hasUploading) return;
+    if (text === "/plan") {
+      setInput("");
+      setCommandCaret(0);
+      setCommandDismissed(true);
+      void enterPlanMode();
+      return;
+    }
+    if (text.startsWith("/plan ")) {
+      const remaining = text.slice("/plan ".length);
+      setInput(remaining);
+      setCommandCaret(remaining.length);
+      setCommandDismissed(true);
+      void enterPlanMode();
+      return;
+    }
+    if (planModeRef.current === "plan" && isPlanConfirmation(text)) {
+      confirmPlanExecution();
+      return;
+    }
+    if (!text && pending.length === 0) return;
     const readyPending = pending.filter((item) => item.status === "ready");
     if (readyPending.length > 0) {
       const chatAttachments: ChatAttachment[] = readyPending.map((item) => ({
@@ -1285,6 +1455,14 @@ function ChatPage() {
   function applyChatCommand(command: ChatCommand) {
     const trigger = findActiveCommandTrigger(input, commandCaret);
     if (!trigger) return;
+    if (command.name === "/plan") {
+      const remaining = `${input.slice(0, trigger.start)}${input.slice(commandCaret)}`;
+      setInput(remaining);
+      setCommandCaret(Math.min(trigger.start, remaining.length));
+      setCommandDismissed(true);
+      void enterPlanMode();
+      return;
+    }
     const caret = trigger.start + command.name.length + 1;
     setInput(`${input.slice(0, trigger.start)}${command.name} ${input.slice(commandCaret)}`);
     setCommandCaret(caret);
@@ -1609,6 +1787,32 @@ function ChatPage() {
               workspaceId={workspaceKey || undefined}
             />
           ))}
+          {activePlan && activePlanHasContent ? (
+            <div className="chat-plan-indicator">
+              <Button
+                aria-label={`打开 ${activePlan.fileName}`}
+                className="chat-plan-indicator-button"
+                onClick={() => {
+                  void loadChatPlan(sessionId, activePlan.id)
+                    .then((plan) =>
+                      openPlanViewer({
+                        sessionId,
+                        planId: plan.id,
+                        fileName: plan.fileName,
+                        content: plan.content,
+                      }),
+                    )
+                    .catch((error) => console.error("Failed to open chat plan", error));
+                }}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                <FileText className="size-3.5" />
+                {activePlan.fileName}
+              </Button>
+            </div>
+          ) : null}
           {developerEnvironmentQuery.data &&
           unavailableDetectedTools.length > 0 &&
           environmentGuideKey !== dismissedEnvironmentGuide ? (
@@ -1692,6 +1896,19 @@ function ChatPage() {
             />
           ) : null}
           <ChatTodoPanel messages={messages} />
+          {planMode === "plan" && activePlan && activePlanHasContent ? (
+            <Button
+              aria-label="开始计划"
+              className="chat-plan-apply-button"
+              disabled={isGenerating}
+              onClick={confirmPlanExecution}
+              size="sm"
+              type="button"
+            >
+              <ArrowUp className="size-3.5" />
+              开始计划
+            </Button>
+          ) : null}
         </div>
         {error && <p className="chat-error">{error.message}</p>}
         <div className="chat-workspace-bar">
@@ -1825,6 +2042,20 @@ function ChatPage() {
               >
                 <Paperclip className="size-4" />
               </Button>
+              {planMode === "plan" ? (
+                <span aria-label="Plan mode" className="chat-plan-mode-chip" role="status">
+                  <span>Plan mode</span>
+                  <button
+                    aria-label="退出 Plan mode"
+                    className="chat-plan-mode-exit"
+                    onClick={exitPlanMode}
+                    title="退出 Plan mode"
+                    type="button"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </span>
+              ) : null}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
@@ -2480,6 +2711,8 @@ function createModelTransport(
   getSandboxMode: () => ChatSandboxMode,
   getSkills: () => SkillDefinition[],
   getMcpServerIds: () => string[],
+  getPlanMode: () => ChatPlanMode,
+  getPlanId: () => string | undefined,
   getPromptInput: () => Promise<
     Pick<RunStartInput, "system" | "memory" | "cwd" | "workspaceId" | "toolNames">
   >,
@@ -2500,6 +2733,8 @@ function createModelTransport(
       const cwd = promptInput.cwd;
       const workspaceId = promptInput.workspaceId;
       const sandboxMode = getSandboxMode();
+      const planMode = getPlanMode();
+      const planId = getPlanId();
       await ensureChatServerSession(sessionId, {
         cwd: cwd || undefined,
         workspaceId: workspaceId || undefined,
@@ -2524,6 +2759,8 @@ function createModelTransport(
           modelId: model.id,
           ...promptInput,
           sandboxMode,
+          planMode,
+          planId,
           mcpServerIds: getMcpServerIds(),
           skillIds: getSkills().map((skill) => skill.id),
           toolNames: activeTools.toolNames,

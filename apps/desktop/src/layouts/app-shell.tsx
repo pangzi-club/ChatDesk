@@ -98,6 +98,8 @@ import {
   canMonitorChatServer,
   canRestartChatServer,
   getChatServerStatus,
+  loadChatPlan,
+  loadChatPlans,
   loadChatServerPort,
   loadServerWorkspaceFile,
   loadServerWorkspaceFiles,
@@ -116,6 +118,7 @@ import {
 } from "@/lib/chat-store";
 import { subscribeFileViewerOpen } from "@/lib/file-viewer-events";
 import { subscribeImagePreviewOpen } from "@/lib/image-preview-events";
+import { subscribePlanViewerOpen, subscribePlanViewerUpdated } from "@/lib/plan-viewer-events";
 import { openExternal } from "@/lib/platform";
 import { settingsStore } from "@/lib/settings-store";
 import {
@@ -521,6 +524,64 @@ function AppShell() {
               ? state.tabs.map((item) => (item.id === existing.id ? refreshedTab : item))
               : [...state.tabs, tab],
             activeTabId: refreshedTab.id,
+          },
+        };
+      });
+    });
+  }, [location.search]);
+
+  useEffect(() => {
+    return subscribePlanViewerUpdated((request) => {
+      setChatWindowStates((current) => {
+        const next = { ...current };
+        for (const [key, state] of Object.entries(current)) {
+          const tabs = state.tabs.map((tab) =>
+            tab.kind === "plan" &&
+            tab.sessionId === request.sessionId &&
+            tab.planId === request.planId
+              ? { ...tab, title: request.fileName, content: request.content }
+              : tab,
+          );
+          if (tabs.some((tab, index) => tab !== state.tabs[index])) {
+            next[key] = { ...state, tabs };
+          }
+        }
+        return next;
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    return subscribePlanViewerOpen((request) => {
+      const key = getChatWindowKey(location.search);
+      setChatWindowStates((current) => {
+        const state = current[key] ?? createChatWindowState();
+        const existing = state.tabs.find(
+          (tab) => tab.kind === "plan" && tab.sessionId === request.sessionId,
+        );
+        const tab: ChatWindowTab = existing ?? {
+          id: createChatWindowTabId(),
+          title: request.fileName,
+          kind: "plan",
+          sessionId: request.sessionId,
+          planId: request.planId,
+          content: request.content,
+        };
+        const updated = {
+          ...tab,
+          title: request.fileName,
+          planId: request.planId,
+          content: request.content,
+        };
+        return {
+          ...current,
+          [key]: {
+            ...state,
+            open: true,
+            tabs: existing
+              ? state.tabs.map((item) => (item.id === existing.id ? updated : item))
+              : [...state.tabs, updated],
+            activeTabId: updated.id,
           },
         };
       });
@@ -1565,7 +1626,7 @@ function describeError(error: unknown) {
 type ChatWindowTab = {
   id: string;
   title: string;
-  kind?: "blank" | "workspace" | "git-diff" | "source" | "terminal" | "browser" | "image";
+  kind?: "blank" | "workspace" | "git-diff" | "source" | "terminal" | "browser" | "image" | "plan";
   workspaceId?: string;
   cwd?: string;
   path?: string;
@@ -1574,6 +1635,8 @@ type ChatWindowTab = {
   explorerView?: "files" | "git";
   editorMode?: "source" | "diff";
   url?: string;
+  sessionId?: string;
+  planId?: string;
 };
 type ChatWindowState = {
   open: boolean;
@@ -1658,6 +1721,7 @@ function ChatWorkspaceWindow({
   const terminalTab = activeTab?.kind === "terminal" ? activeTab : null;
   const browserTab = activeTab?.kind === "browser" ? activeTab : null;
   const imageTab = activeTab?.kind === "image" ? activeTab : null;
+  const planTab = activeTab?.kind === "plan" ? activeTab : null;
   const activeTabWorkspaceId = workspaceTab?.workspaceId;
   const [selectedPath, setSelectedPath] = useState(workspaceTab?.path ?? "");
   const [explorerView, setExplorerView] = useState<"files" | "git">(
@@ -1695,6 +1759,16 @@ function ChatWorkspaceWindow({
     queryFn: () => loadServerWorkspaceGit(activeTabWorkspaceId ?? ""),
     enabled: Boolean(activeTabWorkspaceId),
     refetchInterval: 15_000,
+  });
+  const planQuery = useQuery({
+    queryKey: ["chat-plan", planTab?.sessionId, planTab?.planId],
+    queryFn: () => loadChatPlan(planTab?.sessionId ?? "", planTab?.planId ?? ""),
+    enabled: Boolean(planTab?.sessionId && planTab?.planId),
+  });
+  const planListQuery = useQuery({
+    queryKey: ["chat-plans", planTab?.sessionId],
+    queryFn: () => loadChatPlans(planTab?.sessionId ?? ""),
+    enabled: Boolean(planTab?.sessionId),
   });
   const gitSummary =
     (gitQuery.data as { summary?: WorkspaceGitSummary } | undefined)?.summary ?? null;
@@ -1773,12 +1847,24 @@ function ChatWorkspaceWindow({
     setViewerError(null);
   }, [activeTabId, workspaceTab?.explorerView, workspaceTab?.kind, workspaceTab?.path]);
 
+  useEffect(() => {
+    if (!planTab) return;
+    const value = planQuery.data;
+    if (!value) return;
+    setEditorContent({
+      path: value.fileName,
+      mode: "source",
+      content: planTab.content ?? value.content,
+    });
+    setViewerError(null);
+  }, [planQuery.data, planTab]);
+
   // Refreshing Git intentionally reloads the selected editor snapshot as well as the sidebar.
   // biome-ignore lint/correctness/useExhaustiveDependencies: refresh intentionally reloads current editor content.
   useEffect(() => {
     let active = true;
     const path = activeEditorPath || selectedPath;
-    if (!workspaceTab || !path || !activeTabWorkspaceId) return;
+    if (!workspaceTab || !path || !activeTabWorkspaceId || planTab) return;
     const mode = explorerView === "git" ? "diff" : "source";
     if (mode === "source" && workspaceTab.path === path && workspaceTab.content !== undefined) {
       setEditorContent({ path, mode, content: workspaceTab.content });
@@ -1850,6 +1936,22 @@ function ChatWorkspaceWindow({
         tab.id === activeTab.id ? { ...tab, ...patch, kind: "workspace" } : tab,
       ),
     });
+  }
+
+  function selectPlan(planId: string) {
+    if (!planTab?.sessionId) return;
+    void loadChatPlan(planTab.sessionId, planId)
+      .then((plan) => {
+        onChange({
+          ...state,
+          tabs: state.tabs.map((tab) =>
+            tab.id === planTab.id
+              ? { ...tab, title: plan.fileName, planId: plan.id, content: plan.content }
+              : tab,
+          ),
+        });
+      })
+      .catch((error) => setViewerError(error instanceof Error ? error.message : String(error)));
   }
 
   function selectFile(path: string, mode: "source" | "diff") {
@@ -2244,6 +2346,7 @@ function ChatWorkspaceWindow({
                 {tab.kind === "terminal" ? <SquareTerminal className="size-3" /> : null}
                 {tab.kind === "browser" ? <Globe2 className="size-3" /> : null}
                 {tab.kind === "image" ? <Image className="size-3" /> : null}
+                {tab.kind === "plan" ? <ScrollText className="size-3" /> : null}
                 <span>{tab.title}</span>
               </button>
               <button
@@ -2309,7 +2412,58 @@ function ChatWorkspaceWindow({
           <PanelLeft className="size-3.5 rotate-180" />
         </Button>
       </div>
-      {workspaceTab ? (
+      {planTab ? (
+        <div className="chat-explorer-shell">
+          <header className="chat-explorer-toolbar">
+            <span className="chat-explorer-title">{planTab.title}</span>
+            <span className="chat-explorer-toolbar-actions">
+              <span className="file-viewer-readonly">只读计划</span>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    aria-label="选择历史计划"
+                    className="chat-workspace-window-add"
+                    size="icon"
+                    title="历史计划"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <ScrollText className="size-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" sideOffset={6}>
+                  {planListQuery.isLoading ? (
+                    <DropdownMenuItem disabled>加载中...</DropdownMenuItem>
+                  ) : planListQuery.data?.length ? (
+                    planListQuery.data.map((plan) => (
+                      <DropdownMenuItem key={plan.id} onSelect={() => selectPlan(plan.id)}>
+                        <ScrollText className="size-3.5" />
+                        {plan.fileName}
+                      </DropdownMenuItem>
+                    ))
+                  ) : (
+                    <DropdownMenuItem disabled>暂无历史计划</DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button
+                aria-label="刷新计划"
+                className="chat-workspace-window-add"
+                onClick={() => void planQuery.refetch()}
+                size="icon"
+                title="刷新计划"
+                type="button"
+                variant="ghost"
+              >
+                <RefreshCw className="size-3.5" />
+              </Button>
+            </span>
+          </header>
+          <div className="chat-explorer-editor-pane">
+            <div className="chat-explorer-editor">{editorView}</div>
+          </div>
+        </div>
+      ) : workspaceTab ? (
         <div className="chat-explorer-shell">
           <header className="chat-explorer-toolbar">
             <span className="chat-explorer-title">{gitQuery.data?.branch ?? "Explorer"}</span>
