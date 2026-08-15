@@ -3817,8 +3817,8 @@
 .chat-tool-call-title-detail {
   overflow-wrap: anywhere;
 }
-.chat-tool-call.is-pending .chat-tool-call-title,
-.chat-tool-call-group.is-pending .chat-tool-call-title {
+.chat-tool-call.is-pending:not(.is-compact) .chat-tool-call-title,
+.chat-tool-call-group.is-active .chat-tool-call-title {
   animation: chat-tool-call-title-pulse 1.35s ease-in-out infinite;
 }
 .chat-tool-call-status {
@@ -3866,19 +3866,15 @@
   text-align: left;
   cursor: pointer;
 }
-.chat-tool-call-count {
-  flex: none;
-  color: #898989;
-  font-size: 12px;
-  line-height: 1.45;
-}
 .chat-tool-call-group-items {
   max-height: 220px;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-color: color-mix(in srgb, var(--chat-muted) 45%, transparent) transparent;
   scrollbar-width: thin;
-  border-top: 0;
+  border: 1px solid var(--chat-line);
+  border-radius: 8px;
+  padding: 4px 10px;
 }
 .chat-tool-call-group-items .chat-tool-call {
   border-radius: 0;
@@ -4475,8 +4471,8 @@
   .chat-page .animate-spin,
   .chat-thinking span,
   .chat-generation-status-dot,
-  .chat-tool-call.is-pending .chat-tool-call-title,
-  .chat-tool-call-group.is-pending .chat-tool-call-title {
+  .chat-tool-call.is-pending:not(.is-compact) .chat-tool-call-title,
+  .chat-tool-call-group.is-active .chat-tool-call-title {
     animation: none;
   }
 

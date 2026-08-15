@@ -2836,7 +2836,7 @@ const MessageBubble = memo(function MessageBubble({
           ) : null}
         </div>
         <div className="chat-message-parts">
-          {messageBlocks.map((block) => {
+          {messageBlocks.map((block, blockIndex) => {
             if (block.kind === "tools") {
               const questionnaires = block.parts.flatMap((part) => {
                 if (getToolName(part) !== PLAN_USER_INPUT_TOOL_NAME || !("input" in part))
@@ -2868,6 +2868,11 @@ const MessageBubble = memo(function MessageBubble({
                   {visibleParts.length > 0 ? (
                     <div className="chat-tool-calls">
                       <ChatToolCallGroup
+                        active={
+                          isStreaming &&
+                          blockIndex === messageBlocks.length - 1 &&
+                          questionnaires.length === 0
+                        }
                         calls={visibleParts.map(toChatToolCall)}
                         cwd={cwd}
                         workspaceId={workspaceId}

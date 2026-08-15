@@ -1,6 +1,9 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import {
   type ChatToolCallCardProps,
+  ChatToolCallGroup,
   getChatToolGroupStatus,
   getChatToolGroupSummary,
   getChatToolRunningSummary,
@@ -68,6 +71,19 @@ describe("chat tool call group summaries", () => {
         toolCall({ state: "input-streaming", input: { path: "package.json" } }),
       ),
     ).toBe("正在读取文件 · package.json");
+  });
+
+  it("omits completed status and call count from the active group summary", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ChatToolCallGroup, {
+        active: true,
+        calls: [toolCall({ input: { path: "a.ts" } }), toolCall({ input: { path: "b.ts" } })],
+      }),
+    );
+
+    expect(markup).toContain("chat-tool-call-group is-active");
+    expect(markup).not.toContain("已完成");
+    expect(markup).not.toContain("2 次");
   });
 });
 

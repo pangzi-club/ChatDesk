@@ -54,6 +54,7 @@ export type ChatToolCallCardProps = {
 
 export type ChatToolCallGroupProps = {
   calls: ChatToolCallCardProps[];
+  active?: boolean;
   workspaceId?: string;
   cwd?: string;
 };
@@ -564,7 +565,12 @@ export function ChatToolCallCard({
   );
 }
 
-export function ChatToolCallGroup({ calls, workspaceId, cwd }: ChatToolCallGroupProps) {
+export function ChatToolCallGroup({
+  calls,
+  active = false,
+  workspaceId,
+  cwd,
+}: ChatToolCallGroupProps) {
   const [open, setOpen] = useState(false);
   const reversedCalls = [...calls].reverse();
   const activeCall =
@@ -585,7 +591,7 @@ export function ChatToolCallGroup({ calls, workspaceId, cwd }: ChatToolCallGroup
 
   return (
     <div
-      className={`chat-tool-call-group ${pending ? "is-pending" : ""} ${hasError ? "is-error" : ""}`}
+      className={`chat-tool-call-group ${active ? "is-active" : ""} ${pending ? "is-pending" : ""} ${hasError ? "is-error" : ""}`}
     >
       <button
         aria-expanded={open}
@@ -606,14 +612,13 @@ export function ChatToolCallGroup({ calls, workspaceId, cwd }: ChatToolCallGroup
           }
         >
           {renderToolIcon({
-            pending: running,
+            pending: active && running,
             toolIcon: ToolIcon,
             manualApproval,
           })}
         </span>
         <span className="chat-tool-call-title">{displaySummary}</span>
-        {calls.length > 1 ? <span className="chat-tool-call-count">{calls.length} 次</span> : null}
-        <span className="chat-tool-call-status">{status}</span>
+        {status !== "已完成" ? <span className="chat-tool-call-status">{status}</span> : null}
         <ChevronDown className={`chat-tool-call-chevron ${open ? "is-open" : ""}`} />
       </button>
       {open ? (
