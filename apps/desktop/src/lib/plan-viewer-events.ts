@@ -3,9 +3,12 @@ export type PlanViewerOpenRequest = {
   planId: string;
   fileName: string;
   content: string;
+  canExecute?: boolean;
 };
 
-export type PlanViewerUpdatedRequest = PlanViewerOpenRequest;
+export type PlanViewerUpdatedRequest = Omit<PlanViewerOpenRequest, "content"> & {
+  content?: string;
+};
 
 const EVENT_NAME = "chatdesk:plan-viewer-open";
 
@@ -37,4 +40,23 @@ export function subscribePlanViewerUpdated(listener: (request: PlanViewerUpdated
   };
   window.addEventListener(UPDATED_EVENT_NAME, handler);
   return () => window.removeEventListener(UPDATED_EVENT_NAME, handler);
+}
+
+export type PlanExecutionRequest = Pick<PlanViewerOpenRequest, "sessionId" | "planId">;
+
+const EXECUTE_EVENT_NAME = "chatdesk:plan-execution-requested";
+
+export function requestPlanExecution(request: PlanExecutionRequest) {
+  window.dispatchEvent(
+    new CustomEvent<PlanExecutionRequest>(EXECUTE_EVENT_NAME, { detail: request }),
+  );
+}
+
+export function subscribePlanExecutionRequested(listener: (request: PlanExecutionRequest) => void) {
+  const handler = (event: Event) => {
+    const detail = (event as CustomEvent<PlanExecutionRequest>).detail;
+    if (detail) listener(detail);
+  };
+  window.addEventListener(EXECUTE_EVENT_NAME, handler);
+  return () => window.removeEventListener(EXECUTE_EVENT_NAME, handler);
 }

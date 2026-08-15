@@ -31,6 +31,7 @@ import {
   Palette,
   PanelLeft,
   PanelTop,
+  Play,
   PlugZap,
   Plus,
   RefreshCw,
@@ -119,7 +120,11 @@ import {
 } from "@/lib/chat-store";
 import { subscribeFileViewerOpen } from "@/lib/file-viewer-events";
 import { subscribeImagePreviewOpen } from "@/lib/image-preview-events";
-import { subscribePlanViewerOpen, subscribePlanViewerUpdated } from "@/lib/plan-viewer-events";
+import {
+  requestPlanExecution,
+  subscribePlanViewerOpen,
+  subscribePlanViewerUpdated,
+} from "@/lib/plan-viewer-events";
 import { openExternal } from "@/lib/platform";
 import { settingsStore } from "@/lib/settings-store";
 import {
@@ -537,10 +542,19 @@ function AppShell() {
         const next = { ...current };
         for (const [key, state] of Object.entries(current)) {
           const tabs = state.tabs.map((tab) =>
-            tab.kind === "plan" &&
-            tab.sessionId === request.sessionId &&
-            tab.planId === request.planId
-              ? { ...tab, title: request.fileName, content: request.content }
+            tab.kind === "plan" && tab.sessionId === request.sessionId
+              ? {
+                  ...tab,
+                  ...(tab.planId === request.planId
+                    ? {
+                        title: request.fileName,
+                        content: request.content ?? tab.content,
+                        canExecute: request.canExecute ?? tab.canExecute,
+                      }
+                    : { canExecute: false }),
+                  activePlanId: request.planId,
+                  activePlanCanExecute: request.canExecute ?? tab.activePlanCanExecute,
+                }
               : tab,
           );
           if (tabs.some((tab, index) => tab !== state.tabs[index])) {
@@ -567,12 +581,18 @@ function AppShell() {
           sessionId: request.sessionId,
           planId: request.planId,
           content: request.content,
+          canExecute: request.canExecute,
+          activePlanId: request.planId,
+          activePlanCanExecute: request.canExecute,
         };
         const updated = {
           ...tab,
           title: request.fileName,
           planId: request.planId,
           content: request.content,
+          canExecute: request.canExecute,
+          activePlanId: request.planId,
+          activePlanCanExecute: request.canExecute,
         };
         return {
           ...current,
@@ -1638,6 +1658,9 @@ type ChatWindowTab = {
   url?: string;
   sessionId?: string;
   planId?: string;
+  canExecute?: boolean;
+  activePlanId?: string;
+  activePlanCanExecute?: boolean;
 };
 type ChatWindowState = {
   open: boolean;
@@ -1935,7 +1958,13 @@ function ChatWorkspaceWindow({
           ...state,
           tabs: state.tabs.map((tab) =>
             tab.id === planTab.id
-              ? { ...tab, title: plan.fileName, planId: plan.id, content: plan.content }
+              ? {
+                  ...tab,
+                  title: plan.fileName,
+                  planId: plan.id,
+                  content: plan.content,
+                  canExecute: plan.id === tab.activePlanId && tab.activePlanCanExecute,
+                }
               : tab,
           ),
         });
@@ -2425,6 +2454,23 @@ function ChatWorkspaceWindow({
             <span className="chat-explorer-title">{planTab.title}</span>
             <span className="chat-explorer-toolbar-actions">
               <span className="file-viewer-readonly">只读计划</span>
+              {planTab.canExecute && planTab.sessionId && planTab.planId ? (
+                <Button
+                  className="!h-7 !gap-1.5 !px-2.5 !text-[11px]"
+                  onClick={() =>
+                    requestPlanExecution({
+                      sessionId: planTab.sessionId ?? "",
+                      planId: planTab.planId ?? "",
+                    })
+                  }
+                  size="sm"
+                  title="执行当前计划"
+                  type="button"
+                >
+                  <Play className="size-3.5 fill-current" />
+                  执行计划
+                </Button>
+              ) : null}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button

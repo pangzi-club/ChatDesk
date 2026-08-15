@@ -3255,6 +3255,10 @@
 .chat-plan-mode-exit:focus-visible {
   background: color-mix(in srgb, var(--primary) 14%, var(--card));
 }
+.chat-plan-mode-exit:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
 .chat-composer-actions {
   flex: 0 0 auto;
 }
@@ -3508,10 +3512,6 @@
   border: 0;
   box-shadow: none;
 }
-.chat-plan-question-custom-submit {
-  width: 28px;
-  height: 28px;
-}
 .chat-plan-questionnaire-status {
   display: flex;
   align-items: center;
@@ -3542,6 +3542,29 @@
   overflow-wrap: anywhere;
   color: var(--chat-ink);
   font-weight: 500;
+}
+.chat-plan-questionnaire-footer {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--chat-line);
+  padding: 7px 10px 7px 12px;
+  color: var(--chat-muted);
+  font-size: 10px;
+}
+.chat-plan-questionnaire-footer > span.is-error {
+  color: var(--destructive);
+}
+.chat-plan-questionnaire-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+.chat-plan-questionnaire-actions > button:last-child {
+  min-width: 92px;
 }
 .chat-approval-strip-copy {
   display: flex;

@@ -205,7 +205,11 @@ import { openFileViewer } from "@/lib/file-viewer-events";
 import { openImagePreview } from "@/lib/image-preview-events";
 import { loadMcpServers, saveMcpServers } from "@/lib/mcp";
 import { formatModelLabel, loadModels, type ModelConfig, sortModelsByName } from "@/lib/models";
-import { openPlanViewer, updatePlanViewer } from "@/lib/plan-viewer-events";
+import {
+  openPlanViewer,
+  subscribePlanExecutionRequested,
+  updatePlanViewer,
+} from "@/lib/plan-viewer-events";
 import { openExternal } from "@/lib/platform";
 import {
   formatSkillsSystemHint,
@@ -222,6 +226,7 @@ const DEFAULT_WORKSPACE_LABEL = "Default Workspace";
 const CHAT_MESSAGE_COLLAPSE_CHAR_LIMIT = 1200;
 const CHAT_MESSAGE_COLLAPSE_LINE_LIMIT = 18;
 const CHAT_STREAM_UPDATE_THROTTLE_MS = 50;
+type PlanTransitionState = "idle" | "entering" | "exiting";
 const EMPTY_CHAT_ACTIONS = [
   {
     label: "探索并理解代码",
@@ -331,6 +336,8 @@ function ChatPage() {
   const [activePlanId, setActivePlanId] = useState<string | undefined>();
   const [activePlanHasContent, setActivePlanHasContent] = useState(false);
   const [plans, setPlans] = useState<ChatPlanSummary[]>([]);
+  const [planTransition, setPlanTransition] = useState<PlanTransitionState>("idle");
+  const [planModeError, setPlanModeError] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [commandCaret, setCommandCaret] = useState(0);
   const [commandIndex, setCommandIndex] = useState(0);
@@ -385,6 +392,8 @@ function ChatPage() {
   const planModeRef = useRef<ChatPlanMode>("apply");
   const activePlanIdRef = useRef<string | undefined>(undefined);
   const planCreationRequestRef = useRef(0);
+  const planTransitionRef = useRef<PlanTransitionState>("idle");
+  const confirmPlanExecutionRef = useRef<() => void>(() => {});
   const selectedCwd =
     workspaceProjects.find((project) => project.id === workspaceKey)?.path ?? sessionCwd;
   const workspaceLabel = selectedCwd ? pathBasename(selectedCwd) : DEFAULT_WORKSPACE_LABEL;
@@ -392,6 +401,7 @@ function ChatPage() {
   sandboxModeRef.current = sandboxMode;
   planModeRef.current = planMode;
   activePlanIdRef.current = activePlanId;
+  planTransitionRef.current = planTransition;
   const selectedModel = models.find((model) => model.id === selectedModelId) ?? models[0];
   const selectedModelRef = useRef(selectedModel);
   selectedModelRef.current = selectedModel;
@@ -601,10 +611,16 @@ function ChatPage() {
       setSelectedSkillIds(savedChatSkillIds.filter((id) => installed.has(id)));
       sessionCreatedAtRef.current = new Date().toISOString();
       sessionAttachmentsRef.current = [];
+      planCreationRequestRef.current += 1;
+      planTransitionRef.current = "idle";
+      planModeRef.current = "apply";
+      activePlanIdRef.current = undefined;
       setPlanMode("apply");
       setActivePlanId(undefined);
       setActivePlanHasContent(false);
       setPlans([]);
+      setPlanTransition("idle");
+      setPlanModeError("");
       for (const item of pendingAttachmentsRef.current) {
         if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
       }
@@ -930,22 +946,25 @@ function ChatPage() {
     activePlan &&
       isPlanExecutionReady(planMode, activePlanHasContent, serverRunSummaries[sessionId]),
   );
-  const showPlanStartAction =
+  const canExecutePlan =
     planReady &&
+    planTransition === "idle" &&
+    !isGenerating &&
     Boolean(selectedModel) &&
     !input.trim() &&
-    pendingAttachments.length === 0 &&
-    !isGenerating;
+    pendingAttachments.length === 0;
+  const showPlanStartAction = canExecutePlan;
 
   useEffect(() => {
-    if (!activePlan || livePlanDraft === undefined) return;
+    if (!activePlan) return;
     updatePlanViewer({
       sessionId,
       planId: activePlan.id,
       fileName: activePlan.fileName,
-      content: livePlanDraft,
+      ...(livePlanDraft === undefined ? {} : { content: livePlanDraft }),
+      canExecute: canExecutePlan,
     });
-  }, [activePlan, livePlanDraft, sessionId]);
+  }, [activePlan, canExecutePlan, livePlanDraft, sessionId]);
   const latestPersistedContextUsage = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
       const usage = getMessageContextUsage(messages[index]);
@@ -1095,6 +1114,9 @@ function ChatPage() {
     setActivePlanId(session.activePlanId);
     setActivePlanHasContent(false);
     setPlans(session.plans ?? []);
+    planTransitionRef.current = "idle";
+    setPlanTransition("idle");
+    setPlanModeError("");
     void loadChatPlans(session.id)
       .then((nextPlans) => {
         if (activeSessionRef.current === session.id) setPlans(nextPlans);
@@ -1357,103 +1379,87 @@ function ChatPage() {
   }
 
   async function enterPlanMode() {
-    if (isGenerating) return;
+    if (isGenerating || planTransitionRef.current !== "idle") return false;
     const requestId = ++planCreationRequestRef.current;
-    const previousMode = planModeRef.current;
-    const previousPlanId = activePlanIdRef.current;
-    const previousHasContent = activePlanHasContent;
-    planModeRef.current = "plan";
-    activePlanIdRef.current = undefined;
-    setPlanMode("plan");
-    setActivePlanId(undefined);
-    setActivePlanHasContent(false);
+    const targetSessionId = sessionId;
+    planTransitionRef.current = "entering";
+    setPlanTransition("entering");
+    setPlanModeError("");
     try {
       await initializeChatServer();
-      await ensureChatServerSession(sessionId, {
+      await ensureChatServerSession(targetSessionId, {
         cwd: selectedCwd || undefined,
         workspaceId: workspaceKey || undefined,
       });
-      const plan = await createChatPlan(sessionId);
+      const plan = await createChatPlan(targetSessionId);
       const summary: ChatPlanSummary = {
         id: plan.id,
         fileName: plan.fileName,
         createdAt: plan.createdAt,
         updatedAt: plan.updatedAt,
       };
-      setPlans((current) => [summary, ...current.filter((item) => item.id !== summary.id)]);
-      void queryClient.invalidateQueries({ queryKey: ["chat-plans", sessionId] });
-      if (planCreationRequestRef.current !== requestId) {
-        if ((planModeRef.current as ChatPlanMode) === "apply") {
-          void updateChatPlanMode(sessionId, "apply", plan.id).catch((planError) =>
-            console.error("Failed to keep plan mode closed", planError),
-          );
-        }
-        return;
+      if (
+        planCreationRequestRef.current !== requestId ||
+        activeSessionRef.current !== targetSessionId
+      ) {
+        void updateChatPlanMode(targetSessionId, "apply", plan.id).catch((planError) =>
+          console.error("Failed to close stale plan mode", planError),
+        );
+        return false;
       }
+      setPlans((current) => [summary, ...current.filter((item) => item.id !== summary.id)]);
+      void queryClient.invalidateQueries({ queryKey: ["chat-plans", targetSessionId] });
+      planModeRef.current = "plan";
       activePlanIdRef.current = plan.id;
+      setPlanMode("plan");
       setActivePlanId(plan.id);
       setActivePlanHasContent(false);
-      if (planModeRef.current !== "plan") {
-        void updateChatPlanMode(sessionId, "apply", plan.id).catch((planError) =>
-          console.error("Failed to keep plan mode closed", planError),
-        );
-      }
+      return true;
     } catch (planError) {
-      if (planCreationRequestRef.current !== requestId) return;
-      planModeRef.current = previousMode;
-      activePlanIdRef.current = previousPlanId;
-      setPlanMode(previousMode);
-      setActivePlanId(previousPlanId);
-      setActivePlanHasContent(previousHasContent);
+      if (planCreationRequestRef.current !== requestId) return false;
+      setPlanModeError(
+        planError instanceof Error ? planError.message : "进入计划模式失败，请重试。",
+      );
       console.error("Failed to enter plan mode", planError);
+      return false;
+    } finally {
+      if (planCreationRequestRef.current === requestId) {
+        planTransitionRef.current = "idle";
+        setPlanTransition("idle");
+      }
     }
   }
 
-  function exitPlanMode() {
-    planCreationRequestRef.current += 1;
-    planModeRef.current = "apply";
-    setPlanMode("apply");
-    void updateChatPlanMode(sessionId, "apply", activePlanIdRef.current).catch((planError) =>
-      console.error("Failed to exit plan mode", planError),
-    );
+  async function exitPlanMode() {
+    if (planTransitionRef.current !== "idle" || isGenerating) return;
+    const requestId = ++planCreationRequestRef.current;
+    planTransitionRef.current = "exiting";
+    setPlanTransition("exiting");
+    setPlanModeError("");
+    try {
+      await updateChatPlanMode(sessionId, "apply", activePlanIdRef.current);
+      if (planCreationRequestRef.current !== requestId) return;
+      planModeRef.current = "apply";
+      setPlanMode("apply");
+    } catch (planError) {
+      if (planCreationRequestRef.current !== requestId) return;
+      setPlanModeError(
+        planError instanceof Error ? planError.message : "退出计划模式失败，请重试。",
+      );
+      console.error("Failed to exit plan mode", planError);
+    } finally {
+      if (planCreationRequestRef.current === requestId) {
+        planTransitionRef.current = "idle";
+        setPlanTransition("idle");
+      }
+    }
   }
 
   function isPlanConfirmation(text: string) {
     return /^(开始执行|确认执行|按计划执行|开始实施|执行计划|apply)$/i.test(text.trim());
   }
 
-  function confirmPlanExecution() {
-    if (!activePlanIdRef.current || isGenerating) return;
-    planModeRef.current = "apply";
-    setPlanMode("apply");
-    setInput("");
-    sendMessage({ text: "确认开始执行当前计划，请按计划修改代码并完成必要验证。" });
-  }
-
-  function submitMessage() {
-    const text = input.trim();
-    const pending = pendingAttachmentsRef.current;
-    const hasUploading = pending.some((item) => item.status === "uploading");
-    if (isGenerating || hasUploading) return;
-    if (text === "/plan") {
-      setInput("");
-      setCommandCaret(0);
-      setCommandDismissed(true);
-      void enterPlanMode();
-      return;
-    }
-    if (text.startsWith("/plan ")) {
-      const remaining = text.slice("/plan ".length);
-      setInput(remaining);
-      setCommandCaret(remaining.length);
-      setCommandDismissed(true);
-      void enterPlanMode();
-      return;
-    }
-    if (planModeRef.current === "plan" && isPlanConfirmation(text)) {
-      confirmPlanExecution();
-      return;
-    }
+  function sendPreparedMessage(text: string, pending: PendingAttachment[]) {
     if (!text && pending.length === 0) return;
     const readyPending = pending.filter((item) => item.status === "ready");
     if (readyPending.length > 0) {
@@ -1480,6 +1486,7 @@ function ChatPage() {
     pendingAttachmentsRef.current = [];
     setInput("");
     setContextCompaction(null);
+    setPlanModeError("");
     shouldFollowScrollRef.current = true;
     liveDraftsRef.current.delete(sessionId);
     attachedStreamSessionRef.current = sessionId;
@@ -1511,6 +1518,73 @@ function ChatPage() {
     }
   }
 
+  function confirmPlanExecution() {
+    if (planModeRef.current !== "plan") return;
+    if (isGenerating || planTransitionRef.current !== "idle") return;
+    if (!planReady || !activePlanIdRef.current) {
+      setPlanModeError("计划尚未完成，请等待计划生成结束后再执行。");
+      return;
+    }
+    if (!selectedModelRef.current) {
+      setPlanModeError("请先配置并选择一个模型。");
+      return;
+    }
+    if (input.trim()) {
+      setPlanModeError("执行计划前请先发送或清空 Composer 中的补充说明。");
+      return;
+    }
+    if (pendingAttachmentsRef.current.length > 0) {
+      setPlanModeError("执行计划前请先发送或移除待处理附件。");
+      return;
+    }
+    planModeRef.current = "apply";
+    setPlanMode("apply");
+    sendPreparedMessage("确认开始执行当前计划，请按计划修改代码并完成必要验证。", []);
+  }
+  confirmPlanExecutionRef.current = confirmPlanExecution;
+
+  useEffect(() => {
+    return subscribePlanExecutionRequested((request) => {
+      if (request.sessionId !== sessionId || request.planId !== activePlanIdRef.current) return;
+      confirmPlanExecutionRef.current();
+    });
+  }, [sessionId]);
+
+  function submitMessage() {
+    const text = input.trim();
+    const pending = pendingAttachmentsRef.current;
+    const hasUploading = pending.some((item) => item.status === "uploading");
+    if (isGenerating || hasUploading || planTransitionRef.current !== "idle") return;
+    if (text === "/plan") {
+      setInput("");
+      setCommandCaret(0);
+      setCommandDismissed(true);
+      void enterPlanMode();
+      return;
+    }
+    if (text.startsWith("/plan ")) {
+      const remaining = text.slice("/plan ".length).trim();
+      setInput("");
+      setCommandCaret(0);
+      setCommandDismissed(true);
+      void enterPlanMode().then((entered) => {
+        if (entered) {
+          sendPreparedMessage(remaining, pending);
+          return;
+        }
+        setInput(remaining);
+        setCommandCaret(remaining.length);
+        requestAnimationFrame(() => inputRef.current?.focus());
+      });
+      return;
+    }
+    if (planModeRef.current === "plan" && isPlanConfirmation(text)) {
+      confirmPlanExecution();
+      return;
+    }
+    sendPreparedMessage(text, pending);
+  }
+
   function stopCurrentRun() {
     stop();
     void stopChatServerRun(sessionId).catch((error) => {
@@ -1530,8 +1604,11 @@ function ChatPage() {
   );
 
   const respondToPlanUserInput = useCallback(
-    (toolCallId: string, output: PlanUserInputResponse) => {
-      void addToolOutput({
+    async (toolCallId: string, output: PlanUserInputResponse) => {
+      if (planModeRef.current !== "plan" || planTransitionRef.current !== "idle") {
+        throw new Error("计划模式已关闭");
+      }
+      await addToolOutput({
         tool: PLAN_USER_INPUT_TOOL_NAME,
         toolCallId,
         output,
@@ -1939,6 +2016,7 @@ function ChatPage() {
               message={message}
               onApprovalResponse={respondToApproval}
               onPlanUserInputResponse={respondToPlanUserInput}
+              planInputEnabled={planMode === "plan" && planTransition === "idle"}
               generationStatus={
                 isGenerating && message.role === "assistant" && message.id === lastMessage?.id
                   ? {
@@ -1967,6 +2045,7 @@ function ChatPage() {
                       planId: activePlan.id,
                       fileName: activePlan.fileName,
                       content: livePlanDraft,
+                      canExecute: canExecutePlan,
                     });
                     return;
                   }
@@ -1977,6 +2056,7 @@ function ChatPage() {
                         planId: plan.id,
                         fileName: plan.fileName,
                         content: plan.content,
+                        canExecute: canExecutePlan,
                       }),
                     )
                     .catch((error) => console.error("Failed to open chat plan", error));
@@ -2078,24 +2158,25 @@ function ChatPage() {
           <ChatTodoPanel messages={messages} />
           {showPlanStartAction ? (
             <Button
-              aria-label="开始计划"
+              aria-label="执行计划"
               className="chat-plan-start-float"
               onClick={confirmPlanExecution}
-              title="开始计划"
+              title="执行当前计划"
               type="button"
             >
               <Play aria-hidden="true" className="size-3.5 fill-current" />
-              开始计划
+              执行计划
             </Button>
           ) : null}
         </div>
-        {error ? (
-          <p className="chat-error">
-            {recoverableTransportError
-              ? serverRunActive
-                ? "响应连接已中断，正在从后台任务恢复…"
-                : "与 Chat Server 的连接已中断，请稍后重试。"
-              : error.message}
+        {error || planModeError ? (
+          <p className="chat-error" role="alert">
+            {planModeError ||
+              (recoverableTransportError
+                ? serverRunActive
+                  ? "响应连接已中断，正在从后台任务恢复…"
+                  : "与 Chat Server 的连接已中断，请稍后重试。"
+                : error?.message)}
           </p>
         ) : null}
         <div className="chat-workspace-bar">
@@ -2189,6 +2270,7 @@ function ChatPage() {
             aria-label="输入消息"
             autoCapitalize="none"
             autoCorrect="off"
+            disabled={planTransition !== "idle"}
             ref={inputRef}
             role="combobox"
             spellCheck={false}
@@ -2222,6 +2304,7 @@ function ChatPage() {
               <Button
                 aria-label="添加附件"
                 className="chat-tool-button !size-7"
+                disabled={planTransition !== "idle"}
                 onClick={() => fileInputRef.current?.click()}
                 size="icon"
                 title="添加附件"
@@ -2230,18 +2313,29 @@ function ChatPage() {
               >
                 <Paperclip className="size-4" />
               </Button>
-              {planMode === "plan" ? (
-                <span aria-label="Plan mode" className="chat-plan-mode-chip" role="status">
-                  <span>Plan mode</span>
-                  <button
-                    aria-label="退出 Plan mode"
-                    className="chat-plan-mode-exit"
-                    onClick={exitPlanMode}
-                    title="退出 Plan mode"
-                    type="button"
-                  >
-                    <X className="size-3" />
-                  </button>
+              {planTransition === "entering" ? (
+                <span aria-label="正在进入计划模式" className="chat-plan-mode-chip" role="status">
+                  <LoaderCircle aria-hidden="true" className="size-3 animate-spin" />
+                  <span>正在进入计划模式</span>
+                </span>
+              ) : planMode === "plan" ? (
+                <span aria-label="计划模式" className="chat-plan-mode-chip" role="status">
+                  {planTransition === "exiting" ? (
+                    <LoaderCircle aria-hidden="true" className="size-3 animate-spin" />
+                  ) : null}
+                  <span>{planTransition === "exiting" ? "正在退出计划模式" : "计划模式"}</span>
+                  {planTransition === "idle" ? (
+                    <button
+                      aria-label={isGenerating ? "请先停止生成再退出计划模式" : "退出计划模式"}
+                      className="chat-plan-mode-exit"
+                      disabled={isGenerating}
+                      onClick={() => void exitPlanMode()}
+                      title={isGenerating ? "请先停止生成" : "退出计划模式"}
+                      type="button"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  ) : null}
                 </span>
               ) : null}
               <DropdownMenu>
@@ -2383,7 +2477,8 @@ function ChatPage() {
                 disabled={
                   ((!input.trim() && !pendingAttachments.some((a) => a.status === "ready")) ||
                     !selectedModel ||
-                    pendingAttachments.some((a) => a.status === "uploading")) &&
+                    pendingAttachments.some((a) => a.status === "uploading") ||
+                    planTransition !== "idle") &&
                   !isGenerating
                 }
                 onClick={isGenerating ? stopCurrentRun : submitMessage}
@@ -2666,6 +2761,7 @@ const MessageBubble = memo(function MessageBubble({
   showTokenUsage,
   onApprovalResponse,
   onPlanUserInputResponse,
+  planInputEnabled,
   cwd,
   workspaceId,
 }: {
@@ -2674,7 +2770,8 @@ const MessageBubble = memo(function MessageBubble({
   generationStatus?: ChatGenerationStatusProps;
   showTokenUsage: boolean;
   onApprovalResponse: (id: string, approved: boolean) => void;
-  onPlanUserInputResponse: (toolCallId: string, output: PlanUserInputResponse) => void;
+  onPlanUserInputResponse: (toolCallId: string, output: PlanUserInputResponse) => Promise<void>;
+  planInputEnabled: boolean;
   cwd: string;
   workspaceId?: string;
 }) {
@@ -2779,7 +2876,14 @@ const MessageBubble = memo(function MessageBubble({
                   ) : null}
                   {questionnaires.map(({ part, request, response }) => (
                     <ChatPlanQuestionnaire
-                      disabled={part.state !== "input-available"}
+                      disabled={part.state !== "input-available" || !planInputEnabled}
+                      disabledReason={
+                        !planInputEnabled
+                          ? "计划模式已退出，回答已停用"
+                          : part.state !== "input-available"
+                            ? "问题正在准备中"
+                            : undefined
+                      }
                       key={part.toolCallId}
                       onSubmit={(output) => onPlanUserInputResponse(part.toolCallId, output)}
                       request={request}
