@@ -3512,6 +3512,10 @@
   border: 0;
   box-shadow: none;
 }
+.chat-plan-question-custom-submit {
+  width: 28px;
+  height: 28px;
+}
 .chat-plan-questionnaire-status {
   display: flex;
   align-items: center;
@@ -3562,9 +3566,6 @@
   flex: 0 0 auto;
   align-items: center;
   gap: 4px;
-}
-.chat-plan-questionnaire-actions > button:last-child {
-  min-width: 92px;
 }
 .chat-approval-strip-copy {
   display: flex;

@@ -4,7 +4,7 @@ import {
   type PlanUserInputResponse,
   sortPlanUserInputOptions,
 } from "@chatdesk/shared";
-import { Check, ChevronLeft, ChevronRight, LoaderCircle, Send } from "lucide-react";
+import { Check, ChevronLeft, CornerDownLeft, LoaderCircle, RotateCcw } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -86,11 +86,19 @@ export function ChatPlanQuestionnaire({
   const complete = planAnswersComplete(request, answers);
   const currentQuestion = request.questions[currentQuestionIndex];
   const currentAnswer = currentQuestion ? answers[currentQuestion.id] : undefined;
-  const currentComplete = Boolean(currentAnswer?.answer.trim());
   const isLastQuestion = currentQuestionIndex === request.questions.length - 1;
   const customControlId = currentQuestion
     ? `${instanceId}-${currentQuestion.id}-${CUSTOM_VALUE}`
     : undefined;
+
+  function completeCurrentQuestion(nextAnswers: Record<string, PlanUserInputAnswer>) {
+    setSubmissionState("idle");
+    if (isLastQuestion) {
+      void submitAnswers(nextAnswers);
+      return;
+    }
+    setCurrentQuestionIndex((current) => Math.min(request.questions.length - 1, current + 1));
+  }
 
   function selectAnswer(questionId: string, value: string) {
     if (locked) return;
@@ -106,16 +114,17 @@ export function ChatPlanQuestionnaire({
       next.delete(questionId);
       return next;
     });
-    setAnswers((current) => ({
-      ...current,
+    const nextAnswers = {
+      ...answers,
       [questionId]: {
         questionId,
         optionId: option.id,
         answer: option.label,
         custom: false,
       },
-    }));
-    setSubmissionState("idle");
+    } satisfies Record<string, PlanUserInputAnswer>;
+    setAnswers(nextAnswers);
+    completeCurrentQuestion(nextAnswers);
   }
 
   function selectCustomAnswer(questionId: string) {
@@ -150,8 +159,20 @@ export function ChatPlanQuestionnaire({
     setSubmissionState("idle");
   }
 
-  async function submitAnswers() {
-    const result = planAnswersResponse(request, answers);
+  function confirmCustomAnswer(questionId: string) {
+    if (locked) return;
+    const answer = customDrafts[questionId]?.trim();
+    if (!answer) return;
+    const nextAnswers = {
+      ...answers,
+      [questionId]: { questionId, answer, custom: true },
+    } satisfies Record<string, PlanUserInputAnswer>;
+    setAnswers(nextAnswers);
+    completeCurrentQuestion(nextAnswers);
+  }
+
+  async function submitAnswers(nextAnswers = answers) {
+    const result = planAnswersResponse(request, nextAnswers);
     if (!result || locked || submittingRef.current) return;
     submittingRef.current = true;
     setSubmissionState("submitting");
@@ -217,6 +238,21 @@ export function ChatPlanQuestionnaire({
                       className="chat-plan-question-option"
                       htmlFor={controlId}
                       key={option.id}
+                      onClick={(event) => {
+                        if (locked || currentAnswer?.optionId !== option.id) return;
+                        event.preventDefault();
+                        completeCurrentQuestion(answers);
+                      }}
+                      onKeyDown={(event) => {
+                        if (
+                          locked ||
+                          currentAnswer?.optionId !== option.id ||
+                          !["Enter", " "].includes(event.key)
+                        )
+                          return;
+                        event.preventDefault();
+                        completeCurrentQuestion(answers);
+                      }}
                     >
                       <RadioGroupItem id={controlId} value={option.id} />
                       <span className="chat-plan-question-option-copy">
@@ -229,18 +265,39 @@ export function ChatPlanQuestionnaire({
                     </label>
                   );
                 })}
-                <label className="chat-plan-question-option is-custom" htmlFor={customControlId}>
-                  <RadioGroupItem id={customControlId} value={CUSTOM_VALUE} />
+                <div className="chat-plan-question-option is-custom">
+                  <RadioGroupItem
+                    aria-label="自定义答案"
+                    id={customControlId}
+                    value={CUSTOM_VALUE}
+                  />
                   <Input
                     aria-label={`${currentQuestion.header}自定义答案`}
                     className="chat-plan-question-custom-input"
                     disabled={locked}
                     onChange={(event) => updateCustomAnswer(currentQuestion.id, event.target.value)}
                     onFocus={() => selectCustomAnswer(currentQuestion.id)}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+                      event.preventDefault();
+                      confirmCustomAnswer(currentQuestion.id);
+                    }}
                     placeholder="自定义答案"
                     value={customDrafts[currentQuestion.id] ?? ""}
                   />
-                </label>
+                  <Button
+                    aria-label={`确认${currentQuestion.header}自定义答案`}
+                    className="chat-plan-question-custom-submit"
+                    disabled={locked || !customDrafts[currentQuestion.id]?.trim()}
+                    onClick={() => confirmCustomAnswer(currentQuestion.id)}
+                    size="icon"
+                    title="确认自定义答案"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <CornerDownLeft className="size-3.5" />
+                  </Button>
+                </div>
               </RadioGroup>
             </fieldset>
           ) : null}
@@ -250,11 +307,9 @@ export function ChatPlanQuestionnaire({
                 ? disabledReason
                 : submissionState === "error"
                   ? "发送失败，答案已保留"
-                  : isLastQuestion && complete
-                    ? "请确认后提交"
-                    : currentComplete
-                      ? "已保存当前选择"
-                      : "请选择一个答案"}
+                  : submitting
+                    ? "正在发送答案"
+                    : ""}
             </span>
             <div className="chat-plan-questionnaire-actions">
               <Button
@@ -268,31 +323,19 @@ export function ChatPlanQuestionnaire({
               >
                 <ChevronLeft className="size-3.5" />
               </Button>
-              {isLastQuestion ? (
+              {submissionState === "error" ? (
                 <Button
+                  aria-label="重新发送答案"
                   disabled={locked || !complete}
                   onClick={() => void submitAnswers()}
-                  size="sm"
+                  size="icon"
+                  title="重新发送答案"
                   type="button"
+                  variant="ghost"
                 >
-                  {submissionState === "error" ? null : <Send className="size-3.5" />}
-                  {submissionState === "error" ? "重新发送" : "提交答案"}
+                  <RotateCcw className="size-3.5" />
                 </Button>
-              ) : (
-                <Button
-                  disabled={locked || !currentComplete}
-                  onClick={() =>
-                    setCurrentQuestionIndex((current) =>
-                      Math.min(request.questions.length - 1, current + 1),
-                    )
-                  }
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  下一题 <ChevronRight className="size-3.5" />
-                </Button>
-              )}
+              ) : null}
             </div>
           </div>
         </>
