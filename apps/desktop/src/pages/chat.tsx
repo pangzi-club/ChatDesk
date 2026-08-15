@@ -54,6 +54,7 @@ import {
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ChatAttachmentChips } from "@/components/chat-attachment-chips";
+import { ChatCommandPopup } from "@/components/chat-command-popup";
 import { ChatContextDialog } from "@/components/chat-context-dialog";
 import { ChatContextPopover } from "@/components/chat-context-popover";
 import { ChatGitSummary } from "@/components/chat-git-summary";
@@ -94,6 +95,11 @@ import {
   uploadPendingAttachment,
   validateAttachment,
 } from "@/lib/chat-attachments";
+import {
+  type ChatCommand,
+  filterChatCommands,
+  findActiveCommandTrigger,
+} from "@/lib/chat-commands";
 import { materializeGeneratedImages } from "@/lib/chat-image-generation";
 import {
   type ChatMemoryStore,
@@ -310,6 +316,9 @@ function ChatPage() {
   const [selectedModelId, setSelectedModelId] = useState("");
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [commandCaret, setCommandCaret] = useState(0);
+  const [commandIndex, setCommandIndex] = useState(0);
+  const [commandDismissed, setCommandDismissed] = useState(false);
   const [sessionId, setSessionId] = useState(createSessionId);
   const [sessionTitle, setSessionTitle] = useState("新对话");
   const [workspaceKey, setWorkspaceKey] = useState("");
@@ -1252,7 +1261,68 @@ function ChatPage() {
     }
   }
 
+  const commandTrigger = useMemo(
+    () => findActiveCommandTrigger(input, commandCaret),
+    [input, commandCaret],
+  );
+  const commandQuery = commandTrigger?.query ?? "";
+  const commandMatches = useMemo(
+    () => (commandTrigger ? filterChatCommands(commandTrigger.query) : []),
+    [commandTrigger],
+  );
+  const commandPopupOpen =
+    Boolean(commandTrigger) && commandMatches.length > 0 && !commandDismissed;
+  const activeCommand = commandPopupOpen
+    ? commandMatches[Math.min(commandIndex, commandMatches.length - 1)]
+    : undefined;
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 查询串变化时需要重置 popup 选中与关闭状态
+  useEffect(() => {
+    setCommandIndex(0);
+    setCommandDismissed(false);
+  }, [commandQuery]);
+
+  function applyChatCommand(command: ChatCommand) {
+    const trigger = findActiveCommandTrigger(input, commandCaret);
+    if (!trigger) return;
+    const caret = trigger.start + command.name.length + 1;
+    setInput(`${input.slice(0, trigger.start)}${command.name} ${input.slice(commandCaret)}`);
+    setCommandCaret(caret);
+    setCommandDismissed(true);
+    requestAnimationFrame(() => {
+      const textarea = inputRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(caret, caret);
+    });
+  }
+
   function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (
+      commandPopupOpen &&
+      !event.nativeEvent.isComposing &&
+      event.keyCode !== 229 &&
+      !isComposingRef.current
+    ) {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const count = commandMatches.length;
+        setCommandIndex((current) =>
+          event.key === "ArrowDown" ? (current + 1) % count : (current - 1 + count) % count,
+        );
+        return;
+      }
+      if ((event.key === "Enter" || event.key === "Tab") && activeCommand) {
+        event.preventDefault();
+        applyChatCommand(activeCommand);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setCommandDismissed(true);
+        return;
+      }
+    }
     if (
       event.key === "Enter" &&
       !event.shiftKey &&
@@ -1700,14 +1770,32 @@ function ChatPage() {
             }}
             onRemove={removePendingAttachment}
           />
+          {commandPopupOpen && (
+            <ChatCommandPopup
+              activeIndex={Math.min(commandIndex, commandMatches.length - 1)}
+              commands={commandMatches}
+              onHover={setCommandIndex}
+              onSelect={applyChatCommand}
+            />
+          )}
           <textarea
+            aria-autocomplete="list"
+            aria-controls="chat-command-popup"
+            aria-expanded={commandPopupOpen}
             aria-label="输入消息"
             autoCapitalize="none"
             autoCorrect="off"
             ref={inputRef}
+            role="combobox"
             spellCheck={false}
             value={input}
-            onChange={(event) => setInput(event.target.value)}
+            onChange={(event) => {
+              setInput(event.target.value);
+              setCommandCaret(event.target.selectionStart ?? event.target.value.length);
+            }}
+            onClick={(event) => setCommandCaret(event.currentTarget.selectionStart ?? 0)}
+            onKeyUp={(event) => setCommandCaret(event.currentTarget.selectionStart ?? 0)}
+            onBlur={() => setCommandDismissed(true)}
             onCompositionStart={() => {
               isComposingRef.current = true;
             }}
