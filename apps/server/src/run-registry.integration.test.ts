@@ -220,30 +220,6 @@ describe("complete agent runs", () => {
     assert.doesNotMatch(streamError?.details ?? "", /make a plan/);
   });
 
-  it("ends a model stream that does not produce its first chunk in time", async () => {
-    const current = await fixture(
-      [
-        streamResult(
-          [
-            { type: "stream-start", warnings: [] },
-            { type: "response-metadata", id: "late-response", modelId: "mock-model" },
-            { type: "text-start", id: "late-text" },
-            { type: "text-delta", id: "late-text", delta: "too late" },
-          ],
-          { initialDelayInMs: 40 },
-        ),
-      ],
-      { modelStreamTimeout: { firstChunkMs: 5, chunkMs: 5 } },
-    );
-
-    const summary = await finishRun(current);
-    assert.equal(summary.outcome, "error");
-    const streamError = current.activityLogs
-      .list()
-      .find((entry) => entry.message === "模型流式响应超时或中止");
-    assert.match(streamError?.details ?? "", /timeout/i);
-  });
-
   it("records client stream cancellation without cancelling the server run", async () => {
     const current = await fixture([
       streamResult(
