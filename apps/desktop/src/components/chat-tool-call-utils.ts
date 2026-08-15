@@ -54,10 +54,10 @@ export function extractWorkspaceToolSummary(toolName: string, input: unknown, ou
   const subject =
     toolName === "search_files"
       ? searchKeyword
-      : fileTarget
-        ? fileTarget.path
-        : toolName === "read_file"
-          ? getLastPathSegment(inputPath || outputPath)
+      : toolName === "list_dir" || toolName === "read_file"
+        ? getLastPathSegment(fileTarget?.path || inputPath || outputPath)
+        : fileTarget
+          ? fileTarget.path
           : inputPath ||
             (toolName === "bash" && typeof inputRecord.command === "string"
               ? inputRecord.command

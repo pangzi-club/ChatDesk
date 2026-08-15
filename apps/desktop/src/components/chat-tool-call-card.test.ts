@@ -72,6 +72,19 @@ describe("chat tool call group summaries", () => {
 });
 
 describe("chat tool call workspace file targets", () => {
+  it("shows only the final path segment for directory listings and file reads", () => {
+    expect(
+      extractWorkspaceToolSummary("list_dir", { path: "apps/desktop/src/components/" }, {}),
+    ).toBe(" · components");
+    expect(
+      extractWorkspaceToolSummary(
+        "read_file",
+        { path: "apps/desktop/src/components/chat-tool-call-card.tsx" },
+        {},
+      ),
+    ).toBe(" · chat-tool-call-card.tsx");
+  });
+
   it("keeps long edit_file paths intact in the summary", () => {
     const path = "/Users/bohaowang/Workspace/App/m-dashboard/package.json";
 

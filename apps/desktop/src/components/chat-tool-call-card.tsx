@@ -451,7 +451,7 @@ export function ChatToolCallCard({
                   }}
                   title={fileTarget.path}
                 >
-                  {fileTarget.path}
+                  {toolName === "read_file" ? getLastPathSegment(fileTarget.path) : fileTarget.path}
                 </a>
               </>
             ) : (
