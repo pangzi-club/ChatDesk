@@ -297,6 +297,11 @@ export async function chatServerRequest(
   return response;
 }
 
+function withWorkspaceCwd(pathname: string, cwd?: string) {
+  if (!cwd?.trim()) return pathname;
+  return `${pathname}${pathname.includes("?") ? "&" : "?"}cwd=${encodeURIComponent(cwd.trim())}`;
+}
+
 export async function loadPlatformCapabilities(port = CHAT_SERVER_DEFAULT_PORT) {
   const response = await chatServerRequest("/v1/platform/capabilities", undefined, port);
   return (await response.json()) as PlatformCapabilities;
@@ -327,9 +332,13 @@ export async function removeServerWorkspace(id: string, port = CHAT_SERVER_DEFAU
   await chatServerRequest(`/v1/workspaces/${encodeURIComponent(id)}`, { method: "DELETE" }, port);
 }
 
-export async function loadServerWorkspaceGit(id: string, port = CHAT_SERVER_DEFAULT_PORT) {
+export async function loadServerWorkspaceGit(
+  id: string,
+  cwd?: string,
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
   const response = await chatServerRequest(
-    `/v1/workspaces/${encodeURIComponent(id)}/git`,
+    withWorkspaceCwd(`/v1/workspaces/${encodeURIComponent(id)}/git`, cwd),
     undefined,
     port,
   );
@@ -339,10 +348,14 @@ export async function loadServerWorkspaceGit(id: string, port = CHAT_SERVER_DEFA
 export async function loadServerWorkspaceFiles(
   id: string,
   relativePath = ".",
+  cwd?: string,
   port = CHAT_SERVER_DEFAULT_PORT,
 ) {
   const response = await chatServerRequest(
-    `/v1/workspaces/${encodeURIComponent(id)}/files?path=${encodeURIComponent(relativePath)}`,
+    withWorkspaceCwd(
+      `/v1/workspaces/${encodeURIComponent(id)}/files?path=${encodeURIComponent(relativePath)}`,
+      cwd,
+    ),
     undefined,
     port,
   );
@@ -352,10 +365,14 @@ export async function loadServerWorkspaceFiles(
 export async function loadServerWorkspaceGitDiff(
   id: string,
   filePath: string,
+  cwd?: string,
   port = CHAT_SERVER_DEFAULT_PORT,
 ) {
   const response = await chatServerRequest(
-    `/v1/workspaces/${encodeURIComponent(id)}/git/diff?path=${encodeURIComponent(filePath)}`,
+    withWorkspaceCwd(
+      `/v1/workspaces/${encodeURIComponent(id)}/git/diff?path=${encodeURIComponent(filePath)}`,
+      cwd,
+    ),
     undefined,
     port,
   );
@@ -365,14 +382,15 @@ export async function loadServerWorkspaceGitDiff(
 export async function restoreServerWorkspaceGit(
   id: string,
   filePath?: string,
+  cwd?: string,
   port = CHAT_SERVER_DEFAULT_PORT,
 ) {
   await chatServerRequest(
-    `/v1/workspaces/${encodeURIComponent(id)}/git/restore`,
+    withWorkspaceCwd(`/v1/workspaces/${encodeURIComponent(id)}/git/restore`, cwd),
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(filePath ? { path: filePath } : {}),
+      body: JSON.stringify(filePath ? { path: filePath, cwd } : { cwd }),
     },
     port,
   );
@@ -380,11 +398,11 @@ export async function restoreServerWorkspaceGit(
 
 export async function commitServerWorkspaceGit(
   id: string,
-  value: { message?: string; push?: boolean },
+  value: { message?: string; push?: boolean; cwd?: string },
   port = CHAT_SERVER_DEFAULT_PORT,
 ) {
   const response = await chatServerRequest(
-    `/v1/workspaces/${encodeURIComponent(id)}/git/commit`,
+    withWorkspaceCwd(`/v1/workspaces/${encodeURIComponent(id)}/git/commit`, value.cwd),
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -395,10 +413,18 @@ export async function commitServerWorkspaceGit(
   return (await response.json()) as WorkspaceGitCommitResult;
 }
 
-export async function pushServerWorkspaceGit(id: string, port = CHAT_SERVER_DEFAULT_PORT) {
+export async function pushServerWorkspaceGit(
+  id: string,
+  cwd?: string,
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
   const response = await chatServerRequest(
-    `/v1/workspaces/${encodeURIComponent(id)}/git/push`,
-    { method: "POST" },
+    withWorkspaceCwd(`/v1/workspaces/${encodeURIComponent(id)}/git/push`, cwd),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cwd }),
+    },
     port,
   );
   return (await response.json()) as WorkspaceGitCommitResult;
@@ -407,14 +433,15 @@ export async function pushServerWorkspaceGit(id: string, port = CHAT_SERVER_DEFA
 export async function loadServerWorkspaceFile(
   id: string,
   filePath: string,
+  cwd?: string,
   port = CHAT_SERVER_DEFAULT_PORT,
 ) {
   const response = await chatServerRequest(
-    `/v1/workspaces/${encodeURIComponent(id)}/file`,
+    withWorkspaceCwd(`/v1/workspaces/${encodeURIComponent(id)}/file`, cwd),
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "read", path: filePath }),
+      body: JSON.stringify({ action: "read", path: filePath, cwd }),
     },
     port,
   );

@@ -27,7 +27,7 @@ import { createConfiguredLanguageModel } from "./model-adaptor.ts";
 import { listProviderModels, testModelConnection } from "./model-test.ts";
 import { PlanStore } from "./plan-store.ts";
 import { nodePlatform } from "./platform/index.ts";
-import type { ChatSession, RunStartInput } from "./protocol.ts";
+import { type ChatSession, DEFAULT_WORKSPACE_ID, type RunStartInput } from "./protocol.ts";
 import { RunRegistry, resolveEffectiveWorkspace } from "./run-registry.ts";
 import {
   buildSessionTitlePrompt,
@@ -42,7 +42,7 @@ import { SessionStore } from "./store.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
 import { TODO_TOOL_INSTRUCTIONS } from "./todo-tool.ts";
 import { workspaceSearchInstructions } from "./tool-selection.ts";
-import { WorkspaceStore } from "./workspace-store.ts";
+import { resolveWorkspaceFsRoot, WorkspaceStore } from "./workspace-store.ts";
 
 const runInputSchema = z.object({
   messages: z.array(z.unknown()).optional(),
@@ -267,6 +267,28 @@ function jsonError(message: string, status = 400) {
   });
 }
 
+function requestCwd(query?: string, body?: unknown) {
+  if (typeof body === "object" && body && "cwd" in body && typeof body.cwd === "string") {
+    const cwd = body.cwd.trim();
+    if (cwd) return cwd;
+  }
+  return query?.trim() || undefined;
+}
+
+async function workspaceFsRoot(store: WorkspaceStore, id: string, cwd?: string) {
+  const workspace = store.get(id);
+  if (!workspace) return { error: jsonError("workspace 不存在", 404) };
+  try {
+    const root = resolveWorkspaceFsRoot(workspace.path, cwd);
+    if (cwd && workspace.id === DEFAULT_WORKSPACE_ID) {
+      await mkdir(root, { recursive: true });
+    }
+    return { root };
+  } catch (error) {
+    return { error: jsonError(error instanceof Error ? error.message : String(error)) };
+  }
+}
+
 function parseJson<T>(value: unknown, schema: z.ZodType<T>): T {
   const parsed = schema.safeParse(value);
   if (!parsed.success) throw new Error(parsed.error.issues[0]?.message || "请求参数无效");
@@ -445,41 +467,57 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     return c.body(null, 204);
   });
   app.get("/v1/workspaces/:id/git", async (c) => {
-    const workspace = workspaces.get(c.req.param("id"));
-    if (!workspace) return jsonError("workspace 不存在", 404);
+    const resolved = await workspaceFsRoot(
+      workspaces,
+      c.req.param("id"),
+      requestCwd(c.req.query("cwd")),
+    );
+    if ("error" in resolved) return resolved.error;
     try {
-      return c.json(await nodePlatform.inspectGit(workspace.path));
+      return c.json(await nodePlatform.inspectGit(resolved.root));
     } catch (error) {
       return jsonError(error instanceof Error ? error.message : String(error));
     }
   });
   app.get("/v1/workspaces/:id/git/diff", async (c) => {
-    const workspace = workspaces.get(c.req.param("id"));
-    if (!workspace) return jsonError("workspace 不存在", 404);
+    const resolved = await workspaceFsRoot(
+      workspaces,
+      c.req.param("id"),
+      requestCwd(c.req.query("cwd")),
+    );
+    if ("error" in resolved) return resolved.error;
     try {
       const filePath = c.req.query("path") || "";
-      return c.json(await nodePlatform.readGitDiff(workspace.path, filePath));
+      return c.json(await nodePlatform.readGitDiff(resolved.root, filePath));
     } catch (error) {
       return jsonError(error instanceof Error ? error.message : String(error));
     }
   });
   app.post("/v1/workspaces/:id/git/restore", async (c) => {
-    const workspace = workspaces.get(c.req.param("id"));
-    if (!workspace) return jsonError("workspace 不存在", 404);
     try {
       const body = await c.req.json().catch(() => ({}));
+      const resolved = await workspaceFsRoot(
+        workspaces,
+        c.req.param("id"),
+        requestCwd(c.req.query("cwd"), body),
+      );
+      if ("error" in resolved) return resolved.error;
       const filePath = typeof body.path === "string" ? body.path : undefined;
-      await nodePlatform.restoreGit(workspace.path, filePath);
+      await nodePlatform.restoreGit(resolved.root, filePath);
       return c.body(null, 204);
     } catch (error) {
       return jsonError(error instanceof Error ? error.message : String(error));
     }
   });
   app.post("/v1/workspaces/:id/git/commit", async (c) => {
-    const workspace = workspaces.get(c.req.param("id"));
-    if (!workspace) return jsonError("workspace 不存在", 404);
     try {
       const body = await c.req.json().catch(() => ({}));
+      const resolved = await workspaceFsRoot(
+        workspaces,
+        c.req.param("id"),
+        requestCwd(c.req.query("cwd"), body),
+      );
+      if ("error" in resolved) return resolved.error;
       const message = typeof body.message === "string" ? body.message.trim() : "";
       const push = body.push === true;
       let finalMessage = message;
@@ -505,7 +543,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
           return jsonError("未配置可用模型，请填写提交信息后重试");
         }
         const diff = await nodePlatform.runShell(
-          workspace.path,
+          resolved.root,
           "git diff HEAD --stat && git diff HEAD",
           "full",
         );
@@ -538,41 +576,54 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
         finalMessage = normalizeGeneratedCommitMessage(result.text);
         generated = true;
       }
-      const result = await nodePlatform.commitGit(workspace.path, finalMessage, push);
+      const result = await nodePlatform.commitGit(resolved.root, finalMessage, push);
       return c.json({ ...result, generated });
     } catch (error) {
       return jsonError(error instanceof Error ? error.message : String(error));
     }
   });
   app.post("/v1/workspaces/:id/git/push", async (c) => {
-    const workspace = workspaces.get(c.req.param("id"));
-    if (!workspace) return jsonError("workspace 不存在", 404);
+    const body = await c.req.json().catch(() => ({}));
+    const resolved = await workspaceFsRoot(
+      workspaces,
+      c.req.param("id"),
+      requestCwd(c.req.query("cwd"), body),
+    );
+    if ("error" in resolved) return resolved.error;
     try {
-      return c.json(await nodePlatform.pushGit(workspace.path));
+      return c.json(await nodePlatform.pushGit(resolved.root));
     } catch (error) {
       return jsonError(error instanceof Error ? error.message : String(error));
     }
   });
   app.get("/v1/workspaces/:id/files", async (c) => {
-    const workspace = workspaces.get(c.req.param("id"));
-    if (!workspace) return jsonError("workspace 不存在", 404);
+    const resolved = await workspaceFsRoot(
+      workspaces,
+      c.req.param("id"),
+      requestCwd(c.req.query("cwd")),
+    );
+    if ("error" in resolved) return resolved.error;
     try {
-      return c.json(await nodePlatform.listDir(workspace.path, c.req.query("path") || "."));
+      return c.json(await nodePlatform.listDir(resolved.root, c.req.query("path") || "."));
     } catch (error) {
       return jsonError(error instanceof Error ? error.message : String(error));
     }
   });
   app.post("/v1/workspaces/:id/file", async (c) => {
-    const workspace = workspaces.get(c.req.param("id"));
-    if (!workspace) return jsonError("workspace 不存在", 404);
     try {
       const body = await c.req.json();
+      const resolved = await workspaceFsRoot(
+        workspaces,
+        c.req.param("id"),
+        requestCwd(c.req.query("cwd"), body),
+      );
+      if ("error" in resolved) return resolved.error;
       const action = typeof body.action === "string" ? body.action : "read";
       const filePath = typeof body.path === "string" ? body.path : "";
-      if (action === "read") return c.json(await nodePlatform.readFile(workspace.path, filePath));
+      if (action === "read") return c.json(await nodePlatform.readFile(resolved.root, filePath));
       if (action === "write") {
         const result = await nodePlatform.writeFile(
-          workspace.path,
+          resolved.root,
           filePath,
           String(body.content ?? ""),
         );
@@ -581,7 +632,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
       if (action === "edit") {
         return c.json(
           await nodePlatform.editFile(
-            workspace.path,
+            resolved.root,
             filePath,
             String(body.oldText ?? ""),
             String(body.newText ?? ""),
@@ -594,24 +645,32 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     }
   });
   app.post("/v1/workspaces/:id/search", async (c) => {
-    const workspace = workspaces.get(c.req.param("id"));
-    if (!workspace) return jsonError("workspace 不存在", 404);
     try {
       const body = await c.req.json().catch(() => ({}));
-      return c.json(await nodePlatform.searchFiles(workspace.path, body));
+      const resolved = await workspaceFsRoot(
+        workspaces,
+        c.req.param("id"),
+        requestCwd(c.req.query("cwd"), body),
+      );
+      if ("error" in resolved) return resolved.error;
+      return c.json(await nodePlatform.searchFiles(resolved.root, body));
     } catch (error) {
       return jsonError(error instanceof Error ? error.message : String(error));
     }
   });
   app.post("/v1/workspaces/:id/shell", async (c) => {
-    const workspace = workspaces.get(c.req.param("id"));
-    if (!workspace) return jsonError("workspace 不存在", 404);
     try {
       const body = await c.req.json();
+      const resolved = await workspaceFsRoot(
+        workspaces,
+        c.req.param("id"),
+        requestCwd(c.req.query("cwd")),
+      );
+      if ("error" in resolved) return resolved.error;
       const mode = body.mode === "full" || body.mode === "auto" ? body.mode : "ask";
       return c.json(
         await nodePlatform.runShell(
-          workspace.path,
+          resolved.root,
           String(body.command ?? ""),
           mode,
           typeof body.cwd === "string" ? body.cwd : undefined,

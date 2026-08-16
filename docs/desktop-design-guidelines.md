@@ -130,7 +130,7 @@
 - Chat Header 高 48px；标题、对话操作和全局工具保持在同一紧凑工具栏中。图标按钮为 28px。
 - 消息内容和 Composer 默认共享约 820px 的最大宽度，桌面左右 gutter 为 24px。
 - 640px 以下左右 gutter 缩小到约 14px，控件应隐藏次要文字或缩小最大宽度，而不是横向溢出。
-- 消息区独立滚动，Composer 固定在 Chat 布局底部。消息区顶部保持紧凑留白，第一条消息不再额外叠加块间距；底部 padding 必须为 Composer 留出空间。
+- 消息区独立滚动，Composer 固定在 Chat 布局底部。消息区顶部保持适度留白，第一条消息使用较小的顶部间距，避免贴住 Header；底部 padding 必须为 Composer 留出空间。
 - 分屏或 Workspace 工具窗口应使用稳定的最小尺寸、显式分隔线和独立滚动，不与 Chat 内容重叠。
 - 分屏工具窗口标签栏与 Chat Header 对齐：高 48px，图标按钮 28px，图标约 15px，使用 muted 颜色。
 - 分屏拖拽条与左侧 Sidebar 拖拽条相同：8px 热区、默认不另画分隔线、hover 时用 primary 提示。

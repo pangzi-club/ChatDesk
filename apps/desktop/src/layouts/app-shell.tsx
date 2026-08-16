@@ -168,6 +168,7 @@ import {
   sortWorkspaceProjects,
   type WorkspaceSort,
 } from "@/lib/workspace-conversation-utils";
+import { isDefaultWorkspaceId, resolveDefaultSessionCwd } from "@/lib/workspace-path";
 import {
   addWorkspaceProject,
   loadWorkspaceProjects,
@@ -437,10 +438,31 @@ function AppShell() {
     queryFn: () => loadChatSession(chatSessionId ?? ""),
     enabled: Boolean(chatSessionId),
   });
+  const workspaceProjectsQuery = useQuery({
+    queryKey: ["workspace-projects"],
+    queryFn: loadWorkspaceProjects,
+  });
   const chatWorkspaceId =
-    chatRoute.kind === "new" ? chatRoute.workspaceId : (chatSessionQuery.data?.workspaceId ?? "");
+    chatRoute.kind === "new"
+      ? chatRoute.workspaceId || DEFAULT_WORKSPACE_ID
+      : (chatSessionQuery.data?.workspaceId ?? "");
+  const defaultTasksRoot = workspaceProjectsQuery.data?.find(
+    (project) => project.id === DEFAULT_WORKSPACE_ID,
+  )?.path;
   const chatWorkspaceCwd =
-    chatRoute.kind === "new" ? chatRoute.workspaceCwd : (chatSessionQuery.data?.cwd ?? "");
+    chatRoute.kind === "new"
+      ? chatRoute.workspaceId
+        ? chatRoute.workspaceCwd
+        : resolveDefaultSessionCwd(defaultTasksRoot, "", chatRoute.workspaceCwd)
+      : chatSessionQuery.data
+        ? isDefaultWorkspaceId(chatSessionQuery.data.workspaceId)
+          ? resolveDefaultSessionCwd(
+              defaultTasksRoot,
+              chatSessionQuery.data.id,
+              chatSessionQuery.data.cwd,
+            )
+          : (chatSessionQuery.data.cwd ?? "")
+        : "";
   const hideMainSidebar = location.pathname.startsWith("/settings");
   const lockOutletScroll = location.pathname.startsWith("/settings/history");
 
@@ -657,6 +679,7 @@ function AppShell() {
               refreshToken: Date.now(),
               path: request.path,
               content: request.content,
+              cwd: request.cwd ?? existing.cwd,
               explorerView: request.mode === "diff" ? ("git" as const) : ("files" as const),
               editorMode: request.mode,
             }
@@ -2051,6 +2074,7 @@ function ChatWorkspaceWindow({
   const imageTab = activeTab?.kind === "image" ? activeTab : null;
   const planTab = activeTab?.kind === "plan" ? activeTab : null;
   const activeTabWorkspaceId = workspaceTab?.workspaceId;
+  const explorerCwd = cwd.trim();
   const [selectedPath, setSelectedPath] = useState(workspaceTab?.path ?? "");
   const [explorerView, setExplorerView] = useState<"files" | "git">(
     workspaceTab?.explorerView ?? (workspaceTab?.kind === "git-diff" ? "git" : "files"),
@@ -2083,9 +2107,11 @@ function ChatWorkspaceWindow({
   const [commitOpen, setCommitOpen] = useState(false);
   const queryClient = useQueryClient();
   const gitQuery = useQuery({
-    queryKey: workspaceGitQueryKey(activeTabWorkspaceId ?? ""),
-    queryFn: () => loadServerWorkspaceGit(activeTabWorkspaceId ?? ""),
-    enabled: Boolean(activeTabWorkspaceId),
+    queryKey: workspaceGitQueryKey(activeTabWorkspaceId ?? "", explorerCwd),
+    queryFn: () => loadServerWorkspaceGit(activeTabWorkspaceId ?? "", explorerCwd),
+    enabled:
+      Boolean(activeTabWorkspaceId) &&
+      (!isDefaultWorkspaceId(activeTabWorkspaceId) || Boolean(explorerCwd)),
     refetchInterval: 15_000,
   });
   const planQuery = useQuery({
@@ -2106,9 +2132,11 @@ function ChatWorkspaceWindow({
   );
   const directoryQueries = useQueries({
     queries: directoryPaths.map((path) => ({
-      queryKey: ["workspace-files", activeTabWorkspaceId, path],
-      queryFn: () => loadServerWorkspaceFiles(activeTabWorkspaceId ?? "", path),
-      enabled: Boolean(activeTabWorkspaceId),
+      queryKey: ["workspace-files", activeTabWorkspaceId, explorerCwd, path],
+      queryFn: () => loadServerWorkspaceFiles(activeTabWorkspaceId ?? "", path, explorerCwd),
+      enabled:
+        Boolean(activeTabWorkspaceId) &&
+        (!isDefaultWorkspaceId(activeTabWorkspaceId) || Boolean(explorerCwd)),
     })),
   });
   const directoryMap = useMemo(() => {
@@ -2139,7 +2167,7 @@ function ChatWorkspaceWindow({
 
   const restoreMutation = useMutation({
     mutationFn: (path?: string) =>
-      restoreServerWorkspaceGit(activeTabWorkspaceId ?? workspaceId, path),
+      restoreServerWorkspaceGit(activeTabWorkspaceId ?? workspaceId, path, explorerCwd),
     onSuccess: () => {
       setRestoreTarget(null);
       setViewerError(null);
@@ -2152,6 +2180,7 @@ function ChatWorkspaceWindow({
 
   useEffect(() => {
     if (!workspaceId || state.tabs.length > 0) return;
+    if (isDefaultWorkspaceId(workspaceId) && !cwd) return;
     const tab: ChatWindowTab = {
       id: createChatWindowTabId(),
       title: "Explorer",
@@ -2195,8 +2224,8 @@ function ChatWorkspaceWindow({
     }
     const request =
       mode === "source"
-        ? loadServerWorkspaceFile(activeTabWorkspaceId, path)
-        : loadServerWorkspaceGitDiff(activeTabWorkspaceId, path);
+        ? loadServerWorkspaceFile(activeTabWorkspaceId, path, explorerCwd)
+        : loadServerWorkspaceGitDiff(activeTabWorkspaceId, path, explorerCwd);
     void request
       .then((result) => {
         if (!active) return;
@@ -2238,6 +2267,7 @@ function ChatWorkspaceWindow({
   }, [
     activeTabWorkspaceId,
     activeEditorPath,
+    explorerCwd,
     explorerView,
     gitRefreshToken,
     selectedPath,
@@ -2567,6 +2597,7 @@ function ChatWorkspaceWindow({
 
   function addGitDiffTab() {
     if (!workspaceId) return;
+    if (isDefaultWorkspaceId(workspaceId) && !cwd) return;
     const existing = state.tabs.find(
       (tab) =>
         (tab.kind === "workspace" || tab.kind === "source" || tab.kind === "git-diff") &&
@@ -2733,7 +2764,10 @@ function ChatWorkspaceWindow({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" sideOffset={6}>
-            <DropdownMenuItem disabled={!workspaceId} onSelect={addGitDiffTab}>
+            <DropdownMenuItem
+              disabled={!workspaceId || (isDefaultWorkspaceId(workspaceId) && !cwd)}
+              onSelect={addGitDiffTab}
+            >
               <FolderGit2 className="size-3.5" />
               Workspace Explorer
             </DropdownMenuItem>
@@ -3093,6 +3127,7 @@ function ChatWorkspaceWindow({
         open={commitOpen}
         onOpenChange={setCommitOpen}
         workspaceId={activeTabWorkspaceId ?? workspaceId}
+        cwd={explorerCwd}
         branch={gitSummary?.branch}
         hasChanges={Boolean(gitSummary?.files.length)}
         canPush={Boolean(gitSummary?.ahead)}

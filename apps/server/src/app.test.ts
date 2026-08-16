@@ -121,6 +121,37 @@ describe("chat server", () => {
     assert.equal(right.cwd?.endsWith("/task-two"), true);
     assert.notEqual(left.cwd, right.cwd);
 
+    const note = await server.app.request("http://localhost/v1/workspaces/default/file", {
+      method: "POST",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "write",
+        path: "note.txt",
+        content: "hello",
+        cwd: left.cwd,
+      }),
+    });
+    assert.equal(note.status, 200);
+    const files = await server.app.request(
+      `http://localhost/v1/workspaces/default/files?path=.&cwd=${encodeURIComponent(left.cwd ?? "")}`,
+      { headers: auth() },
+    );
+    assert.equal(files.status, 200);
+    const listing = (await files.json()) as { entries: Array<{ path: string }> };
+    assert.equal(
+      listing.entries.some((entry) => entry.path === "note.txt"),
+      true,
+    );
+    assert.equal(
+      listing.entries.some((entry) => entry.path === "task-two"),
+      false,
+    );
+    const denied = await server.app.request(
+      "http://localhost/v1/workspaces/default/files?path=.&cwd=/tmp",
+      { headers: auth() },
+    );
+    assert.equal(denied.status, 400);
+
     const removed = await server.app.request("http://localhost/v1/workspaces/default", {
       method: "DELETE",
       headers: auth(),

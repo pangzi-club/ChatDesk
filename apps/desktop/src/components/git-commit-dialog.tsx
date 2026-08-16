@@ -25,6 +25,7 @@ type GitCommitDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   workspaceId: string;
+  cwd?: string;
   branch?: string | null;
   hasChanges?: boolean;
   canPush?: boolean;
@@ -42,6 +43,7 @@ export function GitCommitDialog({
   open,
   onOpenChange,
   workspaceId,
+  cwd,
   branch,
   hasChanges = true,
   canPush = false,
@@ -55,10 +57,11 @@ export function GitCommitDialog({
   const [selectedAction, setSelectedAction] = useState<GitCommitAction>("commit");
   const mutation = useMutation({
     mutationFn: (action: "commit" | "push" | "commit-push") => {
-      if (action === "push") return pushServerWorkspaceGit(workspaceId);
+      if (action === "push") return pushServerWorkspaceGit(workspaceId, cwd);
       return commitServerWorkspaceGit(workspaceId, {
         message,
         push: action === "commit-push",
+        cwd,
       });
     },
     onSuccess: () => {

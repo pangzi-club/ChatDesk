@@ -4,7 +4,13 @@ import os from "node:os";
 import path from "node:path";
 import { DEFAULT_WORKSPACE_ID, DEFAULT_WORKSPACE_NAME } from "@chatdesk/shared";
 import { afterEach, describe, it } from "vitest";
-import { defaultTasksRoot, isPathInside, taskCwdFor, WorkspaceStore } from "./workspace-store.ts";
+import {
+  defaultTasksRoot,
+  isPathInside,
+  resolveWorkspaceFsRoot,
+  taskCwdFor,
+  WorkspaceStore,
+} from "./workspace-store.ts";
 
 const directories: string[] = [];
 
@@ -40,6 +46,14 @@ describe("WorkspaceStore default tasks", () => {
     assert.equal(isPathInside(root, root), true);
     assert.equal(isPathInside(path.join(root, "session-1"), root), true);
     assert.equal(isPathInside(path.join(root, "..", "other"), root), false);
+  });
+
+  it("resolves workspace file roots to a session cwd inside the workspace", () => {
+    const root = path.join(os.tmpdir(), "tasks-root");
+    const sessionCwd = path.join(root, "session-1");
+    assert.equal(resolveWorkspaceFsRoot(root), path.resolve(root));
+    assert.equal(resolveWorkspaceFsRoot(root, sessionCwd), path.resolve(sessionCwd));
+    assert.throws(() => resolveWorkspaceFsRoot(root, path.join(root, "..", "other")), /cwd/);
   });
 
   it("registers a default workspace and creates per-session directories", async () => {

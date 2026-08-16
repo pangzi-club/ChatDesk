@@ -2285,7 +2285,7 @@
   margin-top: var(--chat-message-block-gap);
 }
 .chat-message:first-child {
-  margin-top: 0;
+  margin-top: 16px;
 }
 .chat-message.user-message {
   flex-direction: row-reverse;
@@ -4248,7 +4248,7 @@
 }
 
 .chat-message:first-child {
-  margin-top: 0;
+  margin-top: 16px;
 }
 
 .chat-message-text a,

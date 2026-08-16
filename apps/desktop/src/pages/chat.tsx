@@ -236,12 +236,12 @@ import {
   type SkillDefinition,
   saveChatSkillSelection,
 } from "@/lib/skills";
-import { isDefaultWorkspaceId, joinTaskCwd } from "@/lib/workspace-path";
 import {
-  loadWorkspaceProjects,
-  type WorkspaceProject,
-  workspaceGitQueryKey,
-} from "@/lib/workspaces";
+  defaultTaskCwd,
+  isDefaultWorkspaceId,
+  resolveDefaultSessionCwd,
+} from "@/lib/workspace-path";
+import { loadWorkspaceProjects, workspaceGitQueryKey } from "@/lib/workspaces";
 
 const EMPTY_STRING_ARRAY: string[] = [];
 const CHAT_MESSAGE_COLLAPSE_CHAR_LIMIT = 1200;
@@ -438,7 +438,11 @@ function ChatPage() {
   const planTransitionRef = useRef<PlanTransitionState>("idle");
   const confirmPlanExecutionRef = useRef<() => void>(() => {});
   const selectedCwd = isDefaultWorkspaceId(workspaceKey)
-    ? sessionCwd.trim() || defaultTaskCwd(workspaceProjects, sessionId)
+    ? resolveDefaultSessionCwd(
+        workspaceProjects.find((project) => project.id === DEFAULT_WORKSPACE_ID)?.path,
+        sessionId,
+        sessionCwd,
+      )
     : (workspaceProjects.find((project) => project.id === workspaceKey)?.path ?? sessionCwd);
   const workspaceLabel = isDefaultWorkspaceId(workspaceKey)
     ? DEFAULT_WORKSPACE_NAME
@@ -465,8 +469,12 @@ function ChatPage() {
 
   useEffect(() => {
     if (!isDefaultWorkspaceId(workspaceKey)) return;
-    const next = defaultTaskCwd(workspaceProjects, sessionId);
-    if (next && !sessionCwd.trim()) setSessionCwd(next);
+    const next = resolveDefaultSessionCwd(
+      workspaceProjects.find((project) => project.id === DEFAULT_WORKSPACE_ID)?.path,
+      sessionId,
+      sessionCwd,
+    );
+    if (next && next !== sessionCwd) setSessionCwd(next);
   }, [sessionCwd, sessionId, workspaceKey, workspaceProjects]);
 
   const getPromptInput = useCallback(async () => {
@@ -969,9 +977,9 @@ function ChatPage() {
     serverRunActive || (localRunActive && attachedStreamSessionRef.current === sessionId);
   const runStartedAt = runStartedAtBySession[sessionId];
   const workspaceGitQuery = useQuery({
-    queryKey: workspaceGitQueryKey(workspaceKey),
-    queryFn: () => loadServerWorkspaceGit(workspaceKey),
-    enabled: Boolean(workspaceKey),
+    queryKey: workspaceGitQueryKey(workspaceKey, selectedCwd),
+    queryFn: () => loadServerWorkspaceGit(workspaceKey, selectedCwd),
+    enabled: Boolean(workspaceKey) && (!isDefaultWorkspaceId(workspaceKey) || Boolean(selectedCwd)),
     refetchInterval: isGenerating ? 15_000 : false,
     staleTime: 0,
     refetchOnWindowFocus: true,
@@ -1178,10 +1186,13 @@ function ChatPage() {
     setIsRenamingTitle(false);
     setWorkspaceKey(session.workspaceId ?? (session.cwd ? "" : DEFAULT_WORKSPACE_ID));
     setSessionCwd(
-      session.cwd ??
-        (isDefaultWorkspaceId(session.workspaceId)
-          ? defaultTaskCwd(workspaceProjects, session.id)
-          : ""),
+      isDefaultWorkspaceId(session.workspaceId)
+        ? resolveDefaultSessionCwd(
+            workspaceProjects.find((project) => project.id === DEFAULT_WORKSPACE_ID)?.path,
+            session.id,
+            session.cwd,
+          )
+        : (session.cwd ?? ""),
     );
     systemPromptRef.current = session.systemPrompt;
     sessionCreatedAtRef.current = session.createdAt;
@@ -2647,6 +2658,7 @@ function ChatPage() {
         onSuccess={() => void workspaceGitQuery.refetch()}
         open={gitCommitOpen}
         workspaceId={workspaceKey}
+        cwd={selectedCwd}
       />
       <ChatContextDialog
         promptKey={promptKey}
@@ -2733,11 +2745,6 @@ function ChatPage() {
       <Outlet />
     </div>
   );
-}
-
-function defaultTaskCwd(projects: WorkspaceProject[], sessionId: string) {
-  const root = projects.find((project) => project.id === DEFAULT_WORKSPACE_ID)?.path;
-  return root ? joinTaskCwd(root, sessionId) : "";
 }
 
 function pathBasename(path: string) {

@@ -46,6 +46,17 @@ export function isPathInside(value: string, root: string) {
   return resolved === resolvedRoot || resolved.startsWith(`${resolvedRoot}${path.sep}`);
 }
 
+export function resolveWorkspaceFsRoot(workspacePath: string, cwd?: string) {
+  const root = path.resolve(workspacePath);
+  const requested = cwd?.trim();
+  if (!requested) return root;
+  const resolved = path.resolve(requested);
+  if (!isPathInside(resolved, root)) {
+    throw new Error("cwd 必须位于当前 workspace 内");
+  }
+  return resolved;
+}
+
 export function isDefaultWorkspaceId(value: string | null | undefined) {
   return !value?.trim() || value.trim() === DEFAULT_WORKSPACE_ID;
 }
