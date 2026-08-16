@@ -49,6 +49,7 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   type ComponentType,
+  type CSSProperties,
   type KeyboardEvent,
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
@@ -266,6 +267,46 @@ const WORKSPACE_SORT_STORAGE_KEY = "m-dashboard-workspace-sort-v1";
 const CHAT_UNREAD_STORE_KEY = "chatUnreadSessionIds";
 const WORKSPACE_COLLAPSE_STORE_KEY = "workspaceCollapseState";
 const WORKSPACE_SORT_STORE_KEY = "workspaceSort";
+const WORKSPACE_SECTION_COLLAPSE_KEY = "__workspace_section__";
+const MAIN_SIDEBAR_STATE_STORAGE_KEY = "m-dashboard-main-sidebar-v1";
+const MAIN_SIDEBAR_STATE_STORE_KEY = "mainSidebarState";
+const MAIN_SIDEBAR_DEFAULT_WIDTH = 248;
+const MAIN_SIDEBAR_MIN_WIDTH = 200;
+const MAIN_SIDEBAR_MAX_WIDTH = 360;
+
+type MainSidebarState = {
+  width: number;
+  collapsed: boolean;
+};
+
+function normalizeMainSidebarState(value: unknown): MainSidebarState {
+  const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const width =
+    typeof record.width === "number" && Number.isFinite(record.width)
+      ? clamp(record.width, MAIN_SIDEBAR_MIN_WIDTH, MAIN_SIDEBAR_MAX_WIDTH)
+      : MAIN_SIDEBAR_DEFAULT_WIDTH;
+  return { width, collapsed: record.collapsed === true };
+}
+
+function loadMainSidebarState() {
+  if (typeof window === "undefined") return normalizeMainSidebarState(null);
+  try {
+    return normalizeMainSidebarState(
+      JSON.parse(window.localStorage.getItem(MAIN_SIDEBAR_STATE_STORAGE_KEY) ?? "null"),
+    );
+  } catch {
+    return normalizeMainSidebarState(null);
+  }
+}
+
+async function saveMainSidebarState(state: MainSidebarState) {
+  if (isTauri()) {
+    await settingsStore.set(MAIN_SIDEBAR_STATE_STORE_KEY, state);
+    await settingsStore.save();
+    return;
+  }
+  window.localStorage.setItem(MAIN_SIDEBAR_STATE_STORAGE_KEY, JSON.stringify(state));
+}
 
 function isTauri() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -347,6 +388,9 @@ function AppShell() {
   const [isCommandMenuOpen, setIsCommandMenuOpen] = useState(false);
   const [chatWindowStates, setChatWindowStates] = useState<Record<string, ChatWindowState>>({});
   const [shortcutSettings, setShortcutSettings] = useState<ShortcutSettings>(DEFAULT_SHORTCUTS);
+  const [mainSidebarState, setMainSidebarState] = useState(loadMainSidebarState);
+  const mainSidebarRef = useRef<HTMLElement>(null);
+  const mainSidebarWidthRef = useRef(mainSidebarState.width);
   const location = useLocation();
   const navigate = useNavigate();
   const isChatPage = location.pathname === "/chat";
@@ -373,6 +417,23 @@ function AppShell() {
   useEffect(() => {
     rememberReturnPath(location.pathname, location.search);
   }, [location.pathname, location.search]);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    let active = true;
+    void settingsStore
+      .get<unknown>(MAIN_SIDEBAR_STATE_STORE_KEY)
+      .then((value) => {
+        if (!active || value === null || value === undefined) return;
+        const next = normalizeMainSidebarState(value);
+        mainSidebarWidthRef.current = next.width;
+        setMainSidebarState(next);
+      })
+      .catch((error) => console.error("Failed to load main sidebar state", error));
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     void appendSystemLog({ level: "info", source: "应用", message: "应用窗口已启动" }).catch(() => {
@@ -456,6 +517,66 @@ function AppShell() {
     window.addEventListener("keydown", handleGlobalShortcut);
     return () => window.removeEventListener("keydown", handleGlobalShortcut);
   }, [chatWindowKey, isChatPage, shortcutSettings]);
+
+  function persistMainSidebarState(state: MainSidebarState) {
+    void saveMainSidebarState(state).catch((error) =>
+      console.error("Failed to save main sidebar state", error),
+    );
+  }
+
+  function toggleMainSidebar() {
+    setMainSidebarState((current) => {
+      const next = { ...current, collapsed: !current.collapsed };
+      persistMainSidebarState(next);
+      return next;
+    });
+  }
+
+  function setMainSidebarWidth(width: number) {
+    const nextWidth = clamp(width, MAIN_SIDEBAR_MIN_WIDTH, MAIN_SIDEBAR_MAX_WIDTH);
+    mainSidebarWidthRef.current = nextWidth;
+    setMainSidebarState((current) => {
+      const next = { ...current, width: nextWidth };
+      persistMainSidebarState(next);
+      return next;
+    });
+  }
+
+  function beginMainSidebarResize(event: ReactPointerEvent) {
+    if (window.matchMedia("(max-width: 767px)").matches) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const initialWidth = mainSidebarRef.current?.getBoundingClientRect().width;
+    if (!initialWidth) return;
+    mainSidebarWidthRef.current = initialWidth;
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      const width = clamp(
+        initialWidth + moveEvent.clientX - startX,
+        MAIN_SIDEBAR_MIN_WIDTH,
+        MAIN_SIDEBAR_MAX_WIDTH,
+      );
+      mainSidebarWidthRef.current = width;
+      mainSidebarRef.current?.style.setProperty("--main-sidebar-width", `${width}px`);
+    };
+    const handleUp = () => {
+      setMainSidebarWidth(mainSidebarWidthRef.current);
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+  }
+
+  function handleMainSidebarResizeKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight" && event.key !== "Home") return;
+    event.preventDefault();
+    const width =
+      event.key === "Home"
+        ? MAIN_SIDEBAR_DEFAULT_WIDTH
+        : mainSidebarState.width + (event.key === "ArrowLeft" ? -8 : 8);
+    setMainSidebarWidth(width);
+  }
 
   useEffect(() => {
     return subscribeFileViewerOpen((request) => {
@@ -665,66 +786,95 @@ function AppShell() {
         ) : null}
         {!hideMainSidebar ? (
           <>
-            {/* 左列：红绿灯 + 侧栏同一背景，连成一体 */}
-            <aside className="app-shell-sidebar flex w-[248px] shrink-0 flex-col border-border border-r max-md:w-[72px] max-sm:w-16">
-              <div className="flex h-8 shrink-0 items-center select-none">
-                <TitlebarDragRegion />
-              </div>
-              <SidebarHeader />
-              <nav
-                className="space-y-0.5 px-3 py-2 pb-1 max-md:px-2 max-sm:px-1.5"
-                aria-label="Main navigation"
-              >
-                {navItems.slice(0, 2).map((item) => (
-                  <SidebarNavItem item={item} key={item.to} />
-                ))}
-              </nav>
-              <div className="sidebar-scroll-area min-h-0 flex-1 overflow-y-auto">
-                <nav
-                  className="space-y-0.5 px-3 pt-0 pb-2 max-md:px-2 max-sm:px-1.5"
-                  aria-label="Secondary navigation"
+            {!mainSidebarState.collapsed ? (
+              <>
+                {/* 左列：红绿灯 + 侧栏同一背景，连成一体 */}
+                <aside
+                  className="app-shell-sidebar main-sidebar flex shrink-0 flex-col border-border border-r"
+                  ref={mainSidebarRef}
+                  style={
+                    {
+                      "--main-sidebar-width": `${mainSidebarState.width}px`,
+                    } as CSSProperties
+                  }
                 >
-                  {navItems.slice(2).map((item) => (
-                    <SidebarNavItem item={item} key={item.to} />
-                  ))}
-                </nav>
-                <WorkspaceConversationGroups />
-              </div>
-
-              <footer className="relative mt-auto border-border border-t px-3 py-1 max-md:px-2 max-sm:px-1.5">
-                <details className="group">
-                  <summary className="flex h-8 cursor-pointer list-none items-center justify-between rounded-md px-3 text-left text-[13px] font-semibold text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground max-md:justify-center max-md:px-0 [&::-webkit-details-marker]:hidden">
-                    <span className="flex min-w-0 items-center gap-2">
-                      <Avatar className="size-5 bg-primary text-[9px] font-bold text-primary-foreground">
-                        <AvatarFallback className="bg-primary text-[9px] font-bold text-primary-foreground">
-                          O
-                        </AvatarFallback>
-                      </Avatar>
-                      <span className="truncate max-md:hidden">OpenAI</span>
-                    </span>
-                  </summary>
-                  <div className="absolute right-3 bottom-full left-3 mb-2 overflow-hidden rounded-md border border-border bg-popover p-1 shadow-lg max-md:right-2 max-md:left-2 max-sm:right-1.5 max-sm:left-1.5">
-                    <NavLink
-                      className={({ isActive }: NavLinkRenderProps) =>
-                        `flex h-9 items-center gap-2 rounded-sm px-2 text-sm transition-colors ${
-                          isActive
-                            ? "bg-accent text-accent-foreground"
-                            : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                        } max-md:justify-center max-md:px-0`
-                      }
-                      to="/settings"
-                    >
-                      <Settings className="size-4 shrink-0" />
-                      <span className="max-md:hidden">Settings</span>
-                    </NavLink>
+                  <div className="flex h-8 shrink-0 items-center select-none">
+                    <div className="h-full w-[72px] shrink-0" data-tauri-drag-region />
+                    <MainSidebarToggleButton collapsed={false} onToggle={toggleMainSidebar} />
+                    <TitlebarDragRegion />
                   </div>
-                </details>
-              </footer>
-            </aside>
+                  <SidebarHeader />
+                  <nav
+                    className="space-y-0.5 px-2 py-2 pb-1 max-sm:px-1.5"
+                    aria-label="Main navigation"
+                  >
+                    {navItems.slice(0, 1).map((item) => (
+                      <SidebarNavItem item={item} key={item.to} />
+                    ))}
+                  </nav>
+                  <div className="sidebar-scroll-area min-h-0 flex-1 overflow-y-auto">
+                    <nav
+                      className="space-y-0.5 px-2 pt-0 max-sm:px-1.5"
+                      aria-label="Secondary navigation"
+                    >
+                      {navItems.slice(1).map((item) => (
+                        <SidebarNavItem item={item} key={item.to} />
+                      ))}
+                    </nav>
+                    <WorkspaceConversationGroups />
+                  </div>
+
+                  <footer className="relative mt-auto border-border border-t px-2 py-1 max-sm:px-1.5">
+                    <details className="group">
+                      <summary className="flex h-8 cursor-pointer list-none items-center justify-between rounded-md px-3 text-left text-[13px] font-semibold text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground max-md:justify-center max-md:px-0 [&::-webkit-details-marker]:hidden">
+                        <span className="flex min-w-0 items-center gap-2">
+                          <Avatar className="size-5 bg-primary text-[9px] font-bold text-primary-foreground">
+                            <AvatarFallback className="bg-primary text-[9px] font-bold text-primary-foreground">
+                              O
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="truncate max-md:hidden">OpenAI</span>
+                        </span>
+                      </summary>
+                      <div className="absolute right-2 bottom-full left-2 mb-2 overflow-hidden rounded-md border border-border bg-popover p-1 shadow-lg max-sm:right-1.5 max-sm:left-1.5">
+                        <NavLink
+                          className={({ isActive }: NavLinkRenderProps) =>
+                            `flex h-9 items-center gap-2 rounded-sm px-2 text-sm transition-colors ${
+                              isActive
+                                ? "bg-accent text-accent-foreground"
+                                : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                            } max-md:justify-center max-md:px-0`
+                          }
+                          to="/settings"
+                        >
+                          <Settings className="size-4 shrink-0" />
+                          <span className="max-md:hidden">Settings</span>
+                        </NavLink>
+                      </div>
+                    </details>
+                  </footer>
+                </aside>
+                {/* biome-ignore lint/a11y/useSemanticElements: the interactive resize separator needs pointer events and a rendered handle. */}
+                <div
+                  aria-label="调整 Sidebar 宽度"
+                  aria-orientation="vertical"
+                  aria-valuemax={MAIN_SIDEBAR_MAX_WIDTH}
+                  aria-valuemin={MAIN_SIDEBAR_MIN_WIDTH}
+                  aria-valuenow={Math.round(mainSidebarState.width)}
+                  className="main-sidebar-resize max-md:hidden"
+                  onDoubleClick={() => setMainSidebarWidth(MAIN_SIDEBAR_DEFAULT_WIDTH)}
+                  onKeyDown={handleMainSidebarResizeKeyDown}
+                  onPointerDown={beginMainSidebarResize}
+                  role="separator"
+                  tabIndex={0}
+                  title="拖动调整 Sidebar 宽度；双击恢复默认宽度"
+                />
+              </>
+            ) : null}
 
             {/* 右列：内容区铺满到窗口顶部，拖拽条透明浮在上方 */}
             <div
-              className={`app-shell-content relative flex min-w-0 flex-1 flex-col max-sm:w-[calc(100vw-4rem)] ${isChatPage ? "chat-page" : ""}`}
+              className={`app-shell-content relative flex min-w-0 flex-1 flex-col ${!mainSidebarState.collapsed ? "max-sm:w-[calc(100vw-4rem)]" : "w-full"} ${isChatPage ? "chat-page" : ""}`}
             >
               <div
                 className={`chat-split-layout ${isChatPanelOpen ? "is-open" : ""} ${isChatPanelExpanded ? "is-expanded" : ""}`}
@@ -800,6 +950,12 @@ function AppShell() {
               <div
                 className={`absolute inset-x-0 top-0 z-10 flex h-8 items-center ${isChatPage ? "chat-top-actions-layer" : ""}`}
               >
+                {mainSidebarState.collapsed ? (
+                  <>
+                    <div className="h-full w-[72px] shrink-0" data-tauri-drag-region />
+                    <MainSidebarToggleButton collapsed onToggle={toggleMainSidebar} />
+                  </>
+                ) : null}
                 <TitlebarDragRegion />
                 <TopActions
                   isPanelOpen={isChatPanelOpen}
@@ -907,11 +1063,35 @@ function ChatServerStatusBanner() {
 
 function SidebarHeader() {
   return (
-    <header className="flex items-center px-4 pt-3 pb-2 max-md:justify-center max-md:px-2 max-sm:px-1.5">
+    <header className="flex items-center px-3 pt-3 pb-2 max-md:justify-center max-md:px-2 max-sm:px-1.5">
       <h1 className="truncate pl-2 font-semibold text-[15px] text-foreground max-md:hidden">
         ChatDesk
       </h1>
     </header>
+  );
+}
+
+function MainSidebarToggleButton({
+  collapsed,
+  onToggle,
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  const label = collapsed ? "展开 Sidebar" : "收起 Sidebar";
+  return (
+    <Button
+      aria-label={label}
+      aria-pressed={collapsed}
+      className={`size-7 shrink-0 translate-y-0.5 text-muted-foreground ${collapsed ? "" : "max-md:hidden"}`}
+      onClick={onToggle}
+      size="icon"
+      title={label}
+      type="button"
+      variant="ghost"
+    >
+      <PanelLeft className="size-4" />
+    </Button>
   );
 }
 
@@ -1137,6 +1317,21 @@ function WorkspaceConversationGroups() {
     });
   }
 
+  const isWorkspaceSectionCollapsed = collapseOverride[WORKSPACE_SECTION_COLLAPSE_KEY] ?? false;
+
+  function toggleWorkspaceSection() {
+    setCollapseOverride((current) => {
+      const next = {
+        ...current,
+        [WORKSPACE_SECTION_COLLAPSE_KEY]: !(current[WORKSPACE_SECTION_COLLAPSE_KEY] ?? false),
+      };
+      void saveWorkspaceCollapseState(next).catch((error) =>
+        console.error("Failed to save workspace collapse state", error),
+      );
+      return next;
+    });
+  }
+
   function toggleExpanded(groupKey: string) {
     setExpandedGroups((current) => {
       const next = new Set(current);
@@ -1177,14 +1372,27 @@ function WorkspaceConversationGroups() {
   return (
     <section
       aria-labelledby="workspace-conversations-heading"
-      className="px-3 pt-3 pb-2 max-md:hidden"
+      className="px-2 pt-2 pb-2 max-md:hidden"
     >
-      <div className="group flex h-7 items-center rounded-md px-2 transition-colors hover:bg-accent/60">
+      <div className="group flex h-7 items-center rounded-md px-2">
         <h2
-          className="min-w-0 flex-1 truncate font-medium text-xs text-muted-foreground uppercase"
+          className="min-w-0 flex-1 font-medium text-[13px] text-muted-foreground"
           id="workspace-conversations-heading"
         >
-          Workspace
+          <button
+            aria-expanded={!isWorkspaceSectionCollapsed}
+            aria-label={isWorkspaceSectionCollapsed ? "展开 Workspace" : "收起 Workspace"}
+            className="flex w-full items-center gap-1 text-left"
+            onClick={toggleWorkspaceSection}
+            title="Workspace"
+            type="button"
+          >
+            <span className="truncate">Workspace</span>
+            <ChevronRight
+              aria-hidden="true"
+              className={`size-3.5 shrink-0 opacity-0 transition-[transform,opacity] group-hover:opacity-100 group-focus-within:opacity-100 ${isWorkspaceSectionCollapsed ? "" : "rotate-90"}`}
+            />
+          </button>
         </h2>
         <button
           aria-label="添加 Workspace"
@@ -1259,6 +1467,7 @@ function WorkspaceConversationGroups() {
           {groups.map((group) => {
             const isExpanded = expandedGroups.has(group.key);
             const isRecent = group.key === "default";
+            if (!isRecent && isWorkspaceSectionCollapsed) return null;
             const isCollapsed = isGroupCollapsed(group);
             const visibleSessions =
               isRecent || isExpanded ? group.sessions : group.sessions.slice(0, 5);
@@ -1270,16 +1479,20 @@ function WorkspaceConversationGroups() {
                   className={`group flex h-7 min-w-0 items-center rounded-md ${isRecent ? "px-2" : "transition-colors hover:bg-accent/60"}`}
                 >
                   {isRecent ? (
-                    <h2 className="min-w-0 flex-1 font-medium text-xs text-muted-foreground uppercase">
+                    <h2 className="min-w-0 flex-1 font-medium text-[13px] text-muted-foreground">
                       <button
                         aria-expanded={!isCollapsed}
                         aria-label={isCollapsed ? `展开 ${group.label}` : `收起 ${group.label}`}
-                        className="w-full truncate text-left"
+                        className="flex w-full items-center gap-1 text-left"
                         onClick={() => toggleCollapsed(group)}
                         title={group.label}
                         type="button"
                       >
-                        {group.label}
+                        <span className="truncate">{group.label}</span>
+                        <ChevronRight
+                          aria-hidden="true"
+                          className={`size-3.5 shrink-0 opacity-0 transition-[transform,opacity] group-hover:opacity-100 group-focus-within:opacity-100 ${isCollapsed ? "" : "rotate-90"}`}
+                        />
                       </button>
                     </h2>
                   ) : (
@@ -1566,7 +1779,7 @@ function groupChatsByWorkspace(
 
   const recentGroup: WorkspaceChatGroup = {
     key: "default",
-    label: "最近",
+    label: "Task",
     sessions: defaultSessions,
   };
   const workspaceGroups: WorkspaceChatGroup[] = [];
