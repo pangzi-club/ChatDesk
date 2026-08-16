@@ -2179,21 +2179,6 @@ function ChatWorkspaceWindow({
   });
 
   useEffect(() => {
-    if (!workspaceId || state.tabs.length > 0) return;
-    if (isDefaultWorkspaceId(workspaceId) && !cwd) return;
-    const tab: ChatWindowTab = {
-      id: createChatWindowTabId(),
-      title: "Explorer",
-      kind: "workspace",
-      workspaceId,
-      cwd,
-      explorerView: "files",
-      refreshToken: Date.now(),
-    };
-    onChange({ ...state, tabs: [tab], activeTabId: tab.id });
-  }, [cwd, onChange, state, workspaceId]);
-
-  useEffect(() => {
     if (!activeTabId) return;
     const nextView =
       workspaceTab?.explorerView ?? (workspaceTab?.kind === "git-diff" ? "git" : "files");
@@ -2595,9 +2580,11 @@ function ChatWorkspaceWindow({
     window.addEventListener("pointerup", handleUp);
   }
 
-  function addGitDiffTab() {
-    if (!workspaceId) return;
-    if (isDefaultWorkspaceId(workspaceId) && !cwd) return;
+  const canOpenExplorer = Boolean(workspaceId) && !(isDefaultWorkspaceId(workspaceId) && !cwd);
+  const canOpenTerminal = Boolean(cwd);
+
+  function addWorkspaceExplorerTab(view: "files" | "git") {
+    if (!canOpenExplorer) return;
     const existing = state.tabs.find(
       (tab) =>
         (tab.kind === "workspace" || tab.kind === "source" || tab.kind === "git-diff") &&
@@ -2613,7 +2600,7 @@ function ChatWorkspaceWindow({
                 ...tab,
                 kind: "workspace" as const,
                 cwd,
-                explorerView: "git",
+                explorerView: view,
                 refreshToken: Date.now(),
               }
             : tab,
@@ -2627,10 +2614,14 @@ function ChatWorkspaceWindow({
       kind: "workspace" as const,
       workspaceId,
       cwd,
-      explorerView: "git" as const,
+      explorerView: view,
       refreshToken: Date.now(),
     };
     onChange({ ...state, tabs: [...state.tabs, nextTab], activeTabId: nextTab.id });
+  }
+
+  function addGitDiffTab() {
+    addWorkspaceExplorerTab("git");
   }
 
   function addTerminalTab() {
@@ -2764,14 +2755,11 @@ function ChatWorkspaceWindow({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" sideOffset={6}>
-            <DropdownMenuItem
-              disabled={!workspaceId || (isDefaultWorkspaceId(workspaceId) && !cwd)}
-              onSelect={addGitDiffTab}
-            >
+            <DropdownMenuItem disabled={!canOpenExplorer} onSelect={addGitDiffTab}>
               <FolderGit2 className="size-3.5" />
               Workspace Explorer
             </DropdownMenuItem>
-            <DropdownMenuItem disabled={!cwd} onSelect={addTerminalTab}>
+            <DropdownMenuItem disabled={!canOpenTerminal} onSelect={addTerminalTab}>
               <SquareTerminal className="size-3.5" />
               Terminal
             </DropdownMenuItem>
@@ -3084,7 +3072,48 @@ function ChatWorkspaceWindow({
         </div>
       ) : (
         <div className="chat-workspace-window-empty" aria-live="polite">
-          {state.tabs.length === 0 ? "窗口为空" : "空白占位窗口"}
+          <div className="chat-workspace-window-empty-guide">
+            <h2>{state.tabs.length === 0 ? "窗口为空" : "空白占位窗口"}</h2>
+            <p>
+              {canOpenExplorer
+                ? "浏览工作区、打开终端或预览网页。对话中打开的文件、计划和预览也会出现在这里。"
+                : "当前对话没有可用工作区。可以先打开 Browser，或绑定工作区后再浏览文件。"}
+            </p>
+            <div className="chat-workspace-window-empty-actions">
+              <Button
+                disabled={!canOpenExplorer}
+                onClick={() => addWorkspaceExplorerTab("files")}
+                size="sm"
+                title={canOpenExplorer ? "打开工作区 Explorer" : "当前对话没有可用工作区"}
+                type="button"
+                variant="outline"
+              >
+                <FolderGit2 className="size-3.5" />
+                Explorer
+              </Button>
+              <Button
+                disabled={!canOpenTerminal}
+                onClick={addTerminalTab}
+                size="sm"
+                title={canOpenTerminal ? "打开 Terminal" : "当前对话没有工作目录"}
+                type="button"
+                variant="outline"
+              >
+                <SquareTerminal className="size-3.5" />
+                Terminal
+              </Button>
+              <Button
+                onClick={addBrowserTab}
+                size="sm"
+                title="打开 Browser"
+                type="button"
+                variant="outline"
+              >
+                <Globe2 className="size-3.5" />
+                Browser
+              </Button>
+            </div>
+          </div>
         </div>
       )}
       {!split
