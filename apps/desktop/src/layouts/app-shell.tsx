@@ -95,6 +95,14 @@ import { rememberReturnPath } from "@/lib/app-return-path";
 import { getBrowserPreviewTitle, normalizeBrowserPreviewUrl } from "@/lib/browser-preview";
 import { subscribeBrowserPreviewOpen } from "@/lib/browser-preview-events";
 import {
+  chatNewNavigationState,
+  chatNewPath,
+  chatSessionPath,
+  getChatWindowKey,
+  isChatPath,
+  parseChatLocation,
+} from "@/lib/chat-routes";
+import {
   type ChatServerSession,
   canMonitorChatServer,
   canRestartChatServer,
@@ -393,30 +401,55 @@ function AppShell() {
   const mainSidebarWidthRef = useRef(mainSidebarState.width);
   const location = useLocation();
   const navigate = useNavigate();
-  const isChatPage = location.pathname === "/chat";
-  const chatWindowKey = getChatWindowKey(location.search);
+  const isChatPage = isChatPath(location.pathname);
+  const chatWindowKey = getChatWindowKey(location.pathname, location.search);
+  const previousChatWindowKeyRef = useRef(chatWindowKey);
   const activeChatWindowState = chatWindowStates[chatWindowKey];
   const isChatPanelOpen = isChatPage && Boolean(activeChatWindowState?.open);
   const isChatPanelExpanded = isChatPage && Boolean(activeChatWindowState?.expanded);
   const chatPanelSplitRatio = activeChatWindowState?.splitRatio ?? 0.5;
   const shouldReduceMotion = Boolean(useReducedMotion());
   const chatPanelTransition = getWorkbenchLayoutTransition(shouldReduceMotion);
-  const chatUrlParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
-  const chatSessionId = isChatPage ? chatUrlParams.get("sessionId") : null;
+  const chatRoute = useMemo(
+    () => parseChatLocation(location.pathname, location.search),
+    [location.pathname, location.search],
+  );
+  const chatSessionId = chatRoute.kind === "session" ? chatRoute.sessionId : null;
   const chatSessionQuery = useQuery({
     queryKey: ["chat-window-session", chatSessionId],
     queryFn: () => loadChatSession(chatSessionId ?? ""),
     enabled: Boolean(chatSessionId),
   });
   const chatWorkspaceId =
-    chatUrlParams.get("workspaceId") ?? chatSessionQuery.data?.workspaceId ?? "";
-  const chatWorkspaceCwd = chatUrlParams.get("workspaceCwd") ?? chatSessionQuery.data?.cwd ?? "";
+    chatRoute.kind === "new" ? chatRoute.workspaceId : (chatSessionQuery.data?.workspaceId ?? "");
+  const chatWorkspaceCwd =
+    chatRoute.kind === "new" ? chatRoute.workspaceCwd : (chatSessionQuery.data?.cwd ?? "");
   const hideMainSidebar = location.pathname.startsWith("/settings");
   const lockOutletScroll = location.pathname.startsWith("/settings/history");
 
   useEffect(() => {
     rememberReturnPath(location.pathname, location.search);
   }, [location.pathname, location.search]);
+
+  useEffect(() => {
+    const previousKey = previousChatWindowKeyRef.current;
+    previousChatWindowKeyRef.current = chatWindowKey;
+    if (
+      previousKey === chatWindowKey ||
+      !previousKey.startsWith("workspace:") ||
+      chatWindowKey.startsWith("workspace:")
+    ) {
+      return;
+    }
+    setChatWindowStates((current) => {
+      const draftState = current[previousKey];
+      if (!draftState) return current;
+      const next = { ...current };
+      delete next[previousKey];
+      next[chatWindowKey] = current[chatWindowKey] ?? draftState;
+      return next;
+    });
+  }, [chatWindowKey]);
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -445,7 +478,7 @@ function AppShell() {
     if (!("__TAURI_INTERNALS__" in window)) return;
 
     let unlisten: (() => void) | undefined;
-    void listen("tray-chat", () => navigate("/chat")).then((cleanup) => {
+    void listen("tray-chat", () => navigate(chatNewPath())).then((cleanup) => {
       unlisten = cleanup;
     });
 
@@ -580,7 +613,7 @@ function AppShell() {
 
   useEffect(() => {
     return subscribeFileViewerOpen((request) => {
-      const key = getChatWindowKey(location.search);
+      const key = getChatWindowKey(location.pathname, location.search);
       setChatWindowStates((current) => {
         const state = current[key] ?? createChatWindowState();
         const existing = state.tabs.find(
@@ -624,7 +657,7 @@ function AppShell() {
         };
       });
     });
-  }, [location.search]);
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     return subscribePlanViewerUpdated((request) => {
@@ -658,7 +691,7 @@ function AppShell() {
 
   useEffect(() => {
     return subscribePlanViewerOpen((request) => {
-      const key = getChatWindowKey(location.search);
+      const key = getChatWindowKey(location.pathname, location.search);
       setChatWindowStates((current) => {
         const state = current[key] ?? createChatWindowState();
         const existing = state.tabs.find(
@@ -697,13 +730,13 @@ function AppShell() {
         };
       });
     });
-  }, [location.search]);
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     return subscribeBrowserPreviewOpen((request) => {
       const url = normalizeBrowserPreviewUrl(request.url);
       if (!url) return;
-      const key = getChatWindowKey(location.search);
+      const key = getChatWindowKey(location.pathname, location.search);
       setChatWindowStates((current) => {
         const state = current[key] ?? createChatWindowState();
         const existing = [...state.tabs].reverse().find((tab) => tab.kind === "browser");
@@ -731,11 +764,11 @@ function AppShell() {
         };
       });
     });
-  }, [location.search]);
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     return subscribeImagePreviewOpen((request) => {
-      const key = getChatWindowKey(location.search);
+      const key = getChatWindowKey(location.pathname, location.search);
       setChatWindowStates((current) => {
         const state = current[key] ?? createChatWindowState();
         const existing = [...state.tabs]
@@ -766,7 +799,7 @@ function AppShell() {
         };
       });
     });
-  }, [location.search]);
+  }, [location.pathname, location.search]);
 
   return (
     <main className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
@@ -1096,14 +1129,19 @@ function MainSidebarToggleButton({
 }
 
 function SidebarNavItem({ item }: { item: (typeof navItems)[number] }) {
+  const location = useLocation();
   const Icon = item.icon;
+  const to =
+    item.to === "/chat" && isChatPath(location.pathname)
+      ? `${location.pathname}${location.search}`
+      : item.to;
 
   return (
     <NavLink
       className={({ isActive }: NavLinkRenderProps) =>
         `sidebar-nav-item flex h-8 w-full items-center gap-2 px-3 text-left text-[13px] font-medium transition-colors max-md:justify-center max-md:px-0 max-sm:h-8 ${isActive ? "is-active" : ""}`
       }
-      to={item.to}
+      to={to}
     >
       {({ isActive }: NavLinkRenderProps) => (
         <>
@@ -1155,8 +1193,8 @@ function WorkspaceConversationGroups() {
     queryKey: ["workspace-projects"],
     queryFn: loadWorkspaceProjects,
   });
-  const activeSessionId =
-    location.pathname === "/chat" ? new URLSearchParams(location.search).get("sessionId") : null;
+  const chatRoute = parseChatLocation(location.pathname, location.search);
+  const activeSessionId = chatRoute.kind === "session" ? chatRoute.sessionId : null;
   const activeSessionIdRef = useRef(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
   const groups = useMemo(
@@ -1190,10 +1228,13 @@ function WorkspaceConversationGroups() {
       });
       await queryClient.invalidateQueries({ queryKey: ["chat-index"] });
       if (item.id === activeSessionIdRef.current) {
-        const workspaceId = item.workspaceId ?? (item.cwd ? `cwd:${item.cwd}` : "default");
-        const params = new URLSearchParams({ workspaceId });
-        if (item.cwd) params.set("workspaceCwd", item.cwd);
-        navigate(`/chat?${params.toString()}`, { replace: true });
+        navigate(
+          chatNewPath({
+            workspaceId: item.workspaceId ?? (item.cwd ? `cwd:${item.cwd}` : ""),
+            workspaceCwd: item.cwd,
+          }),
+          { replace: true, state: chatNewNavigationState() },
+        );
       }
       setSessionToDelete(null);
     },
@@ -1342,9 +1383,9 @@ function WorkspaceConversationGroups() {
   }
 
   function startWorkspaceSession(group: WorkspaceChatGroup) {
-    const params = new URLSearchParams({ workspaceId: group.key });
-    if (group.cwd) params.set("workspaceCwd", group.cwd);
-    navigate(`/chat?${params.toString()}`);
+    navigate(chatNewPath({ workspaceId: group.key, workspaceCwd: group.cwd }), {
+      state: chatNewNavigationState(),
+    });
   }
 
   function addWorkspace() {
@@ -1361,7 +1402,7 @@ function WorkspaceConversationGroups() {
       );
       return next;
     });
-    navigate(`/chat?sessionId=${encodeURIComponent(sessionId)}`);
+    navigate(chatSessionPath(sessionId));
   }
 
   function confirmRemoveSession() {
@@ -1567,8 +1608,7 @@ function WorkspaceConversationGroups() {
                         >
                           <AnimatePresence initial={false}>
                             {visibleSessions.map((session) => {
-                              const isActive =
-                                location.pathname === "/chat" && activeSessionId === session.id;
+                              const isActive = activeSessionId === session.id;
                               const sessionStatus = serverStatuses[session.id];
                               const isRunning =
                                 sessionStatus === "submitted" || sessionStatus === "streaming";
@@ -1881,11 +1921,6 @@ function createChatWindowState(): ChatWindowState {
 
 function createChatWindowTabId() {
   return `chat-window-tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function getChatWindowKey(search: string) {
-  const params = new URLSearchParams(search);
-  return params.get("sessionId") || `workspace:${params.get("workspaceId") || "new"}`;
 }
 
 function ChatWorkspaceWindow({
@@ -3028,6 +3063,7 @@ function TopActions({
 
 function CommandMenu({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -3050,7 +3086,11 @@ function CommandMenu({ onClose }: { onClose: () => void }) {
       const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query.trim())}`;
       await openExternal(searchUrl);
     } else {
-      navigate(item.to);
+      navigate(
+        item.to === "/chat" && isChatPath(location.pathname)
+          ? `${location.pathname}${location.search}`
+          : item.to,
+      );
     }
     onClose();
   }

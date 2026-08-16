@@ -61,7 +61,7 @@ import {
   X,
 } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { ChatAttachmentChips } from "@/components/chat-attachment-chips";
 import { ChatCommandPopup } from "@/components/chat-command-popup";
 import { ChatContextDialog } from "@/components/chat-context-dialog";
@@ -133,6 +133,7 @@ import {
   lastAssistantMessageHasCompletedPlanInput,
   latestAssistantHasPlanWrite,
 } from "@/lib/chat-plan-state";
+import { chatNewPath, chatRouteKey, chatSessionPath, parseChatLocation } from "@/lib/chat-routes";
 import {
   CHAT_SANDBOX_MODE_DESCRIPTIONS,
   CHAT_SANDBOX_MODE_LABELS,
@@ -279,10 +280,15 @@ function fileToDataUrl(file: File): Promise<string> {
 
 function ChatPage() {
   const queryClient = useQueryClient();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const requestedSessionId = searchParams.get("sessionId");
-  const requestedWorkspaceId = searchParams.get("workspaceId");
-  const requestedWorkspaceCwd = searchParams.get("workspaceCwd") ?? "";
+  const location = useLocation();
+  const navigate = useNavigate();
+  const chatRoute = useMemo(
+    () => parseChatLocation(location.pathname, location.search),
+    [location.pathname, location.search],
+  );
+  const resetChatDraft = Boolean(
+    (location.state as { resetChatDraft?: boolean } | null)?.resetChatDraft,
+  );
   const { data: chatIndex = [], isLoading: isChatHistoryLoading } = useQuery({
     queryKey: ["chat-index"],
     queryFn: loadChatIndex,
@@ -349,14 +355,21 @@ function ChatPage() {
   const [commandCaret, setCommandCaret] = useState(0);
   const [commandIndex, setCommandIndex] = useState(0);
   const [commandDismissed, setCommandDismissed] = useState(false);
-  const [sessionId, setSessionId] = useState(createSessionId);
+  const [sessionId, setSessionId] = useState(() =>
+    chatRoute.kind === "session" ? chatRoute.sessionId : createSessionId(),
+  );
   const [sessionTitle, setSessionTitle] = useState("新对话");
-  const [workspaceKey, setWorkspaceKey] = useState("");
-  const [sessionCwd, setSessionCwd] = useState("");
-  const localSessionTransitionRef = useRef<{
-    nextSessionId: string;
-    previousSessionId: string;
-  } | null>(null);
+  const [workspaceKey, setWorkspaceKey] = useState(() =>
+    chatRoute.kind === "new" ? chatRoute.workspaceId : "",
+  );
+  const [sessionCwd, setSessionCwd] = useState(() =>
+    chatRoute.kind === "new" ? chatRoute.workspaceCwd : "",
+  );
+  const [isHydratingSession, setIsHydratingSession] = useState(() => chatRoute.kind === "session");
+  const [sessionHydrateGeneration, setSessionHydrateGeneration] = useState(0);
+  const appliedRouteKeyRef = useRef(chatRoute.kind === "new" ? chatRouteKey(chatRoute) : "");
+  const loadingSessionIdRef = useRef<string | null>(null);
+  const handledResetKeyRef = useRef<string | null>(null);
   const skillsSelectionInitializedRef = useRef(false);
   const sessionCreatedAtRef = useRef(new Date().toISOString());
   const sessionAttachmentsRef = useRef<ChatAttachment[]>([]);
@@ -585,32 +598,27 @@ function ChatPage() {
   const [generationElapsedSeconds, setGenerationElapsedSeconds] = useState(0);
 
   const startNewSession = useCallback(
-    (nextWorkspaceId = "", nextWorkspaceCwd = "") => {
+    (nextWorkspaceId = "", nextWorkspaceCwd = "", options?: { skipNavigate?: boolean }) => {
       const nextSessionId = createSessionId();
       const normalizedWorkspaceId = nextWorkspaceId === "default" ? "" : nextWorkspaceId;
-      localSessionTransitionRef.current = {
-        nextSessionId,
-        previousSessionId: activeSessionRef.current,
-      };
+      const nextPath = chatNewPath({
+        workspaceId: normalizedWorkspaceId,
+        workspaceCwd: nextWorkspaceCwd,
+      });
+      appliedRouteKeyRef.current = chatRouteKey({
+        kind: "new",
+        workspaceId: normalizedWorkspaceId,
+        workspaceCwd: nextWorkspaceCwd,
+      });
+      loadingSessionIdRef.current = null;
+      setIsHydratingSession(false);
       setSessionId(nextSessionId);
-      setSearchParams(
-        (prev) => {
-          const next = new URLSearchParams(prev);
-          next.set("sessionId", nextSessionId);
-          if (normalizedWorkspaceId) {
-            next.set("workspaceId", normalizedWorkspaceId);
-          } else {
-            next.delete("workspaceId");
-          }
-          if (nextWorkspaceCwd) {
-            next.set("workspaceCwd", nextWorkspaceCwd);
-          } else {
-            next.delete("workspaceCwd");
-          }
-          return next;
-        },
-        { replace: true },
-      );
+      if (!options?.skipNavigate) {
+        const currentPath = `${location.pathname}${location.search}`;
+        if (currentPath !== nextPath) {
+          navigate(nextPath, { replace: true });
+        }
+      }
       workspaceSelectionInitializedRef.current = true;
       setWorkspaceKey(normalizedWorkspaceId);
       setSessionCwd(nextWorkspaceCwd);
@@ -643,8 +651,21 @@ function ChatPage() {
       setMessages([]);
       setInput("");
     },
-    [installedSkillIds, savedChatSkillIds, setMessages, setSearchParams],
+    [
+      installedSkillIds,
+      location.pathname,
+      location.search,
+      navigate,
+      savedChatSkillIds,
+      setMessages,
+    ],
   );
+
+  const promoteDraftSession = useCallback(() => {
+    if (chatRoute.kind === "session" && chatRoute.sessionId === sessionId) return;
+    appliedRouteKeyRef.current = chatRouteKey({ kind: "session", sessionId });
+    navigate(chatSessionPath(sessionId), { replace: true });
+  }, [chatRoute, navigate, sessionId]);
 
   function selectWorkspace(nextWorkspaceValue: string) {
     const nextWorkspaceId = nextWorkspaceValue === "default" ? "" : nextWorkspaceValue;
@@ -653,17 +674,16 @@ function ChatPage() {
     workspaceSelectionInitializedRef.current = true;
     setWorkspaceKey(nextWorkspaceId);
     setSessionCwd(nextWorkspaceCwd);
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        if (nextWorkspaceId) next.set("workspaceId", nextWorkspaceId);
-        else next.delete("workspaceId");
-        if (nextWorkspaceCwd) next.set("workspaceCwd", nextWorkspaceCwd);
-        else next.delete("workspaceCwd");
-        return next;
-      },
-      { replace: true },
-    );
+    if (chatRoute.kind === "new") {
+      appliedRouteKeyRef.current = chatRouteKey({
+        kind: "new",
+        workspaceId: nextWorkspaceId,
+        workspaceCwd: nextWorkspaceCwd,
+      });
+      navigate(chatNewPath({ workspaceId: nextWorkspaceId, workspaceCwd: nextWorkspaceCwd }), {
+        replace: true,
+      });
+    }
   }
 
   useEffect(() => {
@@ -1040,95 +1060,52 @@ function ChatPage() {
 
   useEffect(() => {
     if (isChatHistoryLoading) return;
-    let active = true;
-
-    if (requestedSessionId) {
-      const localTransition = localSessionTransitionRef.current;
-      if (localTransition) {
-        const isNewUrl = requestedSessionId === localTransition.nextSessionId;
-        const isOldUrlWithNewState =
-          requestedSessionId === localTransition.previousSessionId &&
-          sessionId === localTransition.nextSessionId;
-        if (isNewUrl || isOldUrlWithNewState) {
-          if (isNewUrl && sessionId === localTransition.nextSessionId) {
-            localSessionTransitionRef.current = null;
-          }
-          return;
-        }
-        if (sessionId === localTransition.nextSessionId) {
-          localSessionTransitionRef.current = null;
-        }
-      }
-      if (requestedSessionId === sessionId) {
+    const routeKey = chatRouteKey(chatRoute);
+    if (chatRoute.kind === "new") {
+      if (resetChatDraft) {
+        if (handledResetKeyRef.current === location.key) return;
+        handledResetKeyRef.current = location.key;
+        startNewSession(chatRoute.workspaceId, chatRoute.workspaceCwd, { skipNavigate: true });
         return;
       }
-      void loadChatSession(requestedSessionId).then((session) => {
-        if (!active) return;
-        if (!session) {
-          startNewSession(
-            requestedWorkspaceId === "default" ? "" : (requestedWorkspaceId ?? ""),
-            requestedWorkspaceCwd,
-          );
-          return;
-        }
-        savedFingerprintRef.current = "";
-        extractedFingerprintRef.current = "";
-        pendingSessionRef.current = session;
-        setSessionId(session.id);
-      });
-      return () => {
-        active = false;
-      };
+      if (appliedRouteKeyRef.current === routeKey) return;
+      startNewSession(chatRoute.workspaceId, chatRoute.workspaceCwd, { skipNavigate: true });
+      return;
     }
+    if (appliedRouteKeyRef.current === routeKey && chatRoute.sessionId === sessionId) return;
+    if (loadingSessionIdRef.current === chatRoute.sessionId) return;
+    let active = true;
+    loadingSessionIdRef.current = chatRoute.sessionId;
+    setIsHydratingSession(true);
+    void loadChatSession(chatRoute.sessionId).then((session) => {
+      if (!active) return;
+      loadingSessionIdRef.current = null;
+      if (!session) {
+        startNewSession(workspaceKey, sessionCwd);
+        return;
+      }
+      appliedRouteKeyRef.current = routeKey;
+      savedFingerprintRef.current = "";
+      extractedFingerprintRef.current = "";
+      pendingSessionRef.current = session;
+      setSessionId(session.id);
+      setSessionHydrateGeneration((current) => current + 1);
+    });
     return () => {
       active = false;
+      if (loadingSessionIdRef.current === chatRoute.sessionId) {
+        loadingSessionIdRef.current = null;
+      }
     };
   }, [
+    chatRoute,
     isChatHistoryLoading,
-    requestedSessionId,
-    requestedWorkspaceCwd,
-    requestedWorkspaceId,
+    resetChatDraft,
+    sessionCwd,
     sessionId,
     startNewSession,
-  ]);
-
-  useEffect(() => {
-    if (isChatHistoryLoading || requestedSessionId || requestedWorkspaceId === null) return;
-    startNewSession(
-      requestedWorkspaceId === "default" ? "" : requestedWorkspaceId,
-      requestedWorkspaceId === "default" ? "" : requestedWorkspaceCwd,
-    );
-  }, [
-    isChatHistoryLoading,
-    requestedSessionId,
-    requestedWorkspaceCwd,
-    requestedWorkspaceId,
-    startNewSession,
-  ]);
-
-  useEffect(() => {
-    if (
-      isChatHistoryLoading ||
-      requestedSessionId ||
-      requestedWorkspaceId !== null ||
-      searchParams.get("sessionId") === sessionId
-    )
-      return;
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.set("sessionId", sessionId);
-        return next;
-      },
-      { replace: true },
-    );
-  }, [
-    isChatHistoryLoading,
-    requestedSessionId,
-    requestedWorkspaceId,
-    searchParams,
-    sessionId,
-    setSearchParams,
+    workspaceKey,
+    location.key,
   ]);
 
   useEffect(() => {
@@ -1140,6 +1117,7 @@ function ChatPage() {
       chatSkillSelectionQuery.isPending
     )
       return;
+    void sessionHydrateGeneration;
     pendingSessionRef.current = null;
     workspaceSelectionInitializedRef.current = true;
     suppressSaveRef.current = true;
@@ -1192,11 +1170,13 @@ function ChatPage() {
         })
         .catch((error) => console.error("Failed to load active chat plan", error));
     }
+    setIsHydratingSession(false);
   }, [
     chatSkillSelectionQuery.isPending,
     installedSkillIds,
     installedSkillsQuery.isPending,
     savedChatSkillIds,
+    sessionHydrateGeneration,
     sessionId,
     setMessages,
   ]);
@@ -1360,6 +1340,7 @@ function ChatPage() {
           cwd: selectedCwd || undefined,
           workspaceId: workspaceKey || undefined,
         });
+        promoteDraftSession();
       } catch (error) {
         console.error("Failed to ensure chat server session for attachment upload", error);
       }
@@ -1391,7 +1372,7 @@ function ChatPage() {
           });
       }
     },
-    [sessionId, selectedCwd, workspaceKey],
+    [promoteDraftSession, sessionId, selectedCwd, workspaceKey],
   );
 
   const removePendingAttachment = useCallback((localId: string) => {
@@ -1448,6 +1429,7 @@ function ChatPage() {
         cwd: selectedCwd || undefined,
         workspaceId: workspaceKey || undefined,
       });
+      promoteDraftSession();
       const plan = await createChatPlan(targetSessionId);
       const summary: ChatPlanSummary = {
         id: plan.id,
@@ -1518,6 +1500,7 @@ function ChatPage() {
 
   function sendPreparedMessage(text: string, pending: PendingAttachment[]) {
     if (!text && pending.length === 0) return;
+    promoteDraftSession();
     const readyPending = pending.filter((item) => item.status === "ready");
     if (readyPending.length > 0) {
       const chatAttachments: ChatAttachment[] = readyPending.map((item) => ({
@@ -1676,16 +1659,7 @@ function ChatPage() {
 
   function openSession(item: ChatIndexItem) {
     if (item.id === sessionId) return;
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.set("sessionId", item.id);
-        next.delete("workspaceId");
-        next.delete("workspaceCwd");
-        return next;
-      },
-      { replace: true },
-    );
+    navigate(chatSessionPath(item.id));
   }
 
   async function copyConversationId() {
@@ -1723,7 +1697,9 @@ function ChatPage() {
     try {
       await deleteChatSession(item.id);
       await queryClient.invalidateQueries({ queryKey: ["chat-index"] });
-      if (item.id === sessionId) startNewSession();
+      if (item.id === sessionId) {
+        startNewSession(item.workspaceId ?? (item.cwd ? `cwd:${item.cwd}` : ""), item.cwd ?? "");
+      }
     } catch (deleteError) {
       console.error("Failed to delete chat session", deleteError);
     } finally {
@@ -1813,11 +1789,15 @@ function ChatPage() {
     }
   }
 
+  const showHydrateSkeleton =
+    chatRoute.kind === "session" && (isHydratingSession || chatRoute.sessionId !== sessionId);
+  const showEmptyState = !showHydrateSkeleton && messages.length === 0;
+
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: drag-and-drop file upload zone; keyboard users use the attach button
     <div
       className="chat-page"
-      data-chat-empty={messages.length === 0 ? "true" : "false"}
+      data-chat-empty={showEmptyState ? "true" : "false"}
       data-chat-font-size={chatDisplay.fontSize}
       data-chat-spacing={chatDisplay.spacing}
       onDragEnter={handleDragEnter}
@@ -2024,7 +2004,18 @@ function ChatPage() {
 
       <div className="chat-stage" ref={scrollRef}>
         <div className="chat-content">
-          {messages.length === 0 ? (
+          {showHydrateSkeleton ? (
+            <div aria-busy="true" className="chat-transcript-skeleton" role="status">
+              <span className="sr-only">正在加载对话</span>
+              <div className="chat-transcript-skeleton-line is-wide" />
+              <div className="chat-transcript-skeleton-line" />
+              <div className="chat-transcript-skeleton-line is-wide" />
+              <div className="chat-transcript-skeleton-line is-short" />
+              <div className="chat-transcript-skeleton-line" />
+              <div className="chat-transcript-skeleton-line is-short" />
+            </div>
+          ) : null}
+          {!showHydrateSkeleton && showEmptyState ? (
             <div className="chat-empty-state">
               <div aria-hidden="true" className="chat-empty-mark">
                 <Sparkles className="size-8" strokeWidth={1.6} />
@@ -2051,38 +2042,42 @@ function ChatPage() {
               </div>
             </div>
           ) : null}
-          {messages.map((message) => (
-            <MessageBubble
-              key={message.id}
-              message={message}
-              onApprovalResponse={respondToApproval}
-              onPlanUserInputResponse={respondToPlanUserInput}
-              planInputEnabled={planMode === "plan" && planTransition === "idle"}
-              planAttachment={
-                showPlanAttachment && activePlan && latestPlanWriteAnchor?.messageId === message.id
-                  ? {
-                      fileName: activePlan.fileName,
-                      isGenerating: isGenerating && planMode === "plan",
-                      onOpen: openActivePlan,
-                      toolCallId: latestPlanWriteAnchor.toolCallId,
-                    }
-                  : undefined
-              }
-              generationStatus={
-                isGenerating && message.role === "assistant" && message.id === lastMessage?.id
-                  ? {
-                      detail: generationDetail,
-                      elapsedLabel: generationElapsedLabel,
-                      phase: generationPhase,
-                    }
-                  : undefined
-              }
-              isStreaming={effectiveStatus === "streaming" && message.id === lastMessage?.id}
-              showTokenUsage={chatDisplay.showTokenUsage}
-              cwd={selectedCwd}
-              workspaceId={workspaceKey || undefined}
-            />
-          ))}
+          {showHydrateSkeleton
+            ? null
+            : messages.map((message) => (
+                <MessageBubble
+                  key={message.id}
+                  message={message}
+                  onApprovalResponse={respondToApproval}
+                  onPlanUserInputResponse={respondToPlanUserInput}
+                  planInputEnabled={planMode === "plan" && planTransition === "idle"}
+                  planAttachment={
+                    showPlanAttachment &&
+                    activePlan &&
+                    latestPlanWriteAnchor?.messageId === message.id
+                      ? {
+                          fileName: activePlan.fileName,
+                          isGenerating: isGenerating && planMode === "plan",
+                          onOpen: openActivePlan,
+                          toolCallId: latestPlanWriteAnchor.toolCallId,
+                        }
+                      : undefined
+                  }
+                  generationStatus={
+                    isGenerating && message.role === "assistant" && message.id === lastMessage?.id
+                      ? {
+                          detail: generationDetail,
+                          elapsedLabel: generationElapsedLabel,
+                          phase: generationPhase,
+                        }
+                      : undefined
+                  }
+                  isStreaming={effectiveStatus === "streaming" && message.id === lastMessage?.id}
+                  showTokenUsage={chatDisplay.showTokenUsage}
+                  cwd={selectedCwd}
+                  workspaceId={workspaceKey || undefined}
+                />
+              ))}
           {developerEnvironmentQuery.data &&
           unavailableDetectedTools.length > 0 &&
           environmentGuideKey !== dismissedEnvironmentGuide ? (
@@ -2186,7 +2181,7 @@ function ChatPage() {
           </p>
         ) : null}
         <div className="chat-workspace-bar">
-          {messages.length === 0 ? (
+          {showEmptyState ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
@@ -2598,6 +2593,7 @@ function ChatPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <Outlet />
     </div>
   );
 }

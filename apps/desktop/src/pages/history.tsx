@@ -47,6 +47,7 @@ import {
   sourceLabel,
 } from "@/lib/chat-archive";
 import { IMAGE_GENERATION_TOOL_NAME, readImageGenerationOutput } from "@/lib/chat-image-generation";
+import { chatSessionPath } from "@/lib/chat-routes";
 import {
   type ChatIndexItem,
   deleteChatSession,
@@ -653,7 +654,7 @@ function HistoryDetailPage() {
             {isNative ? (
               <Button
                 onClick={() => {
-                  void navigate(`/chat?sessionId=${encodeURIComponent(session.id)}`);
+                  void navigate(chatSessionPath(session.id));
                 }}
                 type="button"
               >

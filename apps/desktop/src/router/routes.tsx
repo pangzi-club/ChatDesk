@@ -1,6 +1,14 @@
-import { createHashRouter, Navigate, RouterProvider, useParams } from "react-router-dom";
+import {
+  createHashRouter,
+  Navigate,
+  Outlet,
+  RouterProvider,
+  useLocation,
+  useParams,
+} from "react-router-dom";
 
 import { AppShell } from "@/layouts/app-shell";
+import { chatIndexRedirectPath } from "@/lib/chat-routes";
 import { AutomationsPage } from "@/pages/automations";
 import { ChatPage } from "@/pages/chat";
 import { HistoryDetailPage } from "@/pages/history";
@@ -34,7 +42,16 @@ const router = createHashRouter([
       },
       {
         path: "chat",
-        element: <ChatPage />,
+        children: [
+          { index: true, element: <ChatIndexRedirect /> },
+          {
+            element: <ChatPage />,
+            children: [
+              { path: "new", element: <Outlet /> },
+              { path: ":sessionId", element: <Outlet /> },
+            ],
+          },
+        ],
       },
       {
         path: "image-generation",
@@ -84,6 +101,11 @@ const router = createHashRouter([
     element: <Navigate replace to="/chat" />,
   },
 ]);
+
+function ChatIndexRedirect() {
+  const location = useLocation();
+  return <Navigate replace to={chatIndexRedirectPath(location.search)} />;
+}
 
 function HistoryLegacyRedirect() {
   const { source, id } = useParams();

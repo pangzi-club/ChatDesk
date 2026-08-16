@@ -4161,6 +4161,28 @@
   text-align: center;
 }
 
+.chat-transcript-skeleton {
+  display: grid;
+  gap: 12px;
+  padding: 28px 8px 8px;
+}
+
+.chat-transcript-skeleton-line {
+  height: 14px;
+  max-width: 72%;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--border) 55%, transparent);
+  animation: chat-explorer-pulse 1.2s ease-in-out infinite alternate;
+}
+
+.chat-transcript-skeleton-line.is-wide {
+  max-width: 88%;
+}
+
+.chat-transcript-skeleton-line.is-short {
+  max-width: 42%;
+}
+
 .chat-empty-mark {
   display: grid;
   width: 58px;
