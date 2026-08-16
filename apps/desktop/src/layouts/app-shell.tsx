@@ -2561,10 +2561,10 @@ function ChatWorkspaceWindow({
                 title={tab.title}
                 type="button"
               >
-                {tab.kind === "terminal" ? <SquareTerminal className="size-3" /> : null}
-                {tab.kind === "browser" ? <Globe2 className="size-3" /> : null}
-                {tab.kind === "image" ? <Image className="size-3" /> : null}
-                {tab.kind === "plan" ? <ScrollText className="size-3" /> : null}
+                {tab.kind === "terminal" ? <SquareTerminal className="size-3.5" /> : null}
+                {tab.kind === "browser" ? <Globe2 className="size-3.5" /> : null}
+                {tab.kind === "image" ? <Image className="size-3.5" /> : null}
+                {tab.kind === "plan" ? <ScrollText className="size-3.5" /> : null}
                 <span>{tab.title}</span>
               </button>
               <button
@@ -2588,7 +2588,7 @@ function ChatWorkspaceWindow({
               type="button"
               variant="ghost"
             >
-              <Plus className="size-3.5" />
+              <Plus className="size-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" sideOffset={6}>
@@ -2616,7 +2616,7 @@ function ChatWorkspaceWindow({
           type="button"
           variant="ghost"
         >
-          {expanded ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+          {expanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
         </Button>
         <Button
           aria-label="关闭 Chat 独立窗口"
@@ -2627,7 +2627,7 @@ function ChatWorkspaceWindow({
           type="button"
           variant="ghost"
         >
-          <PanelLeft className="size-3.5 rotate-180" />
+          <PanelLeft className="size-4 rotate-180" />
         </Button>
       </div>
       {planTab ? (
@@ -2663,7 +2663,7 @@ function ChatWorkspaceWindow({
                     type="button"
                     variant="ghost"
                   >
-                    <ScrollText className="size-3.5" />
+                    <ScrollText className="size-4" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" sideOffset={6}>
@@ -2690,7 +2690,7 @@ function ChatWorkspaceWindow({
                 type="button"
                 variant="ghost"
               >
-                <RefreshCw className="size-3.5" />
+                <RefreshCw className="size-4" />
               </Button>
             </span>
           </header>
@@ -2737,7 +2737,7 @@ function ChatWorkspaceWindow({
                 type="button"
                 variant="ghost"
               >
-                <Upload className="size-3.5" />
+                <Upload className="size-4" />
               </Button>
               <Button
                 aria-label="刷新 Explorer"
@@ -2748,7 +2748,7 @@ function ChatWorkspaceWindow({
                 type="button"
                 variant="ghost"
               >
-                <RefreshCw className="size-3.5" />
+                <RefreshCw className="size-4" />
               </Button>
               <Button
                 aria-label="全部撤回 Git 改动"
@@ -2760,7 +2760,7 @@ function ChatWorkspaceWindow({
                 type="button"
                 variant="ghost"
               >
-                <Undo2 className="size-3.5" />
+                <Undo2 className="size-4" />
               </Button>
             </span>
           </header>

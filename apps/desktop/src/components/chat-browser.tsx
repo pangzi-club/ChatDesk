@@ -61,7 +61,7 @@ export function ChatBrowser({
           type="button"
           variant="ghost"
         >
-          <RefreshCw className="size-3.5" />
+          <RefreshCw className="size-4" />
         </Button>
         <Button
           aria-label="在系统浏览器打开"
@@ -73,7 +73,7 @@ export function ChatBrowser({
           type="button"
           variant="ghost"
         >
-          <ExternalLink className="size-3.5" />
+          <ExternalLink className="size-4" />
         </Button>
       </form>
       {error ? (

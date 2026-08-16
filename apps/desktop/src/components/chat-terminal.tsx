@@ -99,7 +99,7 @@ export function ChatTerminal({ cwd, sessionKey }: { cwd: string; sessionKey: str
           type="button"
           variant="ghost"
         >
-          <Eraser className="size-3.5" />
+          <Eraser className="size-4" />
         </Button>
       </header>
       {status.phase === "error" ? (
