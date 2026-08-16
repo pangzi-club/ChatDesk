@@ -125,8 +125,11 @@ async function runtimeFetch(input: RequestInfo | URL, init: RequestInit | undefi
 function createClient(port = CHAT_SERVER_DEFAULT_PORT) {
   return new ChatServerClient({
     baseUrl: chatServerUrl(port),
-    token: runtimeConfig.token,
+    token: () => runtimeConfig.token,
     fetchImpl: (input, init) => runtimeFetch(input, init),
+    onBeforeReconnect: async () => {
+      await refreshChatServerRuntime();
+    },
   });
 }
 

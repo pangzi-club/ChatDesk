@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
-import { describe, it } from "vitest";
+import { afterEach, describe, it, vi } from "vitest";
 import { ChatServerClient, ChatServerError, type EventSourceLike } from "./index.ts";
 
 describe("ChatServerClient", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
   it("adds bearer authentication and parses session responses", async () => {
     let requestUrl = "";
     let requestHeaders: Headers | undefined;
@@ -170,5 +173,42 @@ describe("ChatServerClient", () => {
     assert.deepEqual(contextUsages, [48_500]);
     assert.deepEqual(progressSteps, [18]);
     assert.deepEqual(completedRuns, ["completed"]);
+  });
+
+  it("refreshes the SSE token before reconnecting", async () => {
+    vi.useFakeTimers();
+    let token = "old-token";
+    const urls: string[] = [];
+    const sources: EventSourceLike[] = [];
+    const client = new ChatServerClient({
+      baseUrl: "http://localhost",
+      token: () => token,
+      onBeforeReconnect: () => {
+        token = "new-token";
+      },
+      eventSourceFactory: (url) => {
+        urls.push(url);
+        const source: EventSourceLike = {
+          onerror: null,
+          onopen: null,
+          addEventListener() {},
+          close() {},
+        };
+        sources.push(source);
+        return source;
+      },
+    });
+
+    const cleanup = client.subscribeEvents({});
+    assert.deepEqual(urls, ["http://localhost/v1/events?token=old-token"]);
+
+    sources[0]?.onerror?.();
+    await vi.advanceTimersByTimeAsync(1000);
+    assert.deepEqual(urls, [
+      "http://localhost/v1/events?token=old-token",
+      "http://localhost/v1/events?token=new-token",
+    ]);
+
+    cleanup();
   });
 });

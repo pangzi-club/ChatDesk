@@ -23,10 +23,11 @@ export type EventSourceFactory = (url: string) => EventSourceLike;
 
 export type ChatServerClientOptions = {
   baseUrl: string;
-  token?: string;
+  token?: string | (() => string);
   fetchImpl?: typeof fetch;
   eventSourceFactory?: EventSourceFactory;
   reconnect?: boolean;
+  onBeforeReconnect?: () => Promise<void> | void;
 };
 
 export type ChatEventHandlers = {
@@ -75,10 +76,11 @@ function toBase64(bytes: Uint8Array) {
 
 export class ChatServerClient {
   private readonly baseUrl: string;
-  private readonly token: string;
+  private readonly token: string | (() => string);
   private readonly fetchImpl: typeof fetch;
   private readonly eventSourceFactory: EventSourceFactory;
   private readonly reconnect: boolean;
+  private readonly onBeforeReconnect?: () => Promise<void> | void;
 
   constructor(options: ChatServerClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, "");
@@ -86,11 +88,17 @@ export class ChatServerClient {
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
     this.eventSourceFactory = options.eventSourceFactory ?? defaultEventSourceFactory;
     this.reconnect = options.reconnect ?? true;
+    this.onBeforeReconnect = options.onBeforeReconnect;
+  }
+
+  private resolveToken() {
+    return typeof this.token === "function" ? this.token() : this.token;
   }
 
   headers(init?: HeadersInit) {
     const headers = new Headers(init);
-    if (this.token) headers.set("Authorization", `Bearer ${this.token}`);
+    const token = this.resolveToken();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
     return headers;
   }
 
@@ -394,9 +402,10 @@ export class ChatServerClient {
       if (!this.reconnect || closed || reconnectTimer) return;
       const delay = [1000, 2000, 5000][Math.min(retryAttempt, 2)];
       retryAttempt += 1;
+      const refresh = Promise.resolve(this.onBeforeReconnect?.()).catch(() => undefined);
       reconnectTimer = setTimeout(() => {
         reconnectTimer = undefined;
-        void connect();
+        void refresh.then(() => connect());
       }, delay);
     };
 
@@ -442,8 +451,9 @@ export class ChatServerClient {
 
     const connect = async () => {
       if (closed) return;
-      const token = this.token ? `?token=${encodeURIComponent(this.token)}` : "";
-      const next = this.eventSourceFactory(this.url(`/v1/events${token}`));
+      const token = this.resolveToken();
+      const query = token ? `?token=${encodeURIComponent(token)}` : "";
+      const next = this.eventSourceFactory(this.url(`/v1/events${query}`));
       source = next;
       next.onopen = () => {
         retryAttempt = 0;
