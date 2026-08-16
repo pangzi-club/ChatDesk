@@ -133,10 +133,13 @@ macOS 默认数据目录为 `~/.chatdesk/chat-server`，其他平台默认使用
 
 ```text
 apps/server/
-├── src/server.ts       # HTTP 服务入口
-├── src/app.ts          # Hono 路由和服务组装
-├── src/run-registry.ts # 并发运行和流式事件
-├── src/store.ts        # 会话与附件持久化
-├── src/*-store.ts      # 配置、记忆、归档和 Skills 存储
-└── src/*.test.ts       # Node.js 测试
+├── src/server.ts          # HTTP 服务入口
+├── src/app.ts             # Hono 路由和服务组装
+├── src/run-registry.ts    # 并发运行和流式事件
+├── src/model-adaptor.ts   # 供应商 Responses / Chat Completions 差异
+├── src/store.ts           # 会话与附件持久化
+├── src/*-store.ts         # 配置、记忆、归档和 Skills 存储
+└── src/*.test.ts          # Node.js 测试
 ```
+
+模型供应商差异（例如 DeepSeek Responses 必须 `store: false`）见 [`docs/model-adaptor.md`](../../docs/model-adaptor.md)。

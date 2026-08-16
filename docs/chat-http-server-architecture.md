@@ -108,6 +108,7 @@ Node HTTP Server
 
 - OpenAI 兼容 HTTP 流式调用；
 - `streamText` + tools 循环（含 Responses / chat 路径差异）；
+- 供应商差异由 [model-adaptor.md](model-adaptor.md) 收口（例如 DeepSeek Responses 关闭 `store`）；
 - system prompt 组装：memory、workspace hint、tools hint、skills hint；
 - 错误归一与可观测日志。
 

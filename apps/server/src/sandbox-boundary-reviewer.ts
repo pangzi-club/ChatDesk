@@ -1,12 +1,9 @@
 import { existsSync, realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createOpenAI } from "@ai-sdk/openai";
 import { generateText, Output, type UIMessage } from "ai";
 import { z } from "zod";
-import { createKimiFetch } from "./kimi.ts";
-import { createMiniMaxFetch, isMiniMaxModel } from "./minimax.ts";
-
+import { createConfiguredLanguageModel } from "./model-adaptor.ts";
 import type { ChatTokenUsage, SandboxReviewerDecision, ServerModelConfig } from "./protocol.ts";
 import { textFromMessage } from "./protocol.ts";
 
@@ -183,14 +180,6 @@ function compactMessages(messages: UIMessage[]) {
   }));
 }
 
-function resolveBaseUrl(value: string) {
-  return value
-    .trim()
-    .replace(/\/+$/, "")
-    .replace(/\/chat\/completions$/i, "")
-    .replace(/\/responses$/i, "");
-}
-
 function normalizeUsage(value: unknown): ChatTokenUsage | undefined {
   if (!value || typeof value !== "object") return undefined;
   const source = value as Record<string, unknown>;
@@ -232,14 +221,7 @@ export async function reviewSandboxBoundary(options: {
     throw new Error("Reviewer 模型配置不完整");
   }
 
-  const provider = createOpenAI({
-    apiKey: model.apiKey,
-    baseURL: resolveBaseUrl(model.baseUrl),
-    fetch: isMiniMaxModel(model) ? createMiniMaxFetch(model) : createKimiFetch(model),
-  });
-  const languageModel = model.responsive
-    ? provider.responses(model.name.trim())
-    : provider.chat(model.name.trim());
+  const languageModel = createConfiguredLanguageModel(model);
   const prompt = [
     "你是一个只负责沙箱越界审批的安全 reviewer。",
     "判断当前工具调用是否应该获得一次性越过当前 Seatbelt/workspace 边界的权限。",

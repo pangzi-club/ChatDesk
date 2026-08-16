@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { createOpenAI, openai } from "@ai-sdk/openai";
+import { openai } from "@ai-sdk/openai";
 import { DEFAULT_WORKSPACE_ID, MAX_AGENT_STEPS, PLAN_USER_INPUT_TOOL_NAME } from "@chatdesk/shared";
 import {
   convertToModelMessages,
@@ -29,8 +29,7 @@ import { createBusinessTools } from "./business-tools.ts";
 import type { ChatConfigStore } from "./chat-config.ts";
 import { createClientTools } from "./client-tools.ts";
 import type { EventHub } from "./events.ts";
-import { createKimiFetch } from "./kimi.ts";
-import { createMiniMaxFetch, isMiniMaxModel } from "./minimax.ts";
+import { createConfiguredLanguageModel, supportsRequiredToolChoice } from "./model-adaptor.ts";
 import type { PlanStore } from "./plan-store.ts";
 import { createPlanWriteTool } from "./plan-tool.ts";
 import { createPlanUserInputTool, PLAN_USER_INPUT_INSTRUCTIONS } from "./plan-user-input-tool.ts";
@@ -174,35 +173,7 @@ export function resolveEffectiveWorkspace(
   return current.cwd;
 }
 
-function baseUrl(value: string) {
-  return value
-    .trim()
-    .replace(/\/+$/, "")
-    .replace(/\/chat\/completions$/i, "")
-    .replace(/\/responses$/i, "");
-}
-
-export function createConfiguredLanguageModel(model: import("./protocol.ts").ServerModelConfig) {
-  const provider = createOpenAI({
-    apiKey: model.apiKey,
-    baseURL: baseUrl(model.baseUrl),
-    fetch: isMiniMaxModel(model) ? createMiniMaxFetch(model) : createKimiFetch(model),
-  });
-  return model.responsive
-    ? provider.responses(model.name.trim())
-    : provider.chat(model.name.trim());
-}
-
-export function supportsRequiredToolChoice(
-  model: Pick<
-    import("./protocol.ts").ServerModelConfig,
-    "baseUrl" | "name" | "provider" | "responsive"
-  >,
-) {
-  if (!model.responsive) return true;
-  const identity = `${model.provider} ${model.baseUrl} ${model.name}`.toLowerCase();
-  return !identity.includes("deepseek");
-}
+export { createConfiguredLanguageModel, supportsRequiredToolChoice };
 
 function assistantMessage(id: string, text: string): UIMessage {
   return { id, role: "assistant", parts: text ? [{ type: "text", text }] : [] };

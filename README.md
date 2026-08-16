@@ -6,7 +6,7 @@ ChatDesk 是一个基于 Tauri、React 和 TypeScript 的本地 AI 工作台。�
 
 ## 功能
 
-- OpenAI 兼容接口，以及 Kimi、MiniMax 等模型适配
+- OpenAI 兼容接口，以及 Kimi、MiniMax、DeepSeek Responses 等模型适配，详见 [docs/model-adaptor.md](docs/model-adaptor.md)
 - 多会话、流式响应、用量统计和历史归档导入
 - 工作区文件、终端、Git 和浏览器工具
 - MCP 服务、Skills 管理和可配置的沙箱审批

@@ -23,15 +23,12 @@ import { normalizeGeneratedCommitMessage } from "./git-commit-message.ts";
 import { ImageGenerationStore } from "./image-generation-store.ts";
 import { McpRuntime } from "./mcp-runtime.ts";
 import { MemoryStore } from "./memory-store.ts";
+import { createConfiguredLanguageModel } from "./model-adaptor.ts";
 import { listProviderModels, testModelConnection } from "./model-test.ts";
 import { PlanStore } from "./plan-store.ts";
 import { nodePlatform } from "./platform/index.ts";
 import type { ChatSession, RunStartInput } from "./protocol.ts";
-import {
-  createConfiguredLanguageModel,
-  RunRegistry,
-  resolveEffectiveWorkspace,
-} from "./run-registry.ts";
+import { RunRegistry, resolveEffectiveWorkspace } from "./run-registry.ts";
 import {
   buildSessionTitlePrompt,
   hasUserMessageText,
@@ -507,36 +504,21 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
         if (!model?.name || !model.baseUrl || !apiKey) {
           return jsonError("未配置可用模型，请填写提交信息后重试");
         }
-        const modelInput = {
-          name: model.name,
-          baseUrl: model.baseUrl,
-          provider: model.provider,
-        };
         const diff = await nodePlatform.runShell(
           workspace.path,
           "git diff HEAD --stat && git diff HEAD",
           "full",
         );
         if (diff.code !== 0) return jsonError(diff.out || "读取 Git 改动失败");
-        const { createOpenAI } = await import("@ai-sdk/openai");
         const { generateText } = await import("ai");
-        const { createKimiFetch } = await import("./kimi.ts");
-        const { createMiniMaxFetch, isMiniMaxModel } = await import("./minimax.ts");
-        const provider = createOpenAI({
-          apiKey,
-          baseURL: model.baseUrl
-            .replace(/\/+$/, "")
-            .replace(/\/chat\/completions$/i, "")
-            .replace(/\/responses$/i, ""),
-          fetch: isMiniMaxModel(modelInput)
-            ? createMiniMaxFetch(modelInput)
-            : createKimiFetch(modelInput),
-        });
-        const languageModel = model.responsive
-          ? provider.responses(model.name)
-          : provider.chat(model.name);
         const result = await generateText({
-          model: languageModel,
+          model: createConfiguredLanguageModel({
+            name: model.name,
+            baseUrl: model.baseUrl,
+            apiKey,
+            provider: model.provider,
+            responsive: model.responsive,
+          }),
           system:
             "You write concise English Conventional Commits messages. Return exactly one line starting with one of feat:, fix:, docs:, refactor:, test:, chore:, build:, ci:, or perf:. Do not use quotes or explanations.",
           prompt: `Summarize the following Git changes as one commit message:\n\n${diff.out.slice(0, 120_000)}`,

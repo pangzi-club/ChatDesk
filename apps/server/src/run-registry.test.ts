@@ -3,6 +3,7 @@ import path from "node:path";
 import { DEFAULT_WORKSPACE_ID } from "@chatdesk/shared";
 import type { UIMessage } from "ai";
 import { test } from "vitest";
+import { supportsRequiredToolChoice } from "./model-adaptor.ts";
 import type { ChatSession } from "./protocol.ts";
 import {
   interruptRunMessage,
@@ -13,7 +14,6 @@ import {
   normalizeCompletedMessages,
   resolveEffectiveWorkspace,
   runCheckpointFingerprint,
-  supportsRequiredToolChoice,
 } from "./run-registry.ts";
 
 test("allows long agent runs without automatically retrying model failures", () => {
