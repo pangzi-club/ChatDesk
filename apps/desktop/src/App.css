@@ -4031,6 +4031,11 @@
   height: 48px;
 }
 
+/* Traffic-light spacer (72px) + toggle (28px) + gap, so the title does not cover the button. */
+.chat-page.is-main-sidebar-collapsed .chat-header {
+  padding-left: 112px;
+}
+
 .chat-top-actions-layer .top-actions {
   margin-right: 0;
 }
@@ -4140,6 +4145,7 @@
 }
 
 .chat-page[data-chat-empty="true"] .chat-brand {
+  pointer-events: none;
   visibility: hidden;
 }
 

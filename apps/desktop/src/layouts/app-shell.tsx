@@ -907,7 +907,7 @@ function AppShell() {
 
             {/* 右列：内容区铺满到窗口顶部，拖拽条透明浮在上方 */}
             <div
-              className={`app-shell-content relative flex min-w-0 flex-1 flex-col ${!mainSidebarState.collapsed ? "max-sm:w-[calc(100vw-4rem)]" : "w-full"} ${isChatPage ? "chat-page" : ""}`}
+              className={`app-shell-content relative flex min-w-0 flex-1 flex-col ${!mainSidebarState.collapsed ? "max-sm:w-[calc(100vw-4rem)]" : "is-main-sidebar-collapsed w-full"} ${isChatPage ? "chat-page" : ""}`}
             >
               <div
                 className={`chat-split-layout ${isChatPanelOpen ? "is-open" : ""} ${isChatPanelExpanded ? "is-expanded" : ""}`}
@@ -984,10 +984,10 @@ function AppShell() {
                 className={`absolute inset-x-0 top-0 z-10 flex h-8 items-center ${isChatPage ? "chat-top-actions-layer" : ""}`}
               >
                 {mainSidebarState.collapsed ? (
-                  <>
+                  <div className="flex h-8 shrink-0 items-center self-start">
                     <div className="h-full w-[72px] shrink-0" data-tauri-drag-region />
                     <MainSidebarToggleButton collapsed onToggle={toggleMainSidebar} />
-                  </>
+                  </div>
                 ) : null}
                 <TitlebarDragRegion />
                 <TopActions
@@ -1116,7 +1116,8 @@ function MainSidebarToggleButton({
     <Button
       aria-label={label}
       aria-pressed={collapsed}
-      className={`size-7 shrink-0 translate-y-0.5 text-muted-foreground ${collapsed ? "" : "max-md:hidden"}`}
+      className={`relative z-20 size-7 shrink-0 translate-y-0.5 text-muted-foreground ${collapsed ? "" : "max-md:hidden"}`}
+      data-tauri-drag-region="false"
       onClick={onToggle}
       size="icon"
       title={label}
