@@ -21,9 +21,9 @@ function bashExecute(
     new Map([["call_1", preflight]]),
   );
   const execute = tools.bash.execute;
-  assert.equal(typeof execute, "function");
+  assert(typeof execute === "function");
   return (command: string) =>
-    execute({ command }, { toolCallId: "call_1" } as Parameters<NonNullable<typeof execute>>[1]);
+    execute({ command }, { toolCallId: "call_1" } as Parameters<typeof execute>[1]);
 }
 
 describe("workspace bash approval permissions", () => {
