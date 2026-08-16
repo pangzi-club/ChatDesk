@@ -4,6 +4,7 @@ import {
   applyModelAdaptor,
   applyStatelessResponsesProviderOptions,
   isDeepSeekModel,
+  isOpenAIResponsesStoreEnabled,
   statelessResponsesMiddleware,
   supportsRequiredToolChoice,
   usesStatelessResponsesApi,
@@ -23,13 +24,42 @@ const openai = {
   responsive: true,
 };
 
-test("detects DeepSeek Responses as a stateless API", () => {
-  assert.equal(isDeepSeekModel(deepseek), true);
-  assert.equal(usesStatelessResponsesApi(deepseek), true);
-  assert.equal(supportsRequiredToolChoice(deepseek), false);
-  assert.equal(isDeepSeekModel(openai), false);
+const customGateway = {
+  provider: "自定义 / Custom",
+  baseUrl: "https://openrouter.ai/api/v1",
+  name: "gpt-5",
+  responsive: true,
+};
+
+test("keeps Responses store enabled only for official OpenAI hosts", () => {
+  assert.equal(isOpenAIResponsesStoreEnabled(openai), true);
   assert.equal(usesStatelessResponsesApi(openai), false);
   assert.equal(supportsRequiredToolChoice(openai), true);
+
+  assert.equal(isDeepSeekModel(deepseek), true);
+  assert.equal(isOpenAIResponsesStoreEnabled(deepseek), false);
+  assert.equal(usesStatelessResponsesApi(deepseek), true);
+  assert.equal(supportsRequiredToolChoice(deepseek), false);
+
+  assert.equal(usesStatelessResponsesApi(customGateway), true);
+  assert.equal(
+    usesStatelessResponsesApi({
+      provider: "OpenAI",
+      baseUrl: "https://proxy.example.com/v1",
+      name: "gpt-5",
+      responsive: true,
+    }),
+    true,
+  );
+  assert.equal(
+    usesStatelessResponsesApi({
+      provider: "OpenAI",
+      baseUrl: "https://example.openai.azure.com",
+      name: "gpt-5",
+      responsive: true,
+    }),
+    false,
+  );
 });
 
 test("forces store=false without dropping other OpenAI provider options", () => {

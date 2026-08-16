@@ -142,4 +142,4 @@ apps/server/
 └── src/*.test.ts          # Node.js 测试
 ```
 
-模型供应商差异（例如 DeepSeek Responses 必须 `store: false`）见 [`docs/model-adaptor.md`](../../docs/model-adaptor.md)。
+模型供应商差异（非 OpenAI 的 Responses 关闭 `store`）见 [`docs/model-adaptor.md`](../../docs/model-adaptor.md)。

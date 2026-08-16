@@ -26,7 +26,7 @@ MiniMax 见 `apps/server/src/minimax.ts`。适配器负责 **SDK 调用参数**�
 3. 对 `responsive` 模型走 `provider.responses()`，否则走 `provider.chat()`
 4. 对无状态 Responses 供应商包一层 `wrapLanguageModel` 中间件
 
-## DeepSeek Responses：关闭 `store`
+## 非 OpenAI Responses：关闭 `store`
 
 AI SDK 的 OpenAI Responses 实现默认 `store: true`。有 `itemId` 的历史 assistant
 文本、reasoning 和 provider-executed 工具会被收成：
@@ -35,34 +35,34 @@ AI SDK 的 OpenAI Responses 实现默认 `store: true`。有 `itemId` 的历史 
 { "type": "item_reference", "id": "<itemId>" }
 ```
 
-这在 OpenAI 上成立：服务端保存了上一轮 response，引用即可还原正文。
+这只在官方 OpenAI（以及同语义的 Azure OpenAI）上成立：服务端保存了上一轮
+response，引用即可还原正文。兼容网关和其它供应商通常是无状态的，会静默忽略
+`store` / `previous_response_id` / `item_reference`。
 
-DeepSeek Responses API 是无状态的：
+因此 ChatDesk 的默认是：
 
-| OpenAI 参数 | DeepSeek |
+| 模型 | Responses `store` |
 | --- | --- |
-| `store` | 不支持，响应里恒为 `store: false` |
-| `previous_response_id` / `conversation` | 不支持 |
-| `item_reference` | 属于未列出的 input 类型，**静默忽略** |
-| 多轮上下文 | 客户端必须在每次请求的 `input` 里发送完整历史 |
+| `api.openai.com`、`*.openai.azure.com` | 保持 SDK 默认 `true` |
+| 其它所有 Responses 供应商（DeepSeek、自定义网关等） | 强制 `false` |
 
-因此默认 `store: true` 时，下一轮请求只带上用户消息和被忽略的引用。模型看不到自己
-已经给出的答案，会把线程里的旧问题再答一遍（例如问 cwd 时重答「你是哪个模型」，
-或重搜已经回答过的天气）。
+`store: true` 套在无状态 API 上时，下一轮往往只带上用户消息和被忽略的引用。模型
+看不到自己已经给出的答案，会把线程里的旧问题再答一遍（例如问 cwd 时重答「你是
+哪个模型」，或重搜已经回答过的天气）。
 
-适配器对 DeepSeek 的 Responses 调用强制：
+适配器对非 OpenAI 的 Responses 调用强制：
 
 ```ts
 providerOptions: { openai: { store: false } }
 ```
 
-SDK 于是把历史 assistant 以 `output_text` / `function_call` 原文放进 `input`，而不是
-`item_reference`。识别规则与 `supportsRequiredToolChoice` 相同：`provider`、
-`baseUrl` 或 `name` 包含 `deepseek`。
+SDK 于是把历史 assistant 以 `output_text` / `function_call` 原文放进 `input`。识别
+只看规范化后的 `baseUrl` 主机名，不看供应商显示名：即便 provider 写成 `OpenAI`，
+只要不是官方 OpenAI 主机，仍会关闭 `store`。
 
 `store: false` 由 `wrapLanguageModel` 的 `transformParams` 注入，覆盖 generate 与
 stream，包括 Agent 循环里的后续 step 和上下文检查点。调用方不必再手写
-`providerOptions`。
+`providerOptions`。DeepSeek 另外仍禁用 `toolChoice: required`，这与 `store` 无关。
 
 ## 已知限制
 
@@ -78,8 +78,8 @@ stream，包括 Agent 循环里的后续 step 和上下文检查点。调用方�
 ## 以后加供应商时
 
 1. 先确认差异属于 SDK 参数还是 HTTP 请求体。
-2. 无状态 Responses（忽略 `store` / `item_reference`）加入
-   `usesStatelessResponsesApi()`。
+2. 默认已对非 OpenAI Responses 关闭 `store`。只有确认对端会持久化 item 时，才把
+   主机名加入 `isOpenAIResponsesStoreEnabled()`。
 3. 请求体字段改写放进该供应商的 fetch 包装，并在 `createConfiguredLanguageModel`
    里接上。
 4. 更新本文的供应商表和限制。

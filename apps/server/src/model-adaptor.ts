@@ -21,12 +21,32 @@ export function isDeepSeekModel(model: ModelAdaptorIdentity) {
   return modelIdentity(model).includes("deepseek");
 }
 
+function hostnameFromBaseUrl(value?: string) {
+  if (!value?.trim()) return "";
+  try {
+    return new URL(normalizeModelApiBaseUrl(value)).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
 /**
- * Providers whose Responses API is stateless: they ignore `store`,
- * `previous_response_id`, `conversation`, and `item_reference`.
+ * Official OpenAI Responses hosts persist items, so `store: true` and
+ * `item_reference` are valid. Azure OpenAI uses the same store semantics.
+ */
+export function isOpenAIResponsesStoreEnabled(model: ModelAdaptorIdentity) {
+  const host = hostnameFromBaseUrl(model.baseUrl);
+  return (
+    host === "api.openai.com" || host === "openai.azure.com" || host.endsWith(".openai.azure.com")
+  );
+}
+
+/**
+ * Compatible Responses APIs are treated as stateless: they typically ignore
+ * `store`, `previous_response_id`, `conversation`, and `item_reference`.
  */
 export function usesStatelessResponsesApi(model: ModelAdaptorIdentity) {
-  return isDeepSeekModel(model);
+  return !isOpenAIResponsesStoreEnabled(model);
 }
 
 export function supportsRequiredToolChoice(model: ModelAdaptorIdentity) {
