@@ -1186,7 +1186,7 @@
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--chat-line);
-  padding: 0 clamp(16px, 3vw, 34px);
+  padding: 0 clamp(16px, 3vw, 24px);
   padding-right: 12px;
 }
 .chat-brand,

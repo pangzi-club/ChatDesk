@@ -1833,7 +1833,7 @@ function ChatPage() {
                 <DropdownMenuTrigger asChild>
                   <Button
                     aria-label="对话操作"
-                    className="chat-title-action"
+                    className="chat-title-action ml-1"
                     size="icon"
                     title="对话操作"
                     type="button"
