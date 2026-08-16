@@ -86,6 +86,47 @@ describe("chat server", () => {
     assert.equal(await server.store.get("session-test"), null);
   });
 
+  it("rejects session title generation without messages or a configured model", async () => {
+    const server = await createTestServer();
+    const missing = await server.app.request("http://localhost/v1/sessions/missing/title", {
+      method: "POST",
+      headers: auth(),
+    });
+    assert.equal(missing.status, 404);
+
+    const created = await server.app.request("http://localhost/v1/sessions", {
+      method: "POST",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "title-session" }),
+    });
+    assert.equal(created.status, 201);
+    const empty = await server.app.request("http://localhost/v1/sessions/title-session/title", {
+      method: "POST",
+      headers: auth(),
+    });
+    assert.equal(empty.status, 400);
+    assert.match((await empty.json()).error, /还没有内容/);
+
+    const session = await server.store.get("title-session");
+    assert.ok(session);
+    await server.store.save({
+      ...session,
+      messages: [
+        {
+          id: "user-1",
+          role: "user",
+          parts: [{ type: "text", text: "帮我检查构建" }],
+        },
+      ],
+    });
+    const unconfigured = await server.app.request(
+      "http://localhost/v1/sessions/title-session/title",
+      { method: "POST", headers: auth() },
+    );
+    assert.equal(unconfigured.status, 400);
+    assert.match((await unconfigured.json()).error, /未配置可用模型/);
+  });
+
   it("previews the system prompt without starting a run", async () => {
     const server = await createTestServer();
     const workspace = await mkdtemp(path.join(os.tmpdir(), "chatdesk-preview-workspace-"));

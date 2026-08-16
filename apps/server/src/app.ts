@@ -27,7 +27,19 @@ import { listProviderModels, testModelConnection } from "./model-test.ts";
 import { PlanStore } from "./plan-store.ts";
 import { nodePlatform } from "./platform/index.ts";
 import type { ChatSession, RunStartInput } from "./protocol.ts";
-import { RunRegistry, resolveEffectiveWorkspace } from "./run-registry.ts";
+import {
+  createConfiguredLanguageModel,
+  RunRegistry,
+  resolveEffectiveWorkspace,
+} from "./run-registry.ts";
+import {
+  buildSessionTitlePrompt,
+  hasUserMessageText,
+  normalizeGeneratedSessionTitle,
+  resolveSessionTitleModel,
+  SESSION_TITLE_SYSTEM,
+  sessionTitleMaxOutputTokens,
+} from "./session-title.ts";
 import { scanSkills } from "./skills-store.ts";
 import { SessionStore } from "./store.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
@@ -1020,6 +1032,47 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
       ...session,
       messages: [...session.messages.filter((message) => message.id !== draft.id), draft],
     });
+  });
+
+  app.post("/v1/sessions/:id/title", async (c) => {
+    try {
+      const session = await store.get(c.req.param("id"));
+      if (!session) return jsonError("会话不存在", 404);
+      if (!hasUserMessageText(session.messages)) {
+        return jsonError("对话还没有内容，无法生成标题");
+      }
+      const model = resolveSessionTitleModel(chatConfig.get(), session.modelId);
+      if (!model) return jsonError("未配置可用模型，无法生成标题");
+      const { generateText } = await import("ai");
+      const result = await generateText({
+        model: createConfiguredLanguageModel(model),
+        system: SESSION_TITLE_SYSTEM,
+        prompt: buildSessionTitlePrompt(session.messages),
+        maxOutputTokens: sessionTitleMaxOutputTokens(model),
+        maxRetries: 0,
+      });
+      const usage = normalizeAiUsage(result.usage);
+      if (usage) {
+        await aiUsageLogs.append({
+          operation: "session-title",
+          sessionId: session.id,
+          modelId: model.id || model.name,
+          provider: model.provider,
+          model: model.name,
+          usage,
+        });
+      }
+      const title = normalizeGeneratedSessionTitle(result.text);
+      if (!title) return jsonError("模型没有返回标题，请重试");
+      await store.save({
+        ...session,
+        title,
+        updatedAt: new Date().toISOString(),
+      });
+      return c.json({ title });
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
   });
 
   app.patch("/v1/sessions/:id", async (c) => {

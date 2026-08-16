@@ -170,6 +170,14 @@ export class ChatServerClient {
     );
   }
 
+  regenerateSessionTitle(sessionId: string) {
+    return this.json<{ title: string }>(
+      `/v1/sessions/${encodePath(sessionId)}/title`,
+      { method: "POST" },
+      "对话标题生成失败",
+    );
+  }
+
   async deleteSession(sessionId: string) {
     const response = await this.request(`/v1/sessions/${encodePath(sessionId)}`, {
       method: "DELETE",

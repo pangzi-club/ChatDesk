@@ -12,6 +12,7 @@ import {
   parsePlanUserInputRequest,
   parsePlanUserInputResponse,
   type RunStartInput,
+  resolveSessionTitle,
   type SystemPromptSnapshot,
   TODO_TOOL_NAME,
 } from "@chatdesk/shared";
@@ -160,6 +161,7 @@ import {
   loadChatServerSystemPromptPreview,
   loadDeveloperEnvironment,
   loadServerWorkspaceGit,
+  regenerateChatSessionTitle,
   saveChatServerConfig,
   stopChatServerRun,
   subscribeChatServerEvents,
@@ -177,7 +179,6 @@ import {
   type ChatSession,
   createSessionId,
   deleteChatSession,
-  deriveChatTitle,
   loadChatIndex,
   loadChatSession,
   saveChatSession,
@@ -351,6 +352,8 @@ function ChatPage() {
   const [plans, setPlans] = useState<ChatPlanSummary[]>([]);
   const [planTransition, setPlanTransition] = useState<PlanTransitionState>("idle");
   const [planModeError, setPlanModeError] = useState("");
+  const [titleError, setTitleError] = useState("");
+  const [isRenamingTitle, setIsRenamingTitle] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [commandCaret, setCommandCaret] = useState(0);
   const [commandIndex, setCommandIndex] = useState(0);
@@ -359,6 +362,8 @@ function ChatPage() {
     chatRoute.kind === "session" ? chatRoute.sessionId : createSessionId(),
   );
   const [sessionTitle, setSessionTitle] = useState("新对话");
+  const sessionTitleRef = useRef(sessionTitle);
+  sessionTitleRef.current = sessionTitle;
   const [workspaceKey, setWorkspaceKey] = useState(() =>
     chatRoute.kind === "new" ? chatRoute.workspaceId : "",
   );
@@ -487,6 +492,7 @@ function ChatPage() {
         () => selectedMcpIds,
         () => planModeRef.current,
         () => activePlanIdRef.current,
+        () => sessionTitleRef.current,
         getPromptInput,
       ),
     [getPromptInput, selectedMcpIds, selectedModel, selectedSkillIds, sessionId],
@@ -636,6 +642,8 @@ function ChatPage() {
       setPlans([]);
       setPlanTransition("idle");
       setPlanModeError("");
+      setTitleError("");
+      setIsRenamingTitle(false);
       for (const item of pendingAttachmentsRef.current) {
         if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
       }
@@ -1122,6 +1130,8 @@ function ChatPage() {
     workspaceSelectionInitializedRef.current = true;
     suppressSaveRef.current = true;
     setSessionTitle(session.title);
+    setTitleError("");
+    setIsRenamingTitle(false);
     setWorkspaceKey(session.workspaceId ?? "");
     setSessionCwd(session.cwd ?? "");
     systemPromptRef.current = session.systemPrompt;
@@ -1214,7 +1224,7 @@ function ChatPage() {
     if (savedFingerprintRef.current === fingerprint) return;
     savedFingerprintRef.current = fingerprint;
     const now = new Date().toISOString();
-    const title = deriveChatTitle(messages);
+    const title = resolveSessionTitle(sessionTitleRef.current, messages);
     setSessionTitle(title);
     void (async () => {
       try {
@@ -1232,7 +1242,7 @@ function ChatPage() {
         if (materialized.changed) {
           await saveChatSession({
             ...canonicalSession,
-            title: deriveChatTitle(materialized.messages),
+            title: resolveSessionTitle(canonicalSession.title, materialized.messages),
             updatedAt: now,
             messages: materialized.messages,
             attachments: materialized.attachments,
@@ -1673,6 +1683,30 @@ function ChatPage() {
     }
   }
 
+  async function regenerateConversationTitle() {
+    if (
+      isGenerating ||
+      isRenamingTitle ||
+      !messages.some((message) => message.role === "user" && messageText(message).trim())
+    ) {
+      return;
+    }
+    setConversationMenuOpen(false);
+    setTitleError("");
+    setIsRenamingTitle(true);
+    try {
+      const result = await regenerateChatSessionTitle(sessionId);
+      if (activeSessionRef.current !== sessionId) return;
+      setSessionTitle(result.title);
+      void queryClient.invalidateQueries({ queryKey: ["chat-index"] });
+    } catch (renameError) {
+      if (activeSessionRef.current !== sessionId) return;
+      setTitleError(renameError instanceof Error ? renameError.message : String(renameError));
+    } finally {
+      if (activeSessionRef.current === sessionId) setIsRenamingTitle(false);
+    }
+  }
+
   function keepConversationMenuOpen() {
     if (conversationMenuCloseTimerRef.current !== null) {
       window.clearTimeout(conversationMenuCloseTimerRef.current);
@@ -1822,6 +1856,12 @@ function ChatPage() {
             <p className="chat-kicker">Workspace assistant</p>
             <div className="chat-brand-title-row">
               <h1>{sessionTitle}</h1>
+              {isRenamingTitle ? (
+                <LoaderCircle
+                  aria-hidden="true"
+                  className="ml-1 size-3.5 shrink-0 animate-spin text-muted-foreground"
+                />
+              ) : null}
               <DropdownMenu
                 modal={false}
                 open={conversationMenuOpen}
@@ -1850,6 +1890,19 @@ function ChatPage() {
                   onPointerLeave={scheduleConversationMenuClose}
                   sideOffset={6}
                 >
+                  <DropdownMenuItem
+                    disabled={
+                      isGenerating ||
+                      isRenamingTitle ||
+                      !messages.some(
+                        (message) => message.role === "user" && messageText(message).trim(),
+                      )
+                    }
+                    onSelect={() => void regenerateConversationTitle()}
+                  >
+                    <Sparkles className="size-4" />
+                    重新生成标题
+                  </DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => void copyConversationId()}>
                     {conversationIdCopied ? (
                       <Check className="size-4 text-primary" />
@@ -2170,9 +2223,10 @@ function ChatPage() {
             </Button>
           ) : null}
         </div>
-        {error || planModeError ? (
+        {error || planModeError || titleError ? (
           <p className="chat-error" role="alert">
             {planModeError ||
+              titleError ||
               (recoverableTransportError
                 ? serverRunActive
                   ? "响应连接已中断，正在从后台任务恢复…"
@@ -3077,6 +3131,7 @@ function createModelTransport(
   getMcpServerIds: () => string[],
   getPlanMode: () => ChatPlanMode,
   getPlanId: () => string | undefined,
+  getTitle: () => string,
   getPromptInput: () => Promise<
     Pick<RunStartInput, "system" | "memory" | "cwd" | "workspaceId" | "toolNames">
   >,
@@ -3128,7 +3183,7 @@ function createModelTransport(
           mcpServerIds: getMcpServerIds(),
           skillIds: getSkills().map((skill) => skill.id),
           toolNames: activeTools.toolNames,
-          title: undefined,
+          title: getTitle(),
         },
         api: `${chatServerUrl()}/v1/sessions/${sessionId}/runs`,
         headers: chatServerHeaders(),

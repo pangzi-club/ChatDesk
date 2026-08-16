@@ -27,6 +27,7 @@ export {
   isSessionStatus,
   MAX_AGENT_STEPS,
   resolveContextCompactionThreshold,
+  resolveSessionTitle,
   SESSION_STATUSES,
   textFromMessage,
 } from "@chatdesk/shared";

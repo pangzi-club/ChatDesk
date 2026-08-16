@@ -603,3 +603,10 @@ export function deriveTitle(messages: UIMessage[]) {
   const chars = Array.from(normalized);
   return chars.slice(0, 40).join("") + (chars.length > 40 ? "…" : "");
 }
+
+export function resolveSessionTitle(currentTitle: string | undefined, messages: UIMessage[]) {
+  const derived = deriveTitle(messages);
+  const current = currentTitle?.trim();
+  if (!current || current === "新对话" || current === derived) return derived;
+  return current;
+}

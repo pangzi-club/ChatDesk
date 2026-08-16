@@ -41,9 +41,9 @@ import {
   type ChatRunSummary,
   type ChatSession,
   type ChatTokenUsage,
-  deriveTitle,
   type RunStartInput,
   resolveContextCompactionThreshold,
+  resolveSessionTitle,
   type SandboxMode,
   type SessionStatus,
 } from "./protocol.ts";
@@ -145,7 +145,7 @@ function baseUrl(value: string) {
     .replace(/\/responses$/i, "");
 }
 
-function createConfiguredLanguageModel(model: import("./protocol.ts").ServerModelConfig) {
+export function createConfiguredLanguageModel(model: import("./protocol.ts").ServerModelConfig) {
   const provider = createOpenAI({
     apiKey: model.apiKey,
     baseURL: baseUrl(model.baseUrl),
@@ -502,7 +502,7 @@ export class RunRegistry {
     await this.store.save({
       ...current,
       messages,
-      title: deriveTitle(messages),
+      title: resolveSessionTitle(current.title, messages),
       updatedAt: new Date().toISOString(),
     });
   }
@@ -574,7 +574,7 @@ export class RunRegistry {
     });
     const session: ChatSession = {
       ...current,
-      title: input.title?.trim() || deriveTitle(messages),
+      title: resolveSessionTitle(input.title ?? current.title, messages),
       updatedAt: now,
       modelId: model.id || model.name,
       workspaceId: input.workspaceId ?? current.workspaceId,
@@ -1251,7 +1251,7 @@ export class RunRegistry {
         ...current,
         messages: nextMessages,
         updatedAt: new Date().toISOString(),
-        title: deriveTitle(nextMessages),
+        title: resolveSessionTitle(current.title, nextMessages),
       };
       await this.store.save(updated);
       this.drafts.delete(sessionId);

@@ -8,6 +8,7 @@ import {
   parsePlanUserInputResponse,
   resolveContextCompactionThreshold,
   resolveModelContextWindow,
+  resolveSessionTitle,
   sortPlanUserInputOptions,
 } from "./chat.ts";
 
@@ -21,6 +22,23 @@ describe("shared chat contracts", () => {
       },
     ]);
     assert.equal(title, "帮我检查这个项目的构建问题");
+  });
+
+  it("keeps a custom session title and still derives the default ones", () => {
+    const messages = [
+      {
+        id: "user-1",
+        role: "user" as const,
+        parts: [{ type: "text" as const, text: "帮我检查这个项目的构建问题" }],
+      },
+    ];
+    assert.equal(resolveSessionTitle(undefined, messages), "帮我检查这个项目的构建问题");
+    assert.equal(resolveSessionTitle("新对话", messages), "帮我检查这个项目的构建问题");
+    assert.equal(
+      resolveSessionTitle("帮我检查这个项目的构建问题", messages),
+      "帮我检查这个项目的构建问题",
+    );
+    assert.equal(resolveSessionTitle("修复构建失败", messages), "修复构建失败");
   });
 
   it("validates known session statuses", () => {
