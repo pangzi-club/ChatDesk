@@ -94,30 +94,34 @@ test("dedupe script applies changes and keeps a backup", async () => {
   const target = await mkdtemp(path.join(os.tmpdir(), "chatdesk-dedupe-target-"));
   const sessionDir = path.join(target, "sessions", "session-1");
   await mkdir(sessionDir, { recursive: true });
-  const sessionFile = path.join(sessionDir, "session.json");
+  const metaFile = path.join(sessionDir, "meta.json");
+  const messagesFile = path.join(sessionDir, "messages.jsonl");
   await writeFile(
-    sessionFile,
+    metaFile,
     JSON.stringify({
       schemaVersion: 2,
       id: "session-1",
       title: "Duplicate",
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
-      messages: [
-        { id: "", role: "assistant", parts: [{ type: "text", text: "same" }] },
-        { id: "stable", role: "assistant", parts: [{ type: "text", text: "same" }] },
-      ],
       attachments: [],
     }),
   );
+  await writeFile(
+    messagesFile,
+    `${JSON.stringify({ id: "", role: "assistant", parts: [{ type: "text", text: "same" }] })}\n${JSON.stringify({ id: "stable", role: "assistant", parts: [{ type: "text", text: "same" }] })}\n`,
+  );
 
   await execFileAsync(process.execPath, [script, "--target", target, "--apply"]);
-  const cleaned = JSON.parse(await readFile(sessionFile, "utf8"));
+  const cleaned = (await readFile(messagesFile, "utf8"))
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
   assert.deepEqual(
-    cleaned.messages.map((message) => message.id),
+    cleaned.map((message) => message.id),
     ["stable"],
   );
-  await stat(`${sessionFile}.before-dedupe`);
+  await stat(`${messagesFile}.before-dedupe`);
 
   const second = await execFileAsync(process.execPath, [script, "--target", target]);
   assert.match(second.stdout, /changed":0/);

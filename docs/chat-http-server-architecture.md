@@ -11,7 +11,7 @@
 - `ChatIndexItem` 与侧栏列表没有 `status` 字段，无法展示各会话进行中状态；
 - 生成中不落盘，切走后无法恢复进行中消息。
 
-持久化层已是 per-session（`chat/{id}/session.json`），但运行时层是单飞。仅改 UI 无法支持「多 chat 同时跑 + 侧栏看进行中」。这些限制已在迁移到 Node HTTP Server 后消除。
+持久化层已是 per-session（`sessions/{id}/meta.json` + `messages.jsonl`），但运行时层是单飞。仅改 UI 无法支持「多 chat 同时跑 + 侧栏看进行中」。这些限制已在迁移到 Node HTTP Server 后消除。
 
 ## 2. 讨论结论
 

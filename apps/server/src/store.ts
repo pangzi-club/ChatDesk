@@ -1,7 +1,30 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  mkdir,
+  open,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import type { ChatSession, SessionIndexItem, SessionStatus } from "./protocol.ts";
+import {
+  cacheFromRawLines,
+  cacheFromSerializedLines,
+  jsonlByteSize,
+  parseMessagesJsonl,
+  prefixUnchanged,
+  SESSION_MESSAGES_FILE,
+  SESSION_META_FILE,
+  type SessionWriteCache,
+  serializeMessageLine,
+  serializeMessagesJsonl,
+  serializeSessionMeta,
+  splitJsonlLines,
+} from "./session-jsonl.ts";
 
 const INDEX_FILE = "index.json";
 
@@ -43,15 +66,36 @@ async function readJson<T>(file: string, fallback: T): Promise<T> {
   }
 }
 
+async function readText(file: string): Promise<string | null> {
+  try {
+    return await readFile(file, "utf8");
+  } catch {
+    return null;
+  }
+}
+
 async function atomicWrite(file: string, contents: string) {
   const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
   await writeFile(temporary, contents, "utf8");
   await rename(temporary, file);
 }
 
+async function replaceLastJsonlLine(file: string, start: number, line: string) {
+  const payload = Buffer.from(`${line}\n`, "utf8");
+  const handle = await open(file, "r+");
+  try {
+    await handle.write(payload, 0, payload.length, start);
+    await handle.truncate(start + payload.length);
+  } finally {
+    await handle.close();
+  }
+}
+
 export class SessionStore {
   readonly root: string;
   private readonly sessionsRoot: string;
+  private readonly writeCaches = new Map<string, SessionWriteCache>();
+  private readonly tails = new Map<string, Promise<void>>();
 
   constructor(root: string) {
     this.root = root;
@@ -92,26 +136,20 @@ export class SessionStore {
 
   async get(id: string): Promise<ChatSession | null> {
     if (!validId(id)) return null;
-    const value = await readJson<unknown>(path.join(this.sessionsRoot, id, "session.json"), null);
-    if (!isSession(value)) return null;
-    return {
-      ...value,
-      schemaVersion: 2,
-      attachments: value.attachments ?? [],
-      messages: value.messages ?? [],
-    };
+    return this.enqueue(id, () => this.getUnlocked(id));
   }
 
   async save(session: ChatSession) {
     if (!validId(session.id)) throw new Error("invalid chat session id");
-    const directory = path.join(this.sessionsRoot, session.id);
-    await mkdir(directory, { recursive: true });
-    await atomicWrite(path.join(directory, "session.json"), JSON.stringify(session, null, 2));
+    await this.enqueue(session.id, () => this.saveUnlocked(session));
   }
 
   async delete(id: string) {
     if (!validId(id)) throw new Error("invalid chat session id");
-    await rm(path.join(this.sessionsRoot, id), { recursive: true, force: true });
+    await this.enqueue(id, async () => {
+      this.writeCaches.delete(id);
+      await rm(path.join(this.sessionsRoot, id), { recursive: true, force: true });
+    });
   }
 
   attachmentPath(sessionId: string, attachmentId: string, fileName: string) {
@@ -176,18 +214,123 @@ export class SessionStore {
     let imported = 0;
     for (const id of ids) {
       if (!validId(id) || (await this.get(id))) continue;
-      let session: unknown = null;
-      for (const sessionPath of [
-        path.join(legacyRoot, id, "session.json"),
-        path.join(legacyRoot, "sessions", id, "session.json"),
-      ]) {
-        session = await readJson<unknown>(sessionPath, null);
-        if (isSession(session)) break;
+      let session: ChatSession | null = null;
+      for (const directory of [path.join(legacyRoot, id), path.join(legacyRoot, "sessions", id)]) {
+        session = await this.readSessionDirectory(directory);
+        if (session) break;
       }
-      if (!isSession(session)) continue;
+      if (!session) continue;
       await this.save({ ...session, schemaVersion: 2 });
       imported += 1;
     }
     return imported;
+  }
+
+  private enqueue<T>(id: string, task: () => Promise<T>): Promise<T> {
+    const previous = this.tails.get(id) ?? Promise.resolve();
+    const current = previous.then(task, task);
+    this.tails.set(
+      id,
+      current.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return current;
+  }
+
+  private sessionDirectory(id: string) {
+    return path.join(this.sessionsRoot, id);
+  }
+
+  private async getUnlocked(id: string): Promise<ChatSession | null> {
+    const session = await this.readSessionDirectory(this.sessionDirectory(id));
+    if (!session) {
+      this.writeCaches.delete(id);
+      return null;
+    }
+    return session;
+  }
+
+  private async readSessionDirectory(directory: string): Promise<ChatSession | null> {
+    const metaValue = await readJson<unknown>(path.join(directory, SESSION_META_FILE), null);
+    if (!metaValue || typeof metaValue !== "object") return null;
+    const { messages: _ignored, ...meta } = metaValue as Record<string, unknown>;
+    const messagesFile = path.join(directory, SESSION_MESSAGES_FILE);
+    const messagesText = (await readText(messagesFile)) ?? "";
+    const parsed = parseMessagesJsonl(messagesText);
+    if (!parsed.ok) return null;
+    const session = {
+      ...meta,
+      schemaVersion: 2,
+      attachments: Array.isArray(meta.attachments) ? meta.attachments : [],
+      messages: parsed.messages,
+    };
+    if (!isSession(session)) return null;
+    const id = session.id;
+    const rawLines = splitJsonlLines(messagesText);
+    const keptRawLines = rawLines.slice(0, parsed.messages.length);
+    if (keptRawLines.length < rawLines.length) {
+      const handle = await open(messagesFile, "r+");
+      try {
+        await handle.truncate(jsonlByteSize(keptRawLines));
+      } finally {
+        await handle.close();
+      }
+    }
+    if (directory === this.sessionDirectory(id)) {
+      this.writeCaches.set(id, cacheFromRawLines(keptRawLines, session.messages));
+    }
+    return session;
+  }
+
+  private async saveUnlocked(session: ChatSession) {
+    const directory = this.sessionDirectory(session.id);
+    await mkdir(directory, { recursive: true });
+    await atomicWrite(path.join(directory, SESSION_META_FILE), serializeSessionMeta(session));
+    const messagesFile = path.join(directory, SESSION_MESSAGES_FILE);
+    const nextLines = session.messages.map((message) => serializeMessageLine(message));
+    const cache = this.writeCaches.get(session.id);
+
+    if (!cache) {
+      await atomicWrite(messagesFile, serializeMessagesJsonl(session.messages));
+      this.writeCaches.set(session.id, cacheFromSerializedLines(nextLines));
+      return;
+    }
+
+    if (
+      nextLines.length === cache.lines.length + 1 &&
+      prefixUnchanged(cache.lines, nextLines, cache.lines.length)
+    ) {
+      const line = nextLines[nextLines.length - 1] ?? "";
+      await appendFile(messagesFile, `${line}\n`, "utf8");
+      this.writeCaches.set(session.id, {
+        lines: nextLines,
+        lastLineStart: cache.fileSize,
+        fileSize: cache.fileSize + Buffer.byteLength(`${line}\n`, "utf8"),
+      });
+      return;
+    }
+
+    if (
+      nextLines.length === cache.lines.length &&
+      nextLines.length > 0 &&
+      prefixUnchanged(cache.lines, nextLines, nextLines.length - 1)
+    ) {
+      const line = nextLines[nextLines.length - 1] ?? "";
+      if (line === cache.lines[cache.lines.length - 1]) return;
+      await replaceLastJsonlLine(messagesFile, cache.lastLineStart, line);
+      this.writeCaches.set(session.id, {
+        lines: nextLines,
+        lastLineStart: cache.lastLineStart,
+        fileSize: cache.lastLineStart + Buffer.byteLength(`${line}\n`, "utf8"),
+      });
+      return;
+    }
+
+    if (nextLines.length === 0 && cache.lines.length === 0) return;
+
+    await atomicWrite(messagesFile, serializeMessagesJsonl(session.messages));
+    this.writeCaches.set(session.id, cacheFromSerializedLines(nextLines));
   }
 }

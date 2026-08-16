@@ -8,16 +8,16 @@
 
 ```text
 <数据目录>/sessions/<sessionId>/
-├── session.json                 # ChatSession 序列化
-│   ├── messages: UIMessage[]    # 消息级：本条消息带了哪几个文件（file part）
-│   └── attachments: ChatAttachment[]  # 会话级：整个会话挂过的文件元数据
+├── meta.json                    # ChatSession 去掉 messages
+├── messages.jsonl               # 每行一条 UIMessage
+│   └── file / reasoning-file part 标记本条消息带了哪些附件
 └── attachments/
     └── <attachmentId>-<fileName>      # 文件本体
 ```
 
 - **文件本体**：`attachments/<attachmentId>-<fileName>`，二进制内容落盘。文件名经 `store.attachmentPath` 清洗（非 `[a-zA-Z0-9._-]` 字符替换为 `_`，截断到 180 字符）。
-- **会话级元数据**：`ChatSession.attachments: ChatAttachment[]`，随 session 序列化进 `session.json`。
-- **消息级引用**：某条 `UIMessage` 的 `parts` 数组里放 `file` / `reasoning-file` 类型的 part，标记「这条消息」具体携带了哪几个附件，渲染侧由 `ChatMessageFiles` 消费。
+- **会话级元数据**：`ChatSession.attachments: ChatAttachment[]`，随 session 序列化进 `meta.json`。
+- **消息级引用**：某条 `UIMessage` 的 `parts` 数组里放 `file` / `reasoning-file` 类型的 part，标记「这条消息」具体携带了哪几个附件，渲染侧由 `ChatMessageFiles` 消费。消息按行写在 `messages.jsonl`。
 
 `ChatAttachment` 定义见 `packages/shared/src/chat.ts`：
 
@@ -65,7 +65,7 @@ type ChatAttachment = {
 2. 合并进 `session.attachments`（按 `id` 去重，参考 `chat-image-generation.ts` 的 `mergeAttachments`）；
 3. 通过 `PATCH /v1/sessions/:id` 保存整个 session，元数据才真正持久化。
 
-少了这一步，文件本体在磁盘上、但 `session.json` 里没有记录，重开会话后无法还原引用。
+少了这一步，文件本体在磁盘上、但 `meta.json` 里没有记录，重开会话后无法还原引用。
 
 ## 5. 前端上传链路
 
@@ -80,7 +80,7 @@ type ChatAttachment = {
 
 ## 6. 消息级引用与渲染
 
-发送消息时，把待发附件转成 `file` part 放进该条用户消息的 `parts`（带 `mediaType` 与可取到文件的 url / attachmentId）。消息随 `ChatSession.messages` 一起存入 `session.json`。
+发送消息时，把待发附件转成 `file` part 放进该条用户消息的 `parts`（带 `mediaType` 与可取到文件的 url / attachmentId）。消息随 `ChatSession.messages` 一起写入 `messages.jsonl`。
 
 渲染侧 `apps/desktop/src/pages/chat.tsx` 的 `ChatMessageFiles` 已支持 `file` / `reasoning-file` part：图片类渲染缩略图，其余渲染文件链接。注意附件内容读取要走带 `Authorization` 的客户端 fetch（`GET /attachments/:attachmentId`），`<img src>` 裸直链拿不到 token。
 

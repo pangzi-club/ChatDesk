@@ -34,7 +34,7 @@ function printHelp() {
   pnpm chat:sessions:dedupe -- --target <chat-server-data-dir> --apply
 
 默认目标：${defaultTarget}
-默认只预览；使用 --apply 才会写入，并为变更的 session.json 保留 .before-dedupe 备份。`);
+默认只预览；使用 --apply 才会写入，并为变更的 messages.jsonl 保留 .before-dedupe 备份。`);
 }
 
 function isUnstableId(id) {
@@ -123,11 +123,26 @@ export function dedupeSessionMessages(messages) {
   return { messages: result, removed, assigned };
 }
 
-async function processSession(file, apply) {
-  const original = await readFile(file, "utf8");
+async function readSession(directory) {
+  const meta = JSON.parse(await readFile(path.join(directory, "meta.json"), "utf8"));
+  const jsonl = await readFile(path.join(directory, "messages.jsonl"), "utf8").catch(() => "");
+  const messages = [];
+  for (const line of jsonl.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    messages.push(JSON.parse(line));
+  }
+  return { ...meta, messages };
+}
+
+function serializeMessages(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) return "";
+  return `${messages.map((message) => JSON.stringify(message)).join("\n")}\n`;
+}
+
+async function processSession(directory, apply) {
   let session;
   try {
-    session = JSON.parse(original);
+    session = await readSession(directory);
   } catch {
     return { changed: false, removed: 0, assigned: 0, skipped: true };
   }
@@ -135,6 +150,7 @@ async function processSession(file, apply) {
   const changed = result.removed > 0 || result.assigned > 0;
   if (!changed || !apply) return { ...result, changed, skipped: false };
 
+  const file = path.join(directory, "messages.jsonl");
   const backup = `${file}.before-dedupe`;
   try {
     await copyFile(file, backup);
@@ -142,7 +158,7 @@ async function processSession(file, apply) {
     // A prior backup is sufficient for repeated runs.
   }
   const next = `${file}.${process.pid}.tmp`;
-  await writeFile(next, JSON.stringify({ ...session, messages: result.messages }, null, 2));
+  await writeFile(next, serializeMessages(result.messages));
   await rename(next, file);
   return { ...result, changed: true, skipped: false };
 }
@@ -154,13 +170,13 @@ async function main() {
   const summary = { scanned: 0, changed: 0, removed: 0, assigned: 0, skipped: 0, failed: 0 };
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
-    const file = path.join(sessionsRoot, entry.name, "session.json");
+    const directory = path.join(sessionsRoot, entry.name);
     summary.scanned += 1;
     try {
-      const result = await processSession(file, options.apply);
+      const result = await processSession(directory, options.apply);
       if (result.skipped) {
         summary.skipped += 1;
-        console.log(`skip     ${file}`);
+        console.log(`skip     ${directory}`);
         continue;
       }
       if (result.changed) summary.changed += 1;
@@ -168,12 +184,14 @@ async function main() {
       summary.assigned += result.assigned;
       if (result.changed) {
         console.log(
-          `${options.apply ? "fixed" : "would-fix"} ${file} removed=${result.removed} assigned=${result.assigned}`,
+          `${options.apply ? "fixed" : "would-fix"} ${directory} removed=${result.removed} assigned=${result.assigned}`,
         );
       }
     } catch (error) {
       summary.failed += 1;
-      console.error(`failed   ${file}: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(
+        `failed   ${directory}: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
   console.log(
