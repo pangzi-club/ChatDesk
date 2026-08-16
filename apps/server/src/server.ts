@@ -1,3 +1,7 @@
+import { installAiSdkWarningFilter } from "./ai-sdk-warnings.ts";
+
+installAiSdkWarningFilter();
+
 type Shutdown = () => Promise<void> | void;
 
 let shutdownServer: Shutdown | undefined;

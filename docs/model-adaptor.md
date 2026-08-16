@@ -71,7 +71,8 @@ stream，包括 Agent 循环里的后续 step 和上下文检查点。调用方�
   证据可能丢失；模型仍可能再次联网。这是 SDK 转换层限制，不是 `store` 默认值本身。
 - **空 reasoning**：DeepSeek Flash 常返回空的 reasoning 文本且没有
   `encrypted_content`。`store: false` 时 SDK 会丢掉这类 reasoning item。Flash 对
-  缺失 thinking passback 通常仍返回 200；Pro 在带工具的多轮里可能更严格。
+  缺失 thinking passback 通常仍返回 200；Pro 在带工具的多轮里可能更严格。这条
+  是预期行为，`ai-sdk-warnings.ts` 只屏蔽对应的 AI SDK Warning，其它警告仍会打出。
 - **Chat Completions**：Kimi / MiniMax 的差异仍由各自 fetch 包装处理，不走
   Responses 的 `store` 中间件。
 

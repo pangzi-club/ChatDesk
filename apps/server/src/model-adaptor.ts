@@ -1,8 +1,11 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { type LanguageModel, type LanguageModelMiddleware, wrapLanguageModel } from "ai";
+import { installAiSdkWarningFilter } from "./ai-sdk-warnings.ts";
 import { createKimiFetch } from "./kimi.ts";
 import { createMiniMaxFetch, isMiniMaxModel } from "./minimax.ts";
 import type { ServerModelConfig } from "./protocol.ts";
+
+installAiSdkWarningFilter();
 
 export type ModelAdaptorIdentity = {
   name?: string;
