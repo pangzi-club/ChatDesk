@@ -28,9 +28,18 @@ import { CHAT_WORKSPACE_TOOL_DISPLAY_NAMES } from "@/lib/chat-workspace-tools";
 import { openFileViewer } from "@/lib/file-viewer-events";
 import { assetUrl } from "@/lib/platform";
 import {
+  extractBrowserToolDetail,
+  extractBrowserToolTitle,
   extractWorkspaceToolSummary,
+  extractWorkspaceToolTitle,
+  formatToolJson,
   getLastPathSegment,
+  getToolCallInputFields,
+  getToolCallOutputFields,
+  headlineToolText,
+  previewToolText,
   resolveWorkspaceToolFileTarget,
+  type ToolCallField,
 } from "./chat-tool-call-utils";
 
 export type ChatToolCallCardProps = {
@@ -60,19 +69,103 @@ export type ChatToolCallGroupProps = {
   cwd?: string;
 };
 
-function formatJson(value: unknown) {
-  if (value === undefined) return "—";
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
-
 function isEmptyInput(value: unknown) {
   if (value === undefined || value === null) return true;
   if (typeof value !== "object") return false;
   return Object.keys(value as Record<string, unknown>).length === 0;
+}
+
+function CollapsiblePre({ text, tone }: { text: string; tone?: ToolCallField["tone"] }) {
+  const [expanded, setExpanded] = useState(false);
+  const preview = previewToolText(text);
+  const display = expanded || !preview.truncated ? text : preview.text;
+
+  return (
+    <div className={`chat-tool-call-pre ${tone ? `is-${tone}` : ""}`}>
+      <pre>
+        {tone === "command" ? (
+          <span aria-hidden="true" className="chat-tool-call-prompt">
+            $
+          </span>
+        ) : null}
+        <code>{display || "—"}</code>
+      </pre>
+      {preview.truncated ? (
+        <button
+          className="chat-tool-call-more"
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            setExpanded((value) => !value);
+          }}
+        >
+          {expanded ? "收起" : "展开全部"}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function ToolCallFields({ fields }: { fields: ToolCallField[] }) {
+  const codeFields = fields.filter((field) => field.kind === "code");
+  const showCodeLabels = codeFields.length > 1;
+
+  return (
+    <div className="chat-tool-call-fields">
+      {fields.map((field) =>
+        field.kind === "meta" ? (
+          <p className="chat-tool-call-meta" key={field.label} title={field.text}>
+            <span className="chat-tool-call-meta-label">{field.label}</span>
+            <span className="chat-tool-call-meta-value">{field.text}</span>
+          </p>
+        ) : (
+          <div className="chat-tool-call-field" key={field.label}>
+            {showCodeLabels ? <p className="chat-tool-call-sublabel">{field.label}</p> : null}
+            <CollapsiblePre text={field.text} tone={field.tone} />
+          </div>
+        ),
+      )}
+    </div>
+  );
+}
+
+function getSummaryDetail(call: ChatToolCallCardProps) {
+  if (call.toolName === "web_search" || call.toolName === "web_search_preview") {
+    const query = extractWebSearchSummary(call.output)?.queries[0];
+    return query ? headlineToolText(query) : "";
+  }
+  if (CHAT_WORKSPACE_TOOL_DISPLAY_NAMES[call.toolName]) {
+    return extractWorkspaceToolSummary(call.toolName, call.input, call.output).replace(/^ · /, "");
+  }
+  const browserDetail = extractBrowserToolDetail(call.toolName, call.input);
+  if (browserDetail) return browserDetail;
+  if (call.toolName === IMAGE_GENERATION_TOOL_NAME) {
+    const prompt =
+      call.input && typeof call.input === "object"
+        ? (call.input as { prompt?: unknown }).prompt
+        : undefined;
+    return typeof prompt === "string" ? headlineToolText(prompt) : "";
+  }
+  return "";
+}
+
+function getSummaryTooltip(call: ChatToolCallCardProps) {
+  if (call.toolName === "web_search" || call.toolName === "web_search_preview") {
+    return extractWebSearchSummary(call.output)?.queries[0] ?? "";
+  }
+  if (CHAT_WORKSPACE_TOOL_DISPLAY_NAMES[call.toolName]) {
+    return extractWorkspaceToolTitle(call.toolName, call.input, call.output);
+  }
+  const browserTitle = extractBrowserToolTitle(call.toolName, call.input);
+  if (browserTitle) return browserTitle;
+  if (call.toolName === IMAGE_GENERATION_TOOL_NAME) {
+    const prompt =
+      call.input && typeof call.input === "object"
+        ? (call.input as { prompt?: unknown }).prompt
+        : undefined;
+    return typeof prompt === "string" ? headlineToolText(prompt, 400) : "";
+  }
+  return "";
 }
 
 export function getChatToolTitle(toolName: string) {
@@ -96,15 +189,8 @@ function getChatToolIcon(toolName: string): LucideIcon {
 
 export function getChatToolSummary(call: ChatToolCallCardProps) {
   const title = getChatToolTitle(call.toolName);
-  const webSearch =
-    call.toolName === "web_search" || call.toolName === "web_search_preview"
-      ? extractWebSearchSummary(call.output)
-      : null;
-  const query = webSearch?.queries[0];
-  const workspaceSummary = CHAT_WORKSPACE_TOOL_DISPLAY_NAMES[call.toolName]
-    ? extractWorkspaceToolSummary(call.toolName, call.input, call.output)
-    : "";
-  return `${title}${query ? ` · ${query}` : ""}${workspaceSummary}`;
+  const detail = getSummaryDetail(call);
+  return `${title}${detail ? ` · ${detail}` : ""}`;
 }
 
 export function getChatToolRunningSummary(call: ChatToolCallCardProps) {
@@ -342,23 +428,26 @@ export function ChatToolCallCard({
     hasImagePreview: Boolean(imagePreviewSrc),
   });
   const showInput = (!webSearch && !isImageGeneration) || !isEmptyInput(input);
-  const summaryQuery = webSearch?.queries[0];
+  const callProps = {
+    toolName,
+    state,
+    input,
+    output,
+    errorText,
+    approval,
+    preliminary,
+  } satisfies ChatToolCallCardProps;
+  const summaryQuery = webSearch?.queries[0] ? headlineToolText(webSearch.queries[0]) : "";
   const workspaceSummary = CHAT_WORKSPACE_TOOL_DISPLAY_NAMES[toolName]
     ? extractWorkspaceToolSummary(toolName, input, output)
     : "";
-  const workspaceTitle = workspaceSummary ? `${title}${workspaceSummary}` : undefined;
+  const browserDetail = extractBrowserToolDetail(toolName, input);
+  const summaryTooltip =
+    (isImageGeneration ? imageMeta?.fileName : undefined) || getSummaryTooltip(callProps);
+  const inputFields = getToolCallInputFields(toolName, input);
+  const outputFields = getToolCallOutputFields(toolName, output);
   const ToolIcon = getChatToolIcon(toolName);
-  const summaryTitle = running
-    ? getChatToolRunningSummary({
-        toolName,
-        state,
-        input,
-        output,
-        errorText,
-        approval,
-        preliminary,
-      })
-    : title;
+  const summaryTitle = running ? getChatToolRunningSummary(callProps) : title;
 
   function openToolFile() {
     if (!fileTarget) return;
@@ -418,16 +507,16 @@ export function ChatToolCallCard({
             manualApproval,
           })}
         </span>
-        <span
-          className="chat-tool-call-title"
-          title={isImageGeneration ? imageMeta?.fileName : workspaceTitle}
-        >
+        <span className="chat-tool-call-title" title={summaryTooltip || undefined}>
           <span className="chat-tool-call-title-name">{summaryTitle}</span>
           {!running && summaryQuery ? (
             <span className="chat-tool-call-title-detail"> · {summaryQuery}</span>
           ) : null}
           {!running && isImageGeneration && imageMeta?.fileName ? (
             <span className="chat-tool-call-title-detail"> · {imageMeta.fileName}</span>
+          ) : null}
+          {!running && !summaryQuery && !imageMeta?.fileName && browserDetail ? (
+            <span className="chat-tool-call-title-detail"> · {browserDetail}</span>
           ) : null}
           {!running && workspaceSummary ? (
             fileTarget ? (
@@ -444,7 +533,7 @@ export function ChatToolCallCard({
                   }}
                   title={fileTarget.path}
                 >
-                  {toolName === "read_file" ? getLastPathSegment(fileTarget.path) : fileTarget.path}
+                  {getLastPathSegment(fileTarget.path)}
                 </a>
               </>
             ) : (
@@ -497,38 +586,44 @@ export function ChatToolCallCard({
         </div>
       ) : null}
       {open && !compact ? (
-        <div className="chat-tool-call-body">
+        <div className={`chat-tool-call-body ${toolName === "bash" ? "is-shell" : ""}`}>
           {showInput ? (
             <div className="chat-tool-call-section">
-              <p className="chat-tool-call-label">参数</p>
-              <pre>{formatJson(input)}</pre>
+              <p className="chat-tool-call-label">{toolName === "bash" ? "命令" : "参数"}</p>
+              {inputFields ? (
+                <ToolCallFields fields={inputFields} />
+              ) : (
+                <CollapsiblePre text={formatToolJson(input)} />
+              )}
             </div>
           ) : null}
           {webSearch && (webSearch.queries.length > 0 || webSearch.sources.length > 0) ? (
             <div className="chat-tool-call-section">
               <p className="chat-tool-call-label">搜索</p>
-              <pre>
-                {formatJson({
+              <CollapsiblePre
+                text={formatToolJson({
                   ...(webSearch.actionLabel ? { action: webSearch.actionLabel } : {}),
                   ...(webSearch.queries.length > 0 ? { queries: webSearch.queries } : {}),
                   ...(webSearch.sources.length > 0 ? { sources: webSearch.sources } : {}),
                 })}
-              </pre>
+              />
             </div>
           ) : null}
           {approval?.reason ? (
             <div className="chat-tool-call-section">
               <p className="chat-tool-call-label">审批理由</p>
-              <pre>{approval.reason}</pre>
+              <CollapsiblePre text={approval.reason} />
             </div>
           ) : null}
           <div className="chat-tool-call-section">
-            <p className="chat-tool-call-label">{failed ? "错误" : "结果"}</p>
+            <p className="chat-tool-call-label">
+              {failed ? "错误" : toolName === "bash" ? "输出" : "结果"}
+            </p>
             {failed ? (
-              <pre>{resolvedError ?? formatJson(output)}</pre>
+              <CollapsiblePre text={resolvedError ?? formatToolJson(output)} />
             ) : isImageGeneration ? (
-              <pre>
-                {formatJson(
+              <CollapsiblePre
+                text={formatToolJson(
                   imageMeta ?? {
                     note: imagePreviewSrc
                       ? preliminary
@@ -537,7 +632,7 @@ export function ChatToolCallCard({
                       : "暂无图片输出",
                   },
                 )}
-              </pre>
+              />
             ) : fileTarget ? (
               <button
                 className="chat-tool-call-open-file"
@@ -547,8 +642,10 @@ export function ChatToolCallCard({
               >
                 {getLastPathSegment(fileTarget.path)}
               </button>
+            ) : outputFields ? (
+              <ToolCallFields fields={outputFields} />
             ) : (
-              <pre>{formatJson(output)}</pre>
+              <CollapsiblePre text={formatToolJson(output)} />
             )}
           </div>
         </div>
@@ -566,6 +663,9 @@ export function ChatToolCallGroup({
   const [open, setOpen] = useState(false);
   const activeCall = calls[calls.length - 1];
   if (!activeCall) return null;
+  if (calls.length === 1) {
+    return <ChatToolCallCard {...activeCall} cwd={cwd} workspaceId={workspaceId} />;
+  }
   const running = calls.some(isToolCallRunning);
   const pending = calls.some(isToolCallPending);
   const hasError =
@@ -576,6 +676,7 @@ export function ChatToolCallGroup({
   const summary = getChatToolGroupSummary(calls);
   const status = getChatToolGroupStatus(calls);
   const displaySummary = running ? getChatToolRunningSummary(activeCall) : summary;
+  const summaryTooltip = getSummaryTooltip(activeCall);
 
   return (
     <div
@@ -605,7 +706,9 @@ export function ChatToolCallGroup({
             manualApproval,
           })}
         </span>
-        <span className="chat-tool-call-title">{displaySummary}</span>
+        <span className="chat-tool-call-title" title={summaryTooltip || displaySummary}>
+          {displaySummary}
+        </span>
         {status !== "已完成" ? <span className="chat-tool-call-status">{status}</span> : null}
         <ChevronDown className={`chat-tool-call-chevron ${open ? "is-open" : ""}`} />
       </button>
@@ -616,7 +719,6 @@ export function ChatToolCallGroup({
               <ChatToolCallCard
                 key={call.id ?? call.toolName}
                 {...call}
-                compact
                 cwd={cwd}
                 workspaceId={workspaceId}
               />
