@@ -20,9 +20,7 @@ import {
   Image,
   Keyboard,
   KeyRound,
-  LayoutDashboard,
   LoaderCircle,
-  Lock,
   Maximize2,
   MessageCircle,
   Minimize2,
@@ -154,12 +152,9 @@ import {
 } from "@/lib/workspaces";
 
 const navItems = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/chat", label: "Chat", icon: MessageCircle },
   { to: "/image-generation", label: "Image", icon: Image },
   { to: "/automations", label: "Automations", icon: Clock3 },
-  { to: "/workspaces", label: "Workspaces", icon: FolderGit2 },
-  { to: "/dev-tools", label: "Dev Tools", icon: Wrench },
 ] satisfies Array<{
   to: string;
   label: string;
@@ -179,38 +174,13 @@ function getWorkbenchLayoutTransition(shouldReduceMotion: boolean) {
 }
 
 const commandItems = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, keywords: ["仪表盘", "首页"] },
   { to: "/chat", label: "Chat", icon: MessageCircle, keywords: ["对话", "聊天"] },
   { to: "/automations", label: "Automations", icon: Clock3, keywords: ["自动化", "任务"] },
-  {
-    to: "/workspaces",
-    label: "Workspaces",
-    icon: FolderGit2,
-    keywords: ["项目", "工作区", "workspace", "git"],
-  },
   {
     to: "/image-generation",
     label: "Image",
     icon: Image,
     keywords: ["图片", "生成", "image"],
-  },
-  {
-    to: "/dev-tools",
-    label: "Dev Tools",
-    icon: Wrench,
-    keywords: ["开发工具", "devtools", "工具"],
-  },
-  {
-    to: "/dev-tools/encrypt",
-    label: "Encrypt",
-    icon: Lock,
-    keywords: ["文本加密", "加密", "devtools"],
-  },
-  {
-    to: "/dev-tools/vite-ports",
-    label: "VitePorts",
-    icon: SquareTerminal,
-    keywords: ["端口", "开发服务", "vite", "devtools"],
   },
   { to: "/settings", label: "Settings", icon: Settings, keywords: ["设置"] },
   {
@@ -397,8 +367,7 @@ function AppShell() {
   const chatWorkspaceId =
     chatUrlParams.get("workspaceId") ?? chatSessionQuery.data?.workspaceId ?? "";
   const chatWorkspaceCwd = chatUrlParams.get("workspaceCwd") ?? chatSessionQuery.data?.cwd ?? "";
-  const hideMainSidebar =
-    location.pathname.startsWith("/settings") || location.pathname.startsWith("/dev-tools/");
+  const hideMainSidebar = location.pathname.startsWith("/settings");
   const lockOutletScroll = location.pathname.startsWith("/settings/history");
 
   useEffect(() => {
@@ -415,7 +384,7 @@ function AppShell() {
     if (!("__TAURI_INTERNALS__" in window)) return;
 
     let unlisten: (() => void) | undefined;
-    void listen("tray-dashboard", () => navigate("/dashboard")).then((cleanup) => {
+    void listen("tray-chat", () => navigate("/chat")).then((cleanup) => {
       unlisten = cleanup;
     });
 

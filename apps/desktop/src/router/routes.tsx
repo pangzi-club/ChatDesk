@@ -3,9 +3,6 @@ import { createHashRouter, Navigate, RouterProvider, useParams } from "react-rou
 import { AppShell } from "@/layouts/app-shell";
 import { AutomationsPage } from "@/pages/automations";
 import { ChatPage } from "@/pages/chat";
-import { DashboardPage } from "@/pages/dashboard";
-import { DevToolsLayout, DevToolsPage } from "@/pages/dev-tools";
-import { EncryptPage } from "@/pages/encrypt";
 import { HistoryDetailPage } from "@/pages/history";
 import { ImageGenerationPage } from "@/pages/image-generation";
 import {
@@ -25,8 +22,6 @@ import {
   TraySettingsPage,
 } from "@/pages/settings";
 import { StatisticsSettingsPage } from "@/pages/statistics";
-import { VitePortsPage } from "@/pages/vite-ports";
-import { WorkspaceDetailPage, WorkspacesPage } from "@/pages/workspaces";
 
 const router = createHashRouter([
   {
@@ -35,11 +30,7 @@ const router = createHashRouter([
     children: [
       {
         index: true,
-        element: <Navigate replace to="/dashboard" />,
-      },
-      {
-        path: "dashboard",
-        element: <DashboardPage />,
+        element: <Navigate replace to="/chat" />,
       },
       {
         path: "chat",
@@ -52,32 +43,6 @@ const router = createHashRouter([
       {
         path: "automations",
         element: <AutomationsPage />,
-      },
-      {
-        path: "workspaces",
-        element: <WorkspacesPage />,
-      },
-      {
-        path: "workspaces/:projectId",
-        element: <WorkspaceDetailPage />,
-      },
-      {
-        path: "dev-tools",
-        children: [
-          { index: true, element: <DevToolsPage /> },
-          { path: "workspaces", element: <Navigate replace to="/workspaces" /> },
-          {
-            path: "workspaces/:projectId",
-            element: <WorkspaceProjectRedirect />,
-          },
-          {
-            element: <DevToolsLayout />,
-            children: [
-              { path: "encrypt", element: <EncryptPage /> },
-              { path: "vite-ports", element: <VitePortsPage /> },
-            ],
-          },
-        ],
       },
       {
         path: "settings",
@@ -103,8 +68,6 @@ const router = createHashRouter([
           { path: "logs", element: <SystemLogsSettingsPage /> },
         ],
       },
-      { path: "encrypt", element: <Navigate replace to="/dev-tools/encrypt" /> },
-      { path: "vite-ports", element: <Navigate replace to="/dev-tools/vite-ports" /> },
       { path: "history", element: <Navigate replace to="/settings/statistics" /> },
       {
         path: "history/analysis",
@@ -118,14 +81,9 @@ const router = createHashRouter([
   },
   {
     path: "*",
-    element: <Navigate replace to="/dashboard" />,
+    element: <Navigate replace to="/chat" />,
   },
 ]);
-
-function WorkspaceProjectRedirect() {
-  const { projectId } = useParams();
-  return <Navigate replace to={`/workspaces/${projectId ?? ""}`} />;
-}
 
 function HistoryLegacyRedirect() {
   const { source, id } = useParams();

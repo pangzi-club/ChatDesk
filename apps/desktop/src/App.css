@@ -873,83 +873,6 @@
   letter-spacing: -0.025em;
 }
 
-.dashboard-home {
-  min-height: 100%;
-  background: var(--background);
-  color: var(--foreground);
-}
-
-.dashboard-home-card {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--card);
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent);
-  transition:
-    border-color 140ms ease,
-    box-shadow 140ms ease,
-    transform 140ms ease;
-}
-
-.dashboard-home-card:hover {
-  border-color: color-mix(in srgb, var(--primary) 18%, var(--border));
-  box-shadow: 0 5px 18px color-mix(in srgb, var(--foreground) 8%, transparent);
-  transform: translateY(-1px);
-}
-
-.dashboard-search {
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--card);
-  box-shadow: 0 4px 16px color-mix(in srgb, var(--foreground) 5%, transparent);
-}
-
-.dashboard-search:focus-within {
-  border-color: var(--ring);
-  box-shadow:
-    0 5px 18px color-mix(in srgb, var(--primary) 14%, transparent),
-    0 0 0 3px color-mix(in srgb, var(--ring) 18%, transparent);
-}
-
-.dashboard-action-mark {
-  background: color-mix(in srgb, var(--primary) 12%, var(--card));
-  color: var(--primary);
-}
-
-.bookmark-tile-swatch {
-  border: 1px solid color-mix(in srgb, var(--border) 80%, var(--foreground));
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--card) 45%, transparent);
-}
-
-.bookmark-tile-tone-1 {
-  background: color-mix(in srgb, var(--primary) 16%, var(--card));
-  color: var(--primary);
-}
-
-.bookmark-tile-tone-2 {
-  background: color-mix(in srgb, var(--accent) 55%, var(--card));
-  color: var(--foreground);
-}
-
-.bookmark-tile-tone-3 {
-  background: color-mix(in srgb, var(--muted) 82%, var(--card));
-  color: var(--foreground);
-}
-
-.bookmark-tile-tone-4 {
-  background: color-mix(in srgb, var(--secondary) 72%, var(--card));
-  color: var(--secondary-foreground);
-}
-
-.bookmark-tile-tone-5 {
-  background: color-mix(in srgb, var(--destructive) 12%, var(--card));
-  color: var(--destructive);
-}
-
-.bookmark-tile-tone-6 {
-  background: color-mix(in srgb, var(--primary) 8%, var(--background));
-  color: var(--primary);
-}
-
 .status-pill-success {
   background: color-mix(in srgb, var(--primary) 10%, var(--card));
   color: color-mix(in srgb, var(--primary) 70%, var(--foreground));
@@ -998,8 +921,7 @@
 }
 
 .dark .app-shell-content,
-.dark .page-surface,
-.dark .dashboard-home {
+.dark .page-surface {
   background: #212124;
 }
 
@@ -1011,20 +933,6 @@
 .dark .sidebar-nav-item:not(.is-active):hover {
   background: #343541;
   color: #f1f1f2;
-}
-
-.dark .dashboard-home {
-  color: #f1f1f2;
-}
-
-.dark .dashboard-home-card,
-.dark .dashboard-search {
-  border-color: #3a3b40;
-  background: #292a2e;
-}
-
-.dark .dashboard-home-card:hover {
-  border-color: #5a5b62;
 }
 
 .app-page-root {

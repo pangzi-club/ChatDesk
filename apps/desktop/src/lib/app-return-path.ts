@@ -1,12 +1,12 @@
-let returnPath = "/dashboard";
+let returnPath = "/chat";
 
 function isOverlayPath(pathname: string) {
-  return pathname.startsWith("/settings") || pathname.startsWith("/dev-tools/");
+  return pathname.startsWith("/settings");
 }
 
 function rememberReturnPath(pathname: string, search = "") {
   if (isOverlayPath(pathname)) return;
-  returnPath = `${pathname}${search}` || "/dashboard";
+  returnPath = `${pathname}${search}` || "/chat";
 }
 
 function getReturnPath() {

@@ -53,10 +53,9 @@ pub fn run() {
             };
             app.manage(chat_server);
             app.manage(TerminalManager::default());
-            let dashboard_item =
-                MenuItem::with_id(app, "dashboard", "Dashboard", true, None::<&str>)?;
+            let chat_item = MenuItem::with_id(app, "chat", "Chat", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&dashboard_item, &quit_item])?;
+            let menu = Menu::with_items(app, &[&chat_item, &quit_item])?;
 
             TrayIconBuilder::with_id("main-tray")
                 .menu(&menu)
@@ -64,12 +63,12 @@ pub fn run() {
                 .icon(Image::new(include_bytes!("../icons/tray.rgba"), 32, 32))
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "quit" => app.exit(0),
-                    "dashboard" => {
+                    "chat" => {
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
                             let _ = window.unminimize();
                             let _ = window.set_focus();
-                            let _ = window.emit("tray-dashboard", ());
+                            let _ = window.emit("tray-chat", ());
                         }
                     }
                     _ => {}
