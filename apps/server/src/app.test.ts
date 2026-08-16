@@ -2,16 +2,29 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, it } from "vitest";
+import { afterEach, describe, it, vi } from "vitest";
 import { createChatServer } from "./app.ts";
 import type { ServerConfig } from "./config.ts";
 import type { ChatRunSummary, ChatSession } from "./protocol.ts";
 import { RunJournal } from "./run-journal.ts";
 import { SessionStore } from "./store.ts";
 
+const { generateTextMock } = vi.hoisted(() => ({
+  generateTextMock: vi.fn(),
+}));
+
+vi.mock("ai", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("ai")>();
+  return {
+    ...actual,
+    generateText: generateTextMock,
+  };
+});
+
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
+  generateTextMock.mockReset();
   await Promise.all(
     temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true })),
   );
@@ -154,6 +167,68 @@ describe("chat server", () => {
     );
     assert.equal(unconfigured.status, 400);
     assert.match((await unconfigured.json()).error, /未配置可用模型/);
+  });
+
+  it("does not change session recency when regenerating a title", async () => {
+    generateTextMock.mockResolvedValue({ text: "检查构建" });
+    const server = await createTestServer();
+    const configured = await server.app.request("http://localhost/v1/chat-config", {
+      method: "PATCH",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({
+        models: [
+          {
+            id: "title-model",
+            name: "title-model",
+            baseUrl: "https://example.com/v1",
+            apiKey: "test-key",
+          },
+        ],
+      }),
+    });
+    assert.equal(configured.status, 200);
+
+    await server.store.save({
+      schemaVersion: 2,
+      id: "older-session",
+      title: "旧标题",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      messages: [
+        {
+          id: "user-1",
+          role: "user",
+          parts: [{ type: "text", text: "帮我检查构建" }],
+        },
+      ],
+      attachments: [],
+    });
+    await server.store.save({
+      schemaVersion: 2,
+      id: "newer-session",
+      title: "较新对话",
+      createdAt: "2026-01-02T00:00:00.000Z",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+      messages: [],
+      attachments: [],
+    });
+
+    const generated = await server.app.request("http://localhost/v1/sessions/older-session/title", {
+      method: "POST",
+      headers: auth(),
+    });
+    assert.equal(generated.status, 200);
+    assert.equal((await generated.json()).title, "检查构建");
+
+    const older = await server.store.get("older-session");
+    assert.equal(older?.title, "检查构建");
+    assert.equal(older?.updatedAt, "2026-01-01T00:00:00.000Z");
+
+    const list = await server.app.request("http://localhost/v1/sessions", { headers: auth() });
+    assert.deepEqual(
+      ((await list.json()) as Array<{ id: string }>).map((session) => session.id),
+      ["newer-session", "older-session"],
+    );
   });
 
   it("previews the system prompt without starting a run", async () => {

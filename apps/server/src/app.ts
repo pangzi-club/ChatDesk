@@ -1063,7 +1063,6 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
       await store.save({
         ...session,
         title,
-        updatedAt: new Date().toISOString(),
       });
       return c.json({ title });
     } catch (error) {
