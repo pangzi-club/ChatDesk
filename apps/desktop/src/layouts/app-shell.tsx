@@ -69,6 +69,10 @@ import {
   useNavigate,
 } from "react-router-dom";
 import { ChatBrowser } from "@/components/chat-browser";
+import {
+  ChatConversationMenuItems,
+  copyChatConversationId,
+} from "@/components/chat-conversation-menu-items";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { ChatTerminal } from "@/components/chat-terminal";
 import { ExplorerFileIcon } from "@/components/explorer-file-icon";
@@ -87,6 +91,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -118,6 +128,7 @@ import {
   loadServerWorkspaceFiles,
   loadServerWorkspaceGit,
   loadServerWorkspaceGitDiff,
+  regenerateChatSessionTitle,
   restartChatServer,
   restoreServerWorkspaceGit,
   subscribeChatServerEvents,
@@ -1184,6 +1195,9 @@ function WorkspaceConversationGroups() {
   const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(loadUnreadChatIds);
   const [serverPort, setServerPort] = useState(14317);
   const [sessionToDelete, setSessionToDelete] = useState<ChatIndexItem | null>(null);
+  const [copiedSessionId, setCopiedSessionId] = useState<string | null>(null);
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+  const copiedResetTimerRef = useRef<number | null>(null);
   const [workspaceToDelete, setWorkspaceToDelete] = useState<WorkspaceProject | null>(null);
   const [orphanWorkspaceToClear, setOrphanWorkspaceToClear] = useState<WorkspaceChatGroup | null>(
     null,
@@ -1348,6 +1362,14 @@ function WorkspaceConversationGroups() {
     return cleanup;
   }, [queryClient, serverPort]);
 
+  useEffect(() => {
+    return () => {
+      if (copiedResetTimerRef.current !== null) {
+        window.clearTimeout(copiedResetTimerRef.current);
+      }
+    };
+  }, []);
+
   function isGroupCollapsed(group: WorkspaceChatGroup) {
     if (group.key in collapseOverride) return collapseOverride[group.key];
     return group.sessions.length === 0;
@@ -1409,6 +1431,37 @@ function WorkspaceConversationGroups() {
       return next;
     });
     navigate(chatSessionPath(sessionId));
+  }
+
+  async function copyConversationId(sessionId: string) {
+    const copied = await copyChatConversationId(sessionId);
+    if (!copied) {
+      setCopiedSessionId(null);
+      return;
+    }
+    setCopiedSessionId(sessionId);
+    if (copiedResetTimerRef.current !== null) {
+      window.clearTimeout(copiedResetTimerRef.current);
+    }
+    copiedResetTimerRef.current = window.setTimeout(() => {
+      setCopiedSessionId(null);
+      copiedResetTimerRef.current = null;
+    }, 1500);
+  }
+
+  async function regenerateConversationTitle(session: ChatIndexItem) {
+    const sessionStatus = serverStatuses[session.id];
+    const isRunning = sessionStatus === "submitted" || sessionStatus === "streaming";
+    if (isRunning || renamingSessionId === session.id || session.messageCount === 0) return;
+    setRenamingSessionId(session.id);
+    try {
+      await regenerateChatSessionTitle(session.id);
+      await queryClient.invalidateQueries({ queryKey: ["chat-index"] });
+    } catch (error) {
+      console.error("Failed to regenerate chat title", error);
+    } finally {
+      setRenamingSessionId((current) => (current === session.id ? null : current));
+    }
   }
 
   function confirmRemoveSession() {
@@ -1619,15 +1672,12 @@ function WorkspaceConversationGroups() {
                               const isRunning =
                                 sessionStatus === "submitted" || sessionStatus === "streaming";
                               const isUnread = unreadSessionIds.has(session.id);
+                              const isRenaming = renamingSessionId === session.id;
 
                               return (
                                 <motion.div
                                   animate={{ height: "1.75rem", opacity: 1 }}
-                                  className={`group flex h-7 w-full items-center overflow-hidden rounded-md transition-colors ${
-                                    isActive
-                                      ? "bg-accent text-accent-foreground font-medium"
-                                      : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-                                  }`}
+                                  className="overflow-hidden"
                                   exit={{ height: 0, opacity: 0 }}
                                   initial={
                                     suppressSidebarEntrance ? false : { height: 0, opacity: 0 }
@@ -1640,36 +1690,65 @@ function WorkspaceConversationGroups() {
                                       : sidebarMotionTransition
                                   }
                                 >
-                                  <button
-                                    aria-current={isActive ? "page" : undefined}
-                                    className={`flex min-w-0 flex-1 items-center rounded-md py-0 pr-1 text-left font-medium text-[13px] ${isRecent ? "pl-2" : "pl-8"} ${isActive ? "text-accent-foreground" : "text-foreground"}`}
-                                    onClick={() => openSession(session.id)}
-                                    title={session.title}
-                                    type="button"
-                                  >
-                                    <span className="truncate">{session.title}</span>
-                                    {isRunning ? (
-                                      <LoaderCircle
-                                        aria-hidden="true"
-                                        className="ml-auto size-3.5 shrink-0 animate-spin text-primary"
+                                  <ContextMenu>
+                                    <ContextMenuTrigger asChild>
+                                      <div
+                                        className={`group flex h-7 w-full items-center rounded-md transition-colors ${
+                                          isActive
+                                            ? "bg-accent text-accent-foreground font-medium"
+                                            : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                                        }`}
+                                      >
+                                        <button
+                                          aria-current={isActive ? "page" : undefined}
+                                          className={`flex min-w-0 flex-1 items-center rounded-md py-0 pr-1 text-left font-medium text-[13px] ${isRecent ? "pl-2" : "pl-8"} ${isActive ? "text-accent-foreground" : "text-foreground"}`}
+                                          onClick={() => openSession(session.id)}
+                                          title={session.title}
+                                          type="button"
+                                        >
+                                          <span className="truncate">{session.title}</span>
+                                          {isRenaming || isRunning ? (
+                                            <LoaderCircle
+                                              aria-hidden="true"
+                                              className="ml-auto size-3.5 shrink-0 animate-spin text-primary"
+                                            />
+                                          ) : isUnread ? (
+                                            <span
+                                              className="ml-auto size-1.5 shrink-0 rounded-full bg-primary"
+                                              title="未读消息"
+                                            />
+                                          ) : null}
+                                        </button>
+                                        <button
+                                          aria-label={`删除${session.title}`}
+                                          className="mr-1 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+                                          disabled={deleteSessionMutation.isPending}
+                                          onClick={() => setSessionToDelete(session)}
+                                          title="删除对话"
+                                          type="button"
+                                        >
+                                          <Trash2 className="size-3" />
+                                        </button>
+                                      </div>
+                                    </ContextMenuTrigger>
+                                    <ContextMenuContent
+                                      onCloseAutoFocus={(event) => event.preventDefault()}
+                                    >
+                                      <ChatConversationMenuItems
+                                        Item={ContextMenuItem}
+                                        canRegenerateTitle={
+                                          !isRunning && !isRenaming && session.messageCount > 0
+                                        }
+                                        conversationIdCopied={copiedSessionId === session.id}
+                                        onCopyConversationId={() =>
+                                          void copyConversationId(session.id)
+                                        }
+                                        onRegenerateTitle={() =>
+                                          void regenerateConversationTitle(session)
+                                        }
                                       />
-                                    ) : isUnread ? (
-                                      <span
-                                        className="ml-auto size-1.5 shrink-0 rounded-full bg-primary"
-                                        title="未读消息"
-                                      />
-                                    ) : null}
-                                  </button>
-                                  <button
-                                    aria-label={`删除${session.title}`}
-                                    className="mr-1 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
-                                    disabled={deleteSessionMutation.isPending}
-                                    onClick={() => setSessionToDelete(session)}
-                                    title="删除对话"
-                                    type="button"
-                                  >
-                                    <Trash2 className="size-3" />
-                                  </button>
+                                    </ContextMenuContent>
+                                  </ContextMenu>
                                 </motion.div>
                               );
                             })}

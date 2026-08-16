@@ -69,6 +69,10 @@ import { ChatAttachmentChips } from "@/components/chat-attachment-chips";
 import { ChatCommandPopup } from "@/components/chat-command-popup";
 import { ChatContextDialog } from "@/components/chat-context-dialog";
 import { ChatContextPopover } from "@/components/chat-context-popover";
+import {
+  ChatConversationMenuItems,
+  copyChatConversationId,
+} from "@/components/chat-conversation-menu-items";
 import { ChatGitSummary } from "@/components/chat-git-summary";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { ChatMemoryDialog } from "@/components/chat-memory-dialog";
@@ -370,6 +374,7 @@ function ChatPage() {
   const [sessionTitle, setSessionTitle] = useState("新对话");
   const sessionTitleRef = useRef(sessionTitle);
   sessionTitleRef.current = sessionTitle;
+  const lastSyncedIndexTitleRef = useRef<{ sessionId: string; title: string } | null>(null);
   const [workspaceKey, setWorkspaceKey] = useState(() =>
     chatRoute.kind === "new" ? chatRoute.workspaceId : "",
   );
@@ -1227,6 +1232,19 @@ function ChatPage() {
     workspaceProjects,
   ]);
 
+  const indexTitle = chatIndex.find((item) => item.id === sessionId)?.title;
+  useEffect(() => {
+    if (!indexTitle) return;
+    const previous = lastSyncedIndexTitleRef.current;
+    if (!previous || previous.sessionId !== sessionId) {
+      lastSyncedIndexTitleRef.current = { sessionId, title: indexTitle };
+      return;
+    }
+    if (previous.title === indexTitle) return;
+    lastSyncedIndexTitleRef.current = { sessionId, title: indexTitle };
+    setSessionTitle(indexTitle);
+  }, [indexTitle, sessionId]);
+
   useEffect(() => {
     if (sandboxModeInitializedRef.current || chatSandboxModeQuery.isPending) return;
     setSandboxMode(normalizeChatSandboxMode(chatSandboxModeQuery.data));
@@ -1713,22 +1731,20 @@ function ChatPage() {
   }
 
   async function copyConversationId() {
-    if (!navigator.clipboard) return;
-    try {
-      await navigator.clipboard.writeText(sessionId);
-      setConversationIdCopied(true);
+    const copied = await copyChatConversationId(sessionId);
+    setConversationIdCopied(copied);
+    if (copied) {
       window.setTimeout(() => setConversationIdCopied(false), 1500);
-    } catch {
-      setConversationIdCopied(false);
     }
   }
 
+  const canRegenerateConversationTitle =
+    !isGenerating &&
+    !isRenamingTitle &&
+    messages.some((message) => message.role === "user" && messageText(message).trim());
+
   async function regenerateConversationTitle() {
-    if (
-      isGenerating ||
-      isRenamingTitle ||
-      !messages.some((message) => message.role === "user" && messageText(message).trim())
-    ) {
+    if (!canRegenerateConversationTitle) {
       return;
     }
     setConversationMenuOpen(false);
@@ -1930,27 +1946,13 @@ function ChatPage() {
                   onPointerLeave={scheduleConversationMenuClose}
                   sideOffset={6}
                 >
-                  <DropdownMenuItem
-                    disabled={
-                      isGenerating ||
-                      isRenamingTitle ||
-                      !messages.some(
-                        (message) => message.role === "user" && messageText(message).trim(),
-                      )
-                    }
-                    onSelect={() => void regenerateConversationTitle()}
-                  >
-                    <Sparkles className="size-4" />
-                    重新生成标题
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => void copyConversationId()}>
-                    {conversationIdCopied ? (
-                      <Check className="size-4 text-primary" />
-                    ) : (
-                      <Copy className="size-4" />
-                    )}
-                    {conversationIdCopied ? "已复制对话 ID" : "复制对话 ID"}
-                  </DropdownMenuItem>
+                  <ChatConversationMenuItems
+                    Item={DropdownMenuItem}
+                    canRegenerateTitle={canRegenerateConversationTitle}
+                    conversationIdCopied={conversationIdCopied}
+                    onCopyConversationId={() => void copyConversationId()}
+                    onRegenerateTitle={() => void regenerateConversationTitle()}
+                  />
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
