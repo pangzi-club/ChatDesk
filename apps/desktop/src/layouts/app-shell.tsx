@@ -16,6 +16,7 @@ import {
   ChevronRight,
   CircleAlert,
   Clock3,
+  CopyX,
   CornerDownLeft,
   ExternalLink,
   FolderGit2,
@@ -2325,11 +2326,28 @@ function ChatWorkspaceWindow({
   function closeEditor(path: string) {
     const next = editorTabs.filter((tab) => tab.path !== path);
     setEditorTabs(next);
-    if (activeEditorPath === path) {
-      const fallback = next[next.length - 1];
-      setActiveEditorPath(fallback?.path ?? "");
-      setSelectedPath(fallback?.path ?? "");
+    if (activeEditorPath !== path) return;
+    const fallback = next[next.length - 1];
+    setActiveEditorPath(fallback?.path ?? "");
+    setSelectedPath(fallback?.path ?? "");
+    if (fallback) {
+      updateWorkspaceTab({
+        path: fallback.path,
+        editorMode: fallback.mode,
+        explorerView: fallback.mode === "diff" ? "git" : "files",
+      });
+      return;
     }
+    setEditorContent(null);
+    updateWorkspaceTab({ path: "" });
+  }
+
+  function closeAllEditors() {
+    setEditorTabs([]);
+    setActiveEditorPath("");
+    setSelectedPath("");
+    setEditorContent(null);
+    updateWorkspaceTab({ path: "" });
   }
 
   function restoreFile(file: WorkspaceGitFile) {
@@ -2973,26 +2991,39 @@ function ChatWorkspaceWindow({
               {editorTabs.length > 0 ? (
                 <div className="chat-explorer-editor-tabs" role="tablist" aria-label="打开的文件">
                   {editorTabs.map((tab) => (
-                    <div
-                      className={`chat-explorer-editor-tab ${tab.path === activeEditorPath && tab.mode === (editorContent?.mode ?? (explorerView === "git" ? "diff" : "source")) ? "is-active" : ""}`}
-                      key={tab.path}
-                    >
-                      <button onClick={() => selectEditor(tab)} role="tab" type="button">
-                        <ExplorerFileIcon
-                          className="size-3.5"
-                          kind={explorerFileIconKind(tab.path)}
-                        />
-                        {pathBasename(tab.path)}
-                        {tab.mode === "diff" ? " · Diff" : ""}
-                      </button>
-                      <button
-                        aria-label={`关闭 ${pathBasename(tab.path)}`}
-                        onClick={() => closeEditor(tab.path)}
-                        type="button"
-                      >
-                        <X className="size-3" />
-                      </button>
-                    </div>
+                    <ContextMenu key={tab.path}>
+                      <ContextMenuTrigger asChild>
+                        <div
+                          className={`chat-explorer-editor-tab ${tab.path === activeEditorPath && tab.mode === (editorContent?.mode ?? (explorerView === "git" ? "diff" : "source")) ? "is-active" : ""}`}
+                        >
+                          <button onClick={() => selectEditor(tab)} role="tab" type="button">
+                            <ExplorerFileIcon
+                              className="size-3.5"
+                              kind={explorerFileIconKind(tab.path)}
+                            />
+                            {pathBasename(tab.path)}
+                            {tab.mode === "diff" ? " · Diff" : ""}
+                          </button>
+                          <button
+                            aria-label={`关闭 ${pathBasename(tab.path)}`}
+                            onClick={() => closeEditor(tab.path)}
+                            type="button"
+                          >
+                            <X className="size-3" />
+                          </button>
+                        </div>
+                      </ContextMenuTrigger>
+                      <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
+                        <ContextMenuItem onSelect={() => closeEditor(tab.path)}>
+                          <X className="size-4" />
+                          关闭标签页
+                        </ContextMenuItem>
+                        <ContextMenuItem onSelect={closeAllEditors}>
+                          <CopyX className="size-4" />
+                          关闭全部标签页
+                        </ContextMenuItem>
+                      </ContextMenuContent>
+                    </ContextMenu>
                   ))}
                 </div>
               ) : null}

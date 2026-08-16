@@ -47,6 +47,7 @@ import {
   History,
   Laptop,
   LoaderCircle,
+  MessageSquarePlus,
   Mic,
   MoreHorizontal,
   Paperclip,
@@ -96,6 +97,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -117,6 +124,7 @@ import {
   filterChatCommands,
   findActiveCommandTrigger,
 } from "@/lib/chat-commands";
+import { appendComposerSelection, readWindowSelectionText } from "@/lib/chat-composer-selection";
 import { materializeGeneratedImages } from "@/lib/chat-image-generation";
 import { appendLiveDraftText, mergeLiveDraft } from "@/lib/chat-live-draft";
 import {
@@ -365,6 +373,7 @@ function ChatPage() {
   const [titleError, setTitleError] = useState("");
   const [isRenamingTitle, setIsRenamingTitle] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const selectedSnippetRef = useRef("");
   const [commandCaret, setCommandCaret] = useState(0);
   const [commandIndex, setCommandIndex] = useState(0);
   const [commandDismissed, setCommandDismissed] = useState(false);
@@ -1658,6 +1667,22 @@ function ChatPage() {
     });
   }, [sessionId]);
 
+  function addSelectionToComposer() {
+    const snippet = selectedSnippetRef.current;
+    if (!snippet) return;
+    setInput((current) => appendComposerSelection(current, snippet));
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
+  function captureTranscriptSelection(event: React.MouseEvent) {
+    const text = readWindowSelectionText();
+    selectedSnippetRef.current = text;
+    if (!text) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }
+
   function submitMessage() {
     const text = input.trim();
     const pending = pendingAttachmentsRef.current;
@@ -2097,138 +2122,152 @@ function ChatPage() {
         </div>
       </header>
 
-      <div className="chat-stage" ref={scrollRef}>
-        <div className="chat-content">
-          {showHydrateSkeleton ? (
-            <div aria-busy="true" className="chat-transcript-skeleton" role="status">
-              <span className="sr-only">正在加载对话</span>
-              <div className="chat-transcript-skeleton-line is-wide" />
-              <div className="chat-transcript-skeleton-line" />
-              <div className="chat-transcript-skeleton-line is-wide" />
-              <div className="chat-transcript-skeleton-line is-short" />
-              <div className="chat-transcript-skeleton-line" />
-              <div className="chat-transcript-skeleton-line is-short" />
-            </div>
-          ) : null}
-          {!showHydrateSkeleton && showEmptyState ? (
-            <div className="chat-empty-state">
-              <div aria-hidden="true" className="chat-empty-mark">
-                <Sparkles className="size-8" strokeWidth={1.6} />
-              </div>
-              <h2>要在 {workspaceLabel} 内开发什么？</h2>
-              <div className="chat-suggestion-grid">
-                {EMPTY_CHAT_ACTIONS.map((action) => {
-                  const Icon = action.icon;
-                  return (
-                    <button
-                      className={`chat-suggestion-card is-${action.accent}`}
-                      key={action.label}
-                      onClick={() => {
-                        setInput(action.prompt);
-                        requestAnimationFrame(() => inputRef.current?.focus());
-                      }}
-                      type="button"
-                    >
-                      <Icon aria-hidden="true" className="size-[18px]" strokeWidth={1.8} />
-                      <span>{action.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-          {showHydrateSkeleton
-            ? null
-            : messages.map((message) => (
-                <MessageBubble
-                  key={message.id}
-                  message={message}
-                  onApprovalResponse={respondToApproval}
-                  onPlanUserInputResponse={respondToPlanUserInput}
-                  planInputEnabled={planMode === "plan" && planTransition === "idle"}
-                  planAttachment={
-                    showPlanAttachment &&
-                    activePlan &&
-                    latestPlanWriteAnchor?.messageId === message.id
-                      ? {
-                          fileName: activePlan.fileName,
-                          isGenerating: isGenerating && planMode === "plan",
-                          onOpen: openActivePlan,
-                          toolCallId: latestPlanWriteAnchor.toolCallId,
-                        }
-                      : undefined
-                  }
-                  generationStatus={
-                    isGenerating && message.role === "assistant" && message.id === lastMessage?.id
-                      ? {
-                          detail: generationDetail,
-                          elapsedLabel: generationElapsedLabel,
-                          phase: generationPhase,
-                        }
-                      : undefined
-                  }
-                  isStreaming={effectiveStatus === "streaming" && message.id === lastMessage?.id}
-                  showTokenUsage={chatDisplay.showTokenUsage}
-                  cwd={selectedCwd}
-                  workspaceId={workspaceKey || undefined}
-                />
-              ))}
-          {developerEnvironmentQuery.data &&
-          unavailableDetectedTools.length > 0 &&
-          environmentGuideKey !== dismissedEnvironmentGuide ? (
-            <div
-              aria-live="polite"
-              className="flex flex-col gap-3 border-border border-y bg-muted/35 px-4 py-3 sm:flex-row sm:items-center"
-            >
-              <CircleAlert className="size-4 shrink-0 text-primary" />
-              <div className="min-w-0 flex-1">
-                <p className="font-medium text-sm">本地开发工具尚未接入</p>
-                <p className="mt-0.5 text-muted-foreground text-xs">
-                  终端找不到 {unavailableDetectedTools.join("、")}。导入后可重新运行当前任务。
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
-                <Button onClick={() => setEnvironmentImportOpen(true)} size="sm" type="button">
-                  <Download className="size-3.5" /> 导入本机工具
-                </Button>
-                <Button asChild size="sm" type="button" variant="ghost">
-                  <Link to="/settings/environment">
-                    <Settings className="size-3.5" /> 环境设置
-                  </Link>
-                </Button>
-                <Button
-                  aria-label="关闭环境提示"
-                  onClick={() => setDismissedEnvironmentGuide(environmentGuideKey)}
-                  size="icon"
-                  title="关闭"
-                  type="button"
-                  variant="ghost"
+      <ContextMenu>
+        <ContextMenuTrigger asChild onContextMenu={captureTranscriptSelection}>
+          <div className="chat-stage" ref={scrollRef}>
+            <div className="chat-content">
+              {showHydrateSkeleton ? (
+                <div aria-busy="true" className="chat-transcript-skeleton" role="status">
+                  <span className="sr-only">正在加载对话</span>
+                  <div className="chat-transcript-skeleton-line is-wide" />
+                  <div className="chat-transcript-skeleton-line" />
+                  <div className="chat-transcript-skeleton-line is-wide" />
+                  <div className="chat-transcript-skeleton-line is-short" />
+                  <div className="chat-transcript-skeleton-line" />
+                  <div className="chat-transcript-skeleton-line is-short" />
+                </div>
+              ) : null}
+              {!showHydrateSkeleton && showEmptyState ? (
+                <div className="chat-empty-state">
+                  <div aria-hidden="true" className="chat-empty-mark">
+                    <Sparkles className="size-8" strokeWidth={1.6} />
+                  </div>
+                  <h2>要在 {workspaceLabel} 内开发什么？</h2>
+                  <div className="chat-suggestion-grid">
+                    {EMPTY_CHAT_ACTIONS.map((action) => {
+                      const Icon = action.icon;
+                      return (
+                        <button
+                          className={`chat-suggestion-card is-${action.accent}`}
+                          key={action.label}
+                          onClick={() => {
+                            setInput(action.prompt);
+                            requestAnimationFrame(() => inputRef.current?.focus());
+                          }}
+                          type="button"
+                        >
+                          <Icon aria-hidden="true" className="size-[18px]" strokeWidth={1.8} />
+                          <span>{action.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+              {showHydrateSkeleton
+                ? null
+                : messages.map((message) => (
+                    <MessageBubble
+                      key={message.id}
+                      message={message}
+                      onApprovalResponse={respondToApproval}
+                      onPlanUserInputResponse={respondToPlanUserInput}
+                      planInputEnabled={planMode === "plan" && planTransition === "idle"}
+                      planAttachment={
+                        showPlanAttachment &&
+                        activePlan &&
+                        latestPlanWriteAnchor?.messageId === message.id
+                          ? {
+                              fileName: activePlan.fileName,
+                              isGenerating: isGenerating && planMode === "plan",
+                              onOpen: openActivePlan,
+                              toolCallId: latestPlanWriteAnchor.toolCallId,
+                            }
+                          : undefined
+                      }
+                      generationStatus={
+                        isGenerating &&
+                        message.role === "assistant" &&
+                        message.id === lastMessage?.id
+                          ? {
+                              detail: generationDetail,
+                              elapsedLabel: generationElapsedLabel,
+                              phase: generationPhase,
+                            }
+                          : undefined
+                      }
+                      isStreaming={
+                        effectiveStatus === "streaming" && message.id === lastMessage?.id
+                      }
+                      showTokenUsage={chatDisplay.showTokenUsage}
+                      cwd={selectedCwd}
+                      workspaceId={workspaceKey || undefined}
+                    />
+                  ))}
+              {developerEnvironmentQuery.data &&
+              unavailableDetectedTools.length > 0 &&
+              environmentGuideKey !== dismissedEnvironmentGuide ? (
+                <div
+                  aria-live="polite"
+                  className="flex flex-col gap-3 border-border border-y bg-muted/35 px-4 py-3 sm:flex-row sm:items-center"
                 >
-                  <X className="size-3.5" />
-                </Button>
-              </div>
-            </div>
-          ) : null}
-          {isGenerating && !hasAssistantMessage && (
-            <div className="chat-message assistant-message">
-              <div className="chat-message-body">
-                <div className="chat-message-meta">
-                  <ChatGenerationStatus
-                    detail={generationDetail}
-                    elapsedLabel={generationElapsedLabel}
-                    phase={generationPhase}
-                  />
+                  <CircleAlert className="size-4 shrink-0 text-primary" />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-sm">本地开发工具尚未接入</p>
+                    <p className="mt-0.5 text-muted-foreground text-xs">
+                      终端找不到 {unavailableDetectedTools.join("、")}。导入后可重新运行当前任务。
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button onClick={() => setEnvironmentImportOpen(true)} size="sm" type="button">
+                      <Download className="size-3.5" /> 导入本机工具
+                    </Button>
+                    <Button asChild size="sm" type="button" variant="ghost">
+                      <Link to="/settings/environment">
+                        <Settings className="size-3.5" /> 环境设置
+                      </Link>
+                    </Button>
+                    <Button
+                      aria-label="关闭环境提示"
+                      onClick={() => setDismissedEnvironmentGuide(environmentGuideKey)}
+                      size="icon"
+                      title="关闭"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <X className="size-3.5" />
+                    </Button>
+                  </div>
                 </div>
-                <div className="chat-thinking">
-                  <span />
-                  <span />
-                  <span />
+              ) : null}
+              {isGenerating && !hasAssistantMessage && (
+                <div className="chat-message assistant-message">
+                  <div className="chat-message-body">
+                    <div className="chat-message-meta">
+                      <ChatGenerationStatus
+                        detail={generationDetail}
+                        elapsedLabel={generationElapsedLabel}
+                        phase={generationPhase}
+                      />
+                    </div>
+                    <div className="chat-thinking">
+                      <span />
+                      <span />
+                      <span />
+                    </div>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
-          )}
-        </div>
-      </div>
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
+          <ContextMenuItem onSelect={addSelectionToComposer}>
+            <MessageSquarePlus className="size-4" />
+            添加到聊天框
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
 
       <div className="chat-composer-wrap">
         <div className="chat-composer-floats">

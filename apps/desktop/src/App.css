@@ -2272,6 +2272,7 @@
   flex: 1;
   overflow-y: auto;
   scroll-behavior: smooth;
+  user-select: text;
 }
 .chat-content {
   width: min(850px, calc(100% - 48px));
