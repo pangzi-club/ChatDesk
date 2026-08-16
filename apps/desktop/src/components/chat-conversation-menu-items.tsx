@@ -24,10 +24,6 @@ export function ChatConversationMenuItems({
 }: ChatConversationMenuItemsProps) {
   return (
     <>
-      <Item disabled={!canRegenerateTitle} onSelect={onRegenerateTitle}>
-        <Sparkles className="size-4" />
-        重新生成标题
-      </Item>
       <Item onSelect={onCopyConversationId}>
         {conversationIdCopied ? (
           <Check className="size-4 text-primary" />
@@ -35,6 +31,10 @@ export function ChatConversationMenuItems({
           <Copy className="size-4" />
         )}
         {conversationIdCopied ? "已复制对话 ID" : "复制对话 ID"}
+      </Item>
+      <Item disabled={!canRegenerateTitle} onSelect={onRegenerateTitle}>
+        <Sparkles className="size-4" />
+        重新生成标题
       </Item>
     </>
   );
