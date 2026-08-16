@@ -35,13 +35,19 @@ export class EventHub {
         const queued = listener.queue.shift();
         if (queued) return Promise.resolve(queued);
         return new Promise<ServerEvent | null>((resolve) => {
-          listener.waiters.push(resolve);
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          const finish = (event: ServerEvent | null) => {
+            if (timer) clearTimeout(timer);
+            resolve(event);
+          };
+          listener.waiters.push(finish);
           if (timeoutMs > 0) {
-            setTimeout(() => {
-              const index = listener.waiters.indexOf(resolve);
+            timer = setTimeout(() => {
+              const index = listener.waiters.indexOf(finish);
               if (index >= 0) listener.waiters.splice(index, 1);
               resolve(null);
             }, timeoutMs);
+            timer.unref?.();
           }
         });
       },

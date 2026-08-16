@@ -58,20 +58,49 @@ async function main() {
   );
 
   let shuttingDown = false;
-  async function shutdown() {
+  async function shutdown(exitCode?: number) {
     if (shuttingDown) return;
     shuttingDown = true;
-    if (process.env.CHAT_SERVER_PRODUCTION === "1") await server.shutdown();
-    await new Promise<void>((resolve) => {
-      httpServer.close(() => resolve());
+    const isProduction = process.env.CHAT_SERVER_PRODUCTION === "1";
+    // node --watch sends SIGTERM and waits until this process exits. Desktop SSE
+    // keep-alive connections otherwise make httpServer.close() hang forever, so
+    // the watcher stays on "Waiting for graceful termination..." and /health dies.
+    const forceExit =
+      exitCode === undefined
+        ? undefined
+        : setTimeout(() => process.exit(exitCode), isProduction ? 5_000 : 1_500);
+
+    try {
+      if (isProduction) await server.shutdown();
+    } catch (error) {
+      console.error(`[Chat Server] 关闭失败: ${errorText(error)}`);
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      httpServer.close((error) => {
+        if (error && (error as NodeJS.ErrnoException).code !== "ERR_SERVER_NOT_RUNNING") {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+      if (
+        "closeAllConnections" in httpServer &&
+        typeof httpServer.closeAllConnections === "function"
+      ) {
+        httpServer.closeAllConnections();
+      }
     }).catch((error) => {
-      if ((error as NodeJS.ErrnoException).code !== "ERR_SERVER_NOT_RUNNING") throw error;
+      console.error(`[Chat Server] 关闭 HTTP 服务失败: ${errorText(error)}`);
     });
+
+    if (forceExit) clearTimeout(forceExit);
+    if (exitCode !== undefined) process.exit(exitCode);
   }
 
   shutdownServer = shutdown;
-  process.once("SIGINT", () => void shutdown());
-  process.once("SIGTERM", () => void shutdown());
+  process.once("SIGINT", () => void shutdown(0));
+  process.once("SIGTERM", () => void shutdown(0));
 }
 
 void main().catch((error) => {
