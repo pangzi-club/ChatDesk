@@ -1172,23 +1172,25 @@ function MainSidebarToggleButton({
 function SidebarNavItem({ item }: { item: (typeof navItems)[number] }) {
   const location = useLocation();
   const Icon = item.icon;
-  const to =
-    item.to === "/chat" && isChatPath(location.pathname)
-      ? `${location.pathname}${location.search}`
-      : item.to;
+  const isChatItem = item.to === "/chat";
+  const to = isChatItem ? chatNewPath() : item.to;
+  const isItemActive = isChatItem ? isChatPath(location.pathname) : undefined;
 
   return (
     <NavLink
       className={({ isActive }: NavLinkRenderProps) =>
-        `sidebar-nav-item flex h-8 w-full items-center gap-2 px-3 text-left text-[13px] font-medium transition-colors max-md:justify-center max-md:px-0 max-sm:h-8 ${isActive ? "is-active" : ""}`
+        `sidebar-nav-item flex h-8 w-full items-center gap-2 px-3 text-left text-[13px] font-medium transition-colors max-md:justify-center max-md:px-0 max-sm:h-8 ${
+          (isItemActive ?? isActive) ? "is-active" : ""
+        }`
       }
+      state={isChatItem ? chatNewNavigationState() : undefined}
       to={to}
     >
       {({ isActive }: NavLinkRenderProps) => (
         <>
           <Icon className="size-4 shrink-0" />
           <span className="max-md:hidden">{item.label}</span>
-          <span className="sr-only">{isActive ? "当前页面" : ""}</span>
+          <span className="sr-only">{(isItemActive ?? isActive) ? "当前页面" : ""}</span>
         </>
       )}
     </NavLink>
@@ -3250,7 +3252,6 @@ function TopActions({
 
 function CommandMenu({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
-  const location = useLocation();
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -3274,9 +3275,8 @@ function CommandMenu({ onClose }: { onClose: () => void }) {
       await openExternal(searchUrl);
     } else {
       navigate(
-        item.to === "/chat" && isChatPath(location.pathname)
-          ? `${location.pathname}${location.search}`
-          : item.to,
+        item.to === "/chat" ? chatNewPath() : item.to,
+        item.to === "/chat" ? { state: chatNewNavigationState() } : undefined,
       );
     }
     onClose();
