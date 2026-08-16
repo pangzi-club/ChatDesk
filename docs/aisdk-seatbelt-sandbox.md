@@ -87,7 +87,7 @@ Agent 得到的是「工具调用失败」或「命令被拒绝」等明确结�
 
 权限选择保存为 Chat Server 的全局设置，并在新建、切换会话或重新打开应用时沿用；会话记录中的旧 `sandboxMode` 字段只用于兼容历史数据，不再覆盖全局选择。
 
-这里的“Approve for me”不是“所有权限自动放开”。工具会先在当前沙箱中执行；只有明确收到沙箱拒绝时，才把该次请求交给 reviewer 做一次性判断。普通退出码失败、参数错误或依赖缺失不会触发提权重试；reviewer 拒绝或自身失败时返回 `sandbox_blocked`（“被沙箱拦截了”）。
+这里的“Approve for me”不是“所有权限自动放开”。工具会先在当前沙箱中执行；只有明确收到沙箱拒绝时，才把该次请求交给 reviewer 做一次性判断。普通退出码失败、参数错误、仓库不存在或依赖缺失不会触发提权重试；reviewer 拒绝或自身失败时返回 `sandbox_blocked`（“被沙箱拦截了”）。Bash 把两类结果分开：`file system sandbox blocked`、`sandbox-exec: deny` 以及网络关闭后的 DNS 被拒（`nodename nor servname provided`、`failed to resolve address`、`Could not resolve host`）视为沙箱拦截，预执行若因此被拦才交给 reviewer；`fatal: repository not found` 这类命令自身报错直接回给模型。已经允许网络的重试若仍 DNS 失败，则按普通命令失败处理。
 
 审批流程应保持可追踪：人工批准或 reviewer 批准都只对当前 tool call 的一次执行生效；批准后的重放不能永久变成全局白名单。`Approve for me` 下如果 reviewer 未配置、拒绝或调用失败，工具返回 `sandbox_blocked`，不会自动扩大权限。
 

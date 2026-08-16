@@ -8,6 +8,8 @@ import { type FileSearchResult, MAX_SEARCH_RESULTS, searchWorkspaceFiles } from 
 import type { SandboxMode } from "./protocol.ts";
 import { classifySandboxBoundary } from "./sandbox-boundary-reviewer.ts";
 import {
+  isFilesystemSandboxDenial,
+  isNetworkSandboxDenial,
   resolveCommandCwd,
   runSandboxedFile,
   runSandboxedShell,
@@ -52,6 +54,20 @@ export function resolveApprovedBashPermissions(
       approved &&
       assessment.reasons.some((reason) => reason === "external-path" || reason === "external-cwd"),
     allowNetwork: approved && assessment.reasons.includes("network"),
+  };
+}
+
+export function resolveBashRetryPermissions(
+  input: { command: string; cwd?: string },
+  workspace: string,
+  readablePaths: string[],
+  error: unknown,
+) {
+  const classified = resolveApprovedBashPermissions(input, workspace, readablePaths, true);
+  const output = error instanceof Error ? error.message : String(error);
+  return {
+    allowOutside: classified.allowOutside || isFilesystemSandboxDenial(output),
+    allowNetwork: classified.allowNetwork || isNetworkSandboxDenial(output),
   };
 }
 
@@ -535,13 +551,6 @@ export function createWorkspaceTools(
       }),
       execute: async ({ command, cwd: requestedCwd }, { toolCallId }) => {
         const input = { command, cwd: requestedCwd };
-        const preflight = consumePreflight(preflightResults, toolCallId, approvedToolCallIds);
-        if (preflight)
-          return resolvePreflight(preflight) as Promise<{
-            code: number;
-            out: string;
-            sandboxBlocked: boolean;
-          }>;
         const approvedPermissions = resolveApprovedBashPermissions(
           input,
           cwd,
@@ -561,15 +570,26 @@ export function createWorkspaceTools(
           if (result.sandboxBlocked) throw new SandboxBlockedError(result.out);
           return result;
         };
-        try {
-          return await run(approvedPermissions);
-        } catch (error) {
-          return retryAfterSandboxReview(error, onSandboxBlocked, {
+        const escalateSandboxBlock = (error: unknown) =>
+          retryAfterSandboxReview(error, onSandboxBlocked, {
             toolName: "bash",
             toolCallId,
             input,
-            retry: () => run({ allowOutside: false, allowNetwork: true }),
+            retry: () => run(resolveBashRetryPermissions(input, cwd, readablePaths, error)),
           });
+        const preflight = consumePreflight(preflightResults, toolCallId, approvedToolCallIds);
+        if (preflight?.status === "sandbox-blocked") return escalateSandboxBlock(preflight.error);
+        if (preflight) {
+          return resolvePreflight(preflight) as Promise<{
+            code: number;
+            out: string;
+            sandboxBlocked: boolean;
+          }>;
+        }
+        try {
+          return await run(approvedPermissions);
+        } catch (error) {
+          return escalateSandboxBlock(error);
         }
       },
     }),

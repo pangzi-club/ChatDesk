@@ -22,6 +22,30 @@ describe("sandbox execution errors", () => {
     expect(isSandboxBlockedOutput("permission denied by application")).toBe(false);
   });
 
+  it("classifies macOS dyld and DNS sandbox denials as blocked", () => {
+    const xcrun =
+      "xcrun: error: unable to load libxcrun (dlopen(/Applications/Xcode.app/Contents/Developer/usr/lib/libxcrun.dylib, 0x0005): tried: '/Applications/Xcode.app/Contents/Developer/usr/lib/libxcrun.dylib' (file system sandbox blocked open()))";
+    const dns =
+      "git2: failed to resolve address for github.com: nodename nor servname provided, or not known";
+    expect(isSandboxBlockedOutput(xcrun)).toBe(true);
+    expect(isSandboxBlockedOutput(dns)).toBe(true);
+    expect(isSandboxBlockedOutput("Could not resolve host: github.com")).toBe(true);
+    expect(isSandboxBlockedOutput(dns, { allowNetwork: true })).toBe(false);
+  });
+
+  it("does not treat ordinary command failures as sandbox denials", () => {
+    expect(
+      isSandboxBlockedOutput("fatal: repository 'https://github.com/org/repo.git' not found"),
+    ).toBe(false);
+    expect(isSandboxBlockedOutput("git: command not found")).toBe(false);
+    expect(
+      isSandboxBlockedOutput(
+        "Cloning into 'mkagent'...\nfatal: Could not read from remote repository.",
+      ),
+    ).toBe(false);
+    expect(isSandboxBlockedOutput("Permission denied (publickey).")).toBe(false);
+  });
+
   it("does not classify successful file content as a sandbox denial", () => {
     const stdout = JSON.stringify({
       ok: true,
