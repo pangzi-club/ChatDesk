@@ -62,13 +62,17 @@ export class SessionStore {
     await mkdir(this.sessionsRoot, { recursive: true });
   }
 
-  async list(statuses: ReadonlyMap<string, SessionStatus> = new Map()) {
+  async list(
+    statuses: ReadonlyMap<string, SessionStatus> = new Map(),
+    runStartedAts: ReadonlyMap<string, string> = new Map(),
+  ) {
     const entries = await readdir(this.sessionsRoot, { withFileTypes: true }).catch(() => []);
     const sessions: SessionIndexItem[] = [];
     for (const entry of entries) {
       if (!entry.isDirectory() || !validId(entry.name)) continue;
       const session = await this.get(entry.name);
       if (!session) continue;
+      const runStartedAt = runStartedAts.get(session.id);
       sessions.push({
         id: session.id,
         title: session.title,
@@ -80,6 +84,7 @@ export class SessionStore {
         cwd: session.cwd,
         status: statuses.get(session.id) ?? "idle",
         lastRunSummary: latestRunSummary(session),
+        ...(runStartedAt ? { runStartedAt } : {}),
       });
     }
     return sessions.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));

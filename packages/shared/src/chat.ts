@@ -199,6 +199,7 @@ export type ChatIndexItem = Pick<
 export type SessionIndexItem = ChatIndexItem & {
   status: SessionStatus;
   lastRunSummary?: ChatRunSummary;
+  runStartedAt?: string;
 };
 
 export type ServerModelConfig = {
@@ -246,6 +247,8 @@ export type ChatRunSummary = {
   duplicateToolCallCount: number;
   compactionCount: number;
   planWritten: boolean;
+  startedAt?: string;
+  durationMs?: number;
 };
 
 export type ChatRunProgress = Omit<ChatRunSummary, "outcome" | "stopReason"> & {

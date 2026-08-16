@@ -27,7 +27,6 @@ import {
 } from "ai";
 import {
   ArrowUp,
-  Bot,
   Brain,
   Bug,
   Check,
@@ -58,7 +57,6 @@ import {
   Sparkles,
   Trash2,
   Upload,
-  User,
   Wrench,
   X,
 } from "lucide-react";
@@ -195,6 +193,8 @@ import {
   serializeChatTransportError,
 } from "@/lib/chat-transport-diagnostics";
 import {
+  formatElapsedDuration,
+  formatMessageRunDuration,
   formatTokenUsage,
   getMessageContextUsage,
   getMessageRunErrorLabel,
@@ -392,8 +392,6 @@ function ChatPage() {
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [sandboxMode, setSandboxMode] = useState<ChatSandboxMode>(DEFAULT_CHAT_SANDBOX_MODE);
   const [chatDisplay, setChatDisplay] = useState<ChatDisplaySettings>(DEFAULT_CHAT_DISPLAY);
-  const generationStartedAtRef = useRef<number | null>(null);
-  const [generationElapsedSeconds, setGenerationElapsedSeconds] = useState(0);
   const workspaceRef = useRef("");
   const sandboxModeRef = useRef<ChatSandboxMode>(DEFAULT_CHAT_SANDBOX_MODE);
   const planModeRef = useRef<ChatPlanMode>("apply");
@@ -583,6 +581,8 @@ function ChatPage() {
   const [contextCompaction, setContextCompaction] = useState<ChatContextCompaction | null>(null);
   const [liveContextUsage, setLiveContextUsage] = useState<ChatContextUsage | null>(null);
   const [runProgress, setRunProgress] = useState<ChatRunProgress | null>(null);
+  const [runStartedAtBySession, setRunStartedAtBySession] = useState<Record<string, string>>({});
+  const [generationElapsedSeconds, setGenerationElapsedSeconds] = useState(0);
 
   const startNewSession = useCallback(
     (nextWorkspaceId = "", nextWorkspaceCwd = "") => {
@@ -706,6 +706,13 @@ function ChatPage() {
               ),
             ),
           );
+          setRunStartedAtBySession(
+            Object.fromEntries(
+              sessions.flatMap((session) =>
+                session.runStartedAt ? [[session.id, session.runStartedAt]] : [],
+              ),
+            ),
+          );
         },
         onStatus: ({ sessionId: eventSessionId, status: eventStatus }) => {
           setServerSessionStatuses((current) => ({
@@ -754,6 +761,13 @@ function ChatPage() {
           }
         },
         onRunProgress: ({ sessionId: eventSessionId, runProgress: nextProgress }) => {
+          const startedAt = nextProgress?.startedAt;
+          if (startedAt) {
+            setRunStartedAtBySession((current) => ({
+              ...current,
+              [eventSessionId]: startedAt,
+            }));
+          }
           if (activeSessionRef.current === eventSessionId && nextProgress) {
             setRunProgress(nextProgress);
           }
@@ -762,6 +776,11 @@ function ChatPage() {
           if (activeSessionRef.current === eventSessionId) {
             attachedStreamSessionRef.current = null;
           }
+          setRunStartedAtBySession((current) => {
+            const next = { ...current };
+            delete next[eventSessionId];
+            return next;
+          });
           setServerRunSummaries((current) => ({
             ...current,
             [eventSessionId]: runSummary,
@@ -876,6 +895,7 @@ function ChatPage() {
 
   const isGenerating =
     serverRunActive || (localRunActive && attachedStreamSessionRef.current === sessionId);
+  const runStartedAt = runStartedAtBySession[sessionId];
   const workspaceGitQuery = useQuery({
     queryKey: workspaceGitQueryKey(workspaceKey),
     queryFn: () => loadServerWorkspaceGit(workspaceKey),
@@ -905,23 +925,23 @@ function ChatPage() {
     };
   }, [workspaceGitQuery.refetch, workspaceKey]);
   useEffect(() => {
-    if (!isGenerating) {
-      generationStartedAtRef.current = null;
+    if (!isGenerating || !runStartedAt) {
       setGenerationElapsedSeconds(0);
       return;
     }
 
-    generationStartedAtRef.current ??= Date.now();
     const updateElapsed = () => {
-      const startedAt = generationStartedAtRef.current;
-      if (startedAt !== null) {
-        setGenerationElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+      const started = Date.parse(runStartedAt);
+      if (!Number.isFinite(started)) {
+        setGenerationElapsedSeconds(0);
+        return;
       }
+      setGenerationElapsedSeconds(Math.max(0, Math.floor((Date.now() - started) / 1000)));
     };
     updateElapsed();
     const intervalId = window.setInterval(updateElapsed, 1000);
     return () => window.clearInterval(intervalId);
-  }, [isGenerating]);
+  }, [isGenerating, runStartedAt]);
 
   const generationPhase =
     runProgress?.phase === "compacting"
@@ -935,7 +955,7 @@ function ChatPage() {
             : effectiveStatus === "submitted"
               ? "等待中"
               : "生成中";
-  const generationElapsedLabel = formatGenerationElapsed(generationElapsedSeconds);
+  const generationElapsedLabel = formatElapsedDuration(generationElapsedSeconds);
   const generationDetail =
     runProgress?.phase === "compacting"
       ? "正在保存目标、约束、事实和下一步"
@@ -2004,22 +2024,6 @@ function ChatPage() {
 
       <div className="chat-stage" ref={scrollRef}>
         <div className="chat-content">
-          {messages.length > 0 ? (
-            <div className="chat-context-row">
-              <span className="chat-status-dot" />
-              <span>{selectedModel?.provider ?? "未配置模型"}</span>
-              <span className="chat-context-rule" />
-              <span className="truncate" title={selectedCwd || undefined}>
-                {selectedCwd ? pathBasename(selectedCwd) : DEFAULT_WORKSPACE_LABEL}
-              </span>
-              <span
-                className="chat-access-badge"
-                title={CHAT_SANDBOX_MODE_DESCRIPTIONS[sandboxMode]}
-              >
-                {CHAT_SANDBOX_MODE_LABELS[sandboxMode]}
-              </span>
-            </div>
-          ) : null}
           {messages.length === 0 ? (
             <div className="chat-empty-state">
               <div aria-hidden="true" className="chat-empty-mark">
@@ -2084,7 +2088,7 @@ function ChatPage() {
           environmentGuideKey !== dismissedEnvironmentGuide ? (
             <div
               aria-live="polite"
-              className="mx-11 flex flex-col gap-3 border-border border-y bg-muted/35 px-4 py-3 sm:flex-row sm:items-center"
+              className="flex flex-col gap-3 border-border border-y bg-muted/35 px-4 py-3 sm:flex-row sm:items-center"
             >
               <CircleAlert className="size-4 shrink-0 text-primary" />
               <div className="min-w-0 flex-1">
@@ -2117,12 +2121,8 @@ function ChatPage() {
           ) : null}
           {isGenerating && !hasAssistantMessage && (
             <div className="chat-message assistant-message">
-              <div className="chat-avatar assistant-avatar">
-                <Bot className="size-4" />
-              </div>
               <div className="chat-message-body">
                 <div className="chat-message-meta">
-                  <strong>ChatDesk</strong>
                   <ChatGenerationStatus
                     detail={generationDetail}
                     elapsedLabel={generationElapsedLabel}
@@ -2497,7 +2497,6 @@ function ChatPage() {
             </div>
           </div>
         </div>
-        <p className="chat-disclaimer">AI 生成的内容可能存在偏差，请核实重要信息。</p>
       </div>
       <ChatSettingsDialog
         onOpenChange={setSettingsOpen}
@@ -2801,6 +2800,15 @@ const MessageBubble = memo(function MessageBubble({
         ?.contextCompaction
     : undefined;
   const completionLabel = getMessageRunStateLabel(message) ?? "已完成";
+  const durationLabel = formatMessageRunDuration(message);
+  const statusLabel = [
+    contextCompaction && completionLabel === "已完成"
+      ? `${completionLabel} · 已生成检查点${contextCompaction.count > 1 ? ` ${contextCompaction.count} 次` : ""}`
+      : completionLabel,
+    durationLabel,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const runErrorLabel = getMessageRunErrorLabel(message);
   const shouldCollapse =
     isUser &&
@@ -2821,14 +2829,10 @@ const MessageBubble = memo(function MessageBubble({
 
   return (
     <div className={`chat-message ${isUser ? "user-message" : "assistant-message"}`}>
-      <div className={`chat-avatar ${isUser ? "user-avatar" : "assistant-avatar"}`}>
-        {isUser ? <User className="size-4" /> : <Bot className="size-4" />}
-      </div>
       <div className="chat-message-body">
-        <div className="chat-message-meta">
-          <strong>{isUser ? "你" : "ChatDesk"}</strong>
-          {!isUser ? (
-            generationStatus ? (
+        {!isUser ? (
+          <div className="chat-message-meta">
+            {generationStatus ? (
               <ChatGenerationStatus {...generationStatus} />
             ) : (
               <span
@@ -2836,13 +2840,11 @@ const MessageBubble = memo(function MessageBubble({
                   contextCompaction ? formatContextCompactionTitle(contextCompaction) : undefined
                 }
               >
-                {contextCompaction && completionLabel === "已完成"
-                  ? `${completionLabel} · 已生成检查点${contextCompaction.count > 1 ? ` ${contextCompaction.count} 次` : ""}`
-                  : completionLabel}
+                {statusLabel}
               </span>
-            )
-          ) : null}
-        </div>
+            )}
+          </div>
+        ) : null}
         <div className="chat-message-parts">
           {messageBlocks.map((block, blockIndex) => {
             if (block.kind === "tools") {
@@ -3042,13 +3044,6 @@ function messageText(message: UIMessage) {
     .filter((part) => part.type === "text")
     .map((part) => part.text)
     .join("\n");
-}
-
-function formatGenerationElapsed(seconds: number) {
-  if (seconds < 60) return `${seconds} 秒`;
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  return remainingSeconds > 0 ? `${minutes} 分 ${remainingSeconds} 秒` : `${minutes} 分`;
 }
 
 function formatContextCompactionTitle(compaction: ChatContextCompaction) {

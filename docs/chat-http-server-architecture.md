@@ -97,8 +97,8 @@ Node HTTP Server
 - `message.delta` / `message.updated`：增量或整段消息更新；
 - `plan.updated`：`plan_write` 原子更新计划后推送完整 Markdown，桌面侧栏无需重新加载即可刷新；
 - `tool.request` / `tool.result`：工具调用过程（若工具经宿主执行）；
-- `run.error` / `run.done`：失败与完成；
-- （可选）token usage / 耗时等元数据。
+- `run.progress`：步骤与阶段；携带本次运行 `startedAt`，供前端本地计时；
+- `run.error` / `run.done`：失败与完成，摘要含 `durationMs`；
 
 要求：客户端重连后能重新订阅并进行中状态；是否支持断线续流可第二期再做，但 status 与已落库消息应可恢复。
 

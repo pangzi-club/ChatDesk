@@ -276,6 +276,10 @@ describe("complete agent runs", () => {
     assert.equal(summary.stopReason, "incomplete-response");
     assert.equal(summary.planWritten, false);
     assert.equal(summary.modelCallCount, 1);
+    assert.equal(typeof summary.durationMs, "number");
+    assert.equal(typeof summary.startedAt, "string");
+    const progressEvent = current.events.published.find((event) => event.type === "run.progress");
+    assert.equal(typeof progressEvent?.runProgress?.startedAt, "string");
     assert.equal(current.usageLogs.list().length, 1);
     assert.equal(current.usageLogs.list()[0]?.runId, summary.runId);
     assert.deepEqual(current.usageLogs.list()[0]?.usage, {

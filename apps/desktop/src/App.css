@@ -1074,7 +1074,7 @@
   --chat-composer-text-size: 14px;
   --chat-message-gap: 14px;
   --chat-message-block-gap: 42px;
-  --chat-content-padding-top: 52px;
+  --chat-content-padding-top: 16px;
   --chat-content-padding-bottom: 180px;
   --chat-ink: var(--foreground);
   --chat-muted: var(--muted-foreground);
@@ -1170,13 +1170,13 @@
 .chat-page[data-chat-spacing="loose"] {
   --chat-message-gap: 18px;
   --chat-message-block-gap: 52px;
-  --chat-content-padding-top: 64px;
+  --chat-content-padding-top: 24px;
   --chat-content-padding-bottom: 200px;
 }
 .chat-page[data-chat-spacing="compact"] {
   --chat-message-gap: 10px;
   --chat-message-block-gap: 28px;
-  --chat-content-padding-top: 36px;
+  --chat-content-padding-top: 12px;
   --chat-content-padding-bottom: 140px;
 }
 .chat-header {
@@ -1194,7 +1194,6 @@
 .chat-composer-footer,
 .chat-composer-tools,
 .chat-composer-actions,
-.chat-context-row,
 .chat-message-meta,
 .chat-message-actions {
   display: flex;
@@ -2196,78 +2195,37 @@
   margin: 0 auto;
   padding: var(--chat-content-padding-top) 0 var(--chat-content-padding-bottom);
 }
-.chat-context-row {
-  gap: 8px;
-  color: var(--chat-muted);
-  font-size: 11px;
-  letter-spacing: 0.02em;
-}
-.chat-status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
-}
-.chat-context-rule {
-  width: 22px;
-  height: 1px;
-  background: var(--chat-line);
-}
-.chat-access-badge {
-  border: 1px solid color-mix(in srgb, var(--primary) 20%, var(--border));
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--primary) 10%, var(--card));
-  padding: 2px 5px;
-  color: var(--primary);
-  font-size: 9px;
-}
 .chat-message {
   display: flex;
   gap: var(--chat-message-gap);
   margin-top: var(--chat-message-block-gap);
 }
+.chat-message:first-child {
+  margin-top: 0;
+}
 .chat-message.user-message {
   flex-direction: row-reverse;
 }
-.chat-avatar {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  flex: 0 0 30px;
-  place-items: center;
-  border-radius: 9px;
-}
-.assistant-avatar {
-  background: color-mix(in srgb, var(--primary) 12%, var(--card));
-  color: var(--primary);
-}
-.user-avatar {
-  background: var(--chat-ink);
-  color: var(--background);
-}
 .chat-message-body {
-  max-width: min(680px, calc(100% - 45px));
+  max-width: min(680px, 100%);
+}
+.assistant-message {
+  width: 100%;
+}
+.assistant-message .chat-message-body {
+  width: 100%;
+  max-width: none;
 }
 .user-message .chat-message-body {
   text-align: right;
 }
 .chat-message-meta {
   gap: 9px;
-  margin: 1px 0 9px;
+  margin: 0 0 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--chat-line);
   color: var(--chat-muted);
   font-size: 11px;
-}
-.user-message .chat-message-meta {
-  justify-content: flex-end;
-}
-.chat-message-meta strong {
-  color: var(--chat-ink);
-  font-size: 12px;
-}
-.assistant-message > .chat-message-body > .chat-message-meta {
-  min-height: 30px;
-  margin: 0;
 }
 .chat-message-text {
   overflow-wrap: anywhere;
@@ -2658,7 +2616,7 @@
   flex-shrink: 0;
   width: min(850px, calc(100% - 48px));
   margin: 0 auto;
-  padding: 0 0 22px;
+  padding: 0 0 12px;
 }
 .chat-composer-floats {
   position: absolute;
@@ -3659,12 +3617,6 @@
   box-shadow: none;
   opacity: 1;
 }
-.chat-disclaimer {
-  margin: 8px 0 0;
-  color: var(--chat-muted);
-  font-size: 10px;
-  text-align: center;
-}
 .chat-tools-hint {
   margin-top: 28px;
   max-width: 36rem;
@@ -4094,30 +4046,12 @@
   width: min(820px, calc(100% - 48px));
 }
 
-.chat-content {
-  padding-top: 34px;
-}
-
-.chat-status-dot,
-.chat-generation-status-dot {
-  background: var(--primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
-}
-
 .chat-message {
   margin-top: 34px;
 }
 
-.assistant-avatar {
-  border-radius: 8px;
-  background: var(--chat-surface-strong);
-  color: var(--primary);
-}
-
-.user-avatar {
-  border-radius: 8px;
-  background: var(--foreground);
-  color: var(--background);
+.chat-message:first-child {
+  margin-top: 0;
 }
 
 .chat-message-text a,

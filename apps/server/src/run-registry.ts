@@ -82,6 +82,7 @@ type ActiveRun = {
   sessionId: string;
   controller: AbortController;
   done?: Promise<void>;
+  startedAt: string;
 };
 
 type TerminalRunState = {
@@ -415,17 +416,20 @@ export class RunRegistry {
         (message) => message.id === (entry.messageId ?? entry.runId),
       );
       if (session && draft) {
-        const runSummary: ChatRunSummary = {
-          runId: entry.runId,
-          outcome: "error",
-          stopReason: "server-restarted",
-          stepCount: 0,
-          modelCallCount: 0,
-          toolCallCount: 0,
-          duplicateToolCallCount: 0,
-          compactionCount: 0,
-          planWritten: false,
-        };
+        const runSummary = withRunDuration(
+          {
+            runId: entry.runId,
+            outcome: "error",
+            stopReason: "server-restarted",
+            stepCount: 0,
+            modelCallCount: 0,
+            toolCallCount: 0,
+            duplicateToolCallCount: 0,
+            compactionCount: 0,
+            planWritten: false,
+          },
+          entry.startedAt,
+        );
         const interruptedDraft = {
           ...interruptRunMessage(draft, "Chat Server 重启，运行已中断"),
           metadata: {
@@ -470,6 +474,12 @@ export class RunRegistry {
 
   statusMap() {
     return this.statuses;
+  }
+
+  runStartedAtMap() {
+    return new Map(
+      [...this.active.entries()].map(([sessionId, run]) => [sessionId, run.startedAt]),
+    );
   }
 
   activeCount() {
@@ -582,7 +592,7 @@ export class RunRegistry {
     const runId = randomUUID();
     await this.journal.begin({ sessionId, runId, startedAt: now });
     const controller = new AbortController();
-    const activeRun: ActiveRun = { id: runId, sessionId, controller };
+    const activeRun: ActiveRun = { id: runId, sessionId, controller, startedAt: now };
     this.active.set(sessionId, activeRun);
     this.drafts.set(sessionId, assistantMessage(runId, ""));
     this.setStatus(sessionId, "submitted", runId);
@@ -645,10 +655,12 @@ export class RunRegistry {
           compactionCount: metrics.compactionCount,
           planWritten: metrics.planWritten,
           planMode,
+          startedAt: now,
           ...(metrics.forcedStopReason ? { stopReason: metrics.forcedStopReason } : {}),
         };
         this.events.publish({ type: "run.progress", sessionId, runId, runProgress });
       };
+      publishProgress("working");
       const recordModelCall =
         (operation: string) =>
         async (event: {
@@ -1049,17 +1061,20 @@ export class RunRegistry {
       return withSseKeepAlive(createUIMessageStreamResponse({ stream: observedClientStream }));
     } catch (error) {
       this.active.delete(sessionId);
-      const runSummary: ChatRunSummary = {
-        runId,
-        outcome: "error",
-        stopReason: error instanceof RunFailure ? error.stopReason : "incomplete-response",
-        stepCount: 0,
-        modelCallCount: 0,
-        toolCallCount: 0,
-        duplicateToolCallCount: 0,
-        compactionCount: 0,
-        planWritten: false,
-      };
+      const runSummary = withRunDuration(
+        {
+          runId,
+          outcome: "error",
+          stopReason: error instanceof RunFailure ? error.stopReason : "incomplete-response",
+          stepCount: 0,
+          modelCallCount: 0,
+          toolCallCount: 0,
+          duplicateToolCallCount: 0,
+          compactionCount: 0,
+          planWritten: false,
+        },
+        now,
+      );
       const failedDraft: UIMessage = {
         ...assistantMessage(runId, `运行启动失败：${errorMessage(error)}`),
         metadata: { runSummary },
@@ -1202,17 +1217,20 @@ export class RunRegistry {
             console.error("Failed to persist incomplete response diagnostic", error),
           );
       }
-      const runSummary: ChatRunSummary = {
-        runId,
-        outcome: completion.outcome,
-        ...(completion.stopReason ? { stopReason: completion.stopReason } : {}),
-        stepCount: metrics.stepCount,
-        modelCallCount: metrics.modelCallCount,
-        toolCallCount: metrics.toolCallCount,
-        duplicateToolCallCount: metrics.duplicateToolCallCount,
-        compactionCount: metrics.compactionCount,
-        planWritten: metrics.planWritten,
-      };
+      const runSummary = withRunDuration(
+        {
+          runId,
+          outcome: completion.outcome,
+          ...(completion.stopReason ? { stopReason: completion.stopReason } : {}),
+          stepCount: metrics.stepCount,
+          modelCallCount: metrics.modelCallCount,
+          toolCallCount: metrics.toolCallCount,
+          duplicateToolCallCount: metrics.duplicateToolCallCount,
+          compactionCount: metrics.compactionCount,
+          planWritten: metrics.planWritten,
+        },
+        startedAt,
+      );
       if (completion.outcome === "error" && !latestAssistantText(persistedMessages).trim()) {
         persistedMessages = mergeRunMessage(
           persistedMessages,
@@ -1269,17 +1287,20 @@ export class RunRegistry {
         : error instanceof RunFailure
           ? error.stopReason
           : "incomplete-response";
-      const runSummary: ChatRunSummary = {
-        runId,
-        outcome: stopped ? "stopped" : "error",
-        stopReason,
-        stepCount: metrics.stepCount,
-        modelCallCount: metrics.modelCallCount,
-        toolCallCount: metrics.toolCallCount,
-        duplicateToolCallCount: metrics.duplicateToolCallCount,
-        compactionCount: metrics.compactionCount,
-        planWritten: metrics.planWritten,
-      };
+      const runSummary = withRunDuration(
+        {
+          runId,
+          outcome: stopped ? "stopped" : "error",
+          stopReason,
+          stepCount: metrics.stepCount,
+          modelCallCount: metrics.modelCallCount,
+          toolCallCount: metrics.toolCallCount,
+          duplicateToolCallCount: metrics.duplicateToolCallCount,
+          compactionCount: metrics.compactionCount,
+          planWritten: metrics.planWritten,
+        },
+        startedAt,
+      );
       await this.activityLogs
         .append({
           level: stopped ? "warning" : "error",
@@ -1361,6 +1382,7 @@ export class RunRegistry {
         duplicateToolCallCount: summary.duplicateToolCallCount,
         compactionCount: summary.compactionCount,
         stopReason: summary.stopReason,
+        durationMs: summary.durationMs,
       }),
     });
   }
@@ -1368,6 +1390,21 @@ export class RunRegistry {
 
 function controllerAborted(run: ActiveRun | undefined) {
   return run?.controller.signal.aborted === true;
+}
+
+function elapsedDurationMs(startedAt: string): number | undefined {
+  const started = Date.parse(startedAt);
+  if (!Number.isFinite(started)) return undefined;
+  return Math.max(0, Date.now() - started);
+}
+
+function withRunDuration(summary: ChatRunSummary, startedAt: string): ChatRunSummary {
+  const durationMs = elapsedDurationMs(startedAt);
+  return {
+    ...summary,
+    startedAt,
+    ...(durationMs === undefined ? {} : { durationMs }),
+  };
 }
 
 function createToolApproval(options: {

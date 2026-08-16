@@ -960,7 +960,9 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     }
   });
 
-  app.get("/v1/sessions", async (c) => c.json(await store.list(runs.statusMap())));
+  app.get("/v1/sessions", async (c) =>
+    c.json(await store.list(runs.statusMap(), runs.runStartedAtMap())),
+  );
 
   app.post("/v1/sessions", async (c) => {
     try {
@@ -1171,7 +1173,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     return streamSSE(c, async (stream) => {
       const subscription = events.subscribe(sessionId);
       try {
-        const snapshot = await store.list(runs.statusMap());
+        const snapshot = await store.list(runs.statusMap(), runs.runStartedAtMap());
         await stream.writeSSE({ event: "snapshot", data: JSON.stringify(snapshot) });
         while (!stream.aborted) {
           const event = await subscription.next(15_000);

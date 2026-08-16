@@ -212,6 +212,24 @@ export function getMessageRunErrorLabel(message: UIMessage) {
   }
 }
 
+export function formatElapsedDuration(seconds: number) {
+  const totalSeconds = Math.max(0, Math.floor(seconds));
+  if (totalSeconds < 60) return `${totalSeconds} 秒`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const remainingSeconds = totalSeconds % 60;
+  return remainingSeconds > 0 ? `${minutes} 分 ${remainingSeconds} 秒` : `${minutes} 分`;
+}
+
+export function formatMessageRunDuration(message: UIMessage) {
+  if (message.role !== "assistant") return undefined;
+  const durationMs = (message.metadata as ChatMessageMetadata | undefined)?.runSummary?.durationMs;
+  if (typeof durationMs !== "number" || !Number.isFinite(durationMs) || durationMs < 0) {
+    return undefined;
+  }
+  const seconds = Math.floor(durationMs / 1000);
+  return seconds < 1 ? "用时不到 1 秒" : `用时 ${formatElapsedDuration(seconds)}`;
+}
+
 export function formatTokenUsage(usage: TokenUsage) {
   const parts: string[] = [];
   if (typeof usage.inputTokens === "number") {

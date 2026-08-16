@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, it } from "vitest";
 import { createChatServer } from "./app.ts";
 import type { ServerConfig } from "./config.ts";
-import type { ChatSession } from "./protocol.ts";
+import type { ChatRunSummary, ChatSession } from "./protocol.ts";
 import { RunJournal } from "./run-journal.ts";
 import { SessionStore } from "./store.ts";
 
@@ -574,21 +574,16 @@ describe("chat server", () => {
       recoveredTool && "errorText" in recoveredTool ? recoveredTool.errorText : undefined,
       "Chat Server 重启，运行已中断",
     );
-    assert.deepEqual(
-      (recovered?.messages[0]?.metadata as { runSummary?: unknown } | undefined)?.runSummary,
-      {
-        runId: "run-recovered",
-        outcome: "error",
-        stopReason: "server-restarted",
-        stepCount: 0,
-        modelCallCount: 0,
-        toolCallCount: 0,
-        duplicateToolCallCount: 0,
-        compactionCount: 0,
-        planWritten: false,
-      },
-    );
-    assert.deepEqual(sessionList[0]?.lastRunSummary, {
+    const recoveredSummary = (
+      recovered?.messages[0]?.metadata as { runSummary?: ChatRunSummary } | undefined
+    )?.runSummary;
+    assert.ok(recoveredSummary);
+    const {
+      durationMs: recoveredDurationMs,
+      startedAt: recoveredStartedAt,
+      ...recoveredSummaryRest
+    } = recoveredSummary;
+    assert.deepEqual(recoveredSummaryRest, {
       runId: "run-recovered",
       outcome: "error",
       stopReason: "server-restarted",
@@ -599,6 +594,26 @@ describe("chat server", () => {
       compactionCount: 0,
       planWritten: false,
     });
+    assert.equal(typeof recoveredDurationMs, "number");
+    assert.equal(recoveredStartedAt, "2026-01-01T00:00:00.000Z");
+    const {
+      durationMs: lastRunDurationMs,
+      startedAt: lastRunStartedAt,
+      ...lastRunSummaryRest
+    } = sessionList[0]?.lastRunSummary ?? {};
+    assert.deepEqual(lastRunSummaryRest, {
+      runId: "run-recovered",
+      outcome: "error",
+      stopReason: "server-restarted",
+      stepCount: 0,
+      modelCallCount: 0,
+      toolCallCount: 0,
+      duplicateToolCallCount: 0,
+      compactionCount: 0,
+      planWritten: false,
+    });
+    assert.equal(typeof lastRunDurationMs, "number");
+    assert.equal(lastRunStartedAt, "2026-01-01T00:00:00.000Z");
     assert.deepEqual(await journal.recover(), []);
   });
 });

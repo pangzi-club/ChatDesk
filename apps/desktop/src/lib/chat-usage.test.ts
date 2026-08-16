@@ -1,7 +1,12 @@
 import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
-import { getMessageContextUsage } from "@/lib/chat-usage";
-import { getMessageRunErrorLabel, getMessageRunStateLabel } from "./chat-usage";
+import {
+  formatElapsedDuration,
+  formatMessageRunDuration,
+  getMessageContextUsage,
+  getMessageRunErrorLabel,
+  getMessageRunStateLabel,
+} from "./chat-usage";
 
 describe("message context usage", () => {
   it("prefers the latest per-step provider measurement over aggregate usage", () => {
@@ -75,5 +80,46 @@ describe("run state labels", () => {
       },
     } as UIMessage;
     expect(getMessageRunErrorLabel(message)).toBe("上下文检查点生成失败，运行已停止。");
+  });
+});
+
+describe("run duration labels", () => {
+  it("formats elapsed seconds", () => {
+    expect(formatElapsedDuration(0)).toBe("0 秒");
+    expect(formatElapsedDuration(12)).toBe("12 秒");
+    expect(formatElapsedDuration(65)).toBe("1 分 5 秒");
+    expect(formatElapsedDuration(120)).toBe("2 分");
+  });
+
+  it("shows persisted run duration on completed assistant messages", () => {
+    expect(
+      formatMessageRunDuration({
+        id: "run",
+        role: "assistant",
+        parts: [{ type: "text", text: "done" }],
+        metadata: { runSummary: { durationMs: 12_400 } },
+      } as UIMessage),
+    ).toBe("用时 12 秒");
+  });
+
+  it("uses a sub-second label for very short runs", () => {
+    expect(
+      formatMessageRunDuration({
+        id: "run",
+        role: "assistant",
+        parts: [{ type: "text", text: "done" }],
+        metadata: { runSummary: { durationMs: 480 } },
+      } as UIMessage),
+    ).toBe("用时不到 1 秒");
+  });
+
+  it("hides duration when metadata is missing", () => {
+    expect(
+      formatMessageRunDuration({
+        id: "run",
+        role: "assistant",
+        parts: [{ type: "text", text: "done" }],
+      } as UIMessage),
+    ).toBeUndefined();
   });
 });
