@@ -39,13 +39,14 @@ function parseArgs(argv) {
 
 function printHelp() {
   console.log(`用法：
-  pnpm migrate:chatdesk
-  pnpm migrate:chatdesk -- --apply
-  pnpm migrate:chatdesk -- --source <旧目录> [--source <旧目录>]
-  pnpm migrate:chatdesk -- --target <目标目录> --apply
+  pnpm migrate chatdesk
+  pnpm migrate chatdesk -- --apply
+  pnpm migrate chatdesk -- --source <旧目录> [--source <旧目录>]
+  pnpm migrate chatdesk -- --target <目标目录> --apply
 
 默认目标：${defaultTarget}
-默认只预览；使用 --apply 才会复制文件。`);
+默认只预览；使用 --apply 才会复制文件。
+详见 docs/data-migration.md。`);
 }
 
 function addSource(sources, source) {
@@ -269,7 +270,9 @@ async function migrateLegacySettingsKeys(targetRoot, summary) {
   }
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
+}

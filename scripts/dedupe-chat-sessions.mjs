@@ -29,12 +29,13 @@ function parseArgs(argv) {
 
 function printHelp() {
   console.log(`用法：
-  pnpm chat:sessions:dedupe
-  pnpm chat:sessions:dedupe -- --target <chat-server-data-dir>
-  pnpm chat:sessions:dedupe -- --target <chat-server-data-dir> --apply
+  pnpm migrate dedupe
+  pnpm migrate dedupe -- --target <chat-server-data-dir>
+  pnpm migrate dedupe -- --target <chat-server-data-dir> --apply
 
 默认目标：${defaultTarget}
-默认只预览；使用 --apply 才会写入，并为变更的 messages.jsonl 保留 .before-dedupe 备份。`);
+默认只预览；使用 --apply 才会写入，并为变更的 messages.jsonl 保留 .before-dedupe 备份。
+详见 docs/data-migration.md。`);
 }
 
 function isUnstableId(id) {

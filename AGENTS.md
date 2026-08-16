@@ -98,7 +98,7 @@ Frontend code should call native functionality through a small adapter in `apps/
 
 ### Tooling, Documentation, and Generated Files
 
-- `scripts/`: repository build, development orchestration, packaging, and other developer tooling. Keep these scripts independent from page rendering.
+- `scripts/`: repository build, development orchestration, packaging, and other developer tooling. Keep these scripts independent from page rendering. Local data migrations go through `pnpm migrate <command>` (`scripts/migrate.mjs`) and are documented in [`docs/data-migration.md`](docs/data-migration.md); do not add new top-level `migrate:*` or `chat:sessions:*` package scripts.
 - `docs/`: architecture notes, operational guidance, and decisions. Update the relevant document when a change alters a documented boundary or workflow.
 - Root configuration files (`package.json`, `pnpm-workspace.yaml`, `biome.json`, and similar): workspace-wide tooling/configuration only. Desktop-specific TypeScript/Vite/Tauri configuration belongs under `apps/desktop/`.
 - `.data/`, `.cache/`, `dist/`, `apps/desktop/src-tauri/target/`, and generated sidecar/binary output: local or generated artifacts. Do not add application source code or secrets to these paths, and do not edit generated output by hand.

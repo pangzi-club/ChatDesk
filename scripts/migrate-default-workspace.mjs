@@ -32,12 +32,13 @@ function parseArgs(argv) {
 
 function printHelp() {
   console.log(`用法：
-  pnpm chat:sessions:migrate-default
-  pnpm chat:sessions:migrate-default -- --target <chat-server-data-dir>
-  pnpm chat:sessions:migrate-default -- --target <chat-server-data-dir> --apply
+  pnpm migrate default-workspace
+  pnpm migrate default-workspace -- --target <chat-server-data-dir>
+  pnpm migrate default-workspace -- --target <chat-server-data-dir> --apply
 
 默认目标：${defaultTarget}
-默认只预览；使用 --apply 才会为无 cwd 的 Default 会话创建 ~/.chatdesk/tasks/<sessionId> 并写回 meta.json。`);
+默认只预览；使用 --apply 才会为无 cwd 的 Default 会话创建 ~/.chatdesk/tasks/<sessionId> 并写回 meta.json。
+详见 docs/data-migration.md。`);
 }
 
 function validId(id) {

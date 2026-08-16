@@ -29,12 +29,13 @@ function parseArgs(argv) {
 
 function printHelp() {
   console.log(`用法：
-  pnpm chat:sessions:migrate-jsonl
-  pnpm chat:sessions:migrate-jsonl -- --target <chat-server-data-dir>
-  pnpm chat:sessions:migrate-jsonl -- --target <chat-server-data-dir> --apply
+  pnpm migrate jsonl
+  pnpm migrate jsonl -- --target <chat-server-data-dir>
+  pnpm migrate jsonl -- --target <chat-server-data-dir> --apply
 
 默认目标：${defaultTarget}
-默认只预览；使用 --apply 才会写入 meta.json 与 messages.jsonl，并删除 session.json。`);
+默认只预览；使用 --apply 才会写入 meta.json 与 messages.jsonl，并删除 session.json。
+详见 docs/data-migration.md。`);
 }
 
 function validId(id) {

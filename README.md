@@ -47,13 +47,13 @@ pnpm desktop:dev # 启动桌面开发模式
 
 不要把 `.env.local`、`.data/`、`~/.chatdesk/` 或包含 API key 的导出文件提交到版本库。
 
-旧版本数据迁移使用独立脚本，不会由新 App 自动执行：
+旧版本数据迁移使用独立脚本，不会由新 App 自动执行。统一入口是 `pnpm migrate`，详见 [docs/data-migration.md](docs/data-migration.md)：
 
 ```sh
-pnpm migrate:chatdesk
-pnpm migrate:chatdesk -- --apply
-pnpm chat:sessions:migrate-default
-pnpm chat:sessions:migrate-default -- --apply
+pnpm migrate
+pnpm migrate chatdesk -- --apply
+pnpm migrate jsonl -- --apply
+pnpm migrate default-workspace -- --apply
 ```
 
 ## 配置
@@ -76,7 +76,8 @@ apps/desktop/src/    React 页面、组件和浏览器端适配器（桌面端 w
 apps/server/src/     Hono Chat Server、存储、运行时和 Node 测试（workspace package）
 packages/shared/     浏览器与服务端共用的运行时无关代码（`@chatdesk/shared`）
 apps/desktop/src-tauri/src/ Tauri 命令、原生服务和 sidecar 管理
-docs/                架构、沙箱和桌面打包说明
+docs/                架构、沙箱、数据迁移和桌面打包说明
+scripts/             开发编排与本地数据迁移入口（`pnpm migrate`）
 ```
 
 ## 开源协作
