@@ -23,6 +23,8 @@ export type {
 } from "@chatdesk/shared";
 export {
   CHAT_SCHEMA_VERSION,
+  DEFAULT_WORKSPACE_ID,
+  DEFAULT_WORKSPACE_NAME,
   deriveTitle,
   isSessionStatus,
   MAX_AGENT_STEPS,

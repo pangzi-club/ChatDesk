@@ -52,6 +52,8 @@ pnpm desktop:dev # 启动桌面开发模式
 ```sh
 pnpm migrate:chatdesk
 pnpm migrate:chatdesk -- --apply
+pnpm chat:sessions:migrate-default
+pnpm chat:sessions:migrate-default -- --apply
 ```
 
 ## 配置

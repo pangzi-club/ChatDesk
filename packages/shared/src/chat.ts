@@ -1,6 +1,8 @@
 import type { UIMessage } from "ai";
 
 export const CHAT_SCHEMA_VERSION = 2 as const;
+export const DEFAULT_WORKSPACE_ID = "default";
+export const DEFAULT_WORKSPACE_NAME = "Default Workspace";
 export const MAX_AGENT_STEPS = 100;
 export const SESSION_STATUSES = ["idle", "submitted", "streaming", "error", "ready"] as const;
 

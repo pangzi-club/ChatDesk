@@ -62,6 +62,24 @@ describe("workspace conversation utilities", () => {
     expect(sorted.map((project) => project.id)).toEqual(["alpha", "beta"]);
   });
 
+  it("groups default workspace sessions under the default key", () => {
+    const defaultProject: WorkspaceProject = {
+      id: "default",
+      path: "/Users/demo/.chatdesk/tasks",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+    expect(
+      getWorkspaceSessionKey(
+        session("task", {
+          workspaceId: "default",
+          cwd: "/Users/demo/.chatdesk/tasks/task",
+          updatedAt: "2026-01-03",
+        }),
+        [...projects, defaultProject],
+      ),
+    ).toBe("default");
+  });
+
   it("sorts the default group with workspaces by conversation count", () => {
     const sorted = sortWorkspaceConversationGroups(
       [

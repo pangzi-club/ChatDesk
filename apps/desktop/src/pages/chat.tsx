@@ -6,6 +6,8 @@ import {
   type ChatPlanSummary,
   type ChatRunProgress,
   type ChatRunSummary,
+  DEFAULT_WORKSPACE_ID,
+  DEFAULT_WORKSPACE_NAME,
   MAX_AGENT_STEPS,
   PLAN_USER_INPUT_TOOL_NAME,
   type PlanUserInputResponse,
@@ -222,10 +224,14 @@ import {
   type SkillDefinition,
   saveChatSkillSelection,
 } from "@/lib/skills";
-import { loadWorkspaceProjects, workspaceGitQueryKey } from "@/lib/workspaces";
+import { isDefaultWorkspaceId, joinTaskCwd } from "@/lib/workspace-path";
+import {
+  loadWorkspaceProjects,
+  type WorkspaceProject,
+  workspaceGitQueryKey,
+} from "@/lib/workspaces";
 
 const EMPTY_STRING_ARRAY: string[] = [];
-const DEFAULT_WORKSPACE_LABEL = "Default Workspace";
 const CHAT_MESSAGE_COLLAPSE_CHAR_LIMIT = 1200;
 const CHAT_MESSAGE_COLLAPSE_LINE_LIMIT = 18;
 const CHAT_STREAM_UPDATE_THROTTLE_MS = 50;
@@ -417,9 +423,14 @@ function ChatPage() {
   const planCreationRequestRef = useRef(0);
   const planTransitionRef = useRef<PlanTransitionState>("idle");
   const confirmPlanExecutionRef = useRef<() => void>(() => {});
-  const selectedCwd =
-    workspaceProjects.find((project) => project.id === workspaceKey)?.path ?? sessionCwd;
-  const workspaceLabel = selectedCwd ? pathBasename(selectedCwd) : DEFAULT_WORKSPACE_LABEL;
+  const selectedCwd = isDefaultWorkspaceId(workspaceKey)
+    ? sessionCwd.trim() || defaultTaskCwd(workspaceProjects, sessionId)
+    : (workspaceProjects.find((project) => project.id === workspaceKey)?.path ?? sessionCwd);
+  const workspaceLabel = isDefaultWorkspaceId(workspaceKey)
+    ? DEFAULT_WORKSPACE_NAME
+    : selectedCwd
+      ? pathBasename(selectedCwd)
+      : DEFAULT_WORKSPACE_NAME;
   workspaceRef.current = selectedCwd;
   sandboxModeRef.current = sandboxMode;
   planModeRef.current = planMode;
@@ -438,10 +449,18 @@ function ChatPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!isDefaultWorkspaceId(workspaceKey)) return;
+    const next = defaultTaskCwd(workspaceProjects, sessionId);
+    if (next && !sessionCwd.trim()) setSessionCwd(next);
+  }, [sessionCwd, sessionId, workspaceKey, workspaceProjects]);
+
   const getPromptInput = useCallback(async () => {
     const memory = memoryRef.current;
     const cwd = workspaceRef.current.trim();
-    const workspaceId = workspaceKey.trim();
+    const workspaceId = isDefaultWorkspaceId(workspaceKey)
+      ? DEFAULT_WORKSPACE_ID
+      : workspaceKey.trim();
     const skills = skillsRef.current.filter((skill) => selectedSkillIds.includes(skill.id));
     const activeTools = await resolveActiveTools(
       toolsRef.current,
@@ -606,15 +625,19 @@ function ChatPage() {
   const startNewSession = useCallback(
     (nextWorkspaceId = "", nextWorkspaceCwd = "", options?: { skipNavigate?: boolean }) => {
       const nextSessionId = createSessionId();
-      const normalizedWorkspaceId = nextWorkspaceId === "default" ? "" : nextWorkspaceId;
+      const isDefault = isDefaultWorkspaceId(nextWorkspaceId);
+      const normalizedWorkspaceId = isDefault ? "" : nextWorkspaceId;
+      const nextCwd = isDefault
+        ? defaultTaskCwd(workspaceProjects, nextSessionId)
+        : nextWorkspaceCwd;
       const nextPath = chatNewPath({
         workspaceId: normalizedWorkspaceId,
-        workspaceCwd: nextWorkspaceCwd,
+        workspaceCwd: isDefault ? "" : nextCwd,
       });
       appliedRouteKeyRef.current = chatRouteKey({
         kind: "new",
         workspaceId: normalizedWorkspaceId,
-        workspaceCwd: nextWorkspaceCwd,
+        workspaceCwd: isDefault ? "" : nextCwd,
       });
       loadingSessionIdRef.current = null;
       setIsHydratingSession(false);
@@ -626,8 +649,8 @@ function ChatPage() {
         }
       }
       workspaceSelectionInitializedRef.current = true;
-      setWorkspaceKey(normalizedWorkspaceId);
-      setSessionCwd(nextWorkspaceCwd);
+      setWorkspaceKey(isDefault ? DEFAULT_WORKSPACE_ID : normalizedWorkspaceId);
+      setSessionCwd(nextCwd);
       const installed = new Set(installedSkillIds);
       setSelectedSkillIds(savedChatSkillIds.filter((id) => installed.has(id)));
       sessionCreatedAtRef.current = new Date().toISOString();
@@ -666,6 +689,7 @@ function ChatPage() {
       navigate,
       savedChatSkillIds,
       setMessages,
+      workspaceProjects,
     ],
   );
 
@@ -676,21 +700,27 @@ function ChatPage() {
   }, [chatRoute, navigate, sessionId]);
 
   function selectWorkspace(nextWorkspaceValue: string) {
-    const nextWorkspaceId = nextWorkspaceValue === "default" ? "" : nextWorkspaceValue;
-    const nextWorkspace = workspaceProjects.find((project) => project.id === nextWorkspaceId);
-    const nextWorkspaceCwd = nextWorkspace?.path ?? "";
+    const isDefault = isDefaultWorkspaceId(nextWorkspaceValue);
+    const nextWorkspaceId = isDefault ? DEFAULT_WORKSPACE_ID : nextWorkspaceValue;
+    const nextWorkspaceCwd = isDefault
+      ? defaultTaskCwd(workspaceProjects, sessionId)
+      : (workspaceProjects.find((project) => project.id === nextWorkspaceId)?.path ?? "");
     workspaceSelectionInitializedRef.current = true;
     setWorkspaceKey(nextWorkspaceId);
     setSessionCwd(nextWorkspaceCwd);
     if (chatRoute.kind === "new") {
       appliedRouteKeyRef.current = chatRouteKey({
         kind: "new",
-        workspaceId: nextWorkspaceId,
-        workspaceCwd: nextWorkspaceCwd,
+        workspaceId: isDefault ? "" : nextWorkspaceId,
+        workspaceCwd: isDefault ? "" : nextWorkspaceCwd,
       });
-      navigate(chatNewPath({ workspaceId: nextWorkspaceId, workspaceCwd: nextWorkspaceCwd }), {
-        replace: true,
-      });
+      navigate(
+        chatNewPath({
+          workspaceId: isDefault ? "" : nextWorkspaceId,
+          workspaceCwd: isDefault ? "" : nextWorkspaceCwd,
+        }),
+        { replace: true },
+      );
     }
   }
 
@@ -1132,8 +1162,13 @@ function ChatPage() {
     setSessionTitle(session.title);
     setTitleError("");
     setIsRenamingTitle(false);
-    setWorkspaceKey(session.workspaceId ?? "");
-    setSessionCwd(session.cwd ?? "");
+    setWorkspaceKey(session.workspaceId ?? (session.cwd ? "" : DEFAULT_WORKSPACE_ID));
+    setSessionCwd(
+      session.cwd ??
+        (isDefaultWorkspaceId(session.workspaceId)
+          ? defaultTaskCwd(workspaceProjects, session.id)
+          : ""),
+    );
     systemPromptRef.current = session.systemPrompt;
     sessionCreatedAtRef.current = session.createdAt;
     sessionAttachmentsRef.current = session.attachments;
@@ -1189,6 +1224,7 @@ function ChatPage() {
     sessionHydrateGeneration,
     sessionId,
     setMessages,
+    workspaceProjects,
   ]);
 
   useEffect(() => {
@@ -1348,7 +1384,9 @@ function ChatPage() {
         await initializeChatServer();
         await ensureChatServerSession(sessionIdValue, {
           cwd: selectedCwd || undefined,
-          workspaceId: workspaceKey || undefined,
+          workspaceId: isDefaultWorkspaceId(workspaceKey)
+            ? DEFAULT_WORKSPACE_ID
+            : workspaceKey || undefined,
         });
         promoteDraftSession();
       } catch (error) {
@@ -1437,7 +1475,9 @@ function ChatPage() {
       await initializeChatServer();
       await ensureChatServerSession(targetSessionId, {
         cwd: selectedCwd || undefined,
-        workspaceId: workspaceKey || undefined,
+        workspaceId: isDefaultWorkspaceId(workspaceKey)
+          ? DEFAULT_WORKSPACE_ID
+          : workspaceKey || undefined,
       });
       promoteDraftSession();
       const plan = await createChatPlan(targetSessionId);
@@ -2261,15 +2301,17 @@ function ChatPage() {
                   onValueChange={selectWorkspace}
                 >
                   <DropdownMenuRadioItem value="default">
-                    <span className="chat-workspace-option-label">{DEFAULT_WORKSPACE_LABEL}</span>
+                    <span className="chat-workspace-option-label">{DEFAULT_WORKSPACE_NAME}</span>
                   </DropdownMenuRadioItem>
-                  {workspaceProjects.map((project) => (
-                    <DropdownMenuRadioItem key={project.id} value={project.id}>
-                      <span className="chat-workspace-option-label">
-                        {pathBasename(project.path)}
-                      </span>
-                    </DropdownMenuRadioItem>
-                  ))}
+                  {workspaceProjects
+                    .filter((project) => project.id !== DEFAULT_WORKSPACE_ID)
+                    .map((project) => (
+                      <DropdownMenuRadioItem key={project.id} value={project.id}>
+                        <span className="chat-workspace-option-label">
+                          {pathBasename(project.path)}
+                        </span>
+                      </DropdownMenuRadioItem>
+                    ))}
                 </DropdownMenuRadioGroup>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -2650,6 +2692,11 @@ function ChatPage() {
       <Outlet />
     </div>
   );
+}
+
+function defaultTaskCwd(projects: WorkspaceProject[], sessionId: string) {
+  const root = projects.find((project) => project.id === DEFAULT_WORKSPACE_ID)?.path;
+  return root ? joinTaskCwd(root, sessionId) : "";
 }
 
 function pathBasename(path: string) {

@@ -86,6 +86,35 @@ describe("chat server", () => {
     assert.equal(await server.store.get("session-test"), null);
   });
 
+  it("binds new sessions without a workspace to a unique default task directory", async () => {
+    const server = await createTestServer();
+    const first = await server.app.request("http://localhost/v1/sessions", {
+      method: "POST",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "task-one" }),
+    });
+    const second = await server.app.request("http://localhost/v1/sessions", {
+      method: "POST",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "task-two" }),
+    });
+    assert.equal(first.status, 201);
+    assert.equal(second.status, 201);
+    const left = (await first.json()) as { workspaceId?: string; cwd?: string };
+    const right = (await second.json()) as { workspaceId?: string; cwd?: string };
+    assert.equal(left.workspaceId, "default");
+    assert.equal(right.workspaceId, "default");
+    assert.equal(left.cwd?.endsWith("/task-one"), true);
+    assert.equal(right.cwd?.endsWith("/task-two"), true);
+    assert.notEqual(left.cwd, right.cwd);
+
+    const removed = await server.app.request("http://localhost/v1/workspaces/default", {
+      method: "DELETE",
+      headers: auth(),
+    });
+    assert.equal(removed.status, 400);
+  });
+
   it("rejects session title generation without messages or a configured model", async () => {
     const server = await createTestServer();
     const missing = await server.app.request("http://localhost/v1/sessions/missing/title", {

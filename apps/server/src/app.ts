@@ -322,6 +322,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   await imageGeneration.init();
   const workspaces = new WorkspaceStore(config.dataDir);
   await workspaces.init();
+  await workspaces.ensureDefault();
   const runs = new RunRegistry(
     store,
     events,
@@ -434,7 +435,11 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   app.delete("/v1/workspaces/:id", async (c) => {
     const workspace = workspaces.get(c.req.param("id"));
     if (!workspace) return jsonError("workspace 不存在", 404);
-    await workspaces.remove(workspace.id);
+    try {
+      await workspaces.remove(workspace.id);
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error), 400);
+    }
     await activityLogs.append({
       level: "info",
       source: "Workspace",
@@ -979,15 +984,24 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   app.post("/v1/sessions", async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const workspaceId = typeof body.workspaceId === "string" ? body.workspaceId : undefined;
-      if (workspaceId && !workspaces.get(workspaceId)) return jsonError("workspace 不存在", 400);
+      const requestedWorkspaceId =
+        typeof body.workspaceId === "string" ? body.workspaceId.trim() : "";
+      const requestedCwd = typeof body.cwd === "string" ? body.cwd : undefined;
+      if (requestedWorkspaceId && !workspaces.get(requestedWorkspaceId)) {
+        return jsonError("workspace 不存在", 400);
+      }
       const session = emptySession(typeof body.id === "string" ? body.id : undefined);
+      const bound = await workspaces.bindSession(
+        session.id,
+        requestedWorkspaceId || undefined,
+        requestedCwd,
+      );
       const next: ChatSession = {
         ...session,
         title:
           typeof body.title === "string" && body.title.trim() ? body.title.trim() : session.title,
-        workspaceId,
-        cwd: workspaceId ? workspaces.get(workspaceId)?.path : undefined,
+        workspaceId: bound.workspaceId,
+        cwd: bound.cwd,
       };
       await store.save(next);
       events.publish({ type: "session.status", sessionId: next.id, status: "idle" });
@@ -1199,7 +1213,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
           cwd: session.cwd,
         });
       }
-      const current = session ?? ({ cwd: undefined } as ChatSession);
+      const current = session ?? ({ id: c.req.param("id"), cwd: undefined } as ChatSession);
       const cwd = resolveEffectiveWorkspace(current, body, (id) => workspaces.get(id)?.path);
       const workspaceToolInstructions = cwd
         ? workspaceSearchInstructions(body.toolNames ?? [])

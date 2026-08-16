@@ -111,16 +111,19 @@ Authorization: Bearer local-dev-token
 macOS 默认数据目录为 `~/.chatdesk/chat-server`，其他平台默认使用 `.data/chat-server`，主要内容包括：
 
 ```text
-chat-server/
-├── sessions/<session-id>/meta.json
-├── sessions/<session-id>/messages.jsonl
-├── sessions/<session-id>/attachments/*
-├── settings.json
-├── memory.json
-└── server-config.json
+~/.chatdesk/
+├── chat-server/
+│   ├── sessions/<session-id>/meta.json
+│   ├── sessions/<session-id>/messages.jsonl
+│   ├── sessions/<session-id>/attachments/*
+│   ├── settings.json
+│   ├── memory.json
+│   ├── workspaces.json
+│   └── server-config.json
+└── tasks/<session-id>/   # Default Workspace 每个会话的独立工作目录
 ```
 
-`meta.json` 保存去掉 `messages` 后的会话元数据；`messages.jsonl` 每行一条消息。存量 `session.json` 请使用 `pnpm chat:sessions:migrate-jsonl -- --apply` 迁移。服务启动时只初始化当前数据目录，不会扫描或迁移旧版本目录。旧版本数据目录请使用根目录的 `pnpm migrate:chatdesk -- --apply` 迁移。请勿将包含 API key 的数据目录提交到版本库。
+`meta.json` 保存去掉 `messages` 后的会话元数据；`messages.jsonl` 每行一条消息。存量 `session.json` 请使用 `pnpm chat:sessions:migrate-jsonl -- --apply` 迁移。无 cwd 的 Default 会话请使用 `pnpm chat:sessions:migrate-default -- --apply` 绑定到 `~/.chatdesk/tasks/<session-id>`。服务启动时只初始化当前数据目录，不会扫描或迁移旧版本目录。旧版本数据目录请使用根目录的 `pnpm migrate:chatdesk -- --apply` 迁移。请勿将包含 API key 的数据目录提交到版本库。
 
 ## 与桌面端的关系
 

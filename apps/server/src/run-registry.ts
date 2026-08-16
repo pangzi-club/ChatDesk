@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
 import { createOpenAI, openai } from "@ai-sdk/openai";
-import { MAX_AGENT_STEPS, PLAN_USER_INPUT_TOOL_NAME } from "@chatdesk/shared";
+import { DEFAULT_WORKSPACE_ID, MAX_AGENT_STEPS, PLAN_USER_INPUT_TOOL_NAME } from "@chatdesk/shared";
 import {
   convertToModelMessages,
   createUIMessageStreamResponse,
@@ -71,6 +73,7 @@ import {
   selectWorkspaceToolNames,
   workspaceSearchInstructions,
 } from "./tool-selection.ts";
+import { isPathInside, taskCwdFor } from "./workspace-store.ts";
 import {
   createWorkspaceTools,
   preflightWorkspaceTool,
@@ -126,15 +129,49 @@ export const MODEL_STREAM_TIMEOUT: ModelStreamTimeout = {
   chunkMs: 90_000,
 };
 
+function resolveDefaultTaskCwd(
+  tasksRoot: string,
+  sessionId: string | undefined,
+  requestedCwd?: string,
+) {
+  if (!sessionId?.trim()) return path.resolve(tasksRoot);
+  const sessionRoot = taskCwdFor(tasksRoot, sessionId);
+  if (requestedCwd && isPathInside(requestedCwd, sessionRoot)) return path.resolve(requestedCwd);
+  return sessionRoot;
+}
+
 export function resolveEffectiveWorkspace(
   current: ChatSession,
   input: RunStartInput,
   resolveWorkspace: (id: string) => string | undefined,
 ) {
-  const resolvedWorkspace = input.workspaceId ? resolveWorkspace(input.workspaceId) : undefined;
-  if (input.workspaceId && !resolvedWorkspace) throw new Error("workspace 不存在");
-  if (input.cwd && !input.workspaceId) throw new Error("请先选择已注册的 workspace");
-  return resolvedWorkspace ?? current.cwd;
+  const requestedId = input.workspaceId?.trim() || current.workspaceId?.trim();
+  const requestedCwd = (input.cwd ?? current.cwd)?.trim() || undefined;
+  const defaultRoot = resolveWorkspace(DEFAULT_WORKSPACE_ID);
+
+  if (input.cwd?.trim() && !input.workspaceId?.trim() && !current.workspaceId?.trim()) {
+    if (
+      defaultRoot &&
+      current.id?.trim() &&
+      isPathInside(input.cwd, resolveDefaultTaskCwd(defaultRoot, current.id))
+    ) {
+      return path.resolve(input.cwd);
+    }
+    throw new Error("请先选择已注册的 workspace");
+  }
+
+  if (requestedId) {
+    const resolvedWorkspace = resolveWorkspace(requestedId);
+    if (!resolvedWorkspace) throw new Error("workspace 不存在");
+    if (requestedId === DEFAULT_WORKSPACE_ID) {
+      return resolveDefaultTaskCwd(resolvedWorkspace, current.id, requestedCwd);
+    }
+    return resolvedWorkspace;
+  }
+
+  if (requestedCwd) return requestedCwd;
+  if (defaultRoot && current.id?.trim()) return resolveDefaultTaskCwd(defaultRoot, current.id);
+  return current.cwd;
 }
 
 function baseUrl(value: string) {
@@ -551,6 +588,16 @@ export class RunRegistry {
         : current.messages;
     const now = new Date().toISOString();
     const effectiveCwd = resolveEffectiveWorkspace(current, input, this.resolveWorkspace);
+    const defaultRoot = this.resolveWorkspace(DEFAULT_WORKSPACE_ID);
+    if (effectiveCwd && defaultRoot && isPathInside(effectiveCwd, defaultRoot)) {
+      await mkdir(effectiveCwd, { recursive: true });
+    }
+    const workspaceId =
+      input.workspaceId?.trim() ||
+      current.workspaceId?.trim() ||
+      (effectiveCwd && defaultRoot && isPathInside(effectiveCwd, defaultRoot)
+        ? DEFAULT_WORKSPACE_ID
+        : undefined);
     const workspaceToolInstructions = effectiveCwd
       ? workspaceSearchInstructions(input.toolNames ?? [])
       : "";
@@ -577,7 +624,7 @@ export class RunRegistry {
       title: resolveSessionTitle(input.title ?? current.title, messages),
       updatedAt: now,
       modelId: model.id || model.name,
-      workspaceId: input.workspaceId ?? current.workspaceId,
+      workspaceId,
       cwd: effectiveCwd,
       sandboxMode,
       mcpServerIds: input.mcpServerIds ?? current.mcpServerIds,

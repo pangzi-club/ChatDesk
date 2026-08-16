@@ -1,4 +1,9 @@
-import type { WorkspaceFileEntry, WorkspaceGitFile, WorkspaceGitSummary } from "@chatdesk/shared";
+import {
+  DEFAULT_WORKSPACE_ID,
+  type WorkspaceFileEntry,
+  type WorkspaceGitFile,
+  type WorkspaceGitSummary,
+} from "@chatdesk/shared";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -1508,7 +1513,7 @@ function WorkspaceConversationGroups() {
         <div className="space-y-1.5">
           {groups.map((group) => {
             const isExpanded = expandedGroups.has(group.key);
-            const isRecent = group.key === "default";
+            const isRecent = group.key === DEFAULT_WORKSPACE_ID;
             if (!isRecent && isWorkspaceSectionCollapsed) return null;
             const isCollapsed = isGroupCollapsed(group);
             const visibleSessions =
@@ -1559,7 +1564,7 @@ function WorkspaceConversationGroups() {
                   >
                     <Plus className="size-3.5" />
                   </button>
-                  {group.key !== "default" ? (
+                  {group.key !== DEFAULT_WORKSPACE_ID ? (
                     <button
                       aria-label={`${workspaceProjectsQuery.data?.some((project) => project.id === group.key) ? "移除" : "移出"} ${group.label}`}
                       className="mr-1 flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
@@ -1809,7 +1814,7 @@ function groupChatsByWorkspace(
   const defaultSessions: ChatIndexItem[] = [];
   for (const session of sessions) {
     const workspaceKey = getWorkspaceSessionKey(session, projects);
-    if (!workspaceKey || workspaceKey === "default") {
+    if (!workspaceKey || workspaceKey === DEFAULT_WORKSPACE_ID) {
       defaultSessions.push(session);
       continue;
     }
@@ -1819,13 +1824,14 @@ function groupChatsByWorkspace(
   }
 
   const recentGroup: WorkspaceChatGroup = {
-    key: "default",
+    key: DEFAULT_WORKSPACE_ID,
     label: "Task",
     sessions: defaultSessions,
   };
   const workspaceGroups: WorkspaceChatGroup[] = [];
 
   for (const project of projects) {
+    if (project.id === DEFAULT_WORKSPACE_ID) continue;
     const workspaceSessions = sessionsByWorkspace.get(project.id) ?? [];
     workspaceGroups.push({
       key: project.id,

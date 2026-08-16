@@ -6,7 +6,7 @@ import type {
   ChatSession,
   SandboxMode,
 } from "@chatdesk/shared";
-import { CHAT_SCHEMA_VERSION, deriveTitle } from "@chatdesk/shared";
+import { CHAT_SCHEMA_VERSION, DEFAULT_WORKSPACE_ID, deriveTitle } from "@chatdesk/shared";
 import type { UIMessage } from "ai";
 import {
   deleteChatServerSession,
@@ -16,6 +16,8 @@ import {
   saveChatServerSession,
   uploadChatServerAttachment,
 } from "@/lib/chat-server";
+import { joinTaskCwd } from "./workspace-path";
+import { loadWorkspaceProjects } from "./workspaces";
 
 export type {
   ChatAttachment,
@@ -139,10 +141,12 @@ export async function clearChatSessionWorkspace(id: string): Promise<void> {
   await initializeChatServer();
   const session = await loadChatServerSession<ChatSession>(id);
   if (!session) return;
+  const projects = await loadWorkspaceProjects();
+  const root = projects.find((project) => project.id === DEFAULT_WORKSPACE_ID)?.path;
   await saveChatServerSession({
     ...session,
-    workspaceId: null,
-    cwd: null,
+    workspaceId: DEFAULT_WORKSPACE_ID,
+    cwd: root ? joinTaskCwd(root, id) : session.cwd,
   } as unknown as ChatSession);
 }
 

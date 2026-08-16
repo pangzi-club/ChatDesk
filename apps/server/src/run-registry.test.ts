@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
+import path from "node:path";
+import { DEFAULT_WORKSPACE_ID } from "@chatdesk/shared";
 import type { UIMessage } from "ai";
 import { test } from "vitest";
+import type { ChatSession } from "./protocol.ts";
 import {
   interruptRunMessage,
   MAX_AGENT_STEPS,
@@ -8,6 +11,7 @@ import {
   mergeLatestMessageMetadata,
   mergeRunMessage,
   normalizeCompletedMessages,
+  resolveEffectiveWorkspace,
   runCheckpointFingerprint,
   supportsRequiredToolChoice,
 } from "./run-registry.ts";
@@ -163,4 +167,54 @@ test("marks pending tools as failed when a persisted run is interrupted", () => 
   assert.equal(text.type === "text" ? text.state : undefined, "done");
   assert.equal("state" in tool ? tool.state : undefined, "output-error");
   assert.equal("errorText" in tool ? tool.errorText : undefined, "server restarted");
+});
+
+function session(values: Partial<ChatSession> = {}): ChatSession {
+  return {
+    schemaVersion: 2,
+    id: "session-1",
+    title: "测试",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    messages: [],
+    attachments: [],
+    ...values,
+  };
+}
+
+test("resolveEffectiveWorkspace uses a project workspace path", () => {
+  const cwd = resolveEffectiveWorkspace(session(), { workspaceId: "alpha" }, (id) =>
+    id === "alpha" ? "/work/alpha" : undefined,
+  );
+  assert.equal(cwd, "/work/alpha");
+});
+
+test("resolveEffectiveWorkspace keeps a session-specific default task directory", () => {
+  const tasksRoot = "/Users/demo/.chatdesk/tasks";
+  const cwd = resolveEffectiveWorkspace(
+    session({ id: "session-1" }),
+    { workspaceId: DEFAULT_WORKSPACE_ID },
+    (id) => (id === DEFAULT_WORKSPACE_ID ? tasksRoot : undefined),
+  );
+  assert.equal(cwd, path.resolve(tasksRoot, "session-1"));
+});
+
+test("resolveEffectiveWorkspace falls back to a default task directory when cwd is missing", () => {
+  const tasksRoot = "/Users/demo/.chatdesk/tasks";
+  const cwd = resolveEffectiveWorkspace(session({ id: "session-2" }), {}, (id) =>
+    id === DEFAULT_WORKSPACE_ID ? tasksRoot : undefined,
+  );
+  assert.equal(cwd, path.resolve(tasksRoot, "session-2"));
+});
+
+test("resolveEffectiveWorkspace keeps a legacy cwd-only project session", () => {
+  const cwd = resolveEffectiveWorkspace(session({ cwd: "/work/alpha" }), {}, () => undefined);
+  assert.equal(cwd, "/work/alpha");
+});
+
+test("resolveEffectiveWorkspace rejects an unregistered cwd", () => {
+  assert.throws(
+    () => resolveEffectiveWorkspace(session(), { cwd: "/tmp/unregistered" }, () => undefined),
+    /请先选择已注册的 workspace/,
+  );
 });
