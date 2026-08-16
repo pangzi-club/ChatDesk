@@ -2072,6 +2072,12 @@
   font-size: 12px;
 }
 .file-viewer {
+  --vscode-diffEditor-unchangedCodeBackground: color-mix(in srgb, var(--muted) 42%, transparent);
+  --vscode-diffEditor-unchangedRegionBackground: color-mix(in srgb, var(--muted) 88%, var(--card));
+  --vscode-diffEditor-unchangedRegionForeground: var(--muted-foreground);
+  --vscode-diffEditor-unchangedRegionShadow: color-mix(in srgb, var(--foreground) 16%, transparent);
+  --vscode-editorLink-activeForeground: var(--primary);
+  --vscode-focusBorder: var(--ring);
   display: flex;
   min-height: 0;
   flex: 1;
@@ -2095,10 +2101,44 @@
   white-space: nowrap;
   color: var(--chat-ink);
 }
+.file-viewer-actions {
+  display: inline-flex;
+  margin-left: auto;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  border-right: 1px solid var(--chat-line);
+  padding-right: 8px;
+}
+.file-viewer-header .file-viewer-action {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  border-radius: 4px;
+  color: var(--chat-muted);
+}
+.file-viewer-header .file-viewer-action:hover,
+.file-viewer-header .file-viewer-action:focus-visible {
+  color: var(--chat-ink);
+}
+.file-viewer-header .file-viewer-action[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--chat-ink);
+}
+.file-viewer-action-divider {
+  width: 1px;
+  height: 12px;
+  flex-shrink: 0;
+  margin: 0 4px;
+  background: var(--chat-line);
+}
 .file-viewer-language {
   margin-left: auto;
   color: var(--chat-muted);
   font-size: 9px;
+}
+.file-viewer-actions + .file-viewer-language {
+  margin-left: 0;
 }
 .file-viewer-readonly {
   border-left: 1px solid var(--chat-line);
