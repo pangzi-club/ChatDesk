@@ -1715,6 +1715,46 @@
   border-bottom-color: var(--primary);
   color: var(--chat-ink);
 }
+.chat-explorer-file-icon {
+  flex-shrink: 0;
+}
+.chat-explorer-file-icon.is-folder,
+.chat-explorer-file-icon.is-folder-open {
+  color: color-mix(in srgb, #c9a227 78%, var(--foreground));
+}
+.chat-explorer-file-icon.is-files {
+  color: color-mix(in srgb, var(--primary) 78%, var(--foreground));
+}
+.chat-explorer-file-icon.is-git {
+  color: color-mix(in srgb, #de6a3a 80%, var(--foreground));
+}
+.chat-explorer-file-icon.is-code-ts {
+  color: color-mix(in srgb, #3178c6 82%, var(--foreground));
+}
+.chat-explorer-file-icon.is-code-js {
+  color: color-mix(in srgb, #c6a428 82%, var(--foreground));
+}
+.chat-explorer-file-icon.is-code {
+  color: color-mix(in srgb, var(--primary) 70%, var(--foreground));
+}
+.chat-explorer-file-icon.is-json {
+  color: color-mix(in srgb, #b89a2a 80%, var(--foreground));
+}
+.chat-explorer-file-icon.is-style {
+  color: color-mix(in srgb, #c45b9f 78%, var(--foreground));
+}
+.chat-explorer-file-icon.is-markup {
+  color: color-mix(in srgb, #d56b3a 80%, var(--foreground));
+}
+.chat-explorer-file-icon.is-doc {
+  color: color-mix(in srgb, #5b7c9a 75%, var(--foreground));
+}
+.chat-explorer-file-icon.is-image {
+  color: color-mix(in srgb, #8a6bc1 78%, var(--foreground));
+}
+.chat-explorer-file-icon.is-file {
+  color: color-mix(in srgb, var(--muted-foreground) 55%, var(--foreground));
+}
 .chat-explorer-list {
   min-height: 0;
   flex: 1;
@@ -1889,6 +1929,9 @@
   color: var(--chat-ink);
 }
 .chat-explorer-editor-tab button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   border: 0;
   background: transparent;
   padding: 6px 7px;

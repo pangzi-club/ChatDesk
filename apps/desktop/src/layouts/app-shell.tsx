@@ -13,8 +13,6 @@ import {
   Clock3,
   CornerDownLeft,
   ExternalLink,
-  File,
-  Folder,
   FolderGit2,
   Globe2,
   Image,
@@ -68,6 +66,7 @@ import {
 import { ChatBrowser } from "@/components/chat-browser";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { ChatTerminal } from "@/components/chat-terminal";
+import { ExplorerFileIcon } from "@/components/explorer-file-icon";
 import { FileViewer } from "@/components/file-viewer";
 import { GitCommitDialog } from "@/components/git-commit-dialog";
 import { TitlebarDragRegion } from "@/components/titlebar";
@@ -125,6 +124,7 @@ import {
   loadChatIndex,
   loadChatSession,
 } from "@/lib/chat-store";
+import { explorerFileIconKind } from "@/lib/explorer-file-icon";
 import { subscribeFileViewerOpen } from "@/lib/file-viewer-events";
 import { subscribeImagePreviewOpen } from "@/lib/image-preview-events";
 import {
@@ -2311,11 +2311,13 @@ function ChatWorkspaceWindow({
               }
               type="button"
             >
-              {entry.kind === "dir" ? (
-                <Folder className="size-3.5" />
-              ) : (
-                <File className="size-3.5" />
-              )}
+              <ExplorerFileIcon
+                className="size-3.5"
+                kind={explorerFileIconKind(entry.path, {
+                  entryKind: entry.kind === "dir" ? "dir" : "file",
+                  expanded: isExpanded,
+                })}
+              />
               <span className="chat-explorer-name">{entry.name}</span>
               {gitFile ? (
                 <span className={`chat-explorer-status is-${gitFile.status}`}>
@@ -2810,7 +2812,7 @@ function ChatWorkspaceWindow({
                   role="tab"
                   type="button"
                 >
-                  <Folder className="size-3.5" />
+                  <ExplorerFileIcon className="size-3.5" kind="files" />
                   文件
                 </button>
                 <button
@@ -2820,7 +2822,7 @@ function ChatWorkspaceWindow({
                   role="tab"
                   type="button"
                 >
-                  <FolderGit2 className="size-3.5" />
+                  <ExplorerFileIcon className="size-3.5" kind="git" />
                   Git 改动{gitSummary?.filesChanged ? ` (${gitSummary.filesChanged})` : ""}
                 </button>
               </div>
@@ -2891,6 +2893,10 @@ function ChatWorkspaceWindow({
                       key={tab.path}
                     >
                       <button onClick={() => selectEditor(tab)} role="tab" type="button">
+                        <ExplorerFileIcon
+                          className="size-3.5"
+                          kind={explorerFileIconKind(tab.path)}
+                        />
                         {pathBasename(tab.path)}
                         {tab.mode === "diff" ? " · Diff" : ""}
                       </button>
