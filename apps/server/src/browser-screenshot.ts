@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { copyFile, mkdir, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
-import { getToolName, isToolUIPart, type UIMessage } from "ai";
+import { getToolName, isToolUIPart, type ToolResultPart, type UIMessage } from "ai";
 
 export type ScreenshotAttachmentStore = {
   attachmentPath(sessionId: string, attachmentId: string, fileName: string): string;
@@ -81,20 +81,16 @@ export type ScreenshotFileUiPart = {
   url: string;
 };
 
-export type ScreenshotModelOutput =
-  | { type: "json"; value: unknown }
-  | {
-      type: "content";
-      value: Array<
-        | { type: "text"; text: string }
-        | {
-            type: "file";
-            mediaType: string;
-            filename?: string;
-            data: { type: "url"; url: URL };
-          }
-      >;
-    };
+export type ScreenshotModelOutput = ToolResultPart["output"];
+
+function toJsonToolOutput(value: unknown): ScreenshotModelOutput {
+  if (value === undefined) return { type: "json", value: null };
+  try {
+    return { type: "json", value: JSON.parse(JSON.stringify(value)) };
+  } catch {
+    return { type: "json", value: String(value) };
+  }
+}
 
 function screenshotSummary(result: BrowserToolResult) {
   const data = isRecord(result.data) ? result.data : {};
@@ -170,9 +166,9 @@ export async function appendScreenshotFileParts(messages: UIMessage[]): Promise<
 export async function screenshotResultToModelOutput(
   output: unknown,
 ): Promise<ScreenshotModelOutput> {
-  if (!isRecord(output)) return { type: "json", value: output ?? null };
+  if (!isRecord(output)) return toJsonToolOutput(output);
   const result = output as BrowserToolResult;
-  if (!result.ok) return { type: "json", value: result };
+  if (!result.ok) return toJsonToolOutput(result);
 
   const summary = screenshotSummary(result);
   const file = await screenshotFileUiPart(output);

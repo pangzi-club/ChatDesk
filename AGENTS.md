@@ -30,6 +30,7 @@ Durable project-specific notes live in [`MEMORY.md`](MEMORY.md). Read it when lo
   2. `pnpm check`
   3. `pnpm test`
   4. `pnpm shared:typecheck`
+  5. `pnpm build`
 - Treat any failure in this sequence as a blocker for reporting the change as CI-ready. Record environmental or pre-existing failures explicitly instead of presenting partial verification as complete.
 
 ## Development Server
