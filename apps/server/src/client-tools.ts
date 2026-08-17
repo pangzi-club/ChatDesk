@@ -7,6 +7,7 @@ import {
   createScreenshotAttachmentTarget,
   persistScreenshotResult,
   type ScreenshotAttachmentStore,
+  screenshotResultToModelOutput,
 } from "./browser-screenshot.ts";
 
 const timeoutSchema = z.number().int().min(100).max(60_000).optional();
@@ -19,7 +20,7 @@ export type ClientToolOptions = {
 
 function createBrowserScreenshotTool(options?: ClientToolOptions) {
   return tool({
-    description: "截取当前浏览器页面。",
+    description: "截取当前浏览器页面。成功时会把截图作为图片提供给模型，请直接阅读画面内容。",
     inputSchema: z.object({
       sessionId: z.string().min(1),
       fullPage: z.boolean().optional(),
@@ -35,6 +36,7 @@ function createBrowserScreenshotTool(options?: ClientToolOptions) {
       });
       return persistScreenshotResult(result, target);
     },
+    toModelOutput: ({ output }) => screenshotResultToModelOutput(output),
   });
 }
 
