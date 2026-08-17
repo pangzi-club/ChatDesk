@@ -1,8 +1,9 @@
 import { resolveContextCompactionThreshold, resolveModelContextWindow } from "@chatdesk/shared";
-import { Gauge } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 type ChatContextPopoverProps = {
   inputContext?: number;
@@ -27,6 +28,48 @@ function formatExactContextCount(value: number | undefined) {
   return value === undefined ? "暂无测量" : `${value.toLocaleString("zh-CN")} tokens`;
 }
 
+const USAGE_RING_SIZE = 16;
+const USAGE_RING_STROKE = 2;
+const USAGE_RING_RADIUS = (USAGE_RING_SIZE - USAGE_RING_STROKE) / 2;
+const USAGE_RING_CIRCUMFERENCE = 2 * Math.PI * USAGE_RING_RADIUS;
+
+function ContextUsageRing({ percent }: { percent?: number }) {
+  const value = percent ?? 0;
+  const offset = USAGE_RING_CIRCUMFERENCE * (1 - value / 100);
+
+  return (
+    <svg
+      aria-hidden="true"
+      className="size-4 -rotate-90"
+      viewBox={`0 0 ${USAGE_RING_SIZE} ${USAGE_RING_SIZE}`}
+    >
+      <circle
+        cx={USAGE_RING_SIZE / 2}
+        cy={USAGE_RING_SIZE / 2}
+        fill="none"
+        opacity={0.25}
+        r={USAGE_RING_RADIUS}
+        stroke="currentColor"
+        strokeWidth={USAGE_RING_STROKE}
+      />
+      {value > 0 ? (
+        <circle
+          className="transition-[stroke-dashoffset] duration-[140ms] ease-in-out motion-reduce:transition-none"
+          cx={USAGE_RING_SIZE / 2}
+          cy={USAGE_RING_SIZE / 2}
+          fill="none"
+          r={USAGE_RING_RADIUS}
+          stroke="currentColor"
+          strokeDasharray={USAGE_RING_CIRCUMFERENCE}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          strokeWidth={USAGE_RING_STROKE}
+        />
+      ) : null}
+    </svg>
+  );
+}
+
 export function ChatContextPopover({
   inputContext,
   inputTokens,
@@ -42,22 +85,27 @@ export function ChatContextPopover({
     inputTokens === undefined
       ? undefined
       : Math.min(100, Math.max(0, (inputTokens / contextWindow) * 100));
-  const title = `当前上下文：${formatContextCount(inputTokens)} / ${formatContextCount(contextWindow)} · 自动压缩阈值 ${formatContextCount(compactionThreshold)}`;
+  const [open, setOpen] = useState(false);
+  const title = `当前上下文：${formatContextCount(inputTokens)} / ${formatContextCount(contextWindow)} · ${usagePercent === undefined ? "暂无测量" : `${Math.round(usagePercent)}%`}`;
 
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          aria-label="查看当前上下文"
-          className="chat-tool-button !size-7"
-          size="icon"
-          title={title}
-          type="button"
-          variant="ghost"
-        >
-          <Gauge className="size-4" />
-        </Button>
-      </PopoverTrigger>
+    <Popover onOpenChange={setOpen} open={open}>
+      <Tooltip delayDuration={200} open={open ? false : undefined}>
+        <PopoverTrigger asChild>
+          <TooltipTrigger asChild>
+            <Button
+              aria-label="查看当前上下文"
+              className="chat-tool-button !size-7"
+              size="icon"
+              type="button"
+              variant="ghost"
+            >
+              <ContextUsageRing percent={usagePercent} />
+            </Button>
+          </TooltipTrigger>
+        </PopoverTrigger>
+        <TooltipContent side="top">{title}</TooltipContent>
+      </Tooltip>
       <PopoverContent align="end" className="w-72 p-0" side="top" sideOffset={8}>
         <div className="border-border border-b px-4 py-3">
           <div className="flex items-center justify-between gap-3">
