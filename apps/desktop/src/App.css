@@ -2929,6 +2929,9 @@
 .chat-todo-detail.is-in_progress {
   color: var(--chat-ink);
 }
+.chat-todo-detail.is-blocked {
+  color: var(--destructive);
+}
 .chat-todo-detail-icon {
   flex-shrink: 0;
   margin-top: 2px;
@@ -2940,6 +2943,9 @@
 }
 .chat-todo-detail-icon.is-active {
   color: var(--primary);
+}
+.chat-todo-detail-icon.is-blocked {
+  color: var(--destructive);
 }
 .chat-todo-detail-content {
   min-width: 0;

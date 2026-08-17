@@ -1,6 +1,6 @@
 import { parseTodoList, TODO_TOOL_NAME, type TodoItem } from "@chatdesk/shared";
 import { getToolName, isToolUIPart, type UIMessage } from "ai";
-import { Check, Circle, ListTodo, LoaderCircle } from "lucide-react";
+import { Check, Circle, CircleSlash2, ListTodo, LoaderCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -32,6 +32,7 @@ export function getLatestTodoState(messages: UIMessage[]): ChatTodoState | null 
       const completed = items.filter((item) => item.status === "completed").length;
       const current =
         items.find((item) => item.status === "in_progress") ??
+        items.find((item) => item.status === "blocked") ??
         items.find((item) => item.status === "pending");
       return { items, total: items.length, completed, current };
     }
@@ -47,6 +48,9 @@ function TodoStatusIcon({ status }: { status: TodoItem["status"] }) {
     return (
       <LoaderCircle aria-hidden="true" className="chat-todo-detail-icon is-active animate-spin" />
     );
+  }
+  if (status === "blocked") {
+    return <CircleSlash2 aria-hidden="true" className="chat-todo-detail-icon is-blocked" />;
   }
   return <Circle aria-hidden="true" className="chat-todo-detail-icon" />;
 }
@@ -108,7 +112,11 @@ export function ChatTodoPanel({ messages }: { messages: UIMessage[] }) {
             {state.completed}/{state.total}
           </span>
           <span className="chat-todo-float-label">
-            {allDone ? "全部完成" : currentLabel || "任务规划"}
+            {allDone
+              ? "全部完成"
+              : state.current?.status === "blocked"
+                ? "存在阻塞"
+                : currentLabel || "任务规划"}
           </span>
         </Button>
       </PopoverTrigger>

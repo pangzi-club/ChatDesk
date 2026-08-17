@@ -49,9 +49,9 @@ describe("shared chat contracts", () => {
   it("resolves model context windows and compaction thresholds", () => {
     assert.equal(resolveModelContextWindow(undefined), DEFAULT_MODEL_CONTEXT_WINDOW);
     assert.equal(resolveModelContextWindow(256_000), 256_000);
-    assert.equal(resolveContextCompactionThreshold(undefined), 96_000);
+    assert.equal(resolveContextCompactionThreshold(undefined), 80_000);
     assert.equal(resolveContextCompactionThreshold(80_000), 60_000);
-    assert.equal(resolveContextCompactionThreshold(1_000_000), 750_000);
+    assert.equal(resolveContextCompactionThreshold(1_000_000), 80_000);
   });
 
   it("validates plan questions and sorts the recommended option first", () => {

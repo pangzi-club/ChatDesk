@@ -1038,7 +1038,7 @@ function ChatPage() {
               ? "等待中"
               : "生成中";
   const generationElapsedLabel = formatElapsedDuration(generationElapsedSeconds);
-  const generationDetail =
+  const generationBaseDetail =
     runProgress?.phase === "compacting"
       ? "正在保存目标、约束、事实和下一步"
       : runProgress?.phase === "finalizing"
@@ -1048,6 +1048,17 @@ function ChatPage() {
           : generationElapsedSeconds >= 10
             ? "响应较慢，仍在等待中"
             : "";
+  const generationMetricDetail = [
+    runProgress?.planWritten ? "正式计划已写入" : "",
+    runProgress?.duplicateToolCallCount
+      ? `重复只读调用 ${runProgress.duplicateToolCallCount} 次`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const generationDetail = [generationBaseDetail, generationMetricDetail]
+    .filter(Boolean)
+    .join(" · ");
   const lastMessage = messages[messages.length - 1];
   const livePlanDraft = useMemo(() => findLatestPlanWriteContent(messages), [messages]);
   const latestPlanWriteAnchor = useMemo(() => findLatestPlanWriteAnchor(messages), [messages]);
@@ -1669,7 +1680,7 @@ function ChatPage() {
     if (planModeRef.current !== "plan") return;
     if (isGenerating || planTransitionRef.current !== "idle") return;
     if (!planReady || !activePlanIdRef.current) {
-      setPlanModeError("计划尚未完成，请等待计划生成结束后再执行。");
+      setPlanModeError("正式计划尚未写入，请等待计划生成结束后再执行。");
       return;
     }
     if (!selectedModelRef.current) {

@@ -4,6 +4,7 @@ export const WORKSPACE_TOOL_NAMES = [
   "read_file",
   "write_file",
   "edit_file",
+  "apply_patch",
   "git",
   "bash",
 ] as const;
@@ -26,7 +27,10 @@ export function workspaceSearchInstructions(toolNames: Iterable<string>) {
 export function selectWorkspaceToolNames(toolNames: Iterable<string>): string[] {
   const requested = new Set(toolNames);
   return WORKSPACE_TOOL_NAMES.filter(
-    (name) => requested.has(name) || (name === "bash" && requested.has("terminal")),
+    (name) =>
+      requested.has(name) ||
+      (name === "apply_patch" && requested.has("edit_file")) ||
+      (name === "bash" && requested.has("terminal")),
   );
 }
 

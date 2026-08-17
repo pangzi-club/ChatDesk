@@ -23,9 +23,14 @@ afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
 });
 
-function usage() {
+function usage(inputTokens = 10) {
   return {
-    inputTokens: { total: 10, noCache: 7, cacheRead: 2, cacheWrite: 1 },
+    inputTokens: {
+      total: inputTokens,
+      noCache: Math.max(0, inputTokens - 3),
+      cacheRead: 2,
+      cacheWrite: 1,
+    },
     outputTokens: { total: 3, text: 2, reasoning: 1 },
   };
 }
@@ -56,6 +61,7 @@ function toolResult(
   toolCallId: string,
   toolName: string,
   input: Record<string, unknown>,
+  inputTokens = 10,
 ): MockStreamResult {
   return streamResult([
     { type: "stream-start", warnings: [] },
@@ -64,7 +70,7 @@ function toolResult(
     {
       type: "finish",
       finishReason: { unified: "tool-calls", raw: "tool-calls" },
-      usage: usage(),
+      usage: usage(inputTokens),
     },
   ]);
 }
@@ -181,12 +187,15 @@ async function fixture(
   };
 }
 
-async function finishRun(fixtureValue: Awaited<ReturnType<typeof fixture>>) {
+async function finishRun(
+  fixtureValue: Awaited<ReturnType<typeof fixture>>,
+  toolNames = ["read_file"],
+) {
   const response = await fixtureValue.registry.start("session-1", {
     modelId: "mock",
     planMode: fixtureValue.planMode,
     ...(fixtureValue.planMode === "plan" ? { planId: fixtureValue.plan.id } : {}),
-    toolNames: ["read_file"],
+    toolNames,
   });
   await response.text().catch(() => undefined);
   for (let attempt = 0; attempt < 1_000 && fixtureValue.registry.activeCount() > 0; attempt += 1) {
@@ -461,6 +470,86 @@ describe("complete agent runs", () => {
       JSON.stringify(current.model.doStreamCalls[0]?.prompt),
       /Preserve this exact body/,
     );
+  });
+
+  it("compacts when the previous provider input exceeds the 80K hard threshold", async () => {
+    const current = await fixture(
+      [
+        toolResult("read-high-context", "read_file", { path: "source.txt" }, 90_000),
+        textResult("Completed after compaction.", "response-after-provider-compaction"),
+      ],
+      {
+        planMode: "apply",
+        inputContext: 1_000_000,
+        doGenerate: checkpointResult(
+          "Goal\nFinish\n\nUser constraints\nNone\n\nConfirmed facts and sources\nsource.txt read\n\nFiles and queries checked\nsource.txt\n\nDecisions made\nNone\n\nOpen questions\nNone\n\nNext step\nRespond",
+        ),
+      },
+    );
+    const summary = await finishRun(current);
+    assert.equal(summary.outcome, "completed");
+    assert.equal(summary.compactionCount, 1);
+    assert.ok(current.events.published.some((event) => event.type === "context.compacted"));
+  });
+
+  it("stops after three consecutive tool-error steps", async () => {
+    const current = await fixture(
+      [
+        toolResult("missing-1", "read_file", { path: "missing.txt" }),
+        toolResult("missing-2", "read_file", { path: "missing.txt" }),
+        toolResult("missing-3", "read_file", { path: "missing.txt" }),
+        textResult("Unable to continue after repeated tool failures.", "response-tool-errors"),
+      ],
+      { planMode: "apply" },
+    );
+    const summary = await finishRun(current);
+    assert.equal(summary.outcome, "error");
+    assert.equal(summary.stopReason, "tool-errors");
+    assert.equal(summary.failedToolCallCount, 3);
+    assert.match(JSON.stringify(current.model.doStreamCalls[2]?.prompt), /重新读取目标的最新状态/);
+    assert.equal(current.model.doStreamCalls[3]?.tools, undefined);
+  });
+
+  it("persists partial task status for blocked todo work", async () => {
+    const current = await fixture(
+      [
+        toolResult("todo-blocked", "todo_write", {
+          todos: [
+            { content: "实现修改", status: "completed" },
+            { content: "运行构建", status: "blocked" },
+          ],
+        }),
+        textResult("Implementation complete; build is blocked.", "response-partial"),
+      ],
+      { planMode: "apply" },
+    );
+    const summary = await finishRun(current);
+    assert.equal(summary.outcome, "completed");
+    assert.equal(summary.taskStatus, "partial");
+  });
+
+  it("records apply_patch paths in the run summary", async () => {
+    const patch = [
+      "diff --git a/source.txt b/source.txt",
+      "--- a/source.txt",
+      "+++ b/source.txt",
+      "@@ -1 +1 @@",
+      "-stable content",
+      "\\ No newline at end of file",
+      "+updated content",
+      "\\ No newline at end of file",
+      "",
+    ].join("\n");
+    const current = await fixture(
+      [
+        toolResult("patch-source", "apply_patch", { patch }),
+        textResult("Patched source.txt.", "response-patched"),
+      ],
+      { planMode: "apply" },
+    );
+    const summary = await finishRun(current, ["edit_file"]);
+    assert.equal(summary.outcome, "completed");
+    assert.deepEqual(summary.touchedPaths, ["source.txt"]);
   });
 
   it("fails the run when checkpoint generation fails", async () => {

@@ -35,7 +35,7 @@ type ToolCallLike = {
 };
 
 const NETWORK_COMMAND_PATTERN =
-  /\b(curl|wget|ssh|scp|sftp|nc|ncat|telnet|ftp|git\s+(clone|fetch|pull|push)|npm\s+(install|add|publish|view|info|search|outdated)|pnpm\s+(install|add|publish|view|info|search|outdated)|yarn\s+(add|install|publish|info|outdated)|pip\s+(install|download|search)|brew\s+(install|update|upgrade))\b/i;
+  /\b(curl|wget|ssh|scp|sftp|nc|ncat|telnet|ftp|git\s+(clone|fetch|pull|push)|npm|npx|pnpm|yarn|corepack|bun|pip\s+(install|download|search)|brew\s+(install|update|upgrade))\b/i;
 const AMBIGUOUS_SHELL_PATTERN =
   /(\$\(|`|\beval\b|\bxargs\b|\bfind\b[^\n]*\s-exec\b|\b(bash|sh|zsh|fish)\s+-c\b|\b(node|python|python3|perl|ruby)\s+-[ec]\b)/i;
 const ABSOLUTE_PATH_PATTERN =
@@ -74,9 +74,15 @@ function addReason(reasons: SandboxBoundaryReason[], reason: SandboxBoundaryReas
 }
 
 function isWorkspaceTool(toolName: string) {
-  return ["list_dir", "search_files", "read_file", "write_file", "edit_file", "bash"].includes(
-    toolName,
-  );
+  return [
+    "list_dir",
+    "search_files",
+    "read_file",
+    "write_file",
+    "edit_file",
+    "apply_patch",
+    "bash",
+  ].includes(toolName);
 }
 
 function collectCommandPaths(command: string) {

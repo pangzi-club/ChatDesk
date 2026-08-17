@@ -2,7 +2,13 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { openai } from "@ai-sdk/openai";
-import { DEFAULT_WORKSPACE_ID, MAX_AGENT_STEPS, PLAN_USER_INPUT_TOOL_NAME } from "@chatdesk/shared";
+import {
+  DEFAULT_WORKSPACE_ID,
+  MAX_AGENT_STEPS,
+  PLAN_USER_INPUT_TOOL_NAME,
+  parseTodoList,
+  type TodoItem,
+} from "@chatdesk/shared";
 import {
   convertToModelMessages,
   createUIMessageStreamResponse,
@@ -56,12 +62,14 @@ import {
   PLAN_MAX_STEPS,
   ReadOnlyToolLoopTracker,
   ReadOnlyToolResultDeduplicator,
+  ToolFailureTracker,
 } from "./run-policy.ts";
 import {
   classifySandboxBoundary,
   reviewSandboxBoundary,
   type SandboxBoundaryAssessment,
 } from "./sandbox-boundary-reviewer.ts";
+import { runSandboxedShell } from "./sandbox-exec.ts";
 import { SandboxReviewLogStore } from "./sandbox-review-log.ts";
 import { withSseKeepAlive } from "./sse-keepalive.ts";
 import type { SessionStore } from "./store.ts";
@@ -102,6 +110,12 @@ type RunMetrics = {
   compactionCount: number;
   planWritten: boolean;
   userInputRequested: boolean;
+  failedToolCallCount: number;
+  truncatedToolResultCount: number;
+  latestTodos?: TodoItem[];
+  touchedPaths: Set<string>;
+  recoveryInstruction?: string;
+  bashObserved: boolean;
   usage?: ChatTokenUsage;
   forcedStopReason?: ChatRunStopReason;
   failureMessage?: string;
@@ -630,15 +644,27 @@ export class RunRegistry {
         compactionCount: 0,
         planWritten: false,
         userInputRequested: false,
+        failedToolCallCount: 0,
+        truncatedToolResultCount: 0,
+        touchedPaths: new Set(),
+        bashObserved: false,
       };
       const terminal: TerminalRunState = { observed: false, text: "" };
       const duplicateResults = new ReadOnlyToolResultDeduplicator();
       const loopTracker = new ReadOnlyToolLoopTracker();
+      const failureTracker = new ToolFailureTracker();
+      const failedExecutionToolCallIds = new Set<string>();
       let contextCompaction: ChatContextCompaction | undefined;
       let contextUsage: ChatContextUsage | undefined;
       let checkpoint = "";
       let currentPlanContent = activePlan?.content ?? "";
       const contextCompactionThreshold = resolveContextCompactionThreshold(model.inputContext);
+      const gitBaseline = await captureGitWorkspaceState(
+        effectiveCwd,
+        sandboxMode,
+        chatConfig.sandboxReadablePaths,
+        chatConfig.developerToolPaths,
+      );
       let invocationIndex = 0;
       let modelAttemptCount = 0;
       const activeModelCalls = new Map<
@@ -673,6 +699,10 @@ export class RunRegistry {
           duplicateToolCallCount: metrics.duplicateToolCallCount,
           compactionCount: metrics.compactionCount,
           planWritten: metrics.planWritten,
+          failedToolCallCount: metrics.failedToolCallCount,
+          truncatedToolResultCount: metrics.truncatedToolResultCount,
+          taskStatus: resolveTaskStatus(metrics.latestTodos),
+          touchedPaths: [...metrics.touchedPaths].sort(),
           planMode,
           startedAt: now,
           ...(metrics.forcedStopReason ? { stopReason: metrics.forcedStopReason } : {}),
@@ -832,17 +862,41 @@ export class RunRegistry {
           });
           publishProgress(policy.phase);
           let preparedMessages = stepMessages;
+          let bashWorkspaceInstruction = "";
+          if (metrics.bashObserved) {
+            bashWorkspaceInstruction = await buildBashWorkspaceInstruction({
+              cwd: effectiveCwd,
+              mode: sandboxMode,
+              readablePaths: chatConfig.sandboxReadablePaths,
+              developerToolPaths: chatConfig.developerToolPaths,
+              baseline: gitBaseline,
+              touchedPaths: metrics.touchedPaths,
+            });
+            metrics.bashObserved = false;
+          }
+          const policyInstructions = [
+            policy.instructions,
+            metrics.recoveryInstruction,
+            bashWorkspaceInstruction,
+          ]
+            .filter((value): value is string => Boolean(value?.trim()))
+            .join("\n");
+          metrics.recoveryInstruction = undefined;
           let preparedInstructions = checkpointInstructions({
             base: system,
             checkpoint,
             planContent: planMode === "plan" ? currentPlanContent : undefined,
-            policyInstructions: policy.instructions,
+            policyInstructions,
           });
           const estimatedTokensBefore = estimateAgentContextTokens(
             preparedMessages,
             preparedInstructions,
           );
-          if (estimatedTokensBefore > contextCompactionThreshold) {
+          const effectiveTokensBefore = Math.max(
+            estimatedTokensBefore,
+            contextUsage?.inputTokens ?? 0,
+          );
+          if (effectiveTokensBefore > contextCompactionThreshold) {
             publishProgress("compacting");
             try {
               if (planMode === "plan" && planId) {
@@ -868,7 +922,7 @@ export class RunRegistry {
                 base: system,
                 checkpoint,
                 planContent: planMode === "plan" ? currentPlanContent : undefined,
-                policyInstructions: policy.instructions,
+                policyInstructions,
               });
               const estimatedTokensAfter = estimateAgentContextTokens(
                 preparedMessages,
@@ -881,7 +935,7 @@ export class RunRegistry {
               contextCompaction = {
                 count: metrics.compactionCount,
                 stepNumber,
-                estimatedTokensBefore,
+                estimatedTokensBefore: effectiveTokensBefore,
                 estimatedTokensAfter,
               };
               this.events.publish({
@@ -940,8 +994,9 @@ export class RunRegistry {
           if (!event) return;
           const { callId, toolCall, toolExecutionMs, toolOutput } = event;
           const outcome = toolOutput?.type ?? "missing";
-          const failed = outcome === "tool-error";
+          const failed = outcome === "tool-error" || isFailedToolOutput(toolOutput);
           const toolError = toolOutput && "error" in toolOutput ? toolOutput.error : undefined;
+          if (failed) failedExecutionToolCallIds.add(toolCall.toolCallId);
           await logRunDiagnostic(failed ? "error" : "success", `工具 ${toolCall.toolName} 结束`, {
             callId,
             toolCallId: toolCall.toolCallId,
@@ -1005,6 +1060,46 @@ export class RunRegistry {
           if (toolCalls.some((toolCall) => toolCall?.toolName === PLAN_USER_INPUT_TOOL_NAME)) {
             metrics.userInputRequested = true;
           }
+          const resultsByCallId = new Map(
+            completedToolResults.map((toolResult) => [toolResult.toolCallId, toolResult]),
+          );
+          const presentToolCalls = toolCalls.filter(
+            (toolCall): toolCall is NonNullable<typeof toolCall> => toolCall !== undefined,
+          );
+          const failure = failureTracker.recordStep(
+            presentToolCalls.map((toolCall) => {
+              const toolResult = resultsByCallId.get(toolCall.toolCallId);
+              return {
+                toolName: toolCall.toolName,
+                input: toolResult?.input ?? toolCall.input,
+                failed:
+                  failedExecutionToolCallIds.has(toolCall.toolCallId) ||
+                  isFailedToolOutput(toolResult?.output),
+              };
+            }),
+          );
+          failedExecutionToolCallIds.clear();
+          metrics.failedToolCallCount = failure.totalFailureCount;
+          if (failure.recoveryRequired && !failure.shouldStop) {
+            metrics.recoveryInstruction =
+              "同一目标已连续失败两次。下一步必须先重新读取目标的最新状态，再改用不同方法；不得原样重试相同工具调用。";
+          }
+          if (failure.shouldStop) {
+            metrics.forcedStopReason = "tool-errors";
+            metrics.failureMessage = "工具连续失败，运行已进入受控收尾";
+            metrics.recoveryInstruction = undefined;
+          }
+          for (const toolResult of completedToolResults) {
+            if (isTruncatedToolOutput(toolResult.output)) metrics.truncatedToolResultCount += 1;
+            if (!isFailedToolOutput(toolResult.output)) {
+              collectTouchedPaths(metrics.touchedPaths, toolResult.toolName, toolResult.output);
+            }
+            if (toolResult.toolName === "bash") metrics.bashObserved = true;
+            if (toolResult.toolName === "todo_write") {
+              const todos = parseTodoList(toolResult.input);
+              if (todos) metrics.latestTodos = todos;
+            }
+          }
           const loop = loopTracker.recordStep(
             completedToolResults.map((toolResult) => ({
               toolName: toolResult.toolName,
@@ -1013,7 +1108,8 @@ export class RunRegistry {
             })),
           );
           metrics.duplicateToolCallCount = loopTracker.duplicateToolCallCount;
-          if (loop.loopDetected) metrics.forcedStopReason = "tool-loop";
+          if (loop.loopDetected && !metrics.forcedStopReason)
+            metrics.forcedStopReason = "tool-loop";
           if (usage.inputTokens !== undefined) {
             contextUsage = {
               inputTokens: usage.inputTokens,
@@ -1252,6 +1348,10 @@ export class RunRegistry {
           duplicateToolCallCount: metrics.duplicateToolCallCount,
           compactionCount: metrics.compactionCount,
           planWritten: metrics.planWritten,
+          failedToolCallCount: metrics.failedToolCallCount,
+          truncatedToolResultCount: metrics.truncatedToolResultCount,
+          taskStatus: resolveTaskStatus(metrics.latestTodos),
+          touchedPaths: [...metrics.touchedPaths].sort(),
         },
         startedAt,
       );
@@ -1322,6 +1422,10 @@ export class RunRegistry {
           duplicateToolCallCount: metrics.duplicateToolCallCount,
           compactionCount: metrics.compactionCount,
           planWritten: metrics.planWritten,
+          failedToolCallCount: metrics.failedToolCallCount,
+          truncatedToolResultCount: metrics.truncatedToolResultCount,
+          taskStatus: resolveTaskStatus(metrics.latestTodos),
+          touchedPaths: [...metrics.touchedPaths].sort(),
         },
         startedAt,
       );
@@ -1404,6 +1508,10 @@ export class RunRegistry {
         modelCallCount: summary.modelCallCount,
         toolCallCount: summary.toolCallCount,
         duplicateToolCallCount: summary.duplicateToolCallCount,
+        failedToolCallCount: summary.failedToolCallCount,
+        truncatedToolResultCount: summary.truncatedToolResultCount,
+        taskStatus: summary.taskStatus,
+        touchedPaths: summary.touchedPaths,
         compactionCount: summary.compactionCount,
         stopReason: summary.stopReason,
         durationMs: summary.durationMs,
@@ -1429,6 +1537,121 @@ function withRunDuration(summary: ChatRunSummary, startedAt: string): ChatRunSum
     startedAt,
     ...(durationMs === undefined ? {} : { durationMs }),
   };
+}
+
+type GitWorkspaceState = {
+  head: string;
+  statuses: Map<string, string>;
+};
+
+async function captureGitWorkspaceState(
+  cwd: string | undefined,
+  mode: SandboxMode,
+  readablePaths: string[],
+  developerToolPaths: string[],
+): Promise<GitWorkspaceState | undefined> {
+  if (!cwd?.trim()) return undefined;
+  try {
+    const result = await runSandboxedShell(
+      "git rev-parse --verify HEAD && git status --porcelain=v1 --untracked-files=all",
+      { cwd, mode, readablePaths, developerToolPaths },
+    );
+    if (!result.success) return undefined;
+    const [head = "", ...statusLines] = result.out.split("\n");
+    if (!head.trim()) return undefined;
+    const statuses = new Map<string, string>();
+    for (const line of statusLines.filter(Boolean)) {
+      const rawPath = line.slice(3).trim();
+      const filePath = rawPath.includes(" -> ")
+        ? (rawPath.split(" -> ").at(-1) ?? rawPath)
+        : rawPath;
+      statuses.set(filePath, line.slice(0, 2));
+    }
+    return { head: head.trim(), statuses };
+  } catch {
+    return undefined;
+  }
+}
+
+async function buildBashWorkspaceInstruction(options: {
+  cwd: string | undefined;
+  mode: SandboxMode;
+  readablePaths: string[];
+  developerToolPaths: string[];
+  baseline: GitWorkspaceState | undefined;
+  touchedPaths: Set<string>;
+}) {
+  if (!options.baseline) {
+    return "Bash 已执行，但运行开始时未能读取 Git HEAD/status 基线；最终回复需说明无法可靠归属 Bash 产生的文件变化。";
+  }
+  const current = await captureGitWorkspaceState(
+    options.cwd,
+    options.mode,
+    options.readablePaths,
+    options.developerToolPaths,
+  );
+  if (!current) {
+    return "Bash 已执行，但当前无法读取 Git HEAD/status；最终回复需说明无法可靠归属 Bash 产生的文件变化。";
+  }
+  const changed = new Set<string>();
+  for (const [filePath, status] of current.statuses) {
+    if (options.baseline.statuses.get(filePath) !== status && !options.touchedPaths.has(filePath)) {
+      changed.add(filePath);
+    }
+  }
+  for (const filePath of options.baseline.statuses.keys()) {
+    if (!current.statuses.has(filePath) && !options.touchedPaths.has(filePath))
+      changed.add(filePath);
+  }
+  const headChanged = current.head !== options.baseline.head;
+  if (!headChanged && changed.size === 0) {
+    return "Git 基线复核未发现无法归属于结构化写工具的 Bash 变更。";
+  }
+  const paths = [...changed].sort().slice(0, 20);
+  return `Git 基线复核发现可能由 Bash 产生且无法归属的变化${headChanged ? "（HEAD 已变化）" : ""}${paths.length > 0 ? `：${paths.join(", ")}` : ""}。最终回复必须明确提示用户。`;
+}
+
+function unwrapToolOutput(value: unknown): unknown {
+  if (!value || typeof value !== "object") return value;
+  const record = value as Record<string, unknown>;
+  if ("output" in record) return record.output;
+  if ("value" in record) return record.value;
+  return value;
+}
+
+function isFailedToolOutput(value: unknown) {
+  const output = unwrapToolOutput(value);
+  if (!output || typeof output !== "object") return false;
+  const record = output as Record<string, unknown>;
+  return (
+    record.success === false || (typeof record.error === "string" && record.error.trim().length > 0)
+  );
+}
+
+function isTruncatedToolOutput(value: unknown) {
+  const output = unwrapToolOutput(value);
+  return Boolean(
+    output && typeof output === "object" && (output as { truncated?: unknown }).truncated,
+  );
+}
+
+function collectTouchedPaths(paths: Set<string>, toolName: string, value: unknown) {
+  const unwrapped = unwrapToolOutput(value);
+  if (!unwrapped || typeof unwrapped !== "object") return;
+  const output = unwrapped as Record<string, unknown>;
+  if ((toolName === "write_file" || toolName === "edit_file") && typeof output.path === "string") {
+    paths.add(output.path);
+  }
+  if (toolName === "apply_patch" && Array.isArray(output.changedFiles)) {
+    for (const filePath of output.changedFiles) {
+      if (typeof filePath === "string" && filePath.trim()) paths.add(filePath);
+    }
+  }
+}
+
+function resolveTaskStatus(todos: TodoItem[] | undefined): ChatRunSummary["taskStatus"] {
+  if (!todos) return "unknown";
+  return todos.every((item) => item.status === "completed") ? "complete" : "partial";
 }
 
 function createToolApproval(options: {
@@ -1644,7 +1867,12 @@ function createSandboxEscalationHandler(options: {
 
 function isWorkspaceMutationTool(toolName: string, input?: unknown) {
   if (toolName === "git") return isGitMutation(input);
-  return toolName === "write_file" || toolName === "edit_file" || toolName === "bash";
+  return (
+    toolName === "write_file" ||
+    toolName === "edit_file" ||
+    toolName === "apply_patch" ||
+    toolName === "bash"
+  );
 }
 
 function isWorkspaceTool(toolName: string) {
@@ -1737,6 +1965,7 @@ function createWorkspaceToolsForInput(
       "read_file",
       "write_file",
       "edit_file",
+      "apply_patch",
       "git",
       "terminal",
       "bash",
@@ -1827,7 +2056,7 @@ function extractReviewInput(
   if (!toolCall?.input || typeof toolCall.input !== "object") return undefined;
   const input = toolCall.input as Record<string, unknown>;
   const fieldsByTool: Record<string, string[]> = {
-    list_dir: ["path"],
+    list_dir: ["path", "offset", "limit"],
     read_file: ["path"],
     search_files: ["path", "pattern", "query", "maxResults"],
     write_file: ["path"],

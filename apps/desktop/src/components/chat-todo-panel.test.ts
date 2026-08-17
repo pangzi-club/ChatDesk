@@ -84,6 +84,25 @@ describe("getLatestTodoState", () => {
     expect(state?.current?.status).toBe("pending");
   });
 
+  it("surfaces blocked work before pending work", () => {
+    const state = getLatestTodoState([
+      todoMessage("m1", [
+        {
+          state: "output-available",
+          input: {
+            todos: [
+              { content: "运行测试", status: "blocked" },
+              { content: "整理结果", status: "pending" },
+            ],
+          },
+        },
+      ]),
+    ]);
+
+    expect(state?.current?.status).toBe("blocked");
+    expect(state?.current?.content).toBe("运行测试");
+  });
+
   it("ignores streaming calls whose partial input prefix already looks valid", () => {
     const state = getLatestTodoState([
       todoMessage("m1", [{ state: "output-available", input: initialTodos }]),

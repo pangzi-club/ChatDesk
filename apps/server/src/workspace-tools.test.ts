@@ -100,7 +100,7 @@ describe("workspace bash approval permissions", () => {
     );
   });
 
-  it("retries xcrun denials with filesystem escape and git clone with network", () => {
+  it("keeps filesystem and network retry permissions separate", () => {
     const clone = { command: "git clone git@github.com:MkThingsHQ/mkagent.git" };
     assert.deepEqual(
       resolveBashRetryPermissions(
@@ -109,7 +109,7 @@ describe("workspace bash approval permissions", () => {
         [],
         new SandboxBlockedError("file system sandbox blocked open()"),
       ),
-      { allowOutside: true, allowNetwork: true },
+      { allowOutside: true, allowNetwork: false },
     );
     assert.deepEqual(
       resolveBashRetryPermissions(
@@ -119,6 +119,15 @@ describe("workspace bash approval permissions", () => {
         new SandboxBlockedError(
           "git2: failed to resolve address for github.com: nodename nor servname provided, or not known",
         ),
+      ),
+      { allowOutside: false, allowNetwork: true },
+    );
+    assert.deepEqual(
+      resolveBashRetryPermissions(
+        { command: "pnpm install > /tmp/pnpm.log" },
+        "/tmp/workspace",
+        [],
+        new SandboxBlockedError("ERR_PNPM_META_FETCH_FAIL fetch failed"),
       ),
       { allowOutside: false, allowNetwork: true },
     );

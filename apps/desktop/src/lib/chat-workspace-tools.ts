@@ -9,6 +9,7 @@ export const CHAT_WORKSPACE_TOOL_DISPLAY_NAMES: Record<string, string> = {
   read_file: "读取文件",
   write_file: "写入文件",
   edit_file: "编辑文件",
+  apply_patch: "应用补丁",
   git: "Git",
   bash: "终端 · Bash",
 };
@@ -21,6 +22,7 @@ export function createChatWorkspaceTools(
     | "read_file"
     | "write_file"
     | "edit_file"
+    | "apply_patch"
     | "git"
     | "terminal"
     | "all" = "all",
@@ -28,7 +30,11 @@ export function createChatWorkspaceTools(
   const tools: ToolSet = {
     list_dir: tool({
       description: "列出 workspace 内的文件与子目录。",
-      inputSchema: z.object({ path: z.string().optional() }),
+      inputSchema: z.object({
+        path: z.string().optional(),
+        offset: z.number().int().min(0).optional(),
+        limit: z.number().int().min(1).max(500).optional(),
+      }),
     }),
     search_files: tool({
       description:
@@ -56,6 +62,15 @@ export function createChatWorkspaceTools(
         newText: z.string(),
       }),
     }),
+    apply_patch: tool({
+      description: "使用 unified diff 原子修改一个或多个 workspace 文件。",
+      inputSchema: z.object({
+        patch: z
+          .string()
+          .min(1)
+          .max(256 * 1024),
+      }),
+    }),
     git: tool({
       description:
         "执行受控的本地 Git 操作：查看 status、创建当前 workspace 内的新分支或提交当前 workspace 的改动。不执行 push、pull 或其他远端操作。",
@@ -72,6 +87,7 @@ export function createChatWorkspaceTools(
     }),
   };
   if (pack === "all") return tools;
-  const names = pack === "terminal" ? ["bash"] : [pack];
+  const names =
+    pack === "terminal" ? ["bash"] : pack === "edit_file" ? ["edit_file", "apply_patch"] : [pack];
   return Object.fromEntries(names.map((name) => [name, tools[name]]));
 }

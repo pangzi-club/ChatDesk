@@ -7,6 +7,10 @@ export const PLAN_WARNING_STEP = 90;
 export const PLAN_FINALIZATION_STEP = 99;
 export const PLAN_MAX_STEPS = 100;
 export const READ_ONLY_LOOP_LIMIT = 3;
+export const RUN_WARNING_STEP = 60;
+export const CONSECUTIVE_FAILED_STEP_LIMIT = 3;
+export const TOTAL_TOOL_FAILURE_LIMIT = 8;
+export const SAME_TARGET_FAILURE_LIMIT = 2;
 
 const READ_ONLY_TOOLS = new Set(["list_dir", "search_files", "read_file"]);
 
@@ -89,6 +93,13 @@ export function decideRunStep(options: {
       };
     }
   }
+  if (options.planMode !== "plan" && step === RUN_WARNING_STEP) {
+    return {
+      phase: "working",
+      instructions:
+        "运行已到第 60 步。请立即收敛：停止扩展任务范围，优先完成当前目标、必要验证与清晰交接。",
+    };
+  }
   return {
     phase: "working",
     ...(options.planMode === "plan" ? { toolChoice: requiredToolChoice } : {}),
@@ -147,7 +158,13 @@ function normalizedPath(value: unknown, fallback: string) {
 
 function normalizeToolInput(toolName: string, input: unknown) {
   const value = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
-  if (toolName === "list_dir") return { path: normalizedPath(value.path, ".") };
+  if (toolName === "list_dir") {
+    return {
+      path: normalizedPath(value.path, "."),
+      offset: value.offset ?? 0,
+      limit: value.limit ?? 200,
+    };
+  }
   if (toolName === "read_file") {
     return {
       path: normalizedPath(value.path, "."),
@@ -252,6 +269,54 @@ export class ReadOnlyToolLoopTracker {
     return {
       loopDetected: repeatedFingerprint || this.consecutiveDuplicateSteps >= READ_ONLY_LOOP_LIMIT,
       duplicateCount,
+    };
+  }
+}
+
+function failureTarget(toolName: string, input: unknown) {
+  const value = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  if (typeof value.path === "string" && value.path.trim()) {
+    return `${toolName}:${normalizedPath(value.path, ".")}`;
+  }
+  if (toolName === "bash") {
+    return `${toolName}:${normalizedPath(value.cwd, ".")}:${typeof value.command === "string" ? value.command.trim() : ""}`;
+  }
+  return toolFingerprint(toolName, input);
+}
+
+export class ToolFailureTracker {
+  totalFailureCount = 0;
+  consecutiveFailedSteps = 0;
+  private lastFailureTarget = "";
+  private sameTargetFailureCount = 0;
+
+  recordStep(calls: Array<{ toolName: string; input: unknown; failed: boolean }>) {
+    let failedInStep = false;
+    let recoveryRequired = false;
+    for (const call of calls) {
+      if (!call.failed) continue;
+      failedInStep = true;
+      this.totalFailureCount += 1;
+      const target = failureTarget(call.toolName, call.input);
+      if (target === this.lastFailureTarget) this.sameTargetFailureCount += 1;
+      else {
+        this.lastFailureTarget = target;
+        this.sameTargetFailureCount = 1;
+      }
+      if (this.sameTargetFailureCount >= SAME_TARGET_FAILURE_LIMIT) recoveryRequired = true;
+    }
+    this.consecutiveFailedSteps = failedInStep ? this.consecutiveFailedSteps + 1 : 0;
+    if (!failedInStep) {
+      this.lastFailureTarget = "";
+      this.sameTargetFailureCount = 0;
+    }
+    return {
+      recoveryRequired,
+      shouldStop:
+        this.consecutiveFailedSteps >= CONSECUTIVE_FAILED_STEP_LIMIT ||
+        this.totalFailureCount >= TOTAL_TOOL_FAILURE_LIMIT,
+      totalFailureCount: this.totalFailureCount,
+      consecutiveFailedSteps: this.consecutiveFailedSteps,
     };
   }
 }

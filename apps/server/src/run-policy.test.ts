@@ -5,6 +5,7 @@ import {
   evaluateRunCompletion,
   ReadOnlyToolLoopTracker,
   ReadOnlyToolResultDeduplicator,
+  ToolFailureTracker,
   toolFingerprint,
 } from "./run-policy.ts";
 
@@ -110,6 +111,59 @@ describe("run policy", () => {
       { outcome: "stopped", stopReason: "user" },
     );
   });
+
+  it("warns apply runs at step 60", () => {
+    assert.match(
+      decideRunStep({ planMode: "apply", stepNumber: 59, planWritten: false }).instructions ?? "",
+      /第 60 步/,
+    );
+  });
+});
+
+describe("tool failure protection", () => {
+  it("requires recovery after two failures on the same target", () => {
+    const tracker = new ToolFailureTracker();
+    assert.equal(
+      tracker.recordStep([{ toolName: "edit_file", input: { path: "a.ts" }, failed: true }])
+        .recoveryRequired,
+      false,
+    );
+    assert.equal(
+      tracker.recordStep([{ toolName: "edit_file", input: { path: "a.ts" }, failed: true }])
+        .recoveryRequired,
+      true,
+    );
+  });
+
+  it("stops after three failed steps or eight total failures", () => {
+    const consecutive = new ToolFailureTracker();
+    for (let index = 0; index < 2; index += 1) {
+      assert.equal(
+        consecutive.recordStep([
+          { toolName: "bash", input: { command: `false ${index}` }, failed: true },
+        ]).shouldStop,
+        false,
+      );
+    }
+    assert.equal(
+      consecutive.recordStep([{ toolName: "bash", input: { command: "false 3" }, failed: true }])
+        .shouldStop,
+      true,
+    );
+
+    const cumulative = new ToolFailureTracker();
+    for (let index = 0; index < 7; index += 1) {
+      cumulative.recordStep([
+        { toolName: "bash", input: { command: `false ${index}` }, failed: true },
+      ]);
+      cumulative.recordStep([]);
+    }
+    assert.equal(
+      cumulative.recordStep([{ toolName: "bash", input: { command: "false 8" }, failed: true }])
+        .shouldStop,
+      true,
+    );
+  });
 });
 
 describe("read-only tool loop detection", () => {
@@ -117,6 +171,10 @@ describe("read-only tool loop detection", () => {
     assert.equal(
       toolFingerprint("read_file", { path: "./src/a.ts" }),
       toolFingerprint("read_file", { path: "src/a.ts", startLine: 1 }),
+    );
+    assert.notEqual(
+      toolFingerprint("list_dir", { path: ".", offset: 0 }),
+      toolFingerprint("list_dir", { path: ".", offset: 200 }),
     );
     const deduplicator = new ReadOnlyToolResultDeduplicator();
     const output = { path: "src/a.ts", content: "same" };

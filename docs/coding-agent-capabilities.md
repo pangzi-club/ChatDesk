@@ -2,7 +2,7 @@
 
 > 目标：回答「apps/server 现在做的事情是不是就是 Claude Code / Codex 做的事」，以及还差什么。
 > 参照系：Claude Code、Codex CLI、Cursor 这类通用编码 agent。
-> 基于 `apps/server/src/` 当前实现逐一对照（2026-08-15）。
+> 基于 `apps/server/src/` 当前实现逐一对照（2026-08-18）。
 
 ## 一、通用编码 Agent 的能力全景
 
@@ -38,17 +38,17 @@
 对照上面的全景，apps/server 已经覆盖的部分：
 
 ### ✅ 核心循环
-- **Agentic loop**：`run-registry.ts` 基于 Vercel AI SDK `streamText` + 工具调用 + `stopWhen(stepCountIs(100))`，支持多步工具调用直至完成；单次模型请求对可重试故障最多重试 3 次。
-- **任务规划**：`todo-tool.ts` 提供 `todo_write` 工具（全量替换语义，免审批），系统提示词约定使用时机（3+ 非平凡步骤）与更新节奏（每完成一步即更新）；前端 `chat-todo-panel.tsx` 从消息流派生最新进度，在输入框上方与 git pill 并排展示，hover 查看逐条状态。
+- **Agentic loop**：`run-registry.ts` 基于 Vercel AI SDK `streamText` + 工具调用 + `stopWhen(stepCountIs(100))`，支持多步工具调用直至完成；第 60 步提示收敛，同一目标连续失败两次要求重新读取并换方法，连续 3 个失败步骤或累计 8 次工具失败以 `tool-errors` 收尾。
+- **任务规划**：`todo-tool.ts` 提供 `todo_write` 工具（全量替换语义，免审批），支持 `pending` / `in_progress` / `completed` / `blocked`；必要验证无法执行时必须标记 `blocked`。前端从消息流派生最新进度，存在 blocked 或 pending 项的正常结束 run 显示为“部分完成”。
 - **中断/停止**：`AbortController`，`/runs/stop` 接口。
 - **流式输出**：UIMessage stream 双 tee（客户端流 + 服务端观察者），SSE 推送 `message.delta`。
 - **崩溃恢复**：`run-journal.ts` 在启动时恢复中断的 run 并标记 error。
 - **Plan Mode**：`/plan` 创建 session 级 `plan-<随机版本>.md`；plan mode 只允许读取 workspace 和 `plan_write`，计划通过 `plan.updated` SSE 实时刷新，确认后切换 apply。
 
 ### ✅ 环境感知
-- **文件工具**：`workspace-tools.ts` 提供 list_dir / read_file / write_file / edit_file / search_files。受限模式默认限制在 workspace 或显式只读白名单内，读取单文件上限为 512KB。
+- **文件工具**：`workspace-tools.ts` 提供 list_dir / read_file / write_file / edit_file / apply_patch / search_files。`list_dir` 默认返回 200 项、最多 500 项并支持 offset 分页；`read_file` 单次最多返回 64 KiB；`apply_patch` 最大 256 KiB，先检查全部 hunk 再原子应用。
 - **文件搜索**：`file-search.ts` 优先调用 ripgrep，支持 glob、大小写不敏感的固定文本搜索、命中行摘要和 `.gitignore`；没有 `rg` 时回退到 Git 文件清单与内置遍历。只启用终端而未启用 `search_files` 时，模型可直接通过 Bash 使用 `rg`。
-- **终端**：`bash` 工具，120s 超时，2MB 输出截断。
+- **终端**：`bash` 工具，120s 超时，macOS 使用支持 `pipefail` 的 shell；输出采用 128 KiB 固定头尾缓冲，超限只标记截断而不终止命令。
 - **浏览器**：`client-tools.ts` + `browser-runtime.ts`，隔离的 headless Chromium session，open / screenshot / click / eval / close 全套。`browser_screenshot` 把截图写入当前聊天 session 的 `attachments/`（与用户上传、生成图同一目录），落盘前走统一 Sharp 压缩，输出可能是 WebP。开发态用 `import.meta.url` / 仓库相对路径回退到源码 `browser-worker.mjs`；打包态由 Tauri 注入普通 JS worker 路径，Chat Server 使用共享 Node 的 `process.execPath` 启动，缺失则启动失败。
 
 ### ✅ 上下文与记忆
@@ -70,13 +70,14 @@
 |---|---|---|---|
 | `todo_write` | 全量更新任务步骤与状态 | Apply 模式、模型支持工具 | 服务端内存工具，不访问 workspace |
 | `plan_write` | 写入当前 session 的计划内容 | Plan 模式且存在 active plan | 服务端写入计划存储，不开放普通写文件工具 |
-| `list_dir` | 列出 `path` 下的文件和目录 | 已选择 workspace，并启用对应工具包 | 结构化文件 helper；受沙箱和读取白名单限制 |
+| `list_dir` | 列出 `path` 下的文件和目录，支持 `offset` / `limit` | 已选择 workspace，并启用对应工具包 | 默认 200、最大 500；返回总数、截断与下一页 offset |
 | `search_files` | 用 `pattern` glob 搜文件名，或用 `query` 搜内容；返回路径及首个命中行 | 已选择 workspace，并启用对应工具包 | 优先 ripgrep，内置实现回退；遵循 Git ignore，结果上限 500 |
-| `read_file` | 读取 `path` 文本内容 | 已选择 workspace，并启用对应工具包 | 结构化文件 helper；单文件上限 512KB |
+| `read_file` | 读取 `path` 文本内容 | 已选择 workspace，并启用对应工具包 | 结构化文件 helper；单次输出上限 64 KiB |
 | `write_file` | 创建或完整覆盖 `path` | Apply 模式、已选择 workspace，并启用对应工具包 | 写操作进入沙箱审批路径 |
 | `edit_file` | 对 `path` 做唯一 `oldText` → `newText` 替换 | Apply 模式、已选择 workspace，并启用对应工具包 | 写操作进入沙箱审批路径；拒绝 0 次或多次匹配 |
+| `apply_patch` | 应用最大 256 KiB 的 unified diff | 启用“编辑文件”工具包 | stdin 传给 helper；拒绝绝对路径、`..`、`.git`、binary patch；全部 hunk 检查通过后应用 |
 | `git` | 查看 status、创建 workspace 内分支、提交 workspace 改动 | Apply 模式、已选择 workspace，并启用 Git 工具包 | 受限 Shell 执行；创建分支和 commit 进入沙箱审批路径；不执行 push/pull |
-| `bash` | 在 workspace 中执行 `command` | 已选择 workspace，并启用“终端” | 默认 120 秒、2MB 输出上限；权限由 ask/auto/full 模式决定 |
+| `bash` | 在 workspace 中执行 `command` | 已选择 workspace，并启用“终端” | 默认 120 秒、128 KiB 头尾输出；返回 success/timedOut/truncated/totalOutputBytes；权限由 ask/auto/full 模式决定 |
 | `browser_open` | 打开 URL，创建或复用 browser session | 启用 Browser，且已配置 browser worker | 隔离 Headless Chromium，不继承用户登录态 |
 | `browser_screenshot` | 截取 browser session 页面，压缩后落入当前聊天 session 的 attachments | 启用 Browser，已有 session | Headless Chromium；内部写入 `sessions/<id>/attachments/`，可能是 WebP |
 | `browser_click` | 按 CSS selector 点击页面元素 | 启用 Browser，已有 session | Headless Chromium |
@@ -94,11 +95,12 @@
 
 ### ✅ 安全与审批
 - **三层沙箱模式**：`sandboxMode` 支持 `ask`（工作区内读操作直接执行，写入/越界暂停等待用户批准）、`auto`（先在沙箱内执行，仅实际被拦截时交 reviewer 判断）、`full`（不使用 Seatbelt，允许外部路径）。
-- **Seatbelt 沙箱执行**：`sandbox-exec.ts` 使用 macOS Seatbelt `(deny default)` profile，限制工作区外写入和网络访问；非登录 shell（`-c`）、最小化环境变量、独立 `HOME` 和缓存目录。
+- **Seatbelt 沙箱执行**：`sandbox-exec.ts` 使用 macOS Seatbelt `(deny default)` profile，限制工作区外写入和网络访问；macOS 通过 zsh `pipefail` 执行，最小化环境变量，并为每个 workspace 建立稳定且真实存在的临时、Corepack、pnpm 和编译缓存目录。
 - **工具审批**：`createToolApproval` 在 AI SDK `toolApproval` 回调中实现交互式审批，区分 workspace 工具与非 workspace 工具，支持已批准的 toolCallId 重放。
 - **边界 Reviewer**：`sandbox-boundary-reviewer.ts` 对越界操作做 AI 辅助判断，`auto` 模式下可自动批准或拒绝沙箱拦截后的重试。
 - **审批日志**：`sandbox-review-log.ts` 记录每次审批决策（approver/reviewer/user-approval）、原因和错误信息。
-- **结构化文件沙箱 worker**：`runSandboxedFile` 通过独立子进程执行 `list_dir`/`read_file`/`search_files`/`write_file`/`edit_file`，打包后解析 `chat-server-sandbox` 二进制；成功解析结构化响应后仅依据 `blocked` 字段判断沙箱拒绝，避免把文件内容中的安全关键词误判为控制信号。
+- **结构化文件沙箱 worker**：`runSandboxedFile` 通过独立子进程执行 `list_dir`/`read_file`/`search_files`/`write_file`/`edit_file`/`apply_patch`，打包后解析 `chat-server-sandbox` 二进制；成功解析结构化响应后仅依据 `blocked` 字段判断沙箱拒绝，避免把文件内容中的安全关键词误判为控制信号。
+- **运行摘要**：`planWritten` 只表示“正式计划已写入”，`duplicateToolCallCount` 只统计“重复只读调用”；摘要还可保存失败工具数、截断结果数、任务状态和结构化写工具触达的路径。
 - **额外读取目录白名单**：Settings > 沙箱页面可配置 `sandboxReadablePaths`，加入 Seatbelt 只读范围。
 
 ### ✅ 用量统计

@@ -184,7 +184,9 @@ export function getMessageContextUsage(message: UIMessage): ChatContextUsage | u
 export function getMessageRunStateLabel(message: UIMessage) {
   if (message.role !== "assistant") return undefined;
   const summary = (message.metadata as ChatMessageMetadata | undefined)?.runSummary;
-  if (summary?.outcome === "completed") return "已完成";
+  if (summary?.outcome === "completed") {
+    return summary.taskStatus === "partial" ? "部分完成" : "已完成";
+  }
   if (summary?.outcome === "awaiting-user") return "等待你的回复";
   if (summary?.outcome === "stopped") return "已停止";
   if (summary?.outcome === "error") return "未完整结束";
@@ -205,6 +207,8 @@ export function getMessageRunErrorLabel(message: UIMessage) {
       return "上下文检查点生成失败，运行已停止。";
     case "context-limit":
       return "模型上下文或输出长度达到限制，运行未完整结束。";
+    case "tool-errors":
+      return "工具连续失败，运行已受控收尾。";
     case "server-restarted":
       return "Chat Server 重启中断了本次运行。";
     default:

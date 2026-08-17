@@ -18,6 +18,7 @@ describe("workspace tool selection", () => {
     assert.deepEqual(selectWorkspaceToolNames(["terminal", "read_file", "edit_file"]), [
       "read_file",
       "edit_file",
+      "apply_patch",
       "bash",
     ]);
   });

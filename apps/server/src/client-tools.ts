@@ -41,7 +41,11 @@ function createBrowserScreenshotTool(options?: ClientToolOptions) {
 const clientTools: ToolSet = {
   list_dir: tool({
     description: "列出当前 workspace 内的文件与子目录。",
-    inputSchema: z.object({ path: z.string().optional() }),
+    inputSchema: z.object({
+      path: z.string().optional(),
+      offset: z.number().int().min(0).optional(),
+      limit: z.number().int().min(1).max(500).optional(),
+    }),
   }),
   search_files: tool({
     description:
@@ -67,6 +71,15 @@ const clientTools: ToolSet = {
       path: z.string().min(1),
       oldText: z.string().min(1),
       newText: z.string(),
+    }),
+  }),
+  apply_patch: tool({
+    description: "使用 unified diff 原子修改一个或多个 workspace 文件。",
+    inputSchema: z.object({
+      patch: z
+        .string()
+        .min(1)
+        .max(256 * 1024),
     }),
   }),
   bash: tool({

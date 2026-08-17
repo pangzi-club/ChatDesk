@@ -6,6 +6,7 @@ export const TODO_TOOL_INSTRUCTIONS = [
   "任务规划规则：遇到可拆分为 3 个及以上非平凡步骤的任务（多文件修改、重构、调试流程、部署步骤等）时，先调用 todo_write 建立步骤清单，再开始执行。",
   "更新节奏：开始某一步时把该条标记为 in_progress（全程最多一条 in_progress）；做完一步立即调用 todo_write 将其更新为 completed，并把下一条置为 in_progress。",
   "每完成一条必须立即单独调用一次更新，不要把多步进度合并成一次更新，也不要只在任务收尾时才更新。",
+  "测试、构建、格式化或其他必要步骤无法执行时，将该条标记为 blocked，并在最终回复说明原因；不得标记为 completed。",
   "不要为单步即可完成、纯问答或只需一次工具调用的简单任务使用 todo_write。",
 ].join("\n");
 
@@ -26,6 +27,7 @@ export function createTodoTool() {
       "使用时机：任务可拆分为 3 个及以上非平凡步骤时先建立清单；单步或纯问答任务不要使用。",
       "更新节奏：开始某一步时将其标记为 in_progress（全程最多一条）；做完一步立即更新为 completed，并把下一条置为 in_progress。",
       "每完成一条必须立即单独更新一次，不得把多步进度合并成一次更新。",
+      "无法执行的必要步骤必须标记为 blocked，不能标记为 completed。",
     ].join(""),
     inputSchema: z.object({
       todos: z.array(todoItemSchema).min(1).max(30).describe("完整的 todo 步骤列表"),
@@ -37,12 +39,14 @@ export function createTodoTool() {
       }
       const completed = todos.filter((item) => item.status === "completed").length;
       const pending = todos.filter((item) => item.status === "pending").length;
+      const blocked = todos.filter((item) => item.status === "blocked").length;
       const allDone = completed === todos.length;
       return {
         total: todos.length,
         completed,
         inProgress: inProgressCount,
         pending,
+        blocked,
         ...(allDone && todos.length >= 3
           ? {
               note: "所有步骤已完成。收尾前请确认已运行必要的验证（测试、构建、格式化等）；若尚未验证，先补验证再总结。",

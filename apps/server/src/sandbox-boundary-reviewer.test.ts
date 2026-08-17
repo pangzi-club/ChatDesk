@@ -57,6 +57,14 @@ describe("sandbox boundary classifier", () => {
     assert.deepEqual(result.reasons, ["network", "external-path"]);
   });
 
+  it("preflights package-manager commands as potentially networked", () => {
+    for (const command of ["pnpm check", "npm test", "yarn lint", "corepack pnpm test"]) {
+      const result = classifySandboxBoundary({ toolName: "bash", input: { command } }, workspace);
+      assert.equal(result.requiresReview, true, command);
+      assert.deepEqual(result.reasons, ["network"], command);
+    }
+  });
+
   it("flags read-only Bash inspection of external files", () => {
     const result = classifySandboxBoundary(
       {

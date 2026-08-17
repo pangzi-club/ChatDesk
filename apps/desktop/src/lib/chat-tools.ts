@@ -58,7 +58,7 @@ export const CHAT_TOOL_PACKS: ChatToolPackMeta[] = [
     id: item.id,
     label: item.label,
     category: "development" as const,
-    toolNames: [item.id],
+    toolNames: item.id === "edit_file" ? ["edit_file", "apply_patch"] : [item.id],
     requiresWorkspace: true,
     description: item.description,
     examples: [item.description],

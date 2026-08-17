@@ -3,6 +3,7 @@ import { readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { type ToolSet, tool } from "ai";
 import { z } from "zod";
+import { buildEditFailureMessage } from "./file-edit.ts";
 import { type ReadFileOptions, type ReadFileResult, readTextFileRange } from "./file-read.ts";
 import { type FileSearchResult, MAX_SEARCH_RESULTS, searchWorkspaceFiles } from "./file-search.ts";
 import { buildGitToolCommand, normalizeGitToolInput } from "./git-tools.ts";
@@ -19,6 +20,9 @@ import {
 } from "./sandbox-exec.ts";
 
 const SKIPPED_DIRECTORIES = new Set([".git", "node_modules", "target", "dist"]);
+const DEFAULT_LIST_LIMIT = 200;
+const MAX_LIST_LIMIT = 500;
+const MAX_PATCH_BYTES = 256 * 1024;
 
 type SandboxEscalationHandler = (toolCall: {
   toolName: string;
@@ -35,6 +39,13 @@ export type ReadOnlyToolResultHandler = (
 type DirectoryResult = {
   path: string;
   entries: Array<{ name: string; path: string; kind: "dir" | "file" | "other" }>;
+  totalEntries: number;
+  truncated: boolean;
+  nextOffset?: number;
+};
+type ApplyPatchResult = {
+  changedFiles: string[];
+  stats: Array<{ path: string; additions: number | null; deletions: number | null }>;
 };
 export type WorkspaceToolPreflight =
   | { status: "ok"; result: unknown }
@@ -66,9 +77,12 @@ export function resolveBashRetryPermissions(
 ) {
   const classified = resolveApprovedBashPermissions(input, workspace, readablePaths, true);
   const output = error instanceof Error ? error.message : String(error);
+  if (isNetworkSandboxDenial(output)) {
+    return { allowOutside: false, allowNetwork: true };
+  }
   return {
     allowOutside: classified.allowOutside || isFilesystemSandboxDenial(output),
-    allowNetwork: classified.allowNetwork || isNetworkSandboxDenial(output),
+    allowNetwork: false,
   };
 }
 
@@ -83,10 +97,18 @@ export async function preflightWorkspaceTool(options: {
   const readablePaths = options.readablePaths ?? [];
   try {
     if (options.toolName === "list_dir") {
-      const input = options.input as { path?: string };
+      const input = options.input as { path?: string; offset?: number; limit?: number };
       return {
         status: "ok",
-        result: await listDirectory(options.cwd, input.path, options.mode, false, readablePaths),
+        result: await listDirectory(
+          options.cwd,
+          input.path,
+          options.mode,
+          false,
+          readablePaths,
+          input.offset,
+          input.limit,
+        ),
       };
     }
     if (options.toolName === "read_file") {
@@ -238,6 +260,8 @@ async function listDirectory(
   mode: SandboxMode,
   allowOutside = false,
   readablePaths: string[] = [],
+  offset = 0,
+  limit = DEFAULT_LIST_LIMIT,
 ): Promise<DirectoryResult> {
   const root = rootPath(cwd);
   const target = resolveReadableTarget(
@@ -249,7 +273,7 @@ async function listDirectory(
   );
   if (mode !== "full" && !allowOutside) {
     const result = await runSandboxedFile(
-      { operation: "list_dir", workspace: root, path: target, readablePaths },
+      { operation: "list_dir", workspace: root, path: target, offset, limit, readablePaths },
       { mode },
     );
     if (result.sandboxBlocked) throw new SandboxBlockedError(result.error);
@@ -257,26 +281,34 @@ async function listDirectory(
     return result.result as DirectoryResult;
   }
   const entries = await readdir(target, { withFileTypes: true });
+  const normalizedOffset = Math.max(0, offset);
+  const normalizedLimit = Math.min(MAX_LIST_LIMIT, Math.max(1, limit));
+  const visibleEntries = entries
+    .filter((entry) => {
+      if (!SKIPPED_DIRECTORIES.has(entry.name)) return true;
+      const readableRoots = resolveReadableRoots(readablePaths);
+      const entryPath = path.resolve(target, entry.name);
+      return readableRoots.some(
+        (directory) => entryPath === directory || entryPath.startsWith(`${directory}${path.sep}`),
+      );
+    })
+    .map((entry) => ({
+      name: entry.name,
+      path: displayPath(root, path.join(target, entry.name)),
+      kind: (entry.isDirectory() ? "dir" : entry.isFile() ? "file" : "other") as
+        | "dir"
+        | "file"
+        | "other",
+    }))
+    .sort((a, b) => a.path.localeCompare(b.path));
+  const pagedEntries = visibleEntries.slice(normalizedOffset, normalizedOffset + normalizedLimit);
+  const nextOffset = normalizedOffset + pagedEntries.length;
   return {
     path: displayPath(root, target),
-    entries: entries
-      .filter((entry) => {
-        if (!SKIPPED_DIRECTORIES.has(entry.name)) return true;
-        const readableRoots = resolveReadableRoots(readablePaths);
-        const entryPath = path.resolve(target, entry.name);
-        return readableRoots.some(
-          (directory) => entryPath === directory || entryPath.startsWith(`${directory}${path.sep}`),
-        );
-      })
-      .map((entry) => ({
-        name: entry.name,
-        path: displayPath(root, path.join(target, entry.name)),
-        kind: (entry.isDirectory() ? "dir" : entry.isFile() ? "file" : "other") as
-          | "dir"
-          | "file"
-          | "other",
-      }))
-      .sort((a, b) => a.path.localeCompare(b.path)),
+    entries: pagedEntries,
+    totalEntries: visibleEntries.length,
+    truncated: nextOffset < visibleEntries.length,
+    nextOffset: nextOffset < visibleEntries.length ? nextOffset : undefined,
   };
 }
 
@@ -350,9 +382,13 @@ export function createWorkspaceTools(
   const tools: ToolSet = {
     list_dir: tool({
       description: `列出文件与子目录。${pathScope}`,
-      inputSchema: z.object({ path: z.string().optional() }),
-      execute: async ({ path: relativePath }, { toolCallId }) => {
-        const input = { path: relativePath };
+      inputSchema: z.object({
+        path: z.string().optional(),
+        offset: z.number().int().min(0).optional(),
+        limit: z.number().int().min(1).max(MAX_LIST_LIMIT).optional(),
+      }),
+      execute: async ({ path: relativePath, offset, limit }, { toolCallId }) => {
+        const input = { path: relativePath, offset, limit };
         const preflight = consumePreflight(preflightResults, toolCallId, approvedToolCallIds);
         if (preflight) {
           const output = await (resolvePreflight(preflight) as Promise<DirectoryResult>);
@@ -365,6 +401,8 @@ export function createWorkspaceTools(
             mode,
             approvedToolCallIds.has(toolCallId),
             readablePaths,
+            offset,
+            limit,
           );
           return onReadOnlyToolResult?.("list_dir", input, output, toolCallId) ?? output;
         } catch (error) {
@@ -372,7 +410,7 @@ export function createWorkspaceTools(
             toolName: "list_dir",
             toolCallId,
             input,
-            retry: () => listDirectory(cwd, relativePath, mode, true, readablePaths),
+            retry: () => listDirectory(cwd, relativePath, mode, true, readablePaths, offset, limit),
           });
           return onReadOnlyToolResult?.("list_dir", input, output, toolCallId) ?? output;
         }
@@ -527,8 +565,7 @@ export function createWorkspaceTools(
           }
           const content = await readFile(target, "utf8");
           const count = content.split(oldText).length - 1;
-          if (count !== 1)
-            throw new Error(count === 0 ? "未找到要替换的文本" : "oldText 必须只匹配一次");
+          if (count !== 1) throw new Error(buildEditFailureMessage(content, oldText, count));
           await writeFile(target, content.replace(oldText, newText), "utf8");
           return { path: path.relative(root, target), changed: true };
         };
@@ -542,6 +579,27 @@ export function createWorkspaceTools(
             retry: () => edit(true),
           });
         }
+      },
+    }),
+    apply_patch: tool({
+      description: `应用 unified diff，可原子修改多个 workspace 文件。最大 256 KiB；不支持绝对路径、..、.git 或 binary patch。${pathScope}`,
+      inputSchema: z.object({
+        patch: z
+          .string()
+          .min(1)
+          .refine((value) => Buffer.byteLength(value) <= MAX_PATCH_BYTES, {
+            message: "patch 不能超过 256 KiB",
+          }),
+      }),
+      execute: async ({ patch }) => {
+        const root = rootPath(cwd);
+        const result = await runSandboxedFile(
+          { operation: "apply_patch", workspace: root, patch },
+          { mode },
+        );
+        if (result.sandboxBlocked) throw new SandboxBlockedError(result.error);
+        if (!result.result) throw new Error(result.error);
+        return result.result as ApplyPatchResult;
       },
     }),
     git: tool({
@@ -592,12 +650,12 @@ export function createWorkspaceTools(
       }),
       execute: async ({ command, cwd: requestedCwd }, { toolCallId }) => {
         const input = { command, cwd: requestedCwd };
-        const approvedPermissions = resolveApprovedBashPermissions(
-          input,
-          cwd,
-          readablePaths,
-          approvedToolCallIds.has(toolCallId),
-        );
+        const approved = approvedToolCallIds.has(toolCallId);
+        const approvedPreflight = toolCallId ? preflightResults.get(toolCallId) : undefined;
+        const approvedPermissions =
+          approved && approvedPreflight?.status === "sandbox-blocked"
+            ? resolveBashRetryPermissions(input, cwd, readablePaths, approvedPreflight.error)
+            : resolveApprovedBashPermissions(input, cwd, readablePaths, approved);
         const run = async (permissions: { allowOutside: boolean; allowNetwork: boolean }) => {
           const commandCwd = resolveCommandCwd(cwd, requestedCwd, mode, permissions.allowOutside);
           const result = await runSandboxedShell(command, {

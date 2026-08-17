@@ -22,16 +22,17 @@ ChatDesk 按以下优先级确定模型输入窗口：
 自动压缩阈值按以下公式计算：
 
 ```text
-min(floor(contextWindow * 0.75), 100,000)
+min(floor(contextWindow * 0.75), 80,000)
 ```
 
-因此，未知模型按 128K 窗口处理，并在估算消息上下文达到 96K 时触发；256K 或 1M
-窗口的模型都在 100K 触发。
+因此，未知模型和更大窗口模型都最晚在 80K 触发；小于约 106K 的模型仍按窗口的 75%
+触发。
 
 ## 压缩规则
 
 Chat Server 在 `streamText.prepareStep` 中检查将发送给当前模型步骤的 `ModelMessage[]`。
-消息 token 数使用 `JSON.stringify(messages).length / 4` 取整估算。超过阈值时调用 AI SDK
+消息 token 数使用 `JSON.stringify(messages).length / 4` 取整估算，并与上一轮供应商返回的实际
+`inputTokens` 取较大值。超过阈值时调用 AI SDK
 的 `pruneMessages`：
 
 - 删除所有 assistant reasoning 内容；
@@ -76,5 +77,5 @@ provider、model 和 token usage 持久化路径。
 
 当前估算只计算 `prepareStep` 中的消息，不包含 system prompt、工具 schema 或供应商特有的
 tokenizer 差异。上下文弹窗中最近一次 `inputTokens` 是供应商返回的实际用量，两者口径不同。
-75% 阈值和 100K 上限为 system prompt、工具定义、输出与估算误差保留空间，但不能代替供应商
+75% 阈值和 80K 上限为 system prompt、工具定义、输出与估算误差保留空间，但不能代替供应商
 的精确 tokenizer。第一版只剪枝 reasoning 和工具数据，不对早期自然语言对话生成摘要。

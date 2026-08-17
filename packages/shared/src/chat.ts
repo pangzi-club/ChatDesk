@@ -227,6 +227,7 @@ export type ChatTokenUsage = {
 
 export const DEFAULT_MODEL_CONTEXT_WINDOW = 128_000;
 export const CONTEXT_COMPACTION_RATIO = 0.75;
+export const MAX_CONTEXT_COMPACTION_TOKENS = 80_000;
 
 export type ChatRunOutcome = "completed" | "awaiting-user" | "stopped" | "error";
 export type ChatRunStopReason =
@@ -236,8 +237,10 @@ export type ChatRunStopReason =
   | "incomplete-response"
   | "checkpoint-failed"
   | "context-limit"
+  | "tool-errors"
   | "server-restarted";
 export type ChatRunPhase = "working" | "compacting" | "finalizing";
+export type ChatTaskStatus = "complete" | "partial" | "unknown";
 
 export type ChatRunSummary = {
   runId: string;
@@ -249,6 +252,10 @@ export type ChatRunSummary = {
   duplicateToolCallCount: number;
   compactionCount: number;
   planWritten: boolean;
+  failedToolCallCount?: number;
+  truncatedToolResultCount?: number;
+  taskStatus?: ChatTaskStatus;
+  touchedPaths?: string[];
   startedAt?: string;
   durationMs?: number;
 };
@@ -279,7 +286,10 @@ export function resolveModelContextWindow(inputContext: number | undefined) {
 }
 
 export function resolveContextCompactionThreshold(inputContext: number | undefined) {
-  return Math.floor(resolveModelContextWindow(inputContext) * CONTEXT_COMPACTION_RATIO);
+  return Math.min(
+    MAX_CONTEXT_COMPACTION_TOKENS,
+    Math.floor(resolveModelContextWindow(inputContext) * CONTEXT_COMPACTION_RATIO),
+  );
 }
 
 export const DEVELOPMENT_TOOL_NAMES = [
@@ -370,7 +380,7 @@ export type RunStartInput = {
 
 export const TODO_TOOL_NAME = "todo_write";
 
-export const TODO_STATUSES = ["pending", "in_progress", "completed"] as const;
+export const TODO_STATUSES = ["pending", "in_progress", "completed", "blocked"] as const;
 
 export type TodoStatus = (typeof TODO_STATUSES)[number];
 

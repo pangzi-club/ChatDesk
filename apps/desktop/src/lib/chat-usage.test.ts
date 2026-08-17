@@ -70,6 +70,16 @@ describe("run state labels", () => {
     expect(getMessageRunStateLabel(message)).toBe("等待你的回复");
   });
 
+  it("does not present pending or blocked todo work as fully complete", () => {
+    const message = {
+      id: "partial-run",
+      role: "assistant",
+      parts: [{ type: "text", text: "partial" }],
+      metadata: { runSummary: { outcome: "completed", taskStatus: "partial" } },
+    } as UIMessage;
+    expect(getMessageRunStateLabel(message)).toBe("部分完成");
+  });
+
   it("explains a persisted checkpoint failure", () => {
     const message = {
       id: "run-error",
@@ -80,6 +90,16 @@ describe("run state labels", () => {
       },
     } as UIMessage;
     expect(getMessageRunErrorLabel(message)).toBe("上下文检查点生成失败，运行已停止。");
+  });
+
+  it("explains a tool-error circuit breaker", () => {
+    const message = {
+      id: "tool-error-run",
+      role: "assistant",
+      parts: [{ type: "text", text: "partial" }],
+      metadata: { runSummary: { outcome: "error", stopReason: "tool-errors" } },
+    } as UIMessage;
+    expect(getMessageRunErrorLabel(message)).toBe("工具连续失败，运行已受控收尾。");
   });
 });
 

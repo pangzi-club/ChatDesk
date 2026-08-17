@@ -182,7 +182,8 @@ function getChatToolIcon(toolName: string): LucideIcon {
   if (toolName === "bash") return Terminal;
   if (toolName === "list_dir") return Folder;
   if (toolName === "read_file") return FileText;
-  if (toolName === "write_file" || toolName === "edit_file") return FilePenLine;
+  if (toolName === "write_file" || toolName === "edit_file" || toolName === "apply_patch")
+    return FilePenLine;
   if (toolName === "search_files" || toolName === "web_search") return Search;
   if (toolName === "browser_open" || toolName === "browser_close") return Globe2;
   if (toolName === "browser_click") return MousePointerClick;
@@ -211,7 +212,19 @@ function isToolCallRunning(call: ChatToolCallCardProps) {
 }
 
 function getToolCallError(call: ChatToolCallCardProps) {
-  return call.errorText || extractToolOutputError(call.output);
+  if (call.errorText) return call.errorText;
+  const outputError = extractToolOutputError(call.output);
+  if (outputError) return outputError;
+  if (call.toolName === "bash" && call.output && typeof call.output === "object") {
+    const result = call.output as { success?: unknown; code?: unknown; timedOut?: unknown };
+    if (result.success === false) {
+      if (result.timedOut === true) return "命令执行超时";
+      return typeof result.code === "number"
+        ? `命令执行失败（退出码 ${result.code}）`
+        : "命令执行失败";
+    }
+  }
+  return undefined;
 }
 
 function isToolCallFailed(call: ChatToolCallCardProps) {

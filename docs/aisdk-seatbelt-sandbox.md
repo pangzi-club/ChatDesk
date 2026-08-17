@@ -33,6 +33,7 @@ Agent 得到的是「工具调用失败」或「命令被拒绝」等明确结�
 - `list_dir`：列目录
 - `read_file`：读文本
 - `write_file`：创建或覆盖写入
+- `apply_patch`：检查并原子应用 unified diff
 
 每个工具都有明确的输入 Schema 和用途说明。模型只能通过这些入口访问本地资源；未注册的能力，对模型而言并不存在。与直接提供脚本执行环境相比，这种方式的权限边界更清晰，也便于在界面中展示「正在读取」或「正在写入」等状态。
 
@@ -87,7 +88,9 @@ Agent 得到的是「工具调用失败」或「命令被拒绝」等明确结�
 
 权限选择保存为 Chat Server 的全局设置，并在新建、切换会话或重新打开应用时沿用；会话记录中的旧 `sandboxMode` 字段只用于兼容历史数据，不再覆盖全局选择。
 
-这里的“Approve for me”不是“所有权限自动放开”。工具会先在当前沙箱中执行；只有明确收到沙箱拒绝时，才把该次请求交给 reviewer 做一次性判断。普通退出码失败、参数错误、仓库不存在或依赖缺失不会触发提权重试；reviewer 拒绝或自身失败时返回 `sandbox_blocked`（“被沙箱拦截了”）。Bash 把两类结果分开：`file system sandbox blocked`、`sandbox-exec: deny` 以及网络关闭后的 DNS 被拒（`nodename nor servname provided`、`failed to resolve address`、`Could not resolve host`）视为沙箱拦截，预执行若因此被拦才交给 reviewer；`fatal: repository not found` 这类命令自身报错直接回给模型。已经允许网络的重试若仍 DNS 失败，则按普通命令失败处理。
+这里的“Approve for me”不是“所有权限自动放开”。工具会先在当前沙箱中执行；只有明确收到沙箱拒绝时，才把该次请求交给 reviewer 做一次性判断。普通退出码失败、参数错误、仓库不存在或依赖缺失不会触发提权重试；reviewer 拒绝或自身失败时返回 `sandbox_blocked`（“被沙箱拦截了”）。Bash 把两类结果分开：`file system sandbox blocked`、`sandbox-exec: deny`，以及网络关闭后的 DNS、连接和 registry fetch 错误（包括 `ERR_PNPM_META_FETCH_FAIL`、`fetch failed`、`EAI_AGAIN`、`ENETUNREACH`、`ECONNREFUSED`）视为沙箱拦截，预执行若因此被拦才交给 reviewer；`fatal: repository not found` 这类命令自身报错直接回给模型。已经允许网络的重试若仍失败，则按普通命令失败处理。
+
+`pnpm`、`npm`、`yarn`、`corepack` 等包管理器调用统一视为“可能联网”，但不会预先放开网络。每次仍先以网络关闭状态预执行；本地缓存足够、普通检查或脚本可以离线完成时不产生审批。只有结果确认是网络阻断时，才按当前 ask/auto 机制给当前 tool call 增加一次网络权限并重试。该授权不扩大文件系统权限，也不提供永久包管理器联网设置，因为 Seatbelt 只能放行网络能力，无法把权限可靠限定到某个 registry 域名。
 
 审批流程应保持可追踪：人工批准或 reviewer 批准都只对当前 tool call 的一次执行生效；批准后的重放不能永久变成全局白名单。`Approve for me` 下如果 reviewer 未配置、拒绝或调用失败，工具返回 `sandbox_blocked`，不会自动扩大权限。
 
@@ -177,7 +180,7 @@ Seatbelt 依赖 macOS 提供的系统能力。应用启动时应检测沙箱是�
 | 自由 Shell / 构建脚本 | Seatbelt（写路径与网络）+ Bash 越界审批 |
 | 用户体验 | 模式选择、待写入预览、工具调用卡片 |
 
-需要注意，Seatbelt 只约束**由 `sandbox-exec` 启动的子进程**。当前受限模式下，Shell 与 `list_dir`、`read_file`、`search_files`、`write_file`、`edit_file` 都通过受限 helper 或子进程执行；结构化文件操作使用独立的轻量 worker，不加载完整 Chat Server 或其依赖。宿主进程仍负责路径归一化、参数校验和审批。明确切换到 Full access 时不使用 Seatbelt；明确批准工作区外的单次结构化写入时，helper profile 只额外放行该目标文件。工具边界、审批策略与进程沙箱仍是互补的防线。
+需要注意，Seatbelt 只约束**由 `sandbox-exec` 启动的子进程**。当前受限模式下，Shell 与 `list_dir`、`read_file`、`search_files`、`write_file`、`edit_file`、`apply_patch` 都通过受限 helper 或子进程执行；结构化文件操作使用独立的轻量 worker，不加载完整 Chat Server 或其依赖。宿主进程仍负责路径归一化、参数校验和审批。明确切换到 Full access 时不使用 Seatbelt；明确批准工作区外的单次结构化写入时，helper profile 只额外放行该目标文件。工具边界、审批策略与进程沙箱仍是互补的防线。
 
 ### 4.1 结构化 helper 的输出协议也是安全边界
 

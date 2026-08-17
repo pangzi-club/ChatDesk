@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -64,6 +65,10 @@ describe("sandbox execution errors", () => {
     expect(isSandboxBlockedOutput(xcrun)).toBe(true);
     expect(isSandboxBlockedOutput(dns)).toBe(true);
     expect(isSandboxBlockedOutput("Could not resolve host: github.com")).toBe(true);
+    expect(
+      isSandboxBlockedOutput("[ERROR] GET https://registry.npmjs.org/pnpm: fetch failed"),
+    ).toBe(true);
+    expect(isSandboxBlockedOutput("ERR_PNPM_META_FETCH_FAIL request failed")).toBe(true);
     expect(isSandboxBlockedOutput(dns, { allowNetwork: true })).toBe(false);
   });
 
@@ -163,21 +168,74 @@ describe("sandbox execution errors", () => {
     );
     const [home, npmCache, goCache] = result.out.split("\n");
 
-    expect(home).toContain(path.join(os.tmpdir(), "chatdesk-sandbox-cache-"));
+    expect(home).toContain(path.join(os.tmpdir(), "chatdesk-sandbox-cache"));
     expect(home).not.toBe(os.homedir());
     expect(home).not.toContain(root);
-    expect(npmCache).toContain(path.join(os.tmpdir(), "chatdesk-sandbox-cache-"));
-    expect(goCache).toContain(path.join(os.tmpdir(), "chatdesk-sandbox-cache-"));
+    expect(npmCache).toContain(path.join(os.tmpdir(), "chatdesk-sandbox-cache"));
+    expect(goCache).toContain(path.join(os.tmpdir(), "chatdesk-sandbox-cache"));
     expect(npmCache).not.toContain(root);
     expect(goCache).not.toContain(root);
+    expect(existsSync(home)).toBe(true);
+    expect(existsSync(npmCache)).toBe(true);
+    expect(existsSync(goCache)).toBe(true);
   });
 
-  it("terminates commands that exceed the output limit", async () => {
+  it("keeps running commands that exceed the output limit and returns a head-tail buffer", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-sandbox-output-"));
     const command = `${JSON.stringify(process.execPath)} -e 'process.stdout.write("x".repeat(2500000))'`;
     const result = await runSandboxedShell(command, { cwd: root, mode: "full" });
 
-    expect(result.out).toContain("命令输出超过限制");
+    expect(result).toMatchObject({
+      code: 0,
+      success: true,
+      timedOut: false,
+      truncated: true,
+      totalOutputBytes: 2_500_000,
+    });
+    expect(result.out).toContain("命令输出已截断");
+    expect(Buffer.byteLength(result.out)).toBeLessThanOrEqual(128 * 1024);
+  });
+
+  it("reports pipeline failures through pipefail", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-sandbox-pipefail-"));
+    const result = await runSandboxedShell("false | tail -n 1", { cwd: root, mode: "full" });
+
+    expect(result).toMatchObject({
+      code: 1,
+      out: "",
+      success: false,
+      timedOut: false,
+      truncated: false,
+      totalOutputBytes: 0,
+    });
+  });
+
+  it("returns empty output for silent successful commands", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-sandbox-silent-"));
+    const result = await runSandboxedShell("true", { cwd: root, mode: "full" });
+
+    expect(result).toMatchObject({
+      code: 0,
+      out: "",
+      success: true,
+      timedOut: false,
+      truncated: false,
+      totalOutputBytes: 0,
+    });
+  });
+
+  it("marks timed out commands explicitly", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-sandbox-timeout-"));
+    const command = `${JSON.stringify(process.execPath)} -e 'setTimeout(() => {}, 10000)'`;
+    const result = await runSandboxedShell(command, {
+      cwd: root,
+      mode: "full",
+      timeoutMs: 50,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.timedOut).toBe(true);
+    expect(result.out).toContain("命令执行超时");
   });
 
   it("adds configured paths to the read policy without adding them to writable paths", () => {
@@ -260,6 +318,33 @@ describe("sandbox execution errors", () => {
     expect(search.result).toMatchObject({ matches: [] });
   });
 
+  it("paginates large directory listings", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-sandbox-list-"));
+    await Promise.all(
+      Array.from({ length: 1_197 }, (_, index) =>
+        writeFile(path.join(root, `entry-${String(index).padStart(4, "0")}.txt`), "", "utf8"),
+      ),
+    );
+
+    const first = await runSandboxedFile(
+      { operation: "list_dir", workspace: root },
+      { mode: "full" },
+    );
+    expect(first.result).toMatchObject({
+      totalEntries: 1_197,
+      truncated: true,
+      nextOffset: 200,
+    });
+    expect((first.result as { entries: unknown[] }).entries).toHaveLength(200);
+
+    const last = await runSandboxedFile(
+      { operation: "list_dir", workspace: root, offset: 1_000, limit: 500 },
+      { mode: "full" },
+    );
+    expect(last.result).toMatchObject({ totalEntries: 1_197, truncated: false });
+    expect((last.result as { entries: unknown[] }).entries).toHaveLength(197);
+  });
+
   it("runs structured writes in the helper process", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-sandbox-write-"));
     const target = path.join(root, "note.txt");
@@ -283,6 +368,129 @@ describe("sandbox execution errors", () => {
     expect(edit.sandboxBlocked).toBe(false);
     expect(edit.result).toMatchObject({ path: "note.txt", changed: true });
     await expect(readFile(target, "utf8")).resolves.toBe("after\n");
+  });
+
+  it("applies multi-file patches atomically outside a Git repository", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-sandbox-patch-"));
+    await writeFile(path.join(root, "one.txt"), "before\n", "utf8");
+    const patch = [
+      "diff --git a/one.txt b/one.txt",
+      "--- a/one.txt",
+      "+++ b/one.txt",
+      "@@ -1 +1 @@",
+      "-before",
+      "+after",
+      "diff --git a/two.txt b/two.txt",
+      "new file mode 100644",
+      "--- /dev/null",
+      "+++ b/two.txt",
+      "@@ -0,0 +1 @@",
+      "+created",
+      "",
+    ].join("\n");
+
+    const result = await runSandboxedFile(
+      { operation: "apply_patch", workspace: root, patch },
+      { mode: "full" },
+    );
+
+    expect(result.result).toMatchObject({
+      changedFiles: ["one.txt", "two.txt"],
+      stats: [
+        { path: "one.txt", additions: 1, deletions: 1 },
+        { path: "two.txt", additions: 1, deletions: 0 },
+      ],
+    });
+    await expect(readFile(path.join(root, "one.txt"), "utf8")).resolves.toBe("after\n");
+    await expect(readFile(path.join(root, "two.txt"), "utf8")).resolves.toBe("created\n");
+  });
+
+  it("does not modify files when a patch hunk fails", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-sandbox-patch-fail-"));
+    const target = path.join(root, "note.txt");
+    await writeFile(target, "current\n", "utf8");
+    const patch = [
+      "diff --git a/note.txt b/note.txt",
+      "--- a/note.txt",
+      "+++ b/note.txt",
+      "@@ -1 +1 @@",
+      "-missing",
+      "+changed",
+      "",
+    ].join("\n");
+
+    const result = await runSandboxedFile(
+      { operation: "apply_patch", workspace: root, patch },
+      { mode: "full" },
+    );
+
+    expect(result.result).toBeUndefined();
+    expect(result.error).toContain("patch failed");
+    await expect(readFile(target, "utf8")).resolves.toBe("current\n");
+  });
+
+  it("rejects unsafe, oversized, and binary patches", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-sandbox-patch-path-"));
+    const traversal = [
+      "diff --git a/../outside.txt b/../outside.txt",
+      "--- a/../outside.txt",
+      "+++ b/../outside.txt",
+      "@@ -0,0 +1 @@",
+      "+blocked",
+      "",
+    ].join("\n");
+    const binary = [
+      "diff --git a/image.png b/image.png",
+      "new file mode 100644",
+      "GIT binary patch",
+      "literal 0",
+      "HcmV?d00001",
+      "",
+    ].join("\n");
+    const absolute = [
+      "--- /tmp/outside.txt",
+      "+++ /tmp/outside.txt",
+      "@@ -0,0 +1 @@",
+      "+blocked",
+      "",
+    ].join("\n");
+    const gitMetadata = [
+      "diff --git a/.git/config b/.git/config",
+      "--- a/.git/config",
+      "+++ b/.git/config",
+      "@@ -0,0 +1 @@",
+      "+blocked",
+      "",
+    ].join("\n");
+    const oversized = `${traversal}${"x".repeat(256 * 1024)}`;
+
+    for (const patch of [traversal, absolute, gitMetadata, oversized, binary]) {
+      const result = await runSandboxedFile(
+        { operation: "apply_patch", workspace: root, patch },
+        { mode: "full" },
+      );
+      expect(result.result).toBeUndefined();
+    }
+  });
+
+  it("bounds edit mismatch diagnostics and identifies whitespace-only candidates", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-sandbox-edit-diagnostic-"));
+    const target = path.join(root, "note.txt");
+    await writeFile(target, `${"padding\n".repeat(10_000)}const value =  1;\n`, "utf8");
+    const result = await runSandboxedFile(
+      {
+        operation: "edit_file",
+        workspace: root,
+        path: target,
+        oldText: "const value = 1;",
+        newText: "const value = 2;",
+      },
+      { mode: "full" },
+    );
+
+    expect(result.result).toBeUndefined();
+    expect(result.error).toContain("第 10001 行（仅空白不同）");
+    expect(Buffer.byteLength(result.error ?? "")).toBeLessThanOrEqual(2 * 1024);
   });
 
   it("rejects helper writes outside the workspace", async () => {

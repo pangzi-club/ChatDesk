@@ -81,6 +81,11 @@ describe("chat tool call group summaries", () => {
         toolCall({ state: "input-streaming" }),
       ]),
     ).toBe("执行中");
+    expect(
+      getChatToolGroupStatus([
+        toolCall({ toolName: "bash", output: { code: 1, success: false, out: "failed" } }),
+      ]),
+    ).toBe("失败");
   });
 
   it("describes a running call as an active action", () => {
@@ -150,6 +155,19 @@ describe("chat tool call workspace file targets", () => {
     );
   });
 
+  it("summarizes apply_patch by changed file count", () => {
+    expect(
+      extractWorkspaceToolSummary(
+        "apply_patch",
+        { patch: "diff --git a/a b/a" },
+        { changedFiles: ["a.ts", "b.ts"] },
+      ),
+    ).toBe(" · 2 个文件");
+    expect(getToolCallInputFields("apply_patch", { patch: "diff --git a/a b/a" })).toEqual([
+      { kind: "code", label: "补丁", text: "diff --git a/a b/a" },
+    ]);
+  });
+
   it("uses the first line of a bash command and truncates long summaries", () => {
     expect(
       extractWorkspaceToolSummary("bash", { command: "pnpm check\npnpm test --coverage" }, {}),
@@ -177,8 +195,20 @@ describe("chat tool call workspace file targets", () => {
       { kind: "meta", label: "目录", text: "/tmp" },
       { kind: "code", label: "命令", text: "echo hi", tone: "command" },
     ]);
-    expect(getToolCallOutputFields("bash", { code: 0, out: "hi\n" })).toEqual([
+    expect(
+      getToolCallOutputFields("bash", {
+        code: 0,
+        out: "hi\n",
+        success: true,
+        timedOut: false,
+        truncated: true,
+        totalOutputBytes: 131_200,
+      }),
+    ).toEqual([
+      { kind: "meta", label: "状态", text: "成功" },
       { kind: "meta", label: "退出码", text: "0" },
+      { kind: "meta", label: "输出截断", text: "是" },
+      { kind: "meta", label: "输出字节", text: "131,200" },
       { kind: "code", label: "输出", text: "hi\n", tone: "output" },
     ]);
   });

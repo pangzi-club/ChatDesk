@@ -156,6 +156,7 @@ const WORKSPACE_MEMORY_EXCLUDED_TOOLS = new Set([
   "read_file",
   "write_file",
   "edit_file",
+  "apply_patch",
   "bash",
 ]);
 

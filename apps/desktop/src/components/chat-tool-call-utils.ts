@@ -27,6 +27,12 @@ function getNumberProperty(value: unknown, key: string) {
   return typeof property === "number" && Number.isFinite(property) ? property : undefined;
 }
 
+function getBooleanProperty(value: unknown, key: string) {
+  if (!value || typeof value !== "object") return undefined;
+  const property = (value as Record<string, unknown>)[key];
+  return typeof property === "boolean" ? property : undefined;
+}
+
 export function getLastPathSegment(value: string) {
   const normalized = value.replace(/[\\/]+$/, "");
   const segments = normalized.split(/[\\/]/);
@@ -103,6 +109,12 @@ function extractWorkspaceToolSubject(toolName: string, input: unknown, output: u
   if (toolName === "search_files") return searchKeyword;
   if (toolName === "bash") {
     return typeof inputRecord.command === "string" ? inputRecord.command : "";
+  }
+  if (toolName === "apply_patch") {
+    const changedFiles = Array.isArray(outputRecord.changedFiles)
+      ? outputRecord.changedFiles.filter((value): value is string => typeof value === "string")
+      : [];
+    return changedFiles.length > 0 ? `${changedFiles.length} 个文件` : "unified diff";
   }
   if (
     toolName === "list_dir" ||
@@ -197,6 +209,12 @@ export function getToolCallInputFields(toolName: string, input: unknown): ToolCa
     return fields;
   }
 
+  if (toolName === "apply_patch") {
+    const patch = getStringProperty(input, "patch");
+    if (!patch) return null;
+    return [{ kind: "code", label: "补丁", text: patch }];
+  }
+
   if (toolName === "browser_eval") {
     const expression = getStringProperty(input, "expression");
     if (!expression) return null;
@@ -225,9 +243,19 @@ export function getToolCallOutputFields(toolName: string, output: unknown): Tool
   if (toolName === "bash") {
     const out = getStringProperty(output, "out");
     const code = getNumberProperty(output, "code");
-    if (!out && code === undefined) return null;
+    const success = getBooleanProperty(output, "success");
+    const timedOut = getBooleanProperty(output, "timedOut");
+    const truncated = getBooleanProperty(output, "truncated");
+    const totalOutputBytes = getNumberProperty(output, "totalOutputBytes");
+    if (!out && code === undefined && success === undefined) return null;
     const fields: ToolCallField[] = [];
+    if (success !== undefined) pushMetaField(fields, "状态", success ? "成功" : "失败");
     if (code !== undefined) pushMetaField(fields, "退出码", String(code));
+    if (timedOut) pushMetaField(fields, "超时", "是");
+    if (truncated) pushMetaField(fields, "输出截断", "是");
+    if (totalOutputBytes !== undefined) {
+      pushMetaField(fields, "输出字节", totalOutputBytes.toLocaleString("zh-CN"));
+    }
     pushCodeField(fields, "输出", out || "(无输出)", "output");
     return fields;
   }

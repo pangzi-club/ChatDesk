@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DEVELOPMENT_TOOL_NAMES } from "@chatdesk/shared";
@@ -8,7 +8,7 @@ import { DEVELOPMENT_TOOL_NAMES } from "@chatdesk/shared";
 import { isDeveloperToolDirectory } from "./developer-environment.ts";
 import type { SandboxMode } from "./protocol.ts";
 
-const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
+const MAX_OUTPUT_BYTES = 128 * 1024;
 const MAX_HELPER_OUTPUT_BYTES = 2 * 1024 * 1024;
 const BASE_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
 const SAFE_ENV_KEYS = [
@@ -43,7 +43,7 @@ export class SandboxPathError extends Error {
 const FILE_SANDBOX_DENIED_PATTERN =
   /(?:sandbox(?:-exec)?[^\n]*(?:deny|violation)|file system sandbox blocked|sandbox violation)/i;
 const NETWORK_SANDBOX_DENIED_PATTERN =
-  /nodename nor servname provided|failed to resolve address|could not resolve host|couldn['’]t resolve host|could not resolve hostname/i;
+  /nodename nor servname provided|failed to resolve address|could not resolve host|couldn['’]t resolve host|could not resolve hostname|ERR_PNPM_META_FETCH_FAIL|ERR_PNPM_FETCH|\bfetch failed\b|error when performing the request to https?:\/\/|\b(?:GET|request to)\s+https?:\/\/[^\s]*(?:npmjs\.org|registry\.)[^\n]*(?:fetch failed|failed)|\b(?:EAI_AGAIN|ENOTFOUND|ENETUNREACH|EHOSTUNREACH|ECONNREFUSED|ECONNRESET|ETIMEDOUT)\b/i;
 
 export function isFilesystemSandboxDenial(output: string) {
   return /file system sandbox blocked/i.test(output);
@@ -74,11 +74,12 @@ export async function runSandboxedShell(
 ) {
   const cwd = resolveDirectory(options.cwd);
   const timeout = options.timeoutMs ?? 120_000;
-  const shell = process.env.SHELL || "/bin/sh";
+  const shell = resolveExecutionShell();
+  const shellArgs = buildShellArgs(shell, command);
   const effectiveMode = options.allowOutside ? "full" : options.mode;
   const args =
     effectiveMode === "full"
-      ? ["-c", command]
+      ? shellArgs
       : [
           "-p",
           buildSeatbeltProfile(
@@ -90,8 +91,7 @@ export async function runSandboxedShell(
             options.allowNetwork ?? false,
           ),
           shell,
-          "-c",
-          command,
+          ...shellArgs,
         ];
   const executable = effectiveMode === "full" ? shell : "/usr/bin/sandbox-exec";
 
@@ -108,14 +108,37 @@ export async function runSandboxedShell(
   return {
     code: result.code,
     out: result.out,
+    success: result.code === 0 && !result.timedOut,
+    timedOut: result.timedOut,
+    truncated: result.truncated,
+    totalOutputBytes: result.totalOutputBytes,
     sandboxBlocked:
       effectiveMode !== "full" &&
       isSandboxBlockedOutput(result.out, { allowNetwork: options.allowNetwork ?? false }),
   };
 }
 
+function resolveExecutionShell() {
+  if (process.platform === "darwin" && existsSync("/bin/zsh")) return "/bin/zsh";
+  return process.env.SHELL || "/bin/sh";
+}
+
+function buildShellArgs(shell: string, command: string) {
+  const name = path.basename(shell).toLowerCase();
+  return ["bash", "zsh", "ksh"].includes(name)
+    ? ["-o", "pipefail", "-c", command]
+    : ["-c", command];
+}
+
 export type SandboxFileRequest =
-  | { operation: "list_dir"; workspace: string; path?: string; readablePaths?: string[] }
+  | {
+      operation: "list_dir";
+      workspace: string;
+      path?: string;
+      offset?: number;
+      limit?: number;
+      readablePaths?: string[];
+    }
   | {
       operation: "read_file";
       workspace: string;
@@ -148,7 +171,8 @@ export type SandboxFileRequest =
       oldText: string;
       newText: string;
       allowOutside?: boolean;
-    };
+    }
+  | { operation: "apply_patch"; workspace: string; patch: string };
 
 type SandboxFileResponse = {
   ok?: boolean;
@@ -322,13 +346,32 @@ function sandboxEnvironment(cwd: string, developerToolPaths: string[] = []) {
     if (value) env[key] = value;
   }
   env.PATH = effectivePath(developerToolPaths);
-  env.TMPDIR ||= os.tmpdir();
   env.SHELL ||= "/bin/sh";
   const cacheRoot = path.join(
-    env.TMPDIR,
-    `chatdesk-sandbox-cache-${process.pid}`,
+    os.tmpdir(),
+    "chatdesk-sandbox-cache",
     createHash("sha256").update(cwd).digest("hex").slice(0, 16),
   );
+  const tempRoot = path.join(cacheRoot, "tmp");
+  for (const directory of [
+    cacheRoot,
+    tempRoot,
+    path.join(cacheRoot, "home"),
+    path.join(cacheRoot, "xdg-cache"),
+    path.join(cacheRoot, "xdg-data"),
+    path.join(cacheRoot, "corepack"),
+    path.join(cacheRoot, "npm"),
+    path.join(cacheRoot, "pnpm-store"),
+    path.join(cacheRoot, "pip"),
+    path.join(cacheRoot, "uv"),
+    path.join(cacheRoot, "python-bytecode"),
+    path.join(cacheRoot, "go-build"),
+    path.join(cacheRoot, "go-mod"),
+    path.join(cacheRoot, "go-path"),
+  ]) {
+    mkdirSync(directory, { recursive: true });
+  }
+  env.TMPDIR = tempRoot;
   env.HOME = path.join(cacheRoot, "home");
   env.XDG_CACHE_HOME = path.join(cacheRoot, "xdg-cache");
   env.XDG_DATA_HOME = path.join(cacheRoot, "xdg-data");
@@ -350,49 +393,92 @@ async function runBoundedProcess(
   args: string[],
   options: { cwd: string; env: NodeJS.ProcessEnv; timeout: number; maxOutputBytes: number },
 ) {
-  return new Promise<{ code: number; out: string; timedOut: boolean }>((resolve, reject) => {
+  return new Promise<{
+    code: number;
+    out: string;
+    timedOut: boolean;
+    truncated: boolean;
+    totalOutputBytes: number;
+  }>((resolve, reject) => {
     const child = spawn(executable, args, {
       cwd: options.cwd,
       env: options.env,
       stdio: ["ignore", "pipe", "pipe"],
       detached: process.platform !== "win32",
     });
-    let stdout = "";
-    let stderr = "";
+    const headLimit = Math.floor(options.maxOutputBytes / 2);
+    const tailLimit = options.maxOutputBytes - headLimit;
+    let head = Buffer.alloc(0);
+    let tail = Buffer.alloc(0);
+    let totalOutputBytes = 0;
     let outputLimitHit = false;
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
       killProcessTree(child);
     }, options.timeout);
-    const append = (target: "stdout" | "stderr", chunk: Buffer) => {
-      const current = target === "stdout" ? stdout : stderr;
-      const remaining = Math.max(options.maxOutputBytes - Buffer.byteLength(current), 0);
-      const text = chunk.subarray(0, remaining).toString();
-      if (target === "stdout") stdout += text;
-      else stderr += text;
-      if (chunk.byteLength > remaining) {
-        outputLimitHit = true;
-        killProcessTree(child);
+    const append = (chunk: Buffer) => {
+      totalOutputBytes += chunk.byteLength;
+      let remaining = chunk;
+      if (head.byteLength < headLimit) {
+        const headBytes = Math.min(headLimit - head.byteLength, remaining.byteLength);
+        head = Buffer.concat([head, remaining.subarray(0, headBytes)]);
+        remaining = remaining.subarray(headBytes);
       }
+      if (remaining.byteLength > 0) {
+        tail = Buffer.concat([tail, remaining]);
+        if (tail.byteLength > tailLimit) tail = tail.subarray(tail.byteLength - tailLimit);
+      }
+      outputLimitHit = totalOutputBytes > options.maxOutputBytes;
     };
-    child.stdout.on("data", (chunk: Buffer) => append("stdout", chunk));
-    child.stderr.on("data", (chunk: Buffer) => append("stderr", chunk));
+    child.stdout.on("data", append);
+    child.stderr.on("data", append);
     child.once("error", (error) => {
       clearTimeout(timer);
       reject(error);
     });
     child.once("close", (code) => {
       clearTimeout(timer);
-      let out = `${stdout}${stderr}`;
-      if (Buffer.byteLength(out) > options.maxOutputBytes) {
-        out = Buffer.from(out).subarray(0, options.maxOutputBytes).toString();
+      const marker = Buffer.from(
+        `\n[命令输出已截断：共 ${totalOutputBytes} 字节，仅保留开头和结尾]\n`,
+      );
+      const retainedBytes = Math.max(0, options.maxOutputBytes - marker.byteLength);
+      const retainedHeadBytes = Math.floor(retainedBytes / 2);
+      const retainedTailBytes = retainedBytes - retainedHeadBytes;
+      let out = outputLimitHit
+        ? Buffer.concat([
+            head.subarray(0, retainedHeadBytes),
+            marker,
+            tail.subarray(Math.max(0, tail.byteLength - retainedTailBytes)),
+          ]).toString()
+        : Buffer.concat([head, tail]).toString();
+      if (timedOut) {
+        const suffix = `${out ? "\n" : ""}命令执行超时，进程已终止`;
+        out = `${truncateUtf8(out, options.maxOutputBytes - Buffer.byteLength(suffix))}${suffix}`;
       }
-      if (timedOut) out = `${out}${out ? "\n" : ""}命令执行超时，进程已终止`;
-      if (outputLimitHit) out = `${out}${out ? "\n" : ""}命令输出超过限制，进程已终止`;
-      resolve({ code: code ?? -1, out: out || "命令执行失败", timedOut });
+      out = truncateUtf8(out, options.maxOutputBytes);
+      resolve({
+        code: code ?? -1,
+        out,
+        timedOut,
+        truncated: outputLimitHit,
+        totalOutputBytes,
+      });
     });
   });
+}
+
+function truncateUtf8(value: string, maxBytes: number) {
+  if (maxBytes <= 0) return "";
+  let bytes = 0;
+  let end = 0;
+  for (const character of value) {
+    const characterBytes = Buffer.byteLength(character);
+    if (bytes + characterBytes > maxBytes) break;
+    bytes += characterBytes;
+    end += character.length;
+  }
+  return value.slice(0, end);
 }
 
 function killProcessTree(child: ReturnType<typeof spawn>) {
