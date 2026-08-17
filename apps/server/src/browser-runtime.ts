@@ -1,6 +1,9 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { existsSync, readdirSync } from "node:fs";
+import path from "node:path";
 import { createInterface } from "node:readline";
+import { fileURLToPath } from "node:url";
 
 type BrowserResponse = {
   ok: boolean;
@@ -9,6 +12,47 @@ type BrowserResponse = {
   code?: string;
   message?: string;
 };
+
+// `pnpm dev` / `pnpm server:dev` run the TypeScript Chat Server from source.
+// Packaged apps inject CHAT_SERVER_BROWSER_WORKER; development falls back to
+// the sidecar script checked into the repo.
+const SOURCE_BROWSER_WORKER = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../desktop/src-tauri/src/sidecar/browser-worker.mjs",
+);
+const SOURCE_PLAYWRIGHT_BROWSERS = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../desktop/src-tauri/resources/playwright-browsers",
+);
+
+export function resolveBrowserWorkerScript(
+  env: NodeJS.ProcessEnv = process.env,
+  exists: (file: string) => boolean = existsSync,
+) {
+  const configured = env.CHAT_SERVER_BROWSER_WORKER || env.M_DASHBOARD_BROWSER_WORKER;
+  if (configured) return configured;
+  if (exists(SOURCE_BROWSER_WORKER)) return SOURCE_BROWSER_WORKER;
+  return undefined;
+}
+
+export function resolvePlaywrightBrowsersPath(
+  env: NodeJS.ProcessEnv = process.env,
+  exists: (file: string) => boolean = existsSync,
+  listDir: (dir: string) => string[] = (dir) => readdirSync(dir),
+) {
+  if (env.CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH) return env.CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH;
+  if (!exists(SOURCE_PLAYWRIGHT_BROWSERS)) return undefined;
+  try {
+    // Debug builds write a placeholder.txt here; ignore that and use Playwright's
+    // default cache unless a real Chromium download is present.
+    if (listDir(SOURCE_PLAYWRIGHT_BROWSERS).some((name) => name.startsWith("chromium"))) {
+      return SOURCE_PLAYWRIGHT_BROWSERS;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
 
 export class BrowserRuntime {
   private worker?: ChildProcessWithoutNullStreams;
@@ -42,16 +86,19 @@ export class BrowserRuntime {
 
   private ensureWorker() {
     if (this.worker) return;
-    const script = process.env.CHAT_SERVER_BROWSER_WORKER || process.env.M_DASHBOARD_BROWSER_WORKER;
-    if (!script) throw new Error("未配置 browser worker");
+    const script = resolveBrowserWorkerScript();
+    if (!script) {
+      throw new Error(
+        "未配置 browser worker。开发环境请从仓库根目录运行 pnpm dev，或设置 CHAT_SERVER_BROWSER_WORKER。",
+      );
+    }
+    const browsersPath = resolvePlaywrightBrowsersPath();
     const command = script.endsWith(".js") || script.endsWith(".mjs") ? "node" : script;
     const args = command === "node" ? [script] : [];
     const worker = spawn(command, args, {
       env: {
         ...process.env,
-        ...(process.env.CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH
-          ? { PLAYWRIGHT_BROWSERS_PATH: process.env.CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH }
-          : {}),
+        ...(browsersPath ? { PLAYWRIGHT_BROWSERS_PATH: browsersPath } : {}),
       },
       stdio: "pipe",
     });

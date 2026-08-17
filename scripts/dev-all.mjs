@@ -1,15 +1,31 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { existsSync, readdirSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const token = process.env.CHAT_SERVER_TOKEN || randomUUID();
 const port = process.env.CHAT_SERVER_PORT || "14317";
+// Development Chat Server is the TypeScript process, not the Tauri sidecar.
+// Point it at the source browser worker so browser_* tools work under `pnpm dev`.
+const browserWorker =
+  process.env.CHAT_SERVER_BROWSER_WORKER ||
+  path.join(root, "apps/desktop/src-tauri/src/sidecar/browser-worker.mjs");
+const playwrightBrowsers =
+  process.env.CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH ||
+  packagedPlaywrightBrowsers(
+    path.join(root, "apps/desktop/src-tauri/resources/playwright-browsers"),
+  );
 const sharedEnv = {
   ...process.env,
   CHAT_SERVER_TOKEN: token,
   CHAT_SERVER_PORT: port,
   VITE_CHAT_SERVER_TOKEN: token,
   VITE_CHAT_SERVER_PORT: port,
+  CHAT_SERVER_BROWSER_WORKER: browserWorker,
+  ...(playwrightBrowsers ? { CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH: playwrightBrowsers } : {}),
 };
 
 const children = [
@@ -37,3 +53,12 @@ for (const child of children) {
 
 process.once("SIGINT", () => shutdown(0, "SIGINT"));
 process.once("SIGTERM", () => shutdown(0, "SIGINT"));
+
+function packagedPlaywrightBrowsers(dir) {
+  if (!existsSync(dir)) return undefined;
+  try {
+    return readdirSync(dir).some((name) => name.startsWith("chromium")) ? dir : undefined;
+  } catch {
+    return undefined;
+  }
+}

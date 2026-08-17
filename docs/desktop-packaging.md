@@ -53,7 +53,13 @@ Cross-platform artifacts should be built on native CI runners. Set `TAURI_TARGET
 
 ## Runtime behavior
 
-Tauri starts `chat-server` with a loopback host, a per-launch token, and a data directory under `~/.chatdesk/chat-server` on macOS. The frontend obtains the token through the `chat_server_info` command. The package also contains a separate `chat-server-sandbox` sidecar dedicated to Seatbelt file operations. Development launches the TypeScript worker directly; production resolves the packaged worker beside the Chat Server binary, so the end-user installation does not depend on Node.js, pnpm, or `node_modules`.
+Tauri starts `chat-server` with a loopback host, a per-launch token, and a data directory under `~/.chatdesk/chat-server` on macOS. The frontend obtains the token through the `chat_server_info` command. The package also contains a separate `chat-server-sandbox` sidecar dedicated to Seatbelt file operations.
+
+Browser tools use a separate worker process. In development (`pnpm dev` / `pnpm server:dev`), Chat Server is the TypeScript process managed by `scripts/dev-all.mjs`, which points `CHAT_SERVER_BROWSER_WORKER` at `apps/desktop/src-tauri/src/sidecar/browser-worker.mjs`. If that path is missing and the env var is unset, `browser_open` fails immediately with a configuration error. First-time Chromium setup is `pnpm --filter chatdesk-desktop exec playwright install chromium --only-shell`.
+
+In a packaged app, Tauri injects `CHAT_SERVER_BROWSER_WORKER` from the `browser-worker` resource next to the Chat Server binary, plus `CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH` when `playwright-browsers` is present. Missing the worker resource is a Chat Server startup error, not a later tool failure. Windows `.exe` resource names are not handled yet. The end-user installation does not depend on Node.js, pnpm, or `node_modules`.
+
+Window geometry is managed by `tauri-plugin-window-state` in the platform app configuration directory; this small UI preference is intentionally exempt from the `~/.chatdesk` data boundary.
 
 Window geometry is managed by `tauri-plugin-window-state` in the platform app configuration directory; this small UI preference is intentionally exempt from the `~/.chatdesk` data boundary.
 

@@ -49,12 +49,17 @@ function installProductionProcessErrorHandlers() {
 installProductionProcessErrorHandlers();
 
 async function main() {
-  const [{ serve }, { createChatServer }, { loadServerConfig }] = await Promise.all([
-    import("@hono/node-server"),
-    import("./app.ts"),
-    import("./config.ts"),
-  ]);
+  const [{ serve }, { createChatServer }, { loadServerConfig }, { resolveBrowserWorkerScript }] =
+    await Promise.all([
+      import("@hono/node-server"),
+      import("./app.ts"),
+      import("./config.ts"),
+      import("./browser-runtime.ts"),
+    ]);
   const config = await loadServerConfig();
+  const browserWorker = resolveBrowserWorkerScript();
+  if (browserWorker) console.log(`[Chat Server] browser worker: ${browserWorker}`);
+  else console.warn("[Chat Server] 未配置 browser worker，浏览器工具将不可用");
   const server = await createChatServer(config);
   const httpServer = serve(
     { fetch: server.app.fetch, hostname: config.host, port: config.port },

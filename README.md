@@ -28,7 +28,13 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dev` 会启动 Tauri 桌面窗口、Vite 前端和 Chat Server，并为前后端生成同一个本地鉴权 token。若只需要浏览器预览，可使用 `pnpm dev:web` 并打开 `http://localhost:1420`。如果需要固定端口或 token，可复制 `.env.example` 为 `.env.local`，在启动前导出其中的变量（例如 `set -a; source .env.local; set +a`）。
+`pnpm dev` 会启动 Tauri 桌面窗口、Vite 前端和 Chat Server，并为前后端生成同一个本地鉴权 token。开发模式下 Chat Server 会使用仓库内的 `apps/desktop/src-tauri/src/sidecar/browser-worker.mjs`；首次使用浏览器工具前需要安装 Chromium：
+
+```sh
+pnpm --filter chatdesk-desktop exec playwright install chromium --only-shell
+```
+
+若只需要浏览器预览，可使用 `pnpm dev:web` 并打开 `http://localhost:1420`。如果需要固定端口或 token，可复制 `.env.example` 为 `.env.local`，在启动前导出其中的变量（例如 `set -a; source .env.local; set +a`）。
 
 常用命令：
 
@@ -66,6 +72,8 @@ Chat Server 支持的环境变量和 HTTP API 见 [`apps/server/README.md`](apps
 | `CHAT_SERVER_PORT` | `14317` | Chat Server 监听端口 |
 | `CHAT_SERVER_TOKEN` | 每次启动随机生成 | API 鉴权 token |
 | `CHAT_SERVER_DATA_DIR` | macOS: `~/.chatdesk/chat-server`；其他平台: `.data/chat-server` | 本地会话、设置和记忆目录 |
+| `CHAT_SERVER_BROWSER_WORKER` | 开发时回退到源码 `browser-worker.mjs` | 浏览器 worker 脚本或可执行文件 |
+| `CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH` | 未设置（使用 Playwright 默认缓存） | Headless Chromium 资源目录 |
 
 API key 在应用设置中配置并保存在本机。使用 `CHAT_SERVER_HOST=0.0.0.0` 对外暴露服务前，请自行配置网络层访问控制和长期 token；本项目默认只面向本机使用。
 

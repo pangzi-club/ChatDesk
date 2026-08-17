@@ -2,6 +2,8 @@
 
 These instructions apply to the entire repository.
 
+Durable project-specific notes live in [`MEMORY.md`](MEMORY.md). Read it when looking up ChatDesk sessions or other local runtime data.
+
 ## AI Usage Accounting
 
 - Unless a task explicitly says otherwise, every AI/model invocation must record its token usage through the existing usage persistence and statistics path. This includes background jobs, reviewers, generated text helpers, and feature-specific AI actions.

@@ -46,8 +46,8 @@ pnpm --filter chatdesk-chat-server typecheck
 | `CHAT_SERVER_TOKEN` | 启动时随机生成 | API 鉴权 token |
 | `CHAT_SERVER_DATA_DIR` | macOS: `~/.chatdesk/chat-server`；其他平台: `.data/chat-server` | 会话、设置、记忆和归档数据目录 |
 | `CHAT_SERVER_PRODUCTION` | 未设置 | 设为 `1` 后启用致命错误处理和关闭时的运行清理 |
-| `CHAT_SERVER_BROWSER_WORKER` | 未设置 | 浏览器 worker 可执行文件或脚本路径 |
-| `CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH` | 未设置 | Playwright 浏览器资源目录 |
+| `CHAT_SERVER_BROWSER_WORKER` | 开发时回退到 `apps/desktop/src-tauri/src/sidecar/browser-worker.mjs` | 浏览器 worker 可执行文件或脚本路径。打包后由 Tauri 注入；未配置时浏览器工具会直接报错 |
+| `CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH` | 未设置 | Playwright 浏览器资源目录。开发时若 `src-tauri/resources/playwright-browsers` 中已有 Chromium 则自动使用，否则走 Playwright 默认缓存 |
 
 示例：
 
@@ -127,7 +127,7 @@ macOS 默认数据目录为 `~/.chatdesk/chat-server`，其他平台默认使用
 
 ## 与桌面端的关系
 
-开发时，`pnpm dev` 会同时启动 Tauri 桌面端和 Chat Server，Tauri 再通过 `pnpm dev:web` 启动 Vite 前端，并将同一个端口和 token 注入两者。打包时，`pnpm desktop:sidecars` 会将此服务构建为桌面端 sidecar；最终用户不需要单独安装 Node.js 或 pnpm。详见 [`docs/desktop-packaging.md`](../../docs/desktop-packaging.md) 和 [`docs/chat-http-server-architecture.md`](../../docs/chat-http-server-architecture.md)。
+开发时，`pnpm dev` 会同时启动 Tauri 桌面端和 Chat Server，Tauri 再通过 `pnpm dev:web` 启动 Vite 前端，并将同一个端口和 token 注入两者。Chat Server 在开发模式下直接运行源码 `browser-worker.mjs`，不依赖打包后的 sidecar。打包时，`pnpm desktop:sidecars` 会将此服务构建为桌面端 sidecar；最终用户不需要单独安装 Node.js 或 pnpm。详见 [`docs/desktop-packaging.md`](../../docs/desktop-packaging.md) 和 [`docs/chat-http-server-architecture.md`](../../docs/chat-http-server-architecture.md)。
 
 ## 目录概览
 

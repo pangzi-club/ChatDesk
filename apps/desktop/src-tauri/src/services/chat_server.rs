@@ -427,25 +427,15 @@ fn spawn_server(app: &AppHandle) -> Result<(Child, ChatServerInfo), String> {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    if let Ok(resource_dir) = app.path().resource_dir() {
-        for candidate in [
-            resource_dir.join("browser-worker"),
-            resource_dir.join("resources/browser-worker"),
-        ] {
-            if candidate.is_file() {
-                command.env("CHAT_SERVER_BROWSER_WORKER", candidate);
-                break;
-            }
-        }
-        for candidate in [
-            resource_dir.join("playwright-browsers"),
-            resource_dir.join("resources/playwright-browsers"),
-        ] {
-            if candidate.is_dir() {
-                command.env("CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH", candidate);
-                break;
-            }
-        }
+    // Production must ship a real browser-worker resource. Missing it is a
+    // startup error so browser tools cannot silently fail later.
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|error| format!("无法解析应用资源目录：{error}"))?;
+    command.env("CHAT_SERVER_BROWSER_WORKER", find_browser_worker(&resource_dir)?);
+    if let Some(browsers) = find_playwright_browsers(&resource_dir) {
+        command.env("CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH", browsers);
     }
     let mut child = command
         .spawn()
@@ -532,6 +522,29 @@ fn read_persisted_port(data_dir: &Path) -> u16 {
     }
 }
 
+fn find_browser_worker(resource_dir: &Path) -> Result<std::path::PathBuf, String> {
+    // Packaged builds ship `browser-worker` as a Unix resource. Windows `.exe`
+    // names are not handled yet; fail instead of starting without browser tools.
+    [
+        resource_dir.join("browser-worker"),
+        resource_dir.join("resources").join("browser-worker"),
+    ]
+    .into_iter()
+    .find(|path| path.is_file())
+    .ok_or_else(|| "未找到 browser worker 资源，请先运行 pnpm desktop:sidecars".to_string())
+}
+
+fn find_playwright_browsers(resource_dir: &Path) -> Option<std::path::PathBuf> {
+    // Chromium is optional at process spawn; the worker reports a runtime error
+    // if Playwright cannot locate a browser.
+    [
+        resource_dir.join("playwright-browsers"),
+        resource_dir.join("resources").join("playwright-browsers"),
+    ]
+    .into_iter()
+    .find(|path| path.is_dir())
+}
+
 fn find_sidecar(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     let current_exe = std::env::current_exe().ok();
     let resource_dir = app.path().resource_dir().ok();
@@ -562,7 +575,8 @@ fn find_sidecar(app: &AppHandle) -> Result<std::path::PathBuf, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{default_info, restart_delay, ChatServerState};
+    use super::{default_info, find_browser_worker, restart_delay, ChatServerState};
+    use std::fs;
     use std::time::Duration;
 
     #[test]
@@ -577,5 +591,18 @@ mod tests {
     fn runtime_info_reports_whether_the_server_is_managed() {
         assert!(default_info(ChatServerState::Running, true).managed);
         assert!(!default_info(ChatServerState::Offline, false).managed);
+    }
+
+    #[test]
+    fn missing_browser_worker_returns_an_error() {
+        let root = std::env::temp_dir().join(format!(
+            "chatdesk-browser-worker-missing-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("create temp resource dir");
+        let error = find_browser_worker(&root).expect_err("missing worker should fail");
+        assert!(error.contains("未找到 browser worker 资源"));
+        let _ = fs::remove_dir_all(&root);
     }
 }
