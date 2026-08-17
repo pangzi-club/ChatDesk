@@ -25,7 +25,6 @@ import {
   retainRecentModelMessages,
 } from "./agent-context.ts";
 import { type AiUsageLogStore, normalizeAiUsage } from "./ai-usage-log.ts";
-import { appendScreenshotFileParts } from "./browser-screenshot.ts";
 import { createBusinessTools } from "./business-tools.ts";
 import type { ChatConfigStore } from "./chat-config.ts";
 import { createClientTools } from "./client-tools.ts";
@@ -620,7 +619,7 @@ export class RunRegistry {
       const languageModel = this.createLanguageModel
         ? this.createLanguageModel(model)
         : createConfiguredLanguageModel(model);
-      const modelMessages = await convertToModelMessages(await appendScreenshotFileParts(messages));
+      const modelMessages = await convertToModelMessages(messages);
       const system = prompt.text;
       const metrics: RunMetrics = {
         stepCount: 0,

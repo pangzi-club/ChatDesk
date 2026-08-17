@@ -49,7 +49,7 @@
 - **文件工具**：`workspace-tools.ts` 提供 list_dir / read_file / write_file / edit_file / search_files。受限模式默认限制在 workspace 或显式只读白名单内，读取单文件上限为 512KB。
 - **文件搜索**：`file-search.ts` 优先调用 ripgrep，支持 glob、大小写不敏感的固定文本搜索、命中行摘要和 `.gitignore`；没有 `rg` 时回退到 Git 文件清单与内置遍历。只启用终端而未启用 `search_files` 时，模型可直接通过 Bash 使用 `rg`。
 - **终端**：`bash` 工具，120s 超时，2MB 输出截断。
-- **浏览器**：`client-tools.ts` + `browser-runtime.ts`，隔离的 headless Chromium session，open / screenshot / click / eval / close 全套。`browser_screenshot` 把 PNG 写入当前聊天 session 的 `attachments/`（与用户上传、生成图同一目录），而不是系统临时目录；发给模型时与用户上传图片相同，使用 `file` part（data URL）。开发态回退到源码 `browser-worker.mjs`；打包后由 Tauri 注入 `CHAT_SERVER_BROWSER_WORKER`，缺失则 Chat Server 启动失败。
+- **浏览器**：`client-tools.ts` + `browser-runtime.ts`，隔离的 headless Chromium session，open / screenshot / click / eval / close 全套。`browser_screenshot` 把 PNG 写入当前聊天 session 的 `attachments/`（与用户上传、生成图同一目录），而不是系统临时目录。开发态回退到源码 `browser-worker.mjs`；打包后由 Tauri 注入 `CHAT_SERVER_BROWSER_WORKER`，缺失则 Chat Server 启动失败。
 
 ### ✅ 上下文与记忆
 - **会话历史**：`store.ts` 持久化，CRUD 齐全。
@@ -77,7 +77,7 @@
 | `edit_file` | 对 `path` 做唯一 `oldText` → `newText` 替换 | Apply 模式、已选择 workspace，并启用对应工具包 | 写操作进入沙箱审批路径；拒绝 0 次或多次匹配 |
 | `bash` | 在 workspace 中执行 `command` | 已选择 workspace，并启用“终端” | 默认 120 秒、2MB 输出上限；权限由 ask/auto/full 模式决定 |
 | `browser_open` | 打开 URL，创建或复用 browser session | 启用 Browser，且已配置 browser worker | 隔离 Headless Chromium，不继承用户登录态 |
-| `browser_screenshot` | 截取 browser session 页面，PNG 落入当前聊天 session 的 attachments，并以与用户上传相同的 `file` part 提供给模型 | 启用 Browser，已有 session | Headless Chromium；内部写入 `sessions/<id>/attachments/` |
+| `browser_screenshot` | 截取 browser session 页面，PNG 落入当前聊天 session 的 attachments | 启用 Browser，已有 session | Headless Chromium；内部写入 `sessions/<id>/attachments/` |
 | `browser_click` | 按 CSS selector 点击页面元素 | 启用 Browser，已有 session | Headless Chromium |
 | `browser_eval` | 在页面执行受限长度的 JavaScript 表达式 | 启用 Browser，已有 session | Headless Chromium 页面上下文 |
 | `browser_close` | 关闭 browser session | 启用 Browser，已有 session | Headless Chromium |

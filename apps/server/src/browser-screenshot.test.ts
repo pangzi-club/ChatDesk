@@ -2,15 +2,11 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { UIMessage } from "ai";
 import { test } from "vitest";
 import {
-  appendScreenshotFileParts,
   createScreenshotAttachmentTarget,
   decorateScreenshotResult,
   persistScreenshotResult,
-  screenshotFileUiPart,
-  screenshotResultToModelOutput,
 } from "./browser-screenshot.ts";
 import { SessionStore } from "./store.ts";
 
@@ -124,94 +120,4 @@ test("persistScreenshotResult keeps a file already written to the attachment pat
   );
   assert.equal(await readFile(targetPath, "utf8"), "direct");
   assert.equal((persisted.data as { attachmentId?: string }).attachmentId, "att-3");
-});
-
-test("screenshotFileUiPart builds the same data-URL file part as user uploads", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-screenshot-file-part-"));
-  const imagePath = path.join(root, "shot.png");
-  const bytes = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-  await writeFile(imagePath, bytes);
-  const file = await screenshotFileUiPart({
-    ok: true,
-    data: {
-      path: imagePath,
-      mimeType: "image/png",
-      fileName: "screenshot-1.png",
-      attachmentId: "att-1",
-    },
-  });
-  assert.deepEqual(file, {
-    type: "file",
-    mediaType: "image/png",
-    filename: "screenshot-1.png",
-    url: `data:image/png;base64,${bytes.toString("base64")}`,
-  });
-});
-
-test("appendScreenshotFileParts inserts a file part after the screenshot tool", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-screenshot-append-"));
-  const imagePath = path.join(root, "shot.png");
-  const bytes = Buffer.from("png-bytes");
-  await writeFile(imagePath, bytes);
-  const messages = [
-    {
-      id: "m1",
-      role: "assistant",
-      parts: [
-        {
-          type: "tool-browser_screenshot",
-          toolCallId: "call-1",
-          state: "output-available",
-          input: { sessionId: "hn" },
-          output: {
-            ok: true,
-            data: {
-              path: imagePath,
-              mimeType: "image/png",
-              fileName: "screenshot-1.png",
-              attachmentId: "att-1",
-            },
-          },
-        },
-      ],
-    },
-  ] as UIMessage[];
-
-  const withFiles = await appendScreenshotFileParts(messages);
-  assert.equal(withFiles[0]?.parts.at(-1)?.type, "file");
-  assert.deepEqual(withFiles[0]?.parts.at(-1), {
-    type: "file",
-    mediaType: "image/png",
-    filename: "screenshot-1.png",
-    url: `data:image/png;base64,${bytes.toString("base64")}`,
-  });
-  assert.equal(await appendScreenshotFileParts(withFiles), withFiles);
-});
-
-test("screenshotResultToModelOutput uses a data-URL file like convertToModelMessages", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-screenshot-model-"));
-  const imagePath = path.join(root, "shot.png");
-  const bytes = Buffer.from("png-bytes");
-  await writeFile(imagePath, bytes);
-  const output = await screenshotResultToModelOutput({
-    ok: true,
-    sessionId: "hn",
-    data: {
-      path: imagePath,
-      mimeType: "image/png",
-      fileName: "screenshot-1.png",
-      attachmentId: "att-1",
-      width: 10,
-      height: 20,
-    },
-  });
-  assert.equal(output.type, "content");
-  if (output.type !== "content") return;
-  const file = output.value.find((part) => part.type === "file");
-  assert.ok(file && file.type === "file");
-  if (!file || file.type !== "file") return;
-  assert.equal(file.mediaType, "image/png");
-  assert.equal(file.filename, "screenshot-1.png");
-  assert.equal(file.data.type, "url");
-  assert.equal(file.data.url.href, `data:image/png;base64,${bytes.toString("base64")}`);
 });
