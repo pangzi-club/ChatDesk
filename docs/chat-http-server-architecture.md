@@ -67,7 +67,7 @@ Node HTTP Server
 
 - 提供可独立启动的 Node 入口（不启桌面壳也能跑，便于调试）；
 - 读取宿主注入的配置：监听地址、端口、token、数据目录、模型相关密钥等；
-- 浏览器工具依赖 `CHAT_SERVER_BROWSER_WORKER`：开发态 ESM 用 `import.meta.url` 回退到源码 `browser-worker.mjs`，打包 sidecar 是 CJS（`import.meta` 为空）由 Tauri 注入；缺失时工具调用直接报错，打包启动也会失败；
+- 浏览器工具依赖 `CHAT_SERVER_BROWSER_WORKER`：开发态 ESM 用 `import.meta.url` 回退到源码 `browser-worker.mjs`，打包态由 Tauri 注入共享 Node runtime 内的普通 JS worker 路径；缺失时打包启动直接失败；
 - 健康检查（如 `GET /health`）；
 - 优雅关闭：停止接受新 run，尽量结束或持久化进行中状态后退出。
 

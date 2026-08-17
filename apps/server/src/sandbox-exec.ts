@@ -182,6 +182,33 @@ export function resolveSandboxFileProcessOutput(
   };
 }
 
+export function resolveSandboxWorkerCommand(
+  env: NodeJS.ProcessEnv = process.env,
+  nodeExecutable = process.execPath,
+  exists: (file: string) => boolean = existsSync,
+  developmentEntry = resolveSandboxFileEntry(),
+) {
+  const configured = env.CHAT_SERVER_SANDBOX_WORKER?.trim();
+  if (configured) {
+    if (!exists(configured)) {
+      throw new SandboxBlockedError(`找不到打包的 sandbox worker：${configured}`);
+    }
+    return {
+      helperExecutable: nodeExecutable,
+      nodeArgs: [configured],
+      helperReadPaths: [path.dirname(configured)],
+    };
+  }
+  if (env.CHAT_SERVER_PRODUCTION === "1") {
+    throw new SandboxBlockedError("未配置打包的 sandbox worker");
+  }
+  return {
+    helperExecutable: nodeExecutable,
+    nodeArgs: ["--experimental-strip-types", ...(developmentEntry ? [developmentEntry] : [])],
+    helperReadPaths: developmentEntry ? [path.dirname(developmentEntry)] : [],
+  };
+}
+
 export async function runSandboxedFile(
   request: SandboxFileRequest,
   options: {
@@ -196,13 +223,7 @@ export async function runSandboxedFile(
   const timeout = options.timeoutMs ?? 120_000;
   const effectiveMode = options.allowOutside ? "full" : options.mode;
   const payload = JSON.stringify(request);
-  const isPackaged = (process as NodeJS.Process & { pkg?: unknown }).pkg !== undefined;
-  const helperEntry = isPackaged ? undefined : resolveSandboxFileEntry();
-  const helperExecutable = isPackaged ? resolvePackagedSandboxWorker() : process.execPath;
-  const nodeArgs = isPackaged
-    ? []
-    : ["--experimental-strip-types", ...(helperEntry ? [helperEntry] : [])];
-  const helperReadPaths = helperEntry ? [path.dirname(helperEntry)] : [];
+  const { helperExecutable, nodeArgs, helperReadPaths } = resolveSandboxWorkerCommand();
   const args =
     effectiveMode === "full"
       ? nodeArgs
@@ -271,25 +292,6 @@ function resolveSandboxFileEntry() {
     path.resolve(process.cwd(), "src/sandbox-file-entry.ts"),
   ];
   return candidates.find((candidate) => existsSync(candidate));
-}
-
-function resolvePackagedSandboxWorker() {
-  const executableDirectory = path.dirname(process.execPath);
-  const candidates = [
-    path.join(executableDirectory, "chat-server-sandbox"),
-    path.join(executableDirectory, "chat-server-sandbox.exe"),
-    path.join(executableDirectory, "binaries", "chat-server-sandbox"),
-    path.join(executableDirectory, "binaries", "chat-server-sandbox.exe"),
-    path.resolve(executableDirectory, "..", "resources", "chat-server-sandbox"),
-    path.resolve(executableDirectory, "..", "resources", "chat-server-sandbox.exe"),
-    path.resolve(executableDirectory, "..", "resources", "binaries", "chat-server-sandbox"),
-    path.resolve(executableDirectory, "..", "resources", "binaries", "chat-server-sandbox.exe"),
-  ];
-  const worker = candidates.find((candidate) => existsSync(candidate));
-  if (!worker) {
-    throw new SandboxBlockedError("找不到打包的 sandbox worker");
-  }
-  return worker;
 }
 
 function resolveDirectory(value: string) {

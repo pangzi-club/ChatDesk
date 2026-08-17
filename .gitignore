@@ -13,8 +13,6 @@ node_modules
 apps/desktop/src-tauri/binaries/*
 !apps/desktop/src-tauri/binaries/assistant-sidecar-x86_64-apple-darwin
 apps/desktop/src-tauri/resources/*
-!apps/desktop/src-tauri/resources/sharp-node-modules/
-!apps/desktop/src-tauri/resources/sharp-node-modules/.keep
 dist
 dist-ssr
 *.local

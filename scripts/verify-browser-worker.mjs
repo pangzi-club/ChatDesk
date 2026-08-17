@@ -5,19 +5,69 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
+const NODE_RUNTIME_VERSION = "v22.20.0";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const resourcesDir = path.join(root, "apps/desktop/src-tauri/resources");
-const browserPath = path.join(resourcesDir, "playwright-browsers");
-const executable = path.join(
-  resourcesDir,
-  process.platform === "win32" ? "browser-worker.exe" : "browser-worker",
-);
+const layout = await resolveLayout(process.argv.slice(2));
 
-if (!existsSync(executable)) {
-  throw new Error(`Packaged browser worker does not exist: ${executable}`);
+for (const [name, filename] of Object.entries(layout)) {
+  if (!existsSync(filename)) throw new Error(`Packaged ${name} does not exist: ${filename}`);
 }
 
+await verifyNodeRuntime();
+await verifyRuntimeDependencies();
 await verifyBrowserWorker();
+
+async function resolveLayout(args) {
+  if (args[0] !== "--app") {
+    const targetTriple = process.env.TAURI_TARGET_TRIPLE || (await readTargetTriple());
+    const extension = process.platform === "win32" ? ".exe" : "";
+    const resourcesDir = path.join(root, "apps/desktop/src-tauri/resources");
+    const runtimeRoot = path.join(resourcesDir, "node-runtime");
+    return {
+      nodeRuntime: path.join(
+        root,
+        "apps/desktop/src-tauri/binaries",
+        `node-runtime-${targetTriple}${extension}`,
+      ),
+      runtimeRoot,
+      worker: path.join(runtimeRoot, "workers/browser-worker.mjs"),
+      browsers: path.join(resourcesDir, "playwright-browsers"),
+    };
+  }
+
+  if (process.platform !== "darwin") {
+    throw new Error("Packaged application verification currently supports macOS .app bundles");
+  }
+  const appPath = path.resolve(args[1] || defaultMacAppPath());
+  const runtimeRoot = path.join(appPath, "Contents/Resources/resources/node-runtime");
+  return {
+    nodeRuntime: path.join(appPath, "Contents/MacOS/node-runtime"),
+    runtimeRoot,
+    worker: path.join(runtimeRoot, "workers/browser-worker.mjs"),
+    browsers: path.join(appPath, "Contents/Resources/resources/playwright-browsers"),
+  };
+}
+
+function defaultMacAppPath() {
+  const targetTriple = process.env.TAURI_TARGET_TRIPLE;
+  const targetRoot = targetTriple
+    ? path.join(root, "apps/desktop/src-tauri/target", targetTriple)
+    : path.join(root, "apps/desktop/src-tauri/target");
+  return path.join(targetRoot, "release/bundle/macos/ChatDesk.app");
+}
+
+async function verifyNodeRuntime() {
+  const version = (await execFile(layout.nodeRuntime, ["--version"])).trim();
+  if (version !== NODE_RUNTIME_VERSION) {
+    throw new Error(`Packaged Node version is ${version}, expected ${NODE_RUNTIME_VERSION}`);
+  }
+}
+
+async function verifyRuntimeDependencies() {
+  await execFile(layout.nodeRuntime, ["-e", 'require("playwright"); require("sharp")'], {
+    cwd: layout.runtimeRoot,
+  });
+}
 
 async function verifyBrowserWorker() {
   const page =
@@ -36,8 +86,8 @@ async function verifyBrowserWorker() {
 
   try {
     const address = await listen(server);
-    worker = spawn(executable, [], {
-      env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: browserPath },
+    worker = spawn(layout.nodeRuntime, [layout.worker], {
+      env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: layout.browsers },
       stdio: "pipe",
     });
     lines = createInterface({ input: worker.stdout });
@@ -74,7 +124,7 @@ async function verifyBrowserWorker() {
       params: { sessionId },
     });
     if (!closed.ok) throw new Error(`browser_close failed: ${JSON.stringify(closed)}`);
-    console.log("Verified packaged browser worker browser_open");
+    console.log(`Verified browser_open with ${layout.nodeRuntime}`);
   } catch (error) {
     const detail = stderr.trim();
     const message = error instanceof Error ? error.message : String(error);
@@ -86,6 +136,33 @@ async function verifyBrowserWorker() {
     worker?.kill();
     await closeServer(server);
   }
+}
+
+function readTargetTriple() {
+  return execFile("rustc", ["--print", "host-tuple"]).then((value) => value.trim());
+}
+
+function execFile(command, args, options = {}) {
+  const child = spawn(command, args, {
+    cwd: options.cwd || root,
+    env: process.env,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => {
+    stdout += chunk;
+  });
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk;
+  });
+  return new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code) => {
+      if (code === 0) resolve(stdout);
+      else reject(new Error(`${command} exited with ${code}: ${stderr || stdout}`));
+    });
+  });
 }
 
 function listen(server) {

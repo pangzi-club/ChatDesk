@@ -82,6 +82,10 @@ export function resolvePlaywrightBrowsersPath(
   return undefined;
 }
 
+export function browserWorkerCommand(script: string, nodeExecutable = process.execPath) {
+  return { command: nodeExecutable, args: [script] };
+}
+
 export class BrowserRuntime {
   private worker?: ChildProcessWithoutNullStreams;
   private pending = new Map<string, (value: BrowserResponse) => void>();
@@ -121,8 +125,7 @@ export class BrowserRuntime {
       );
     }
     const browsersPath = resolvePlaywrightBrowsersPath();
-    const command = script.endsWith(".js") || script.endsWith(".mjs") ? "node" : script;
-    const args = command === "node" ? [script] : [];
+    const { command, args } = browserWorkerCommand(script);
     const worker = spawn(command, args, {
       env: {
         ...process.env,

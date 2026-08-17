@@ -40,12 +40,8 @@
   },
   "bundle": {
     "active": true,
-    "externalBin": ["binaries/chat-server", "binaries/chat-server-sandbox"],
-    "resources": [
-      "resources/browser-worker*",
-      "resources/playwright-browsers/**/*",
-      "resources/sharp-node-modules/**/*"
-    ],
+    "externalBin": ["binaries/node-runtime"],
+    "resources": ["resources/node-runtime/**/*", "resources/playwright-browsers/**/*"],
     "targets": "all",
     "icon": [
       "icons/32x32.png",

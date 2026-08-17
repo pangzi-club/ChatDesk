@@ -1,41 +1,60 @@
 import { spawn } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+const NODE_RUNTIME_VERSION = "v22.20.0";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const desktopRoot = path.join(root, "apps/desktop");
 const tauriRoot = path.join(desktopRoot, "src-tauri");
 const binariesDir = path.join(tauriRoot, "binaries");
 const resourcesDir = path.join(tauriRoot, "resources");
+const runtimeRoot = path.join(resourcesDir, "node-runtime");
+const runtimeWorkersDir = path.join(runtimeRoot, "workers");
+const runtimeModulesDir = path.join(runtimeRoot, "node_modules");
 const browserPath = path.join(resourcesDir, "playwright-browsers");
-const serverCacheDir = path.join(root, "apps/server/.cache");
-const browserWorkerBundlePath = path.join(serverCacheDir, "browser-worker.cjs");
-const browserWorkerBidiShim = path.join(tauriRoot, "src/sidecar/playwright-bidi-shim.mjs");
-const browserWorkerFseventsShim = path.join(tauriRoot, "src/sidecar/playwright-fsevents-shim.mjs");
-const serverBundlePath = path.join(serverCacheDir, "chat-server.cjs");
-const sandboxBundlePath = path.join(serverCacheDir, "chat-server-sandbox.cjs");
-const pkgCachePath = process.env.PKG_CACHE_PATH || path.join(root, ".cache/pkg");
+const browserWorkerSource = path.join(tauriRoot, "src/sidecar/browser-worker.mjs");
+const serverBundlePath = path.join(runtimeWorkersDir, "chat-server.cjs");
+const sandboxBundlePath = path.join(runtimeWorkersDir, "chat-server-sandbox.cjs");
+const browserWorkerPath = path.join(runtimeWorkersDir, "browser-worker.mjs");
 const localBinExtension = process.platform === "win32" ? ".cmd" : "";
 const localBinDir = path.join(desktopRoot, "node_modules/.bin");
 
 const hostTriple = await readTargetTriple();
 const targetTriple = process.env.TAURI_TARGET_TRIPLE || hostTriple;
-const pkgTarget = toPkgTarget(targetTriple);
-const browserWorkerSeaTarget = toPkgTarget(targetTriple, "node22.20.0");
 const extension = process.platform === "win32" ? ".exe" : "";
+const nodeRuntimePath = path.join(binariesDir, `node-runtime-${targetTriple}${extension}`);
 
+assertNativeTarget(hostTriple, targetTriple);
+assertNodeRuntimeVersion();
 assertTool("playwright");
-assertTool("pkg");
 assertTool("esbuild");
 
-await mkdir(binariesDir, { recursive: true });
-await mkdir(resourcesDir, { recursive: true });
-await mkdir(browserPath, { recursive: true });
-await mkdir(serverCacheDir, { recursive: true });
-await mkdir(pkgCachePath, { recursive: true });
+await rm(runtimeRoot, { recursive: true, force: true });
+await rm(nodeRuntimePath, { force: true });
+await Promise.all([
+  rm(path.join(resourcesDir, "browser-worker"), { force: true }),
+  rm(path.join(resourcesDir, "browser-worker.exe"), { force: true }),
+  rm(path.join(resourcesDir, "sharp-node-modules"), { recursive: true, force: true }),
+  rm(path.join(binariesDir, `chat-server-${targetTriple}${extension}`), { force: true }),
+  rm(path.join(binariesDir, `chat-server-sandbox-${targetTriple}${extension}`), { force: true }),
+]);
+await Promise.all([
+  mkdir(binariesDir, { recursive: true }),
+  mkdir(runtimeWorkersDir, { recursive: true }),
+  mkdir(runtimeModulesDir, { recursive: true }),
+  mkdir(path.join(runtimeRoot, "licenses"), { recursive: true }),
+  mkdir(browserPath, { recursive: true }),
+]);
+
+await copyNodeRuntime();
+await writeFile(
+  path.join(runtimeRoot, "package.json"),
+  `${JSON.stringify({ name: "chatdesk-node-runtime", private: true, type: "module" }, null, 2)}\n`,
+);
+await cp(browserWorkerSource, browserWorkerPath);
 
 if (process.env.M_DASHBOARD_SKIP_BROWSER_DOWNLOAD !== "1") {
   await runTool("playwright", ["install", "chromium", "--only-shell"], {
@@ -43,10 +62,6 @@ if (process.env.M_DASHBOARD_SKIP_BROWSER_DOWNLOAD !== "1") {
   });
 }
 
-await prepareBrowserWorkerBundle();
-
-// CJS empties import.meta. browser-runtime.ts must not call fileURLToPath at
-// load time; packaged paths come from CHAT_SERVER_BROWSER_WORKER / PLAYWRIGHT_*.
 await runTool("esbuild", [
   "apps/server/src/server.ts",
   "--bundle",
@@ -62,20 +77,6 @@ if (/\brequire\(["']sharp["']\)/.test(serverBundle) || /\bfrom ["']sharp["']/.te
   throw new Error("chat-server bundle must not statically require sharp");
 }
 
-await writeFile(
-  path.join(serverCacheDir, "package.json"),
-  `${JSON.stringify(
-    {
-      name: "chatdesk-chat-server-bundle",
-      private: true,
-    },
-    null,
-    2,
-  )}\n`,
-);
-
-await copySharpNative();
-
 await runTool("esbuild", [
   "apps/server/src/sandbox-file-entry.ts",
   "--bundle",
@@ -85,168 +86,140 @@ await runTool("esbuild", [
   `--outfile=${sandboxBundlePath}`,
 ]);
 
-await runTool(
-  "pkg",
-  [
-    serverBundlePath,
-    "--target",
-    pkgTarget,
-    "--fallback-to-source",
-    "--public-packages",
-    "undici",
-    "--output",
-    path.join(binariesDir, `chat-server-${targetTriple}${extension}`),
-  ],
-  { PKG_CACHE_PATH: pkgCachePath },
-);
+const copiedPackages = new Map();
+await copyRuntimeDependency("playwright", createRequire(path.join(desktopRoot, "package.json")));
+await copyRuntimeDependency("sharp", createRequire(path.join(root, "apps/server/package.json")));
+await verifyRuntimeDependencies();
 
-await runTool(
-  "pkg",
-  [
-    sandboxBundlePath,
-    "--target",
-    pkgTarget,
-    "--fallback-to-source",
-    "--output",
-    path.join(binariesDir, `chat-server-sandbox-${targetTriple}${extension}`),
-  ],
-  { PKG_CACHE_PATH: pkgCachePath },
-);
+console.log(`Built shared Node runtime for ${targetTriple} (${process.version})`);
 
-await runTool(
-  "pkg",
-  [
-    browserWorkerBundlePath,
-    "--sea",
-    "--target",
-    browserWorkerSeaTarget,
-    "--output",
-    path.join(resourcesDir, `browser-worker${extension}`),
-  ],
-  {
-    PLAYWRIGHT_BROWSERS_PATH: browserPath,
-    PKG_CACHE_PATH: pkgCachePath,
-  },
-);
-
-console.log(`Built sidecars for ${targetTriple} (${pkgTarget})`);
-
-async function prepareBrowserWorkerBundle() {
-  const requireFromDesktop = createRequire(path.join(desktopRoot, "package.json"));
-  const { build } = requireFromDesktop("esbuild");
-  const playwrightCorePackage = realpathSync(
-    requireFromDesktop.resolve("playwright-core/package.json"),
-  );
-  const playwrightCoreRoot = path.dirname(playwrightCorePackage);
-  const playwrightCoreBundle = path.join(playwrightCoreRoot, "lib/coreBundle.js");
-  const browsersJson = realpathSync(path.join(playwrightCoreRoot, "browsers.json"));
-  const [packageMetadata, browserMetadata] = await Promise.all([
-    readJson(playwrightCorePackage),
-    readJson(browsersJson),
-  ]);
-  await build({
-    absWorkingDir: root,
-    alias: {
-      "chromium-bidi/lib/cjs/bidiMapper/BidiMapper": browserWorkerBidiShim,
-      "chromium-bidi/lib/cjs/cdp/CdpConnection": browserWorkerBidiShim,
-      fsevents: browserWorkerFseventsShim,
-    },
-    bundle: true,
-    entryPoints: ["apps/desktop/src-tauri/src/sidecar/browser-worker.mjs"],
-    format: "cjs",
-    logLevel: "info",
-    outfile: browserWorkerBundlePath,
-    platform: "node",
-    plugins: [
-      {
-        name: "playwright-sea-metadata",
-        setup(context) {
-          context.onLoad({ filter: /coreBundle\.js$/ }, async (args) => {
-            if (realpathSync(args.path) !== playwrightCoreBundle) return undefined;
-            let contents = await readFile(args.path, "utf8");
-            contents = replaceOnce(
-              contents,
-              'require(import_path9.default.join(packageRoot, "package.json"))',
-              `(${JSON.stringify(packageMetadata)})`,
-            );
-            contents = replaceOnce(
-              contents,
-              'require(import_path20.default.join(packageRoot, "browsers.json"))',
-              `(${JSON.stringify(browserMetadata)})`,
-            );
-            return { contents, loader: "js" };
-          });
-        },
-      },
-    ],
-    target: "node22",
-  });
+async function copyNodeRuntime() {
+  const executable = realpathSync(process.execPath);
+  await cp(executable, nodeRuntimePath);
+  if (process.platform !== "win32") await chmod(nodeRuntimePath, 0o755);
+  const license = findNodeLicense(executable);
+  await cp(license, path.join(runtimeRoot, "licenses/node-LICENSE"));
 }
 
-async function readJson(filename) {
-  return JSON.parse(await readFile(filename, "utf8"));
-}
-
-function replaceOnce(contents, search, replacement) {
-  const index = contents.indexOf(search);
-  if (index === -1) {
-    throw new Error(`Unable to patch Playwright bundle expression: ${search}`);
+function findNodeLicense(executable) {
+  const executableDir = path.dirname(executable);
+  const candidates = [
+    path.join(executableDir, "LICENSE"),
+    path.resolve(executableDir, "../LICENSE"),
+    path.resolve(executableDir, "../../LICENSE"),
+  ];
+  const license = candidates.find((candidate) => existsSync(candidate));
+  if (!license) {
+    throw new Error(`Cannot locate the Node.js LICENSE next to ${executable}`);
   }
-  if (contents.indexOf(search, index + search.length) !== -1) {
-    throw new Error(`Playwright bundle expression is not unique: ${search}`);
-  }
-  return `${contents.slice(0, index)}${replacement}${contents.slice(index + search.length)}`;
+  return license;
 }
 
-async function copySharpNative() {
-  const requireFromServer = createRequire(path.join(root, "apps/server/package.json"));
-  let sharpEntry;
+async function copyRuntimeDependency(name, requireFrom, optional = false, issuerRoot) {
+  let packageRoot;
   try {
-    sharpEntry = realpathSync(requireFromServer.resolve("sharp"));
+    packageRoot = findPackageRoot(realpathSync(requireFrom.resolve(name)));
   } catch (error) {
-    throw new Error(
-      `Cannot resolve sharp for sidecar packaging: ${error instanceof Error ? error.message : error}`,
-    );
-  }
-  let nodeModulesDir = path.dirname(sharpEntry);
-  while (path.basename(nodeModulesDir) !== "node_modules") {
-    const parent = path.dirname(nodeModulesDir);
-    if (parent === nodeModulesDir) {
-      throw new Error(`Cannot locate sharp node_modules from ${sharpEntry}`);
+    packageRoot = issuerRoot ? findInstalledDependency(issuerRoot, name) : undefined;
+    if (!packageRoot) {
+      if (optional) return;
+      throw new Error(
+        `Cannot resolve runtime dependency ${name}: ${error instanceof Error ? error.message : error}`,
+      );
     }
-    nodeModulesDir = parent;
   }
-  const destRoot = path.join(resourcesDir, "sharp-node-modules");
-  const destModules = path.join(destRoot, "node_modules");
-  await rm(destRoot, { recursive: true, force: true });
-  await mkdir(destRoot, { recursive: true });
-  await writeFile(
-    path.join(destRoot, "package.json"),
-    `${JSON.stringify({ name: "chatdesk-sharp-runtime", private: true }, null, 2)}\n`,
+
+  const packageJsonPath = path.join(packageRoot, "package.json");
+  const metadata = JSON.parse(await readFile(packageJsonPath, "utf8"));
+  const packageName = metadata.name || name;
+  const version = metadata.version || "unknown";
+  const copiedVersion = copiedPackages.get(packageName);
+  if (copiedVersion) {
+    if (copiedVersion !== version) {
+      throw new Error(
+        `Runtime dependency version conflict for ${packageName}: ${copiedVersion} and ${version}`,
+      );
+    }
+    return;
+  }
+  copiedPackages.set(packageName, version);
+
+  const destination = path.join(runtimeModulesDir, ...packageName.split("/"));
+  await mkdir(path.dirname(destination), { recursive: true });
+  await cp(packageRoot, destination, {
+    recursive: true,
+    dereference: true,
+    filter(source) {
+      return source === packageRoot || path.basename(source) !== "node_modules";
+    },
+  });
+
+  const dependencyRequire = createRequire(packageJsonPath);
+  for (const dependency of Object.keys(metadata.dependencies || {})) {
+    await copyRuntimeDependency(dependency, dependencyRequire, false, packageRoot);
+  }
+  for (const dependency of Object.keys(metadata.optionalDependencies || {})) {
+    await copyRuntimeDependency(dependency, dependencyRequire, true, packageRoot);
+  }
+}
+
+function findInstalledDependency(issuerRoot, name) {
+  let current = issuerRoot;
+  const parts = name.split("/");
+  while (true) {
+    const candidates = [
+      path.join(current, "node_modules", ...parts),
+      ...(path.basename(current) === "node_modules" ? [path.join(current, ...parts)] : []),
+    ];
+    const installed = candidates.find((candidate) =>
+      existsSync(path.join(candidate, "package.json")),
+    );
+    if (installed) return realpathSync(installed);
+    const parent = path.dirname(current);
+    if (parent === current) return undefined;
+    current = parent;
+  }
+}
+
+function findPackageRoot(entry) {
+  let current = path.dirname(entry);
+  while (true) {
+    if (existsSync(path.join(current, "package.json"))) return current;
+    const parent = path.dirname(current);
+    if (parent === current) throw new Error(`Cannot find package root for ${entry}`);
+    current = parent;
+  }
+}
+
+async function verifyRuntimeDependencies() {
+  await run(nodeRuntimePath, ["-e", 'require("playwright"); require("sharp")'], undefined, {
+    cwd: runtimeRoot,
+  });
+  console.log(
+    `Verified runtime dependencies: ${[...copiedPackages.entries()]
+      .map(([name, version]) => `${name}@${version}`)
+      .join(", ")}`,
   );
-  await cp(nodeModulesDir, destModules, { recursive: true, dereference: true });
-  await writeFile(path.join(destRoot, ".keep"), "");
-  const verify = createRequire(path.join(destRoot, "package.json"));
-  verify("sharp");
-  console.log("Verified packaged sharp native module");
 }
 
 async function readTargetTriple() {
   return (await execFile("rustc", ["--print", "host-tuple"])).trim();
 }
 
-function toPkgTarget(triple, nodeRange = "node22") {
-  const targets = {
-    "x86_64-apple-darwin": `${nodeRange}-macos-x64`,
-    "aarch64-apple-darwin": `${nodeRange}-macos-arm64`,
-    "x86_64-pc-windows-msvc": `${nodeRange}-win-x64`,
-    "aarch64-pc-windows-msvc": `${nodeRange}-win-arm64`,
-    "x86_64-unknown-linux-gnu": `${nodeRange}-linux-x64`,
-    "aarch64-unknown-linux-gnu": `${nodeRange}-linux-arm64`,
-  };
-  const target = targets[triple];
-  if (!target) throw new Error(`Unsupported sidecar target triple: ${triple}`);
-  return target;
+function assertNativeTarget(host, target) {
+  if (host !== target) {
+    throw new Error(
+      `Shared Node runtime builds must be native: host is ${host}, requested target is ${target}`,
+    );
+  }
+}
+
+function assertNodeRuntimeVersion() {
+  if (process.version !== NODE_RUNTIME_VERSION) {
+    throw new Error(
+      `Shared Node runtime requires ${NODE_RUNTIME_VERSION}, current process is ${process.version}`,
+    );
+  }
 }
 
 function assertTool(name) {
@@ -259,22 +232,11 @@ function assertTool(name) {
 }
 
 function execFile(command, args) {
-  const result = spawn(command, args, { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
-  let stdout = "";
-  let stderr = "";
-  result.stdout.on("data", (chunk) => (stdout += chunk));
-  result.stderr.on("data", (chunk) => (stderr += chunk));
-  return new Promise((resolve, reject) => {
-    result.once("error", reject);
-    result.once("exit", (code) => {
-      if (code === 0) resolve(stdout);
-      else reject(new Error(`${command} exited with ${code}: ${stderr || stdout}`));
-    });
-  });
+  return execFileWithEnv(command, args);
 }
 
-async function run(command, args, env) {
-  const result = await execFileWithEnv(command, args, env);
+async function run(command, args, env, options = {}) {
+  const result = await execFileWithEnv(command, args, env, options);
   if (result.trim()) console.log(result.trim());
 }
 
@@ -288,9 +250,9 @@ async function runTool(name, args, env) {
   }
 }
 
-function execFileWithEnv(command, args, extraEnv) {
+function execFileWithEnv(command, args, extraEnv, options = {}) {
   const child = spawn(command, args, {
-    cwd: root,
+    cwd: options.cwd || root,
     env: { ...process.env, ...extraEnv },
     stdio: ["ignore", "pipe", "pipe"],
   });

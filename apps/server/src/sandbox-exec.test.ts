@@ -7,12 +7,46 @@ import {
   isSandboxBlockedOutput,
   resolveCommandCwd,
   resolveSandboxFileProcessOutput,
+  resolveSandboxWorkerCommand,
   runSandboxedFile,
   runSandboxedShell,
   SandboxPathError,
 } from "./sandbox-exec.ts";
 
 describe("sandbox execution errors", () => {
+  it("runs a packaged sandbox worker with the shared Node runtime", () => {
+    expect(
+      resolveSandboxWorkerCommand(
+        {
+          CHAT_SERVER_PRODUCTION: "1",
+          CHAT_SERVER_SANDBOX_WORKER: "/app/resources/workers/chat-server-sandbox.cjs",
+        },
+        "/app/node-runtime",
+        () => true,
+      ),
+    ).toEqual({
+      helperExecutable: "/app/node-runtime",
+      nodeArgs: ["/app/resources/workers/chat-server-sandbox.cjs"],
+      helperReadPaths: ["/app/resources/workers"],
+    });
+  });
+
+  it("fails early when a production sandbox worker is missing", () => {
+    expect(() =>
+      resolveSandboxWorkerCommand({ CHAT_SERVER_PRODUCTION: "1" }, "/app/node-runtime"),
+    ).toThrow("未配置打包的 sandbox worker");
+  });
+
+  it("uses the TypeScript helper entry during development", () => {
+    expect(
+      resolveSandboxWorkerCommand({}, "/usr/local/bin/node", () => false, "/repo/sandbox.ts"),
+    ).toEqual({
+      helperExecutable: "/usr/local/bin/node",
+      nodeArgs: ["--experimental-strip-types", "/repo/sandbox.ts"],
+      helperReadPaths: ["/repo"],
+    });
+  });
+
   it("only classifies recognizable Seatbelt denial output as sandbox blocked", () => {
     expect(isSandboxBlockedOutput("sandbox-exec: deny file-write-data")).toBe(true);
     expect(isSandboxBlockedOutput("sandbox-exec: sandbox_apply: Operation not permitted")).toBe(

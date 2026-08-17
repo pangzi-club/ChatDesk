@@ -1,7 +1,11 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { resolveBrowserWorkerScript, resolvePlaywrightBrowsersPath } from "./browser-runtime.ts";
+import {
+  browserWorkerCommand,
+  resolveBrowserWorkerScript,
+  resolvePlaywrightBrowsersPath,
+} from "./browser-runtime.ts";
 
 const sourceWorker = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -9,6 +13,13 @@ const sourceWorker = path.resolve(
 );
 
 describe("browser worker resolution", () => {
+  it("runs worker scripts with the current Node executable", () => {
+    expect(browserWorkerCommand("/tmp/browser-worker.mjs", "/app/node-runtime")).toEqual({
+      command: "/app/node-runtime",
+      args: ["/tmp/browser-worker.mjs"],
+    });
+  });
+
   it("uses CHAT_SERVER_BROWSER_WORKER when set", () => {
     expect(
       resolveBrowserWorkerScript(

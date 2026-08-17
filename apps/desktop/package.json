@@ -19,6 +19,7 @@
     "desktop:dev": "tauri dev",
     "desktop:sidecars": "node ../../scripts/build-sidecars.mjs",
     "desktop:sidecars:verify": "node ../../scripts/verify-browser-worker.mjs",
+    "desktop:package:verify": "node ../../scripts/verify-browser-worker.mjs --app",
     "desktop:build": "pnpm desktop:sidecars && tauri build",
     "preview": "vite preview"
   },
@@ -62,10 +63,8 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
-    "@yao-pkg/pkg": "^6.21.0",
     "esbuild": "^0.28.1",
-    "playwright": "^1.55.0",
-    "playwright-core": "^1.62.1",
+    "playwright": "1.62.1",
     "tailwindcss": "^4.3.3",
     "typescript": "7.0.2",
     "vite": "^7.0.4"

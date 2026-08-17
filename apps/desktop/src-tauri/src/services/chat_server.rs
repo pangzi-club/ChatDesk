@@ -416,9 +416,16 @@ fn spawn_server(app: &AppHandle) -> Result<(Child, ChatServerInfo), String> {
         .map_err(|error| format!("无法创建 Chat Server 数据目录：{error}"))?;
     let port = read_persisted_port(&data_dir);
     let token = Uuid::new_v4().to_string();
-    let executable = find_sidecar(app)?;
-    let mut command = Command::new(executable);
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|error| format!("无法解析应用资源目录：{error}"))?;
+    let runtime_root = find_node_runtime_root(&resource_dir)?;
+    let node_runtime = find_node_runtime(app, &resource_dir)?;
+    let server_worker = find_runtime_worker(&runtime_root, "chat-server.cjs")?;
+    let mut command = Command::new(node_runtime);
     command
+        .arg(server_worker)
         .env("CHAT_SERVER_HOST", "127.0.0.1")
         .env("CHAT_SERVER_PRODUCTION", "1")
         .env("CHAT_SERVER_TOKEN", &token)
@@ -427,20 +434,18 @@ fn spawn_server(app: &AppHandle) -> Result<(Child, ChatServerInfo), String> {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    // Production must ship a real browser-worker resource. Missing it is a
-    // startup error so browser tools cannot silently fail later.
-    let resource_dir = app
-        .path()
-        .resource_dir()
-        .map_err(|error| format!("无法解析应用资源目录：{error}"))?;
-    // The Chat Server sidecar is CJS, so import.meta.url is empty. These env
-    // vars are the production source of truth for browser-runtime.ts.
-    command.env("CHAT_SERVER_BROWSER_WORKER", find_browser_worker(&resource_dir)?);
+    command
+        .env(
+            "CHAT_SERVER_BROWSER_WORKER",
+            find_runtime_worker(&runtime_root, "browser-worker.mjs")?,
+        )
+        .env(
+            "CHAT_SERVER_SANDBOX_WORKER",
+            find_runtime_worker(&runtime_root, "chat-server-sandbox.cjs")?,
+        )
+        .env("CHAT_SERVER_SHARP_PATH", &runtime_root);
     if let Some(browsers) = find_playwright_browsers(&resource_dir) {
         command.env("CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH", browsers);
-    }
-    if let Some(sharp) = find_sharp_node_modules(&resource_dir) {
-        command.env("CHAT_SERVER_SHARP_PATH", sharp);
     }
     let mut child = command
         .spawn()
@@ -527,16 +532,25 @@ fn read_persisted_port(data_dir: &Path) -> u16 {
     }
 }
 
-fn find_browser_worker(resource_dir: &Path) -> Result<std::path::PathBuf, String> {
-    // Packaged builds ship `browser-worker` as a Unix resource. Windows `.exe`
-    // names are not handled yet; fail instead of starting without browser tools.
+fn find_node_runtime_root(resource_dir: &Path) -> Result<std::path::PathBuf, String> {
     [
-        resource_dir.join("browser-worker"),
-        resource_dir.join("resources").join("browser-worker"),
+        resource_dir.join("node-runtime"),
+        resource_dir.join("resources").join("node-runtime"),
     ]
     .into_iter()
-    .find(|path| path.is_file())
-    .ok_or_else(|| "未找到 browser worker 资源，请先运行 pnpm desktop:sidecars".to_string())
+    .find(|path| path.join("package.json").is_file())
+    .ok_or_else(|| "未找到共享 Node runtime 资源，请先运行 pnpm desktop:sidecars".to_string())
+}
+
+fn find_runtime_worker(runtime_root: &Path, name: &str) -> Result<std::path::PathBuf, String> {
+    let worker = runtime_root.join("workers").join(name);
+    if worker.is_file() {
+        Ok(worker)
+    } else {
+        Err(format!(
+            "未找到 Node worker {name}，请先运行 pnpm desktop:sidecars"
+        ))
+    }
 }
 
 fn find_playwright_browsers(resource_dir: &Path) -> Option<std::path::PathBuf> {
@@ -550,46 +564,37 @@ fn find_playwright_browsers(resource_dir: &Path) -> Option<std::path::PathBuf> {
     .find(|path| path.is_dir())
 }
 
-fn find_sharp_node_modules(resource_dir: &Path) -> Option<std::path::PathBuf> {
-    [
-        resource_dir.join("sharp-node-modules"),
-        resource_dir.join("resources").join("sharp-node-modules"),
-    ]
-    .into_iter()
-    .find(|path| path.join("package.json").is_file())
-}
-
-fn find_sidecar(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+fn find_node_runtime(app: &AppHandle, resource_dir: &Path) -> Result<std::path::PathBuf, String> {
     let current_exe = std::env::current_exe().ok();
-    let resource_dir = app.path().resource_dir().ok();
     let candidates = [
         current_exe
             .as_ref()
-            .and_then(|path| path.parent().map(|parent| parent.join("chat-server"))),
+            .and_then(|path| path.parent().map(|parent| parent.join("node-runtime"))),
         current_exe
             .as_ref()
-            .and_then(|path| path.parent().map(|parent| parent.join("chat-server.exe"))),
-        resource_dir.as_ref().map(|path| path.join("chat-server")),
-        resource_dir
-            .as_ref()
-            .map(|path| path.join("chat-server.exe")),
-        resource_dir
-            .as_ref()
-            .map(|path| path.join("binaries/chat-server")),
-        resource_dir
-            .as_ref()
-            .map(|path| path.join("binaries/chat-server.exe")),
+            .and_then(|path| path.parent().map(|parent| parent.join("node-runtime.exe"))),
+        Some(resource_dir.join("node-runtime")),
+        Some(resource_dir.join("node-runtime.exe")),
+        Some(resource_dir.join("binaries/node-runtime")),
+        Some(resource_dir.join("binaries/node-runtime.exe")),
     ];
     candidates
         .into_iter()
         .flatten()
         .find(|path| path.is_file())
-        .ok_or_else(|| "未找到已构建的 chat-server sidecar".to_string())
+        .ok_or_else(|| {
+            format!(
+                "未找到已构建的共享 Node runtime（应用：{}）",
+                app.package_info().name
+            )
+        })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{default_info, find_browser_worker, find_sharp_node_modules, restart_delay, ChatServerState};
+    use super::{
+        default_info, find_node_runtime_root, find_runtime_worker, restart_delay, ChatServerState,
+    };
     use std::fs;
     use std::time::Duration;
 
@@ -608,44 +613,52 @@ mod tests {
     }
 
     #[test]
-    fn missing_browser_worker_returns_an_error() {
+    fn missing_node_runtime_returns_an_error() {
         let root = std::env::temp_dir().join(format!(
-            "chatdesk-browser-worker-missing-{}",
+            "chatdesk-node-runtime-missing-{}",
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("create temp resource dir");
-        let error = find_browser_worker(&root).expect_err("missing worker should fail");
-        assert!(error.contains("未找到 browser worker 资源"));
+        let error = find_node_runtime_root(&root).expect_err("missing runtime should fail");
+        assert!(error.contains("未找到共享 Node runtime 资源"));
         let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
-    fn missing_sharp_runtime_is_optional() {
+    fn finds_nested_node_runtime_and_worker() {
         let root = std::env::temp_dir().join(format!(
-            "chatdesk-sharp-missing-{}",
+            "chatdesk-node-runtime-present-{}",
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).expect("create temp resource dir");
-        assert!(find_sharp_node_modules(&root).is_none());
-        let _ = fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn finds_sharp_runtime_package() {
-        let root = std::env::temp_dir().join(format!(
-            "chatdesk-sharp-present-{}",
-            std::process::id()
-        ));
-        let _ = fs::remove_dir_all(&root);
-        let sharp = root.join("sharp-node-modules");
-        fs::create_dir_all(&sharp).expect("create sharp dir");
-        fs::write(sharp.join("package.json"), "{}").expect("write package.json");
+        let runtime = root.join("resources/node-runtime");
+        let worker = runtime.join("workers/browser-worker.mjs");
+        fs::create_dir_all(worker.parent().expect("worker parent")).expect("create worker dir");
+        fs::write(runtime.join("package.json"), "{}").expect("write package.json");
+        fs::write(&worker, "").expect("write worker");
         assert_eq!(
-            find_sharp_node_modules(&root).as_deref(),
-            Some(sharp.as_path())
+            find_node_runtime_root(&root).as_deref(),
+            Ok(runtime.as_path())
         );
+        assert_eq!(
+            find_runtime_worker(&runtime, "browser-worker.mjs").as_deref(),
+            Ok(worker.as_path())
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn missing_runtime_worker_returns_an_error() {
+        let root = std::env::temp_dir().join(format!(
+            "chatdesk-node-worker-missing-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("workers")).expect("create worker dir");
+        let error = find_runtime_worker(&root, "browser-worker.mjs")
+            .expect_err("missing worker should fail");
+        assert!(error.contains("未找到 Node worker browser-worker.mjs"));
         let _ = fs::remove_dir_all(&root);
     }
 }
