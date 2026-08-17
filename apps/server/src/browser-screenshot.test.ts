@@ -161,7 +161,6 @@ test("appendScreenshotFileParts inserts a file part after the screenshot tool", 
         {
           type: "tool-browser_screenshot",
           toolCallId: "call-1",
-          toolName: "browser_screenshot",
           state: "output-available",
           input: { sessionId: "hn" },
           output: {

@@ -55,7 +55,6 @@ describe("materializeBrowserScreenshots", () => {
           {
             type: "tool-browser_screenshot",
             toolCallId: "call-1",
-            toolName: "browser_screenshot",
             state: "output-available",
             input: { sessionId: "browser-1" },
             output: {
@@ -73,7 +72,6 @@ describe("materializeBrowserScreenshots", () => {
           {
             type: "tool-browser_screenshot",
             toolCallId: "call-2",
-            toolName: "browser_screenshot",
             state: "output-available",
             input: { sessionId: "browser-1" },
             output: {
