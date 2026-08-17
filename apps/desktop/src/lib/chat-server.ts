@@ -634,6 +634,14 @@ export async function uploadChatServerAttachment(
   return createClient(port).uploadAttachment(sessionId, attachmentId, fileName, bytes);
 }
 
+export async function downloadChatServerAttachment(
+  sessionId: string,
+  attachmentId: string,
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  return createClient(port).downloadAttachment(sessionId, attachmentId);
+}
+
 export async function ensureChatServerSession(
   sessionId: string,
   options?: { title?: string; workspaceId?: string; cwd?: string },

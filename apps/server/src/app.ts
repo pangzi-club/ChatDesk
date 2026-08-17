@@ -20,6 +20,7 @@ import {
 } from "./developer-environment.ts";
 import { EventHub } from "./events.ts";
 import { normalizeGeneratedCommitMessage } from "./git-commit-message.ts";
+import { compressChatImage, MAX_ATTACHMENT_BYTES, replaceImageFileName } from "./image-compress.ts";
 import { ImageGenerationStore } from "./image-generation-store.ts";
 import { McpRuntime } from "./mcp-runtime.ts";
 import { MemoryStore } from "./memory-store.ts";
@@ -1210,8 +1211,32 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
         base64.includes(",") ? (base64.split(",").pop() ?? "") : base64,
         "base64",
       );
-      const savedPath = await store.saveAttachment(session.id, attachmentId, fileName, bytes);
-      return c.json({ id: attachmentId, fileName, path: savedPath, size: bytes.byteLength }, 201);
+      if (bytes.byteLength > MAX_ATTACHMENT_BYTES) {
+        return jsonError("附件超过 20MB 上限", 400);
+      }
+      const compressed = await compressChatImage(bytes);
+      const savedName =
+        compressed.changed && compressed.mediaType
+          ? replaceImageFileName(fileName, compressed.mediaType)
+          : fileName;
+      const savedPath = await store.saveAttachment(
+        session.id,
+        attachmentId,
+        savedName,
+        compressed.bytes,
+      );
+      return c.json(
+        {
+          id: attachmentId,
+          fileName: savedName,
+          path: savedPath,
+          size: compressed.bytes.byteLength,
+          ...(compressed.mediaType ? { mediaType: compressed.mediaType } : {}),
+          ...(compressed.width ? { width: compressed.width } : {}),
+          ...(compressed.height ? { height: compressed.height } : {}),
+        },
+        201,
+      );
     } catch (error) {
       return jsonError(error instanceof Error ? error.message : String(error));
     }

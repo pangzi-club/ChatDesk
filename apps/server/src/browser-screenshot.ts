@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { copyFile, mkdir, unlink } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { compressChatImage, replaceImageFileName } from "./image-compress.ts";
 
 export type ScreenshotAttachmentStore = {
   attachmentPath(sessionId: string, attachmentId: string, fileName: string): string;
@@ -22,6 +23,31 @@ export type BrowserToolResult = {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object";
+}
+
+function sanitizeAttachmentFileName(fileName: string) {
+  return fileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 180) || "attachment";
+}
+
+export function retargetScreenshotAttachment(
+  target: ScreenshotAttachmentTarget,
+  fileName: string,
+): ScreenshotAttachmentTarget {
+  return {
+    ...target,
+    fileName,
+    path: path.join(
+      path.dirname(target.path),
+      `${target.attachmentId}-${sanitizeAttachmentFileName(fileName)}`,
+    ),
+  };
+}
+
+async function writeAttachmentFile(targetPath: string, bytes: Uint8Array) {
+  await mkdir(path.dirname(targetPath), { recursive: true });
+  const temporary = `${targetPath}.tmp`;
+  await writeFile(temporary, bytes);
+  await rename(temporary, targetPath);
 }
 
 export function createScreenshotAttachmentTarget(
@@ -68,5 +94,33 @@ export async function persistScreenshotResult(
     await copyFile(source, target.path);
     await unlink(source).catch(() => undefined);
   }
-  return decorateScreenshotResult(result, target);
+
+  const original = await readFile(target.path).catch(() => null);
+  if (!original) return decorateScreenshotResult(result, target);
+
+  const compressed = await compressChatImage(original);
+  let next = target;
+  if (compressed.changed) {
+    const nextName = compressed.mediaType
+      ? replaceImageFileName(target.fileName, compressed.mediaType)
+      : target.fileName;
+    next = retargetScreenshotAttachment(target, nextName);
+    await writeAttachmentFile(next.path, compressed.bytes);
+    if (path.resolve(next.path) !== path.resolve(target.path)) {
+      await unlink(target.path).catch(() => undefined);
+    }
+  }
+
+  return decorateScreenshotResult(
+    {
+      ...result,
+      data: {
+        ...data,
+        ...(compressed.mediaType ? { mimeType: compressed.mediaType } : {}),
+        ...(compressed.width ? { width: compressed.width } : {}),
+        ...(compressed.height ? { height: compressed.height } : {}),
+      },
+    },
+    next,
+  );
 }

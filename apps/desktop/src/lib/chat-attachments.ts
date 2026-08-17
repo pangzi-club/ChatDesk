@@ -1,6 +1,6 @@
 import type { ChatAttachment, ChatAttachmentKind } from "@chatdesk/shared";
 
-import { writeChatAttachment } from "@/lib/chat-store";
+import { readChatAttachment, writeChatAttachment } from "@/lib/chat-store";
 
 export type { ChatAttachmentKind };
 
@@ -94,23 +94,38 @@ export function createPendingAttachment(file: File): PendingAttachment {
   };
 }
 
-/** 上传单个待发附件，返回可并入 session.attachments 的元数据。 */
+/** 上传单个待发附件，返回可并入 session.attachments 的元数据，以及发给模型用的压缩后文件。 */
 export async function uploadPendingAttachment(
   sessionId: string,
   pending: PendingAttachment,
-): Promise<ChatAttachment> {
+): Promise<{ attachment: ChatAttachment; file: File; previewUrl?: string }> {
   const bytes = new Uint8Array(await pending.file.arrayBuffer());
   const attachmentId = crypto.randomUUID();
-  const path = await writeChatAttachment(sessionId, attachmentId, bytes, pending.fileName);
+  const uploaded = await writeChatAttachment(sessionId, attachmentId, bytes, pending.fileName);
+  const fileName = uploaded.fileName || pending.fileName;
+  const mediaType = uploaded.mediaType || pending.mediaType;
+  const size = uploaded.size ?? pending.size;
+  let file = pending.file;
+  let previewUrl = pending.previewUrl;
+  const downloaded = await readChatAttachment(sessionId, attachmentId);
+  file = new File([downloaded], fileName, { type: mediaType });
+  if (previewUrl) URL.revokeObjectURL(previewUrl);
+  previewUrl = mediaType.startsWith("image/") ? URL.createObjectURL(file) : undefined;
   return {
-    id: attachmentId,
-    kind: pending.kind,
-    mediaType: pending.mediaType,
-    fileName: pending.fileName,
-    size: pending.size,
-    path: path ?? "",
-    source: "upload",
-    createdAt: new Date().toISOString(),
+    attachment: {
+      id: attachmentId,
+      kind: inferAttachmentKind(mediaType),
+      mediaType,
+      fileName,
+      size,
+      path: uploaded.path ?? "",
+      source: "upload",
+      createdAt: new Date().toISOString(),
+      ...(uploaded.width ? { width: uploaded.width } : {}),
+      ...(uploaded.height ? { height: uploaded.height } : {}),
+    },
+    file,
+    previewUrl,
   };
 }
 

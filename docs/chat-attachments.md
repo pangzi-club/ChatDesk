@@ -43,7 +43,8 @@ type ChatAttachment = {
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `POST` | `/v1/sessions/:id/attachments` | 上传附件。Body `{ id?, fileName?, base64 }`，base64 解码后落盘，返回 `{ id, fileName, path, size }` |
+| `POST` | `/v1/sessions/:id/attachments` | 上传附件。Body `{ id?, fileName?, base64 }`，base64 解码后若为图片则经 Sharp 压缩再落盘，返回 `{ id, fileName, path, size, mediaType?, width?, height? }`。压缩后扩展名可能变为 `.webp`。 |
+
 | `GET` | `/v1/sessions/:id/attachments/:attachmentId` | 按 id 读文件本体，返回 `application/octet-stream` |
 | `DELETE` | `/v1/sessions/:id/attachments/:attachmentId` | 按 id 删文件本体（用于清理未发送的孤儿附件） |
 
@@ -61,7 +62,7 @@ type ChatAttachment = {
 
 因此前端上传成功后必须自己补一步：
 
-1. 用返回的 `id / path / size` 加上前端已知的 `mediaType / kind / fileName` 构造完整的 `ChatAttachment`（用户上传 `source: "upload"`）；
+1. 用返回的 `id / path / size` 以及服务端给出的 `mediaType / fileName`（没有则用前端已知值）构造完整的 `ChatAttachment`（用户上传 `source: "upload"`）；
 2. 合并进 `session.attachments`（按 `id` 去重，参考 `chat-image-generation.ts` 的 `mergeAttachments`）；
 3. 通过 `PATCH /v1/sessions/:id` 保存整个 session，元数据才真正持久化。
 
@@ -73,10 +74,13 @@ type ChatAttachment = {
 用户文件 / 生成图片
   → uploadChatServerAttachment(sessionId, attachmentId, fileName, bytes)   # apps/desktop/src/lib/chat-server.ts
   → ChatServerClient.uploadAttachment                                       # packages/chat-client（base64 POST）
-  → POST /v1/sessions/:id/attachments                                       # 落盘，返回 { path, ... }
+  → POST /v1/sessions/:id/attachments                                       # Sharp 压缩后落盘，返回 { path, size, mediaType?, ... }
+  → GET /attachments/:id                                                    # 取压缩后的字节，构造发给模型的 file part
   → 构造 ChatAttachment，merge 进 session.attachments
   → PATCH /v1/sessions/:id                                                  # 元数据持久化
 ```
+
+发送 file part 必须使用压缩后的附件字节，不要用用户选择的原始 `File` 转 data URL。
 
 ## 6. 消息级引用与渲染
 
@@ -86,19 +90,25 @@ type ChatAttachment = {
 
 ## 7. 现有调用方
 
-- **image_generation（首个调用方）**：`apps/desktop/src/lib/chat-image-generation.ts` 的 `materializeGeneratedImages` 把生成图片落盘为 `source: "generated"` 的附件，并用 `mergeAttachments` 回填 `session.attachments`、改写消息 parts。这是「落盘 + 回填元数据 + 改写 parts」的完整范式。
-- **browser_screenshot**：Chat Server 在工具执行时把 PNG 直接写到 `sessions/<sessionId>/attachments/`（内部 path，不进入工具 schema）。前端 `apps/desktop/src/lib/chat-browser-screenshots.ts` 的 `materializeBrowserScreenshots` 只回填 `session.attachments`（`source: "generated"`），不再次上传。聊天卡片按 tool output 的 `data.path` 预览。若助手把同一绝对路径写进 Markdown `![](/Users/...png)`，`ChatMarkdown` 会把它转成 `assetUrl`（桌面端 `convertFileSrc`），不能当网站相对路径加载。
+- **image_generation（首个调用方）**：`apps/desktop/src/lib/chat-image-generation.ts` 的 `materializeGeneratedImages` 把生成图片经同一 `POST /attachments` 落盘为 `source: "generated"` 的附件（因此也会走 Sharp 压缩），并用 `mergeAttachments` 回填 `session.attachments`、改写消息 parts。这是「落盘 + 回填元数据 + 改写 parts」的完整范式。
+- **browser_screenshot**：Chat Server 在工具执行时先把截图写到 `sessions/<sessionId>/attachments/`（内部 path，不进入工具 schema），再经同一套 Sharp 压缩；输出可能是 WebP，不再保证 PNG。前端 `apps/desktop/src/lib/chat-browser-screenshots.ts` 的 `materializeBrowserScreenshots` 只回填 `session.attachments`（`source: "generated"`），不再次上传。聊天卡片按 tool output 的 `data.path` 预览。若助手把同一绝对路径写进 Markdown `![](/Users/...png)`，`ChatMarkdown` 会把它转成 `assetUrl`（桌面端 `convertFileSrc`），不能当网站相对路径加载。
 - **用户文件输入**：composer 附件按钮与拖拽上传复用同一链路，`source: "upload"`。实现见 `apps/desktop/src/lib/chat-attachments.ts` 与 `apps/desktop/src/pages/chat.tsx`。
 
-## 8. 限制与清理
+## 8. 限制、压缩与清理
 
-- 用户文件输入侧的限制（单文件大小、单次数量上限）在前端 `lib/chat-attachments.ts` 约定；server 的 `POST /attachments` 本身不强制大小校验。
+- 用户文件输入侧的限制（单文件 20MB、单次最多 9 个）在前端 `lib/chat-attachments.ts` 约定；超限时 composer 显示错误文案。`POST /attachments` 对解码后的 body 同样拒绝超过 20MB 的附件。
+- 图片在落盘前由 Chat Server 的 Sharp 统一压缩（`apps/server/src/image-compress.ts`），覆盖用户上传、浏览器截图和经上传接口物化的生成图：
+  - 按 EXIF 旋转；最长边先压到 1280，仍超过 256KB 再降到 1024 / 768。
+  - 默认输出 WebP quality 60；超 256KB 再降到 40、28。目标体积 256KB，避免 base64 后撑爆模型上下文。
+  - 已够小则跳过：两边都 ≤ 1280、体积 ≤ 256KB，且已是 jpeg/webp/png。
+  - GIF / 动图 / SVG、解码失败或 Sharp 不可用时保留原图，不让上传失败。
 - 待发附件在上传后、发送前被移除时，应调 `DELETE /attachments/:attachmentId` 清掉已落盘的孤儿文件，避免 `attachments/` 目录只增不减。
 
 ## 9. 当前代码位置
 
 - `packages/shared/src/chat.ts`：`ChatAttachment`、`ChatSession.attachments` 类型。
 - `apps/server/src/app.ts`：`POST/GET/DELETE /v1/sessions/:id/attachments` 路由。
+- `apps/server/src/image-compress.ts`：Sharp 图片压缩。
 - `apps/server/src/store.ts`：`saveAttachment / readAttachment / deleteAttachment / attachmentPath`。
 - `packages/chat-client/src/index.ts`：`ChatServerClient.uploadAttachment`。
 - `apps/desktop/src/lib/chat-server.ts`：`uploadChatServerAttachment` 封装。

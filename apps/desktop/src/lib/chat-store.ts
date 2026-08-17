@@ -10,6 +10,7 @@ import { CHAT_SCHEMA_VERSION, DEFAULT_WORKSPACE_ID, deriveTitle } from "@chatdes
 import type { UIMessage } from "ai";
 import {
   deleteChatServerSession,
+  downloadChatServerAttachment,
   initializeChatServer,
   loadChatServerSession,
   loadChatServerSessions,
@@ -160,7 +161,10 @@ export async function writeChatAttachment(
   attachmentId: string,
   bytes: Uint8Array,
   fileName: string,
-): Promise<string | null> {
-  const result = await uploadChatServerAttachment(sessionId, attachmentId, fileName, bytes);
-  return result.path;
+) {
+  return uploadChatServerAttachment(sessionId, attachmentId, fileName, bytes);
+}
+
+export async function readChatAttachment(sessionId: string, attachmentId: string) {
+  return downloadChatServerAttachment(sessionId, attachmentId);
 }

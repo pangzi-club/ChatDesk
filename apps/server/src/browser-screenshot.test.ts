@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import sharp from "sharp";
 import { test } from "vitest";
 import {
   createScreenshotAttachmentTarget,
@@ -120,4 +121,38 @@ test("persistScreenshotResult keeps a file already written to the attachment pat
   );
   assert.equal(await readFile(targetPath, "utf8"), "direct");
   assert.equal((persisted.data as { attachmentId?: string }).attachmentId, "att-3");
+});
+
+test("persistScreenshotResult compresses oversized screenshots", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-screenshot-compress-"));
+  const tempFile = path.join(root, "temp-shot.png");
+  const raw = Buffer.alloc(3000 * 2000 * 3);
+  for (let index = 0; index < raw.length; index += 1) raw[index] = (index * 13) % 256;
+  const png = await sharp(raw, {
+    raw: { width: 3000, height: 2000, channels: 3 },
+  })
+    .png()
+    .toBuffer();
+  await writeFile(tempFile, png);
+  const target = {
+    attachmentId: "att-5",
+    fileName: "screenshot-5.png",
+    path: path.join(root, "attachments", "att-5-screenshot-5.png"),
+  };
+  const persisted = await persistScreenshotResult(
+    { ok: true, data: { path: tempFile, mimeType: "image/png", width: 3000, height: 2000 } },
+    target,
+  );
+  const data = persisted.data as {
+    path: string;
+    mimeType: string;
+    fileName: string;
+    width: number;
+    height: number;
+  };
+  assert.ok(data.width <= 1280);
+  assert.ok(data.height <= 1280);
+  assert.match(data.fileName, /\.(webp|png)$/);
+  const written = await readFile(data.path);
+  assert.ok(written.byteLength > 0);
 });

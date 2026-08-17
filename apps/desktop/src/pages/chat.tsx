@@ -371,6 +371,7 @@ function ChatPage() {
   const [plans, setPlans] = useState<ChatPlanSummary[]>([]);
   const [planTransition, setPlanTransition] = useState<PlanTransitionState>("idle");
   const [planModeError, setPlanModeError] = useState("");
+  const [attachmentError, setAttachmentError] = useState("");
   const [titleError, setTitleError] = useState("");
   const [isRenamingTitle, setIsRenamingTitle] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -1410,14 +1411,16 @@ function ChatPage() {
       if (files.length === 0) return;
       const current = pendingAttachmentsRef.current;
       const accepted: PendingAttachment[] = [];
+      const errors: string[] = [];
       for (const file of files) {
         const error = validateAttachment(file, current.length + accepted.length);
         if (error) {
-          console.warn(error);
+          errors.push(error);
           continue;
         }
         accepted.push(createPendingAttachment(file));
       }
+      setAttachmentError(errors[0] ?? "");
       if (accepted.length === 0) return;
       const next = [...current, ...accepted];
       setPendingAttachments(next);
@@ -1437,19 +1440,29 @@ function ChatPage() {
       }
       for (const pending of accepted) {
         uploadPendingAttachment(sessionIdValue, pending)
-          .then((attachment) => {
-            setPendingAttachments((prev) =>
-              prev.map((item) =>
+          .then(({ attachment, file, previewUrl }) => {
+            setPendingAttachments((prev) => {
+              if (!prev.some((item) => item.localId === pending.localId)) {
+                if (previewUrl) URL.revokeObjectURL(previewUrl);
+                return prev;
+              }
+              return prev.map((item) =>
                 item.localId === pending.localId
                   ? {
                       ...item,
+                      file,
+                      fileName: attachment.fileName ?? item.fileName,
+                      mediaType: attachment.mediaType,
+                      size: attachment.size ?? item.size,
+                      kind: attachment.kind,
+                      previewUrl,
                       status: "ready" as const,
                       attachmentId: attachment.id,
                       path: attachment.path,
                     }
                   : item,
-              ),
-            );
+              );
+            });
           })
           .catch((error) => {
             console.error("Failed to upload attachment", pending.fileName, error);
@@ -1620,6 +1633,7 @@ function ChatPage() {
     setInput("");
     setContextCompaction(null);
     setPlanModeError("");
+    setAttachmentError("");
     shouldFollowScrollRef.current = true;
     liveDraftsRef.current.delete(sessionId);
     attachedStreamSessionRef.current = sessionId;
@@ -2320,10 +2334,11 @@ function ChatPage() {
             </Button>
           ) : null}
         </div>
-        {error || planModeError || titleError ? (
+        {error || planModeError || titleError || attachmentError ? (
           <p className="chat-error" role="alert">
             {planModeError ||
               titleError ||
+              attachmentError ||
               (recoverableTransportError
                 ? serverRunActive
                   ? "响应连接已中断，正在从后台任务恢复…"

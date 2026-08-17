@@ -56,6 +56,16 @@ export class ChatServerError extends Error {
   }
 }
 
+export type ChatAttachmentUploadResult = {
+  id: string;
+  fileName: string;
+  path: string;
+  size: number;
+  mediaType?: string;
+  width?: number;
+  height?: number;
+};
+
 function defaultEventSourceFactory(url: string): EventSourceLike {
   const EventSourceConstructor = globalThis.EventSource;
   if (!EventSourceConstructor) {
@@ -199,7 +209,7 @@ export class ChatServerClient {
   }
 
   uploadAttachment(sessionId: string, attachmentId: string, fileName: string, bytes: Uint8Array) {
-    return this.json<{ path: string }>(
+    return this.json<ChatAttachmentUploadResult>(
       `/v1/sessions/${encodePath(sessionId)}/attachments`,
       {
         method: "POST",
@@ -208,6 +218,19 @@ export class ChatServerClient {
       },
       "Chat Server 附件上传失败",
     );
+  }
+
+  async downloadAttachment(sessionId: string, attachmentId: string) {
+    const response = await this.request(
+      `/v1/sessions/${encodePath(sessionId)}/attachments/${encodePath(attachmentId)}`,
+    );
+    if (!response.ok) {
+      throw new ChatServerError(
+        (await response.text()) || "Chat Server 附件下载失败",
+        response.status,
+      );
+    }
+    return new Uint8Array(await response.arrayBuffer());
   }
 
   startRun(sessionId: string, input: RunStartInput) {

@@ -576,6 +576,9 @@ describe("chat server", () => {
       },
     );
     assert.equal(attachment.status, 201);
+    const saved = (await attachment.json()) as { size: number; fileName: string };
+    assert.equal(saved.fileName, "note.txt");
+    assert.equal(saved.size, 5);
     const downloaded = await server.app.request(
       "http://localhost/v1/sessions/attachment-session/attachments/file-1",
       { headers: auth() },

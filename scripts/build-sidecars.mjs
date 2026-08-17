@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { existsSync, realpathSync } from "node:fs";
+import { cp, mkdir, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -43,6 +44,7 @@ await runTool("esbuild", [
   "--platform=node",
   "--format=cjs",
   "--target=node22",
+  "--external:sharp",
   `--outfile=${serverBundlePath}`,
 ]);
 
@@ -63,7 +65,7 @@ await runTool(
     pkgTarget,
     "--fallback-to-source",
     "--public-packages",
-    "undici",
+    "undici,sharp",
     "--output",
     path.join(binariesDir, `chat-server-${targetTriple}${extension}`),
   ],
@@ -100,6 +102,40 @@ await runTool(
 );
 
 console.log(`Built sidecars for ${targetTriple} (${pkgTarget})`);
+await copySharpNative();
+
+async function copySharpNative() {
+  const requireFromServer = createRequire(path.join(root, "apps/server/package.json"));
+  let sharpEntry;
+  try {
+    sharpEntry = realpathSync(requireFromServer.resolve("sharp"));
+  } catch (error) {
+    throw new Error(
+      `Cannot resolve sharp for sidecar packaging: ${error instanceof Error ? error.message : error}`,
+    );
+  }
+  let nodeModulesDir = path.dirname(sharpEntry);
+  while (path.basename(nodeModulesDir) !== "node_modules") {
+    const parent = path.dirname(nodeModulesDir);
+    if (parent === nodeModulesDir) {
+      throw new Error(`Cannot locate sharp node_modules from ${sharpEntry}`);
+    }
+    nodeModulesDir = parent;
+  }
+  const destRoot = path.join(resourcesDir, "sharp-node-modules");
+  const destModules = path.join(destRoot, "node_modules");
+  await rm(destRoot, { recursive: true, force: true });
+  await mkdir(destRoot, { recursive: true });
+  await writeFile(
+    path.join(destRoot, "package.json"),
+    `${JSON.stringify({ name: "chatdesk-sharp-runtime", private: true }, null, 2)}\n`,
+  );
+  await cp(nodeModulesDir, destModules, { recursive: true, dereference: true });
+  await writeFile(path.join(destRoot, ".keep"), "");
+  const verify = createRequire(path.join(destRoot, "package.json"));
+  verify("sharp");
+  console.log("Verified packaged sharp native module");
+}
 
 async function readTargetTriple() {
   return (await execFile("rustc", ["--print", "host-tuple"])).trim();

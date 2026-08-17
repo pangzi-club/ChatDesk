@@ -437,6 +437,9 @@ fn spawn_server(app: &AppHandle) -> Result<(Child, ChatServerInfo), String> {
     if let Some(browsers) = find_playwright_browsers(&resource_dir) {
         command.env("CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH", browsers);
     }
+    if let Some(sharp) = find_sharp_node_modules(&resource_dir) {
+        command.env("CHAT_SERVER_SHARP_PATH", sharp);
+    }
     let mut child = command
         .spawn()
         .map_err(|error| format!("无法启动 Chat Server sidecar：{error}"))?;
@@ -545,6 +548,15 @@ fn find_playwright_browsers(resource_dir: &Path) -> Option<std::path::PathBuf> {
     .find(|path| path.is_dir())
 }
 
+fn find_sharp_node_modules(resource_dir: &Path) -> Option<std::path::PathBuf> {
+    [
+        resource_dir.join("sharp-node-modules"),
+        resource_dir.join("resources").join("sharp-node-modules"),
+    ]
+    .into_iter()
+    .find(|path| path.join("package.json").is_file())
+}
+
 fn find_sidecar(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     let current_exe = std::env::current_exe().ok();
     let resource_dir = app.path().resource_dir().ok();
@@ -575,7 +587,7 @@ fn find_sidecar(app: &AppHandle) -> Result<std::path::PathBuf, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{default_info, find_browser_worker, restart_delay, ChatServerState};
+    use super::{default_info, find_browser_worker, find_sharp_node_modules, restart_delay, ChatServerState};
     use std::fs;
     use std::time::Duration;
 
@@ -603,6 +615,35 @@ mod tests {
         fs::create_dir_all(&root).expect("create temp resource dir");
         let error = find_browser_worker(&root).expect_err("missing worker should fail");
         assert!(error.contains("未找到 browser worker 资源"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn missing_sharp_runtime_is_optional() {
+        let root = std::env::temp_dir().join(format!(
+            "chatdesk-sharp-missing-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("create temp resource dir");
+        assert!(find_sharp_node_modules(&root).is_none());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn finds_sharp_runtime_package() {
+        let root = std::env::temp_dir().join(format!(
+            "chatdesk-sharp-present-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let sharp = root.join("sharp-node-modules");
+        fs::create_dir_all(&sharp).expect("create sharp dir");
+        fs::write(sharp.join("package.json"), "{}").expect("write package.json");
+        assert_eq!(
+            find_sharp_node_modules(&root).as_deref(),
+            Some(sharp.as_path())
+        );
         let _ = fs::remove_dir_all(&root);
     }
 }

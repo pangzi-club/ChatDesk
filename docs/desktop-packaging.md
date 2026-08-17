@@ -34,7 +34,7 @@ both builds finish successfully. Keep the tag version aligned with the
 versions in `package.json`, `apps/desktop/package.json`,
 `apps/desktop/src-tauri/tauri.conf.json`, and `apps/desktop/src-tauri/Cargo.toml`.
 
-`pnpm desktop:sidecars` first bundles the TypeScript Chat Server and its sandbox worker into separate CommonJS files, then uses `@yao-pkg/pkg` with source fallback to create the target-specific binaries. It also downloads the Chromium headless shell into `apps/desktop/src-tauri/resources/playwright-browsers`. The generated files are ignored by Git and must be rebuilt for every target platform.
+`pnpm desktop:sidecars` first bundles the TypeScript Chat Server and its sandbox worker into separate CommonJS files, then uses `@yao-pkg/pkg` with source fallback to create the target-specific binaries. Sharp is a native module, so the Chat Server bundle marks it external (`esbuild --external:sharp`, `pkg --public-packages undici,sharp`) and copies the current platform's `sharp` / `@img/sharp-*` tree into `apps/desktop/src-tauri/resources/sharp-node-modules`. Tauri injects `CHAT_SERVER_SHARP_PATH` at spawn so the packaged server can `require("sharp")`. The build verifies `require("sharp")` against that copy. It also downloads the Chromium headless shell into `apps/desktop/src-tauri/resources/playwright-browsers`. The generated files are ignored by Git and must be rebuilt for every target platform. Each CI runner must install the matching Sharp optional native binary.
 
 The pkg base-runtime cache defaults to `.cache/pkg`; set `PKG_CACHE_PATH` to share it between CI jobs.
 
@@ -57,7 +57,7 @@ Tauri starts `chat-server` with a loopback host, a per-launch token, and a data 
 
 Browser tools use a separate worker process. In development (`pnpm dev` / `pnpm server:dev`), Chat Server is the TypeScript process managed by `scripts/dev-all.mjs`, which points `CHAT_SERVER_BROWSER_WORKER` at `apps/desktop/src-tauri/src/sidecar/browser-worker.mjs`. If that path is missing and the env var is unset, `browser_open` fails immediately with a configuration error. First-time Chromium setup is `pnpm --filter chatdesk-desktop exec playwright install chromium --only-shell`.
 
-In a packaged app, Tauri injects `CHAT_SERVER_BROWSER_WORKER` from the `browser-worker` resource next to the Chat Server binary, plus `CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH` when `playwright-browsers` is present. Missing the worker resource is a Chat Server startup error, not a later tool failure. Windows `.exe` resource names are not handled yet. The end-user installation does not depend on Node.js, pnpm, or `node_modules`.
+In a packaged app, Tauri injects `CHAT_SERVER_BROWSER_WORKER` from the `browser-worker` resource next to the Chat Server binary, plus `CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH` when `playwright-browsers` is present, and `CHAT_SERVER_SHARP_PATH` when `sharp-node-modules` is present. Missing the worker resource is a Chat Server startup error, not a later tool failure. Missing Sharp falls back to storing original image bytes. Windows `.exe` resource names are not handled yet. The end-user installation does not depend on Node.js, pnpm, or `node_modules`.
 
 Window geometry is managed by `tauri-plugin-window-state` in the platform app configuration directory; this small UI preference is intentionally exempt from the `~/.chatdesk` data boundary.
 

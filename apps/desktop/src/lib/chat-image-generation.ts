@@ -190,13 +190,16 @@ export async function materializeGeneratedImages(
       }
 
       const fileName = `${attachmentId}.${extensionForMediaType(mediaType)}`;
-      const path = await writeChatAttachment(sessionId, attachmentId, bytes, fileName);
+      const uploaded = await writeChatAttachment(sessionId, attachmentId, bytes, fileName);
+      const savedMediaType = uploaded.mediaType || mediaType;
+      const savedFileName = uploaded.fileName || fileName;
+      const path = uploaded.path;
       const now = new Date().toISOString();
       const output: MaterializedImageOutput = {
         attachmentId,
-        mediaType,
-        fileName,
-        ...(path ? { path } : { url: `data:${mediaType};base64,${bytesToBase64(bytes)}` }),
+        mediaType: savedMediaType,
+        fileName: savedFileName,
+        ...(path ? { path } : { url: `data:${savedMediaType};base64,${bytesToBase64(bytes)}` }),
         ...(taskId ? { taskId } : {}),
         ...(sourceUrl ? { sourceUrl } : {}),
       };
@@ -204,12 +207,14 @@ export async function materializeGeneratedImages(
       created.push({
         id: attachmentId,
         kind: "image",
-        mediaType,
-        fileName,
-        size: bytes.byteLength,
+        mediaType: savedMediaType,
+        fileName: savedFileName,
+        size: uploaded.size ?? bytes.byteLength,
         path: path ?? "",
         source: "generated",
         createdAt: now,
+        ...(uploaded.width ? { width: uploaded.width } : {}),
+        ...(uploaded.height ? { height: uploaded.height } : {}),
       });
 
       nextParts.push({

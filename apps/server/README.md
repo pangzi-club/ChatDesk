@@ -48,6 +48,7 @@ pnpm --filter chatdesk-chat-server typecheck
 | `CHAT_SERVER_PRODUCTION` | 未设置 | 设为 `1` 后启用致命错误处理和关闭时的运行清理 |
 | `CHAT_SERVER_BROWSER_WORKER` | 开发时回退到 `apps/desktop/src-tauri/src/sidecar/browser-worker.mjs` | 浏览器 worker 可执行文件或脚本路径。打包后由 Tauri 注入；未配置时浏览器工具会直接报错 |
 | `CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH` | 未设置 | Playwright 浏览器资源目录。开发时若 `src-tauri/resources/playwright-browsers` 中已有 Chromium 则自动使用，否则走 Playwright 默认缓存 |
+| `CHAT_SERVER_SHARP_PATH` | 未设置 | 打包后 Sharp native 运行时目录（含 `package.json` 与 `node_modules/sharp`）。开发态直接使用 `apps/server` 的 `sharp` 依赖 |
 
 示例：
 
@@ -84,7 +85,7 @@ Authorization: Bearer local-dev-token
 - `POST /v1/sessions/import`：批量导入会话。
 - `GET/PATCH/DELETE /v1/sessions/:id`：读取、更新或删除会话。
 - `POST /v1/sessions/:id/title`：根据当前对话用模型重新生成会话标题。
-- `POST/GET/DELETE /v1/sessions/:id/attachments...`：上传、读取或删除附件。
+- `POST/GET/DELETE /v1/sessions/:id/attachments...`：上传、读取或删除附件。图片会在落盘前经 Sharp 压缩。
 - `POST /v1/sessions/:id/runs`：启动一次模型运行；同一会话已有运行时返回 `409`。
 - `POST /v1/sessions/:id/runs/stop`：停止当前运行。
 - `GET /v1/events`：SSE 事件流；可用 `sessionId` 查询参数过滤会话。
@@ -138,6 +139,7 @@ apps/server/
 ├── src/run-registry.ts    # 并发运行和流式事件
 ├── src/model-adaptor.ts   # 供应商 Responses / Chat Completions 差异
 ├── src/store.ts           # 会话与附件持久化
+├── src/image-compress.ts  # 聊天图片 Sharp 压缩
 ├── src/*-store.ts         # 配置、记忆、归档和 Skills 存储
 └── src/*.test.ts          # Node.js 测试
 ```

@@ -61,6 +61,20 @@ describe("ChatServerClient", () => {
     assert.match(body, /"base64":"QUI="/);
   });
 
+  it("downloads attachment bytes as an array buffer", async () => {
+    const client = new ChatServerClient({
+      baseUrl: "http://localhost",
+      fetchImpl: async (input) => {
+        assert.equal(String(input), "http://localhost/v1/sessions/session/attachments/attachment");
+        return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+      },
+    });
+    assert.deepEqual(
+      await client.downloadAttachment("session", "attachment"),
+      new Uint8Array([1, 2, 3]),
+    );
+  });
+
   it("dispatches typed SSE events through the injected event source", () => {
     const listeners = new Map<string, (event: { data: string }) => void>();
     const source: EventSourceLike = {

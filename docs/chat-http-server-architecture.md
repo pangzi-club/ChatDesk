@@ -76,7 +76,7 @@ Node HTTP Server
 - 创建 / 列出 / 获取 / 更新 / 删除会话；
 - 维护会话元数据：`id`、`title`、时间戳、`modelId`、`workspaceId` / `cwd`、MCP / skills 选择等；
 - 维护消息列表（至少支持 UI 可渲染的消息结构）；
-- 维护会话附件（文件本体 + 会话级元数据 + 消息级 file part），详见 [chat-attachments.md](chat-attachments.md)；
+- 维护会话附件（文件本体 + 会话级元数据 + 消息级 file part），图片落盘前压缩，详见 [chat-attachments.md](chat-attachments.md)；
 - 维护会话级计划：每次进入 plan mode 创建 `sessions/<id>/plan-<随机版本>.md`，计划摘要保存在 session 元数据，文件不进入 workspace/Git；
 - 成为运行时的 session 真相源；与现有磁盘索引的同步策略需明确（由 server 写盘，或经宿主落盘）。
 

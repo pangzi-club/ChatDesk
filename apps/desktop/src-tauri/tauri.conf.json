@@ -41,7 +41,11 @@
   "bundle": {
     "active": true,
     "externalBin": ["binaries/chat-server", "binaries/chat-server-sandbox"],
-    "resources": ["resources/browser-worker*", "resources/playwright-browsers/**/*"],
+    "resources": [
+      "resources/browser-worker*",
+      "resources/playwright-browsers/**/*",
+      "resources/sharp-node-modules/**/*"
+    ],
     "targets": "all",
     "icon": [
       "icons/32x32.png",
