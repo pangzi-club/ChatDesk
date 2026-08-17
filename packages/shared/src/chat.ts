@@ -506,6 +506,7 @@ export type ChatToolPackId =
   | "read_file"
   | "write_file"
   | "edit_file"
+  | "git"
   | "terminal"
   | "web_search"
   | "image_generation"

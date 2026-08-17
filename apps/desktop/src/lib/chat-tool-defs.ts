@@ -149,6 +149,7 @@ export async function resolveActiveTools(
       pack.id === "read_file" ||
       pack.id === "write_file" ||
       pack.id === "edit_file" ||
+      pack.id === "git" ||
       pack.id === "terminal"
     ) {
       if (!getCwd) continue;
