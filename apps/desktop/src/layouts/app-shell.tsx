@@ -2,7 +2,6 @@ import {
   DEFAULT_WORKSPACE_ID,
   type WorkspaceFileEntry,
   type WorkspaceGitFile,
-  type WorkspaceGitSummary,
 } from "@chatdesk/shared";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
@@ -174,6 +173,7 @@ import {
   loadWorkspaceProjects,
   removeWorkspaceProject,
   selectWorkspaceDirectory,
+  type WorkspaceGitInfo,
   type WorkspaceProject,
   workspaceGitQueryKey,
 } from "@/lib/workspaces";
@@ -2110,7 +2110,8 @@ function ChatWorkspaceWindow({
   const queryClient = useQueryClient();
   const gitQuery = useQuery({
     queryKey: workspaceGitQueryKey(activeTabWorkspaceId ?? "", explorerCwd),
-    queryFn: () => loadServerWorkspaceGit(activeTabWorkspaceId ?? "", explorerCwd),
+    queryFn: () =>
+      loadServerWorkspaceGit(activeTabWorkspaceId ?? "", explorerCwd) as Promise<WorkspaceGitInfo>,
     enabled:
       Boolean(activeTabWorkspaceId) &&
       (!isDefaultWorkspaceId(activeTabWorkspaceId) || Boolean(explorerCwd)),
@@ -2126,8 +2127,9 @@ function ChatWorkspaceWindow({
     queryFn: () => loadChatPlans(planTab?.sessionId ?? ""),
     enabled: Boolean(planTab?.sessionId),
   });
-  const gitSummary =
-    (gitQuery.data as { summary?: WorkspaceGitSummary } | undefined)?.summary ?? null;
+  const gitInfo = gitQuery.data;
+  const isGitWorkspace = gitInfo?.isRepository === true;
+  const gitSummary = gitInfo?.summary ?? null;
   const directoryPaths = useMemo(
     () => [...expandedDirectories].filter((path) => path === "." || path.length > 0),
     [expandedDirectories],
@@ -2184,12 +2186,18 @@ function ChatWorkspaceWindow({
     if (!activeTabId) return;
     const nextView =
       workspaceTab?.explorerView ?? (workspaceTab?.kind === "git-diff" ? "git" : "files");
-    setExplorerView(nextView);
+    setExplorerView(gitInfo?.isRepository === false ? "files" : nextView);
     setSelectedPath(workspaceTab?.path ?? "");
     setActiveEditorPath(workspaceTab?.path ?? "");
     setEditorContent(null);
     setViewerError(null);
-  }, [activeTabId, workspaceTab?.explorerView, workspaceTab?.kind, workspaceTab?.path]);
+  }, [
+    activeTabId,
+    gitInfo?.isRepository,
+    workspaceTab?.explorerView,
+    workspaceTab?.kind,
+    workspaceTab?.path,
+  ]);
 
   // Refreshing Git intentionally reloads the selected editor snapshot as well as the sidebar.
   // biome-ignore lint/correctness/useExhaustiveDependencies: refresh intentionally reloads current editor content.
@@ -2332,6 +2340,7 @@ function ChatWorkspaceWindow({
   }
 
   function switchExplorerView(view: "files" | "git") {
+    if (view === "git" && !isGitWorkspace) return;
     setExplorerView(view);
     updateWorkspaceTab({ explorerView: view });
     if (view === "git") {
@@ -2885,25 +2894,31 @@ function ChatWorkspaceWindow({
       ) : workspaceTab ? (
         <div className="chat-explorer-shell">
           <header className="chat-explorer-toolbar">
-            <span className="chat-explorer-title">{gitQuery.data?.branch ?? "Explorer"}</span>
+            <span className="chat-explorer-title">
+              {isGitWorkspace ? (gitSummary?.branch ?? "Explorer") : "Explorer"}
+            </span>
             <span className="chat-explorer-toolbar-actions">
-              {explorerView === "git" ? (
+              {explorerView === "git" && isGitWorkspace ? (
                 <span className="chat-explorer-totals">
                   +{gitSummary?.insertions ?? 0} -{gitSummary?.deletions ?? 0}
                 </span>
               ) : null}
-              <Button
-                aria-label="提交 Git 改动"
-                className="chat-workspace-window-add"
-                disabled={!gitSummary || (!(gitSummary.files.length > 0) && gitSummary.ahead <= 0)}
-                onClick={() => setCommitOpen(true)}
-                size="icon"
-                title="提交 Git 改动"
-                type="button"
-                variant="ghost"
-              >
-                <Upload className="size-4" />
-              </Button>
+              {isGitWorkspace ? (
+                <Button
+                  aria-label="提交 Git 改动"
+                  className="chat-workspace-window-add"
+                  disabled={
+                    !gitSummary || (!(gitSummary.files.length > 0) && gitSummary.ahead <= 0)
+                  }
+                  onClick={() => setCommitOpen(true)}
+                  size="icon"
+                  title="提交 Git 改动"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Upload className="size-4" />
+                </Button>
+              ) : null}
               <Button
                 aria-label="刷新 Explorer"
                 className="chat-workspace-window-add"
@@ -2915,46 +2930,50 @@ function ChatWorkspaceWindow({
               >
                 <RefreshCw className="size-4" />
               </Button>
-              <Button
-                aria-label="全部撤回 Git 改动"
-                className="chat-workspace-window-add"
-                disabled={restoreMutation.isPending || !(gitSummary?.files.length ?? 0)}
-                onClick={() => setRestoreTarget({ label: "全部 Git 改动" })}
-                size="icon"
-                title="全部撤回"
-                type="button"
-                variant="ghost"
-              >
-                <Undo2 className="size-4" />
-              </Button>
+              {isGitWorkspace ? (
+                <Button
+                  aria-label="全部撤回 Git 改动"
+                  className="chat-workspace-window-add"
+                  disabled={restoreMutation.isPending || !(gitSummary?.files.length ?? 0)}
+                  onClick={() => setRestoreTarget({ label: "全部 Git 改动" })}
+                  size="icon"
+                  title="全部撤回"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Undo2 className="size-4" />
+                </Button>
+              ) : null}
             </span>
           </header>
           <div className="chat-explorer-body">
             <aside className="chat-explorer-sidebar">
-              <div className="chat-explorer-view-tabs" role="tablist" aria-label="Explorer 视图">
-                <button
-                  aria-selected={explorerView === "files"}
-                  className={explorerView === "files" ? "is-active" : ""}
-                  onClick={() => switchExplorerView("files")}
-                  role="tab"
-                  type="button"
-                >
-                  <ExplorerFileIcon className="size-3.5" kind="files" />
-                  文件
-                </button>
-                <button
-                  aria-selected={explorerView === "git"}
-                  className={explorerView === "git" ? "is-active" : ""}
-                  onClick={() => switchExplorerView("git")}
-                  role="tab"
-                  type="button"
-                >
-                  <ExplorerFileIcon className="size-3.5" kind="git" />
-                  Git 改动{gitSummary?.filesChanged ? ` (${gitSummary.filesChanged})` : ""}
-                </button>
-              </div>
+              {isGitWorkspace ? (
+                <div className="chat-explorer-view-tabs" role="tablist" aria-label="Explorer 视图">
+                  <button
+                    aria-selected={explorerView === "files"}
+                    className={explorerView === "files" ? "is-active" : ""}
+                    onClick={() => switchExplorerView("files")}
+                    role="tab"
+                    type="button"
+                  >
+                    <ExplorerFileIcon className="size-3.5" kind="files" />
+                    文件
+                  </button>
+                  <button
+                    aria-selected={explorerView === "git"}
+                    className={explorerView === "git" ? "is-active" : ""}
+                    onClick={() => switchExplorerView("git")}
+                    role="tab"
+                    type="button"
+                  >
+                    <ExplorerFileIcon className="size-3.5" kind="git" />
+                    Git 改动{gitSummary?.filesChanged ? ` (${gitSummary.filesChanged})` : ""}
+                  </button>
+                </div>
+              ) : null}
               <div className="chat-explorer-list">
-                {explorerView === "files" ? (
+                {explorerView !== "git" || !isGitWorkspace ? (
                   renderDirectory(".")
                 ) : gitQuery.isLoading ? (
                   <div className="chat-explorer-skeleton-list">
