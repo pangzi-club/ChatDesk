@@ -433,6 +433,8 @@ fn spawn_server(app: &AppHandle) -> Result<(Child, ChatServerInfo), String> {
         .path()
         .resource_dir()
         .map_err(|error| format!("无法解析应用资源目录：{error}"))?;
+    // The Chat Server sidecar is CJS, so import.meta.url is empty. These env
+    // vars are the production source of truth for browser-runtime.ts.
     command.env("CHAT_SERVER_BROWSER_WORKER", find_browser_worker(&resource_dir)?);
     if let Some(browsers) = find_playwright_browsers(&resource_dir) {
         command.env("CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH", browsers);

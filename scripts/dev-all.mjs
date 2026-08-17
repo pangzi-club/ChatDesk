@@ -8,8 +8,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const token = process.env.CHAT_SERVER_TOKEN || randomUUID();
 const port = process.env.CHAT_SERVER_PORT || "14317";
-// Development Chat Server is the TypeScript process, not the Tauri sidecar.
-// Point it at the source browser worker so browser_* tools work under `pnpm dev`.
+// Development Chat Server is the TypeScript ESM process, not the Tauri sidecar.
+// Point it at the source browser worker so browser_* tools work under `pnpm dev`
+// even before browser-runtime.ts falls back to import.meta.url / repo-relative paths.
 const browserWorker =
   process.env.CHAT_SERVER_BROWSER_WORKER ||
   path.join(root, "apps/desktop/src-tauri/src/sidecar/browser-worker.mjs");

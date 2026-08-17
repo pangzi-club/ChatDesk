@@ -33,14 +33,23 @@ function asSharpCtor(mod: unknown): SharpCtor {
   throw new Error("sharp module is not callable");
 }
 
+function sharpRequireRoots() {
+  const packaged = process.env.CHAT_SERVER_SHARP_PATH?.trim();
+  return [...(packaged ? [packaged] : []), path.join(process.cwd(), "apps/server"), process.cwd()];
+}
+
 export async function loadSharp(): Promise<SharpCtor> {
   sharpLoader ??= (async () => {
-    const packaged = process.env.CHAT_SERVER_SHARP_PATH?.trim();
-    if (packaged) {
-      const require = createRequire(path.join(packaged, "package.json"));
-      return asSharpCtor(require("sharp"));
+    const specifier = "sharp";
+    let lastError: unknown;
+    for (const root of sharpRequireRoots()) {
+      try {
+        return asSharpCtor(createRequire(path.join(root, "package.json"))(specifier));
+      } catch (error) {
+        lastError = error;
+      }
     }
-    return asSharpCtor(await import("sharp"));
+    throw lastError instanceof Error ? lastError : new Error("sharp is not available");
   })();
   return sharpLoader;
 }

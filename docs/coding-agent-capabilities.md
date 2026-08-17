@@ -49,7 +49,7 @@
 - **文件工具**：`workspace-tools.ts` 提供 list_dir / read_file / write_file / edit_file / search_files。受限模式默认限制在 workspace 或显式只读白名单内，读取单文件上限为 512KB。
 - **文件搜索**：`file-search.ts` 优先调用 ripgrep，支持 glob、大小写不敏感的固定文本搜索、命中行摘要和 `.gitignore`；没有 `rg` 时回退到 Git 文件清单与内置遍历。只启用终端而未启用 `search_files` 时，模型可直接通过 Bash 使用 `rg`。
 - **终端**：`bash` 工具，120s 超时，2MB 输出截断。
-- **浏览器**：`client-tools.ts` + `browser-runtime.ts`，隔离的 headless Chromium session，open / screenshot / click / eval / close 全套。`browser_screenshot` 把截图写入当前聊天 session 的 `attachments/`（与用户上传、生成图同一目录），落盘前走统一 Sharp 压缩，输出可能是 WebP。开发态回退到源码 `browser-worker.mjs`；打包后由 Tauri 注入 `CHAT_SERVER_BROWSER_WORKER`，缺失则 Chat Server 启动失败。
+- **浏览器**：`client-tools.ts` + `browser-runtime.ts`，隔离的 headless Chromium session，open / screenshot / click / eval / close 全套。`browser_screenshot` 把截图写入当前聊天 session 的 `attachments/`（与用户上传、生成图同一目录），落盘前走统一 Sharp 压缩，输出可能是 WebP。开发态用 `import.meta.url` / 仓库相对路径回退到源码 `browser-worker.mjs`；打包 sidecar 是 CJS（`import.meta` 为空），由 Tauri 注入 `CHAT_SERVER_BROWSER_WORKER`，缺失则 Chat Server 启动失败。
 
 ### ✅ 上下文与记忆
 - **会话历史**：`store.ts` 持久化，CRUD 齐全。

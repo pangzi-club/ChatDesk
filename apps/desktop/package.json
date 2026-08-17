@@ -18,14 +18,9 @@
     "build": "tsc && vite build",
     "desktop:dev": "tauri dev",
     "desktop:sidecars": "node ../../scripts/build-sidecars.mjs",
+    "desktop:sidecars:verify": "node ../../scripts/verify-browser-worker.mjs",
     "desktop:build": "pnpm desktop:sidecars && tauri build",
     "preview": "vite preview"
-  },
-  "pkg": {
-    "assets": [
-      "node_modules/playwright/lib/**/*",
-      "node_modules/playwright-core/**/*"
-    ]
   },
   "dependencies": {
     "@ai-sdk/mcp": "^2.0.24",

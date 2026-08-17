@@ -3,6 +3,7 @@ import sharp from "sharp";
 import { test } from "vitest";
 import {
   compressChatImage,
+  loadSharp,
   MAX_CHAT_IMAGE_EDGE,
   replaceImageFileName,
   TARGET_CHAT_IMAGE_MAX_BYTES,
@@ -71,6 +72,17 @@ test("compressChatImage leaves undecodable bytes unchanged", async () => {
   const result = await compressChatImage(input);
   assert.equal(result.changed, false);
   assert.deepEqual(result.bytes, input);
+});
+
+test("loadSharp resolves the native module from the server package", async () => {
+  const ctor = await loadSharp();
+  assert.equal(typeof ctor, "function");
+  const bytes = await ctor({
+    create: { width: 2, height: 2, channels: 3, background: { r: 0, g: 0, b: 0 } },
+  })
+    .png()
+    .toBuffer();
+  assert.ok(bytes.byteLength > 0);
 });
 
 test("replaceImageFileName swaps or appends the matching extension", () => {

@@ -31,6 +31,7 @@
     "build:web": "pnpm --filter chatdesk-desktop build",
     "build:server": "tsc -p tsconfig.server.json",
     "desktop:sidecars": "pnpm --filter chatdesk-desktop desktop:sidecars",
+    "desktop:sidecars:verify": "pnpm --filter chatdesk-desktop desktop:sidecars:verify",
     "desktop:build": "pnpm --filter chatdesk-desktop desktop:build",
     "check": "biome check .",
     "check:write": "biome check --write .",

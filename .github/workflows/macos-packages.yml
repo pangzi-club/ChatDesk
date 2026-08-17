@@ -47,7 +47,9 @@ jobs:
       - name: Cache pkg runtime
         uses: actions/cache@v4
         with:
-          path: .cache/pkg
+          path: |
+            .cache/pkg
+            ~/.pkg-cache/sea
           key: ${{ runner.os }}-${{ matrix.arch }}-pkg-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.arch }}-pkg-
@@ -59,6 +61,9 @@ jobs:
         run: pnpm desktop:sidecars
         env:
           TAURI_TARGET_TRIPLE: ${{ matrix.target }}
+
+      - name: Verify browser worker
+        run: pnpm desktop:sidecars:verify
 
       - name: Build Tauri package
         run: pnpm --filter chatdesk-desktop exec tauri build --target ${{ matrix.target }}
