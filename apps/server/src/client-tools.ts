@@ -1,9 +1,42 @@
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
 import { type ToolSet, tool } from "ai";
 import { z } from "zod";
 import { BrowserRuntime } from "./browser-runtime.ts";
+import {
+  createScreenshotAttachmentTarget,
+  persistScreenshotResult,
+  type ScreenshotAttachmentStore,
+} from "./browser-screenshot.ts";
 
 const timeoutSchema = z.number().int().min(100).max(60_000).optional();
 const browser = new BrowserRuntime();
+
+export type ClientToolOptions = {
+  chatSessionId: string;
+  store: ScreenshotAttachmentStore;
+};
+
+function createBrowserScreenshotTool(options?: ClientToolOptions) {
+  return tool({
+    description: "截取当前浏览器页面。",
+    inputSchema: z.object({
+      sessionId: z.string().min(1),
+      fullPage: z.boolean().optional(),
+    }),
+    execute: async ({ sessionId, fullPage }) => {
+      if (!options) return browser.request("screenshot", { sessionId, fullPage });
+      const target = createScreenshotAttachmentTarget(options.store, options.chatSessionId);
+      await mkdir(path.dirname(target.path), { recursive: true });
+      const result = await browser.request("screenshot", {
+        sessionId,
+        fullPage,
+        path: target.path,
+      });
+      return persistScreenshotResult(result, target);
+    },
+  });
+}
 
 const clientTools: ToolSet = {
   list_dir: tool({
@@ -51,14 +84,7 @@ const clientTools: ToolSet = {
     execute: ({ url, sessionId, timeoutMs }) =>
       browser.request("open", { url, sessionId, timeoutMs }),
   }),
-  browser_screenshot: tool({
-    description: "截取当前浏览器页面。",
-    inputSchema: z.object({
-      sessionId: z.string().min(1),
-      fullPage: z.boolean().optional(),
-    }),
-    execute: ({ sessionId, fullPage }) => browser.request("screenshot", { sessionId, fullPage }),
-  }),
+  browser_screenshot: createBrowserScreenshotTool(),
   browser_click: tool({
     description: "按 CSS selector 点击当前浏览器页面元素。",
     inputSchema: z.object({
@@ -90,10 +116,20 @@ const clientTools: ToolSet = {
 
 const CLIENT_TOOL_NAMES = new Set(Object.keys(clientTools));
 
-export function createClientTools(toolNames: string[] | undefined): ToolSet | undefined {
+export function createClientTools(
+  toolNames: string[] | undefined,
+  options?: ClientToolOptions,
+): ToolSet | undefined {
   const selected = (toolNames ?? []).filter((name) => CLIENT_TOOL_NAMES.has(name));
   if (selected.length === 0) return undefined;
-  return Object.fromEntries(selected.map((name) => [name, clientTools[name]]));
+  return Object.fromEntries(
+    selected.map((name) => [
+      name,
+      name === "browser_screenshot" && options
+        ? createBrowserScreenshotTool(options)
+        : clientTools[name],
+    ]),
+  );
 }
 
 export function closeClientTools() {

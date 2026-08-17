@@ -28,6 +28,15 @@ function timeout(value) {
   return Math.min(Math.max(Number(value) || DEFAULT_TIMEOUT, 100), 60_000);
 }
 
+function resolveScreenshotFilename(params) {
+  const requested = typeof params.path === "string" ? params.path.trim() : "";
+  if (!requested) return path.join(tempDir, `${randomUUID()}-${Date.now()}.png`);
+  if (!path.isAbsolute(requested)) {
+    throw new Error("截图路径必须是绝对路径");
+  }
+  return requested;
+}
+
 async function handle(request) {
   const params = request.params ?? {};
   if (request.method === "open") {
@@ -67,8 +76,8 @@ async function handle(request) {
     return fail(request, "unknown_session", "浏览器 session 不存在或已关闭");
   }
   if (request.method === "screenshot") {
-    // Keep the session identifier out of the filesystem path; it is supplied by the caller.
-    const filename = path.join(tempDir, `${randomUUID()}-${Date.now()}.png`);
+    const filename = resolveScreenshotFilename(params);
+    await mkdir(path.dirname(filename), { recursive: true });
     await session.page.screenshot({ path: filename, fullPage: params.fullPage === true });
     const viewport = session.page.viewportSize();
     result(request, {

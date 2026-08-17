@@ -53,7 +53,7 @@ Cross-platform artifacts should be built on native CI runners. Set `TAURI_TARGET
 
 ## Runtime behavior
 
-Tauri starts `chat-server` with a loopback host, a per-launch token, and a data directory under `~/.chatdesk/chat-server` on macOS. The frontend obtains the token through the `chat_server_info` command. The package also contains a separate `chat-server-sandbox` sidecar dedicated to Seatbelt file operations.
+Tauri starts `chat-server` with a loopback host, a per-launch token, and a data directory under `~/.chatdesk/chat-server` on macOS. The frontend obtains the token through the `chat_server_info` command. Chat screenshots and other files under `~/.chatdesk` are shown with `convertFileSrc`; `assetProtocol.scope` must list `$HOME/.chatdesk/**` explicitly because Unix hidden directories are not matched by `$HOME/**`. The package also contains a separate `chat-server-sandbox` sidecar dedicated to Seatbelt file operations.
 
 Browser tools use a separate worker process. In development (`pnpm dev` / `pnpm server:dev`), Chat Server is the TypeScript process managed by `scripts/dev-all.mjs`, which points `CHAT_SERVER_BROWSER_WORKER` at `apps/desktop/src-tauri/src/sidecar/browser-worker.mjs`. If that path is missing and the env var is unset, `browser_open` fails immediately with a configuration error. First-time Chromium setup is `pnpm --filter chatdesk-desktop exec playwright install chromium --only-shell`.
 

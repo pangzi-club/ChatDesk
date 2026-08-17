@@ -19,6 +19,10 @@ import { useMemo, useState } from "react";
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
+  BROWSER_SCREENSHOT_TOOL_NAME,
+  readBrowserScreenshotOutput,
+} from "@/lib/chat-browser-screenshots";
+import {
   IMAGE_GENERATION_MEDIA_TYPE,
   IMAGE_GENERATION_TOOL_NAME,
   readImageGenerationOutput,
@@ -183,7 +187,8 @@ function getChatToolIcon(toolName: string): LucideIcon {
   if (toolName === "browser_open" || toolName === "browser_close") return Globe2;
   if (toolName === "browser_click") return MousePointerClick;
   if (toolName === "browser_eval") return Code2;
-  if (toolName === "browser_screenshot" || toolName === IMAGE_GENERATION_TOOL_NAME) return Image;
+  if (toolName === BROWSER_SCREENSHOT_TOOL_NAME || toolName === IMAGE_GENERATION_TOOL_NAME)
+    return Image;
   return Wrench;
 }
 
@@ -309,10 +314,12 @@ function resolveImagePreviewSrc(output: unknown): string | null {
 }
 
 function resolveBrowserScreenshotSrc(output: unknown): string | null {
+  const screenshot = readBrowserScreenshotOutput(output);
+  if (screenshot) return assetUrl(screenshot.path);
   if (!output || typeof output !== "object") return null;
   const result = output as {
     ok?: boolean;
-    data?: { path?: unknown; mimeType?: unknown };
+    data?: { path?: unknown };
   };
   if (result.ok !== true || typeof result.data?.path !== "string") return null;
   return assetUrl(result.data.path);
@@ -382,7 +389,7 @@ export function ChatToolCallCard({
       ? extractWebSearchSummary(output)
       : null;
   const isImageGeneration = toolName === IMAGE_GENERATION_TOOL_NAME;
-  const isBrowserScreenshot = toolName === "browser_screenshot";
+  const isBrowserScreenshot = toolName === BROWSER_SCREENSHOT_TOOL_NAME;
   const imagePreviewSrc = useMemo(
     () =>
       !failed
@@ -395,7 +402,17 @@ export function ChatToolCallCard({
     [failed, isBrowserScreenshot, isImageGeneration, output],
   );
   const imageMeta = useMemo(() => {
-    if (!isImageGeneration || failed) return null;
+    if (failed) return null;
+    if (isBrowserScreenshot) {
+      const screenshot = readBrowserScreenshotOutput(output);
+      if (!screenshot) return null;
+      return {
+        attachmentId: screenshot.attachmentId,
+        fileName: screenshot.fileName,
+        mediaType: screenshot.mediaType,
+      };
+    }
+    if (!isImageGeneration) return null;
     const { materialized, remoteUrl, taskId } = readImageGenerationOutput(output);
     if (materialized) {
       return {
@@ -414,7 +431,7 @@ export function ChatToolCallCard({
       };
     }
     return null;
-  }, [failed, isImageGeneration, output]);
+  }, [failed, isBrowserScreenshot, isImageGeneration, output]);
   const running =
     !failed && (preliminary || state === "input-streaming" || state === "input-available");
   const pending = running || (!failed && state === "approval-requested");
@@ -442,8 +459,7 @@ export function ChatToolCallCard({
     ? extractWorkspaceToolSummary(toolName, input, output)
     : "";
   const browserDetail = extractBrowserToolDetail(toolName, input);
-  const summaryTooltip =
-    (isImageGeneration ? imageMeta?.fileName : undefined) || getSummaryTooltip(callProps);
+  const summaryTooltip = imageMeta?.fileName || getSummaryTooltip(callProps);
   const inputFields = getToolCallInputFields(toolName, input);
   const outputFields = getToolCallOutputFields(toolName, output);
   const ToolIcon = getChatToolIcon(toolName);
@@ -512,7 +528,7 @@ export function ChatToolCallCard({
           {!running && summaryQuery ? (
             <span className="chat-tool-call-title-detail"> · {summaryQuery}</span>
           ) : null}
-          {!running && isImageGeneration && imageMeta?.fileName ? (
+          {!running && imageMeta?.fileName ? (
             <span className="chat-tool-call-title-detail"> · {imageMeta.fileName}</span>
           ) : null}
           {!running && !summaryQuery && !imageMeta?.fileName && browserDetail ? (

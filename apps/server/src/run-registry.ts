@@ -783,7 +783,12 @@ export class RunRegistry {
                   [PLAN_USER_INPUT_TOOL_NAME]: createPlanUserInputTool(),
                 }
               : { todo_write: createTodoTool() }),
-            ...(planMode === "plan" ? {} : (createClientTools(input.toolNames) ?? {})),
+            ...(planMode === "plan"
+              ? {}
+              : (createClientTools(input.toolNames, {
+                  chatSessionId: sessionId,
+                  store: this.store,
+                }) ?? {})),
             ...workspaceTools,
             ...(planMode === "plan"
               ? {}

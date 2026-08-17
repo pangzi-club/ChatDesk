@@ -119,6 +119,7 @@ import {
   uploadPendingAttachment,
   validateAttachment,
 } from "@/lib/chat-attachments";
+import { materializeBrowserScreenshots } from "@/lib/chat-browser-screenshots";
 import {
   type ChatCommand,
   filterChatCommands,
@@ -1312,14 +1313,18 @@ function ChatPage() {
           canonicalMessages,
           canonicalSession.attachments,
         );
-        sessionAttachmentsRef.current = materialized.attachments;
-        if (materialized.changed) {
+        const screenshots = materializeBrowserScreenshots(
+          materialized.messages,
+          materialized.attachments,
+        );
+        sessionAttachmentsRef.current = screenshots.attachments;
+        if (materialized.changed || screenshots.changed) {
           await saveChatSession({
             ...canonicalSession,
             title: resolveSessionTitle(canonicalSession.title, materialized.messages),
             updatedAt: now,
             messages: materialized.messages,
-            attachments: materialized.attachments,
+            attachments: screenshots.attachments,
           });
           suppressSaveRef.current = true;
           setMessages(materialized.messages);

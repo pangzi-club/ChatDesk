@@ -1,4 +1,3 @@
-import { code } from "@streamdown/code";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { getToolName, isToolUIPart, type UIMessage } from "ai";
@@ -16,9 +15,8 @@ import {
 } from "lucide-react";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
-import { Streamdown } from "streamdown";
-import "streamdown/styles.css";
 
+import { ChatMarkdown } from "@/components/chat-markdown";
 import { ChatToolCallGroup } from "@/components/chat-tool-call-card";
 import { HistoryImportDialog } from "@/components/history-import-dialog";
 import {
@@ -46,6 +44,10 @@ import {
   pathExists,
   sourceLabel,
 } from "@/lib/chat-archive";
+import {
+  BROWSER_SCREENSHOT_TOOL_NAME,
+  readBrowserScreenshotOutput,
+} from "@/lib/chat-browser-screenshots";
 import { IMAGE_GENERATION_TOOL_NAME, readImageGenerationOutput } from "@/lib/chat-image-generation";
 import { chatSessionPath } from "@/lib/chat-routes";
 import {
@@ -730,28 +732,45 @@ function uiMessageToArchiveMessage(message: UIMessage): ArchiveMessage {
     };
   });
   const assets = toolParts.flatMap((part): ArchiveAsset[] => {
-    if (getToolName(part) !== IMAGE_GENERATION_TOOL_NAME || !("output" in part)) return [];
-    const { materialized, rawBase64 } = readImageGenerationOutput(part.output);
-    if (materialized) {
-      return [
-        {
-          id: materialized.attachmentId,
-          kind: "image",
-          fileName: materialized.fileName,
-          mediaType: materialized.mediaType,
-          ...(materialized.path ? { path: materialized.path } : {}),
-          ...(materialized.url ? { url: materialized.url } : {}),
-        },
-      ];
+    if (!("output" in part)) return [];
+    const toolName = getToolName(part);
+    if (toolName === IMAGE_GENERATION_TOOL_NAME) {
+      const { materialized, rawBase64 } = readImageGenerationOutput(part.output);
+      if (materialized) {
+        return [
+          {
+            id: materialized.attachmentId,
+            kind: "image",
+            fileName: materialized.fileName,
+            mediaType: materialized.mediaType,
+            ...(materialized.path ? { path: materialized.path } : {}),
+            ...(materialized.url ? { url: materialized.url } : {}),
+          },
+        ];
+      }
+      if (rawBase64) {
+        return [
+          {
+            id: part.toolCallId,
+            kind: "image",
+            fileName: `${part.toolCallId}.png`,
+            mediaType: "image/png",
+            url: `data:image/png;base64,${rawBase64}`,
+          },
+        ];
+      }
+      return [];
     }
-    if (rawBase64) {
+    if (toolName === BROWSER_SCREENSHOT_TOOL_NAME) {
+      const screenshot = readBrowserScreenshotOutput(part.output);
+      if (!screenshot) return [];
       return [
         {
-          id: part.toolCallId,
+          id: screenshot.attachmentId,
           kind: "image",
-          fileName: `${part.toolCallId}.png`,
-          mediaType: "image/png",
-          url: `data:image/png;base64,${rawBase64}`,
+          fileName: screenshot.fileName,
+          mediaType: screenshot.mediaType,
+          path: screenshot.path,
         },
       ];
     }
@@ -772,14 +791,19 @@ function ArchiveMessageBubble({ message }: { message: ArchiveMessage }) {
   const collapsible = useMemo(() => shouldCollapseMessage(message.text), [message.text]);
   const [expanded, setExpanded] = useState(false);
   const toolCalls = message.toolCalls ?? [];
-  // 生成图已在 ChatToolCallCard 预览，避免与 ArchiveAssetView 重复渲染。
+  // 生成图和浏览器截图已在 ChatToolCallCard 预览，避免与 ArchiveAssetView 重复渲染。
   const assets = useMemo(() => {
     const coveredIds = new Set<string>();
     for (const call of toolCalls) {
-      if (call.toolName !== IMAGE_GENERATION_TOOL_NAME) continue;
-      const { materialized } = readImageGenerationOutput(call.output);
-      if (materialized) coveredIds.add(materialized.attachmentId);
-      else coveredIds.add(call.id);
+      if (call.toolName === IMAGE_GENERATION_TOOL_NAME) {
+        const { materialized } = readImageGenerationOutput(call.output);
+        if (materialized) coveredIds.add(materialized.attachmentId);
+        else coveredIds.add(call.id);
+      }
+      if (call.toolName === BROWSER_SCREENSHOT_TOOL_NAME) {
+        const screenshot = readBrowserScreenshotOutput(call.output);
+        if (screenshot) coveredIds.add(screenshot.attachmentId);
+      }
     }
     return (message.assets ?? []).filter((asset) => !coveredIds.has(asset.id));
   }, [message.assets, toolCalls]);
@@ -824,7 +848,7 @@ function ArchiveMessageBubble({ message }: { message: ArchiveMessage }) {
                 collapsible && !expanded ? "history-message-collapsed" : ""
               }`}
             >
-              <Streamdown plugins={{ code }}>{markdown}</Streamdown>
+              <ChatMarkdown isAnimating={false}>{markdown}</ChatMarkdown>
             </div>
             {collapsible && !expanded ? <div className="history-message-fade" /> : null}
             {collapsible ? (

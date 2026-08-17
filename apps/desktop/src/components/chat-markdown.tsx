@@ -4,6 +4,7 @@ import { defaultRemarkPlugins, Streamdown } from "streamdown";
 import "streamdown/styles.css";
 import { isLocalBrowserPreviewUrl, normalizeBrowserPreviewUrl } from "@/lib/browser-preview";
 import { openBrowserPreview } from "@/lib/browser-preview-events";
+import { resolveMarkdownImageSrc } from "@/lib/chat-markdown-images";
 import { remarkLocalBrowserLinks } from "@/lib/chat-markdown-links";
 
 const STREAMDOWN_PLUGINS = { code };
@@ -21,7 +22,11 @@ type MarkdownExtraProps = {
 export function ChatMarkdown({ children, isAnimating }: ChatMarkdownProps) {
   return (
     <Streamdown
-      components={{ a: ChatMarkdownLink, inlineCode: ChatMarkdownInlineCode }}
+      components={{
+        a: ChatMarkdownLink,
+        img: ChatMarkdownImage,
+        inlineCode: ChatMarkdownInlineCode,
+      }}
       isAnimating={isAnimating}
       plugins={STREAMDOWN_PLUGINS}
       remarkPlugins={CHAT_REMARK_PLUGINS}
@@ -60,6 +65,16 @@ function ChatMarkdownLink({
       {children}
     </a>
   );
+}
+
+function ChatMarkdownImage({
+  alt,
+  node: _node,
+  src,
+  ...props
+}: ComponentProps<"img"> & MarkdownExtraProps) {
+  const resolved = src ? resolveMarkdownImageSrc(src) : src;
+  return <img {...props} alt={alt ?? ""} data-streamdown="image" src={resolved} />;
 }
 
 function ChatMarkdownInlineCode({

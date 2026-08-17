@@ -87,6 +87,7 @@ type ChatAttachment = {
 ## 7. 现有调用方
 
 - **image_generation（首个调用方）**：`apps/desktop/src/lib/chat-image-generation.ts` 的 `materializeGeneratedImages` 把生成图片落盘为 `source: "generated"` 的附件，并用 `mergeAttachments` 回填 `session.attachments`、改写消息 parts。这是「落盘 + 回填元数据 + 改写 parts」的完整范式。
+- **browser_screenshot**：Chat Server 在工具执行时把 PNG 直接写到 `sessions/<sessionId>/attachments/`（内部 path，不进入工具 schema）。前端 `apps/desktop/src/lib/chat-browser-screenshots.ts` 的 `materializeBrowserScreenshots` 只回填 `session.attachments`（`source: "generated"`），不再次上传。聊天卡片按 tool output 的 `data.path` 预览。若助手把同一绝对路径写进 Markdown `![](/Users/...png)`，`ChatMarkdown` 会把它转成 `assetUrl`（桌面端 `convertFileSrc`），不能当网站相对路径加载。
 - **用户文件输入**：composer 附件按钮与拖拽上传复用同一链路，`source: "upload"`。实现见 `apps/desktop/src/lib/chat-attachments.ts` 与 `apps/desktop/src/pages/chat.tsx`。
 
 ## 8. 限制与清理
@@ -102,3 +103,6 @@ type ChatAttachment = {
 - `packages/chat-client/src/index.ts`：`ChatServerClient.uploadAttachment`。
 - `apps/desktop/src/lib/chat-server.ts`：`uploadChatServerAttachment` 封装。
 - `apps/desktop/src/lib/chat-image-generation.ts`：现有「落盘 + 回填 + 改写 parts」范式（`mergeAttachments` / `materializeGeneratedImages`）。
+- `apps/desktop/src/lib/chat-browser-screenshots.ts`：浏览器截图「已落盘 + 回填 session.attachments」。
+- `apps/desktop/src/lib/chat-markdown-images.ts`：Markdown 本地文件图片 src 转 `assetUrl`。
+- `apps/server/src/browser-screenshot.ts`：截图附件路径与 tool output 字段。
