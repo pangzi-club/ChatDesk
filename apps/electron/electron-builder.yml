@@ -20,10 +20,19 @@ extraResources:
       - node-runtime-*
   - from: ../desktop/src-tauri/icons/32x32.png
     to: icons/32x32.png
+  - from: ../desktop/src-tauri/icons/icon.png
+    to: icons/icon.png
+  - from: ../desktop/src-tauri/icons/icon.ico
+    to: icons/icon.ico
+  - from: ../desktop/src-tauri/icons/icon.icns
+    to: icons/icon.icns
 mac:
   category: public.app-category.developer-tools
+  icon: ../desktop/src-tauri/icons/icon.icns
 win:
   target: nsis
+  icon: ../desktop/src-tauri/icons/icon.ico
 linux:
   target: AppImage
   category: Development
+  icon: ../desktop/src-tauri/icons/icon.png

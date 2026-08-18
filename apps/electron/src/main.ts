@@ -100,14 +100,26 @@ function rendererEntry() {
   return rendererLoadUrl();
 }
 
+function applicationIconPath() {
+  const fileName = process.platform === "win32" ? "icon.ico" : "icon.png";
+  const candidates = [
+    join(process.resourcesPath, `icons/${fileName}`),
+    join(app.getAppPath(), `apps/desktop/src-tauri/icons/${fileName}`),
+    join(moduleDirectory, `../../desktop/src-tauri/icons/${fileName}`),
+  ];
+  return candidates.find((candidate) => existsSync(candidate));
+}
+
 function createWindow() {
   const entry = rendererEntry();
+  const iconPath = process.platform === "darwin" ? undefined : applicationIconPath();
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 720,
     show: false,
     title: "ChatDesk",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    ...(iconPath ? { icon: iconPath } : {}),
     webPreferences: {
       preload: join(moduleDirectory, "preload.cjs"),
       nodeIntegration: false,
@@ -403,6 +415,8 @@ if (!gotSingleInstanceLock) {
     setupAssetProtocol();
     setupNetworkPermissions();
     setupIpc();
+    const iconPath = applicationIconPath();
+    if (process.platform === "darwin" && iconPath) app.dock?.setIcon(iconPath);
     setTrayEnabled(true);
     await setupSupervisor().catch((error) => {
       console.error("Chat Server startup failed", error);
