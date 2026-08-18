@@ -28,6 +28,8 @@ describe("desktop bridge", () => {
       saveImageFile: async () => true,
       setTrayEnabled: async () => undefined,
       toggleWindowMaximize: async () => undefined,
+      httpRequest: async () => ({ status: 200, statusText: "OK", headers: [], body: [] }),
+      terminalSpawn: async () => ({ id: "test", shell: "sh" }),
     };
 
     globalThis.window = { __CHATDESK_DESKTOP_BRIDGE__: bridge } as Window &

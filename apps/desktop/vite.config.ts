@@ -4,7 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-const host = process.env.TAURI_DEV_HOST;
+const host = process.env.VITE_DEV_HOST;
 const require = createRequire(import.meta.url);
 const monacoRoot = path.dirname(require.resolve("monaco-editor/package.json"));
 const chatServerPort = Number(process.env.CHAT_SERVER_PORT || process.env.VITE_CHAT_SERVER_PORT);
@@ -23,11 +23,8 @@ export default defineConfig(async () => ({
     },
   },
 
-  // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
-  //
-  // 1. prevent Vite from obscuring rust errors
+  // Keep renderer build output visible when a desktop host launches Vite.
   clearScreen: false,
-  // 2. tauri expects a fixed port, fail if that port is not available
   server: {
     port: 1420,
     strictPort: true,
@@ -39,10 +36,6 @@ export default defineConfig(async () => ({
           port: 1421,
         }
       : undefined,
-    watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
-    },
     fs: {
       allow: [path.resolve(__dirname), monacoRoot],
     },

@@ -39,38 +39,29 @@ jobs:
           node-version: 22.20.0
           cache: pnpm
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build sidecars
-        run: pnpm desktop:sidecars
+      - name: Build Electron package
+        run: pnpm electron:package
         env:
-          TAURI_TARGET_TRIPLE: ${{ matrix.target }}
+          DESKTOP_TARGET_TRIPLE: ${{ matrix.target }}
 
       - name: Verify browser worker
         run: pnpm desktop:sidecars:verify
 
-      - name: Build Tauri package
-        run: pnpm --filter chatdesk-desktop exec tauri build --target ${{ matrix.target }}
-
       - name: Verify packaged browser worker
-        run: pnpm desktop:package:verify
+        run: pnpm electron:package:verify
         env:
-          TAURI_TARGET_TRIPLE: ${{ matrix.target }}
+          DESKTOP_TARGET_TRIPLE: ${{ matrix.target }}
 
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
           name: ChatDesk-macos-${{ matrix.arch }}
           path: |
-            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
-            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
-            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig
+            apps/electron/dist-electron/*.dmg
+            apps/electron/dist-electron/*-mac.zip
           if-no-files-found: error
           retention-days: 14
 

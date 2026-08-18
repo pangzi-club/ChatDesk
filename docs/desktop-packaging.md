@@ -4,7 +4,7 @@ The desktop release ships one shared Node.js runtime with the Electron package; 
 
 ## Local build
 
-Use Node.js 22 or newer, Rust, pnpm 11.19.0, and the platform's Tauri prerequisites.
+Use Node.js 22 or newer and pnpm 11.19.0. Tauri fallback builds additionally require Rust and the platform's Tauri prerequisites.
 
 ```sh
 pnpm install
@@ -22,7 +22,7 @@ pnpm desktop:sidecars:verify
 After a macOS application bundle has been built, verify the exact Node, worker, and Chromium resources inside the `.app`:
 
 ```bash
-pnpm desktop:package:verify
+pnpm tauri:package:verify
 ```
 
 ## GitHub Actions
@@ -46,15 +46,15 @@ git push origin v0.3.0
 The tag starts the two architecture builds. The release job runs only after
 both builds finish successfully. Keep the tag version aligned with the
 versions in `package.json`, `apps/desktop/package.json`,
-`apps/desktop/src-tauri/tauri.conf.json`, and `apps/desktop/src-tauri/Cargo.toml`.
+`apps/tauri/src-tauri/tauri.conf.json`, and `apps/tauri/src-tauri/Cargo.toml`.
 
-`pnpm desktop:sidecars` requires Node.js 22.20.0. It copies the current Node executable to `binaries/node-runtime-<target-triple>`, bundles the TypeScript Chat Server and sandbox worker into CommonJS, and copies the browser worker as an ordinary ES module. These scripts live under `resources/node-runtime/workers` and are all executed by the same Node binary.
+`pnpm desktop:sidecars` requires Node.js 22.20.0. It copies the current Node executable to `apps/tauri/src-tauri/binaries/node-runtime-<target-triple>`, bundles the TypeScript Chat Server and sandbox worker into CommonJS, and copies the browser worker as an ordinary ES module. These scripts live under `apps/tauri/src-tauri/resources/node-runtime/workers` and are all executed by the same Node binary.
 
 Playwright is not bundled into JavaScript or embedded in an executable. The build recursively copies the installed production package trees for Playwright and Sharp into `resources/node-runtime/node_modules`, including the native Sharp packages available for the current platform. This preserves Playwright's package metadata, browser registry, dynamic loads, and filesystem layout. Chromium Headless Shell remains under `resources/playwright-browsers` because browser executables must exist on the real filesystem.
 
-The Node runtime is copied from the build host, so `TAURI_TARGET_TRIPLE` must match `rustc --print host-tuple`. Cross-platform artifacts must be built on native CI runners. The build fails if Node is not exactly 22.20.0 or if a requested target does not match the host architecture.
+The Node runtime is copied from the build host, so `DESKTOP_TARGET_TRIPLE` must match the host architecture. Cross-platform artifacts must be built on native CI runners. The build fails if Node is not exactly 22.20.0 or if a requested target does not match the host architecture.
 
-`pnpm desktop:sidecars:verify` is intentionally separate from packaging. It verifies the staged Node version, loads Playwright and Sharp from the staged runtime, then performs `browser_open`, page evaluation, and close against a loopback page. Release CI repeats the same verification against the final `.app` after `tauri build`, covering Tauri resource placement and executable permissions.
+`pnpm desktop:sidecars:verify` is intentionally separate from packaging. It verifies the staged Node version, loads Playwright and Sharp from the staged runtime, then performs `browser_open`, page evaluation, and close against a loopback page. Release CI repeats the same verification against the final Electron `.app` with `pnpm electron:package:verify`.
 
 ## Runtime behavior
 

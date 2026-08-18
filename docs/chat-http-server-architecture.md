@@ -151,7 +151,7 @@ Server 负责「何时调工具、如何把结果写回模型」；工具的真�
 - `apps/desktop/src/lib/chat-server.ts`：前端 HTTP/SSE 客户端，封装 fetch 与 EventSource。
 - `apps/desktop/src/pages/chat.tsx`：Chat 页面，消费 HTTP 客户端，切页不中断生成。
 - `apps/desktop/src/lib/chat-routes.ts`：桌面 Chat URL 身份（`/chat/new` 草稿与 `/chat/:sessionId` 会话）。
-- `apps/desktop/src-tauri/src/services/chat_server.rs`：Tauri 侧进程拉起、token 注入、优雅退出。
+- `apps/tauri/src-tauri/src/services/chat_server.rs`：Tauri 侧进程拉起、token 注入、优雅退出。
 
 ### 4.1 桌面 Chat URL
 

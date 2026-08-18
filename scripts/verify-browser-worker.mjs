@@ -18,15 +18,15 @@ await verifyRuntimeDependencies();
 await verifyBrowserWorker();
 
 async function resolveLayout(args) {
-  if (args[0] !== "--app") {
-    const targetTriple = process.env.TAURI_TARGET_TRIPLE || (await readTargetTriple());
+  if (args[0] !== "--app" && args[0] !== "--electron-app") {
+    const targetTriple = process.env.DESKTOP_TARGET_TRIPLE || platformTargetTriple();
     const extension = process.platform === "win32" ? ".exe" : "";
-    const resourcesDir = path.join(root, "apps/desktop/src-tauri/resources");
+    const resourcesDir = path.join(root, "apps/tauri/src-tauri/resources");
     const runtimeRoot = path.join(resourcesDir, "node-runtime");
     return {
       nodeRuntime: path.join(
         root,
-        "apps/desktop/src-tauri/binaries",
+        "apps/tauri/src-tauri/binaries",
         `node-runtime-${targetTriple}${extension}`,
       ),
       runtimeRoot,
@@ -38,6 +38,21 @@ async function resolveLayout(args) {
   if (process.platform !== "darwin") {
     throw new Error("Packaged application verification currently supports macOS .app bundles");
   }
+  if (args[0] === "--electron-app") {
+    const appPath = path.resolve(args[1] || defaultElectronAppPath());
+    const resourcesRoot = path.join(appPath, "Contents/Resources");
+    const runtimeRoot = path.join(resourcesRoot, "node-runtime");
+    return {
+      nodeRuntime: path.join(
+        resourcesRoot,
+        "binaries",
+        `node-runtime-${process.env.DESKTOP_TARGET_TRIPLE || platformTargetTriple()}`,
+      ),
+      runtimeRoot,
+      worker: path.join(runtimeRoot, "workers/browser-worker.mjs"),
+      browsers: path.join(resourcesRoot, "playwright-browsers"),
+    };
+  }
   const appPath = path.resolve(args[1] || defaultMacAppPath());
   const runtimeRoot = path.join(appPath, "Contents/Resources/resources/node-runtime");
   return {
@@ -48,11 +63,20 @@ async function resolveLayout(args) {
   };
 }
 
+function defaultElectronAppPath() {
+  const candidates = [
+    path.join(root, "apps/electron/dist-electron/mac/ChatDesk.app"),
+    path.join(root, "apps/electron/dist-electron/mac-arm64/ChatDesk.app"),
+    path.join(root, "apps/electron/dist-electron/mac-x64/ChatDesk.app"),
+  ];
+  return candidates.find((candidate) => existsSync(candidate)) || candidates[0];
+}
+
 function defaultMacAppPath() {
-  const targetTriple = process.env.TAURI_TARGET_TRIPLE;
+  const targetTriple = process.env.DESKTOP_TARGET_TRIPLE;
   const targetRoot = targetTriple
-    ? path.join(root, "apps/desktop/src-tauri/target", targetTriple)
-    : path.join(root, "apps/desktop/src-tauri/target");
+    ? path.join(root, "apps/tauri/src-tauri/target", targetTriple)
+    : path.join(root, "apps/tauri/src-tauri/target");
   return path.join(targetRoot, "release/bundle/macos/ChatDesk.app");
 }
 
@@ -138,8 +162,17 @@ async function verifyBrowserWorker() {
   }
 }
 
-function readTargetTriple() {
-  return execFile("rustc", ["--print", "host-tuple"]).then((value) => value.trim());
+function platformTargetTriple() {
+  if (process.platform === "darwin") {
+    return process.arch === "arm64" ? "aarch64-apple-darwin" : "x86_64-apple-darwin";
+  }
+  if (process.platform === "win32") {
+    return process.arch === "arm64" ? "aarch64-pc-windows-msvc" : "x86_64-pc-windows-msvc";
+  }
+  if (process.platform === "linux") {
+    return process.arch === "arm64" ? "aarch64-unknown-linux-gnu" : "x86_64-unknown-linux-gnu";
+  }
+  throw new Error(`Unsupported desktop target: ${process.platform}/${process.arch}`);
 }
 
 function execFile(command, args, options = {}) {

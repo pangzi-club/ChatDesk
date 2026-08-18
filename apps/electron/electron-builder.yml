@@ -10,29 +10,29 @@ asarUnpack:
 extraResources:
   - from: ../desktop/dist
     to: desktop/dist
-  - from: ../desktop/src-tauri/resources/node-runtime
+  - from: ../tauri/src-tauri/resources/node-runtime
     to: node-runtime
-  - from: ../desktop/src-tauri/resources/playwright-browsers
+  - from: ../tauri/src-tauri/resources/playwright-browsers
     to: playwright-browsers
-  - from: ../desktop/src-tauri/binaries
+  - from: ../tauri/src-tauri/binaries
     to: binaries
     filter:
       - node-runtime-*
-  - from: ../desktop/src-tauri/icons/32x32.png
+  - from: ../tauri/src-tauri/icons/32x32.png
     to: icons/32x32.png
-  - from: ../desktop/src-tauri/icons/icon.png
+  - from: ../tauri/src-tauri/icons/icon.png
     to: icons/icon.png
-  - from: ../desktop/src-tauri/icons/icon.ico
+  - from: ../tauri/src-tauri/icons/icon.ico
     to: icons/icon.ico
-  - from: ../desktop/src-tauri/icons/icon.icns
+  - from: ../tauri/src-tauri/icons/icon.icns
     to: icons/icon.icns
 mac:
   category: public.app-category.developer-tools
-  icon: ../desktop/src-tauri/icons/icon.icns
+  icon: ../tauri/src-tauri/icons/icon.icns
 win:
   target: nsis
-  icon: ../desktop/src-tauri/icons/icon.ico
+  icon: ../tauri/src-tauri/icons/icon.ico
 linux:
   target: AppImage
   category: Development
-  icon: ../desktop/src-tauri/icons/icon.png
+  icon: ../tauri/src-tauri/icons/icon.png

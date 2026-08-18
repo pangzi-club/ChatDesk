@@ -9,7 +9,7 @@ import {
 
 const sourceWorker = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
-  "../../desktop/src-tauri/src/sidecar/browser-worker.mjs",
+  "../../tauri/src-tauri/src/sidecar/browser-worker.mjs",
 );
 
 describe("browser worker resolution", () => {
@@ -36,11 +36,11 @@ describe("browser worker resolution", () => {
   it("falls back to a repo-relative path from cwd when the ESM file path is absent", () => {
     const fromRepoRoot = path.resolve(
       process.cwd(),
-      "apps/desktop/src-tauri/src/sidecar/browser-worker.mjs",
+      "apps/tauri/src-tauri/src/sidecar/browser-worker.mjs",
     );
     const fromServerDir = path.resolve(
       process.cwd(),
-      "../desktop/src-tauri/src/sidecar/browser-worker.mjs",
+      "../tauri/src-tauri/src/sidecar/browser-worker.mjs",
     );
     const result = resolveBrowserWorkerScript(
       {},
@@ -56,7 +56,7 @@ describe("browser worker resolution", () => {
   it("uses packaged Playwright browsers only when Chromium is present", () => {
     const browsers = path.resolve(
       path.dirname(fileURLToPath(import.meta.url)),
-      "../../desktop/src-tauri/resources/playwright-browsers",
+      "../../tauri/src-tauri/resources/playwright-browsers",
     );
     expect(
       resolvePlaywrightBrowsersPath(

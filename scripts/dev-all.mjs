@@ -13,12 +13,10 @@ const port = process.env.CHAT_SERVER_PORT || "14317";
 // even before browser-runtime.ts falls back to import.meta.url / repo-relative paths.
 const browserWorker =
   process.env.CHAT_SERVER_BROWSER_WORKER ||
-  path.join(root, "apps/desktop/src-tauri/src/sidecar/browser-worker.mjs");
+  path.join(root, "apps/tauri/src-tauri/src/sidecar/browser-worker.mjs");
 const playwrightBrowsers =
   process.env.CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH ||
-  packagedPlaywrightBrowsers(
-    path.join(root, "apps/desktop/src-tauri/resources/playwright-browsers"),
-  );
+  packagedPlaywrightBrowsers(path.join(root, "apps/tauri/src-tauri/resources/playwright-browsers"));
 const sharedEnv = {
   ...process.env,
   CHAT_SERVER_TOKEN: token,
@@ -31,7 +29,7 @@ const sharedEnv = {
 
 const children = [
   spawn(pnpm, ["server:dev"], { env: sharedEnv, stdio: "inherit" }),
-  spawn(pnpm, ["--filter", "chatdesk-desktop", "exec", "tauri", "dev"], {
+  spawn(pnpm, ["--filter", "chatdesk-tauri", "exec", "tauri", "dev"], {
     env: sharedEnv,
     stdio: "inherit",
   }),

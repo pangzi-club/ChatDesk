@@ -87,7 +87,7 @@ apps/desktop/src/    React 页面、组件和浏览器端适配器（桌面端 w
 apps/server/src/     Hono Chat Server、存储、运行时和 Node 测试（workspace package）
 packages/shared/     浏览器与服务端共用的运行时无关代码（`@chatdesk/shared`）
 apps/electron/        Electron main/preload 和宿主服务
-apps/desktop/src-tauri/src/ Tauri 回退命令、原生服务和 sidecar 管理
+apps/tauri/src-tauri/ Tauri 回退命令、原生服务和 sidecar 管理
 docs/                架构、沙箱、数据迁移和桌面打包说明
 scripts/             开发编排与本地数据迁移入口（`pnpm migrate`）
 ```

@@ -12,7 +12,8 @@
     "build": "pnpm --filter @chatdesk/desktop-host build && tsc -p tsconfig.build.json",
     "typecheck": "pnpm --filter @chatdesk/desktop-host build && tsc -p tsconfig.json --noEmit",
     "test": "vitest run --config vitest.config.ts",
-    "package": "pnpm --dir ../.. desktop:sidecars && pnpm --dir ../.. build:web && pnpm build && electron-builder --config electron-builder.yml"
+    "package": "pnpm --dir ../.. desktop:sidecars && pnpm --dir ../.. build:web && pnpm build && electron-builder --config electron-builder.yml",
+    "package:verify": "node ../../scripts/verify-browser-worker.mjs --electron-app"
   },
   "dependencies": {
     "@chatdesk/desktop-host": "workspace:*",

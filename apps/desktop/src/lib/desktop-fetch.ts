@@ -1,17 +1,8 @@
-import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { getDesktopBridge } from "@/lib/desktop-bridge";
-
-type DesktopHttpResponse = {
-  status: number;
-  statusText: string;
-  headers: Array<[string, string]>;
-  body: number[];
-};
 
 export function desktopFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
   const bridge = getDesktopBridge();
-  if (bridge?.runtime === "tauri") return tauriFetch(input, init);
-  if (bridge?.runtime !== "electron") return window.fetch(input, init);
+  if (!bridge) return window.fetch(input, init);
 
   const request = input instanceof Request ? input : null;
   const url = request?.url ?? String(input);
@@ -19,7 +10,7 @@ export function desktopFetch(input: RequestInfo | URL, init: RequestInit = {}): 
   const headers = new Headers(init.headers ?? request?.headers);
   const body = serializeBody(init.body);
   const operation = bridge
-    .call<DesktopHttpResponse>("http_request", {
+    .httpRequest({
       url,
       method,
       headers: [...headers.entries()],
@@ -40,7 +31,7 @@ function serializeBody(body: BodyInit | null | undefined) {
   if (body == null) return undefined;
   if (typeof body === "string") return body;
   if (body instanceof URLSearchParams) return body.toString();
-  throw new Error("Electron HTTP bridge 目前只接受文本请求体");
+  throw new Error("桌面 HTTP bridge 目前只接受文本请求体");
 }
 
 function raceAbort<T>(operation: Promise<T>, signal?: AbortSignal | null): Promise<T> {

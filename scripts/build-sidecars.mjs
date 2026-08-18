@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 const NODE_RUNTIME_VERSION = "v22.20.0";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const desktopRoot = path.join(root, "apps/desktop");
-const tauriRoot = path.join(desktopRoot, "src-tauri");
+const tauriRoot = path.join(root, "apps/tauri/src-tauri");
 const binariesDir = path.join(tauriRoot, "binaries");
 const resourcesDir = path.join(tauriRoot, "resources");
 const runtimeRoot = path.join(resourcesDir, "node-runtime");
@@ -22,8 +22,8 @@ const browserWorkerPath = path.join(runtimeWorkersDir, "browser-worker.mjs");
 const localBinExtension = process.platform === "win32" ? ".cmd" : "";
 const localBinDir = path.join(desktopRoot, "node_modules/.bin");
 
-const hostTriple = await readTargetTriple();
-const targetTriple = process.env.TAURI_TARGET_TRIPLE || hostTriple;
+const hostTriple = process.env.DESKTOP_HOST_TRIPLE || platformTargetTriple();
+const targetTriple = process.env.DESKTOP_TARGET_TRIPLE || hostTriple;
 const extension = process.platform === "win32" ? ".exe" : "";
 const nodeRuntimePath = path.join(binariesDir, `node-runtime-${targetTriple}${extension}`);
 
@@ -202,8 +202,17 @@ async function verifyRuntimeDependencies() {
   );
 }
 
-async function readTargetTriple() {
-  return (await execFile("rustc", ["--print", "host-tuple"])).trim();
+function platformTargetTriple() {
+  if (process.platform === "darwin") {
+    return process.arch === "arm64" ? "aarch64-apple-darwin" : "x86_64-apple-darwin";
+  }
+  if (process.platform === "win32") {
+    return process.arch === "arm64" ? "aarch64-pc-windows-msvc" : "x86_64-pc-windows-msvc";
+  }
+  if (process.platform === "linux") {
+    return process.arch === "arm64" ? "aarch64-unknown-linux-gnu" : "x86_64-unknown-linux-gnu";
+  }
+  throw new Error(`Unsupported desktop target: ${process.platform}/${process.arch}`);
 }
 
 function assertNativeTarget(host, target) {
@@ -229,10 +238,6 @@ function assertTool(name) {
       `Missing ${name} executable. Install workspace dependencies before building sidecars.`,
     );
   }
-}
-
-function execFile(command, args) {
-  return execFileWithEnv(command, args);
 }
 
 async function run(command, args, env, options = {}) {

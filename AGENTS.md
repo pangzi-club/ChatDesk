@@ -88,14 +88,14 @@ For browser code, use this decision order: JSX that defines a URL screen belongs
 
 The Node service may import runtime-neutral code from `packages/shared/`, but must not import React components, browser pages, `src/lib/` browser adapters, or Tauri code. Browser callers should reach this service through the client boundary in `src/lib/chat-server.ts`.
 
-### Native Desktop Layer (`apps/desktop/src-tauri`)
+### Tauri Desktop Layer (`apps/tauri/src-tauri`)
 
-- `apps/desktop/src-tauri/src/main.rs` and `apps/desktop/src-tauri/src/lib.rs`: Tauri startup, plugin setup, command registration, and application-wide wiring.
-- `apps/desktop/src-tauri/src/commands/`: thin Tauri command handlers. Validate/deserialize command inputs, call a service, and return serializable results; keep filesystem, process, Git, and other business logic out of command handlers.
-- `apps/desktop/src-tauri/src/services/`: native capabilities and side effects, including filesystem/workspace access, processes, Git, automation, sandboxing, and chat-server lifecycle management.
-- `apps/desktop/src-tauri/src/models/`: Rust data structures shared by commands and services, especially `serde` request/response models. Keep transport models separate from service implementation details.
-- `apps/desktop/src-tauri/capabilities/`: Tauri permission and capability declarations. Update these when adding or changing native commands or plugins.
-- `apps/desktop/src-tauri/sidecar/`: source for JavaScript sidecar workers. Generated sidecars and build output are not hand-edited.
+- `apps/tauri/src-tauri/src/main.rs` and `apps/tauri/src-tauri/src/lib.rs`: Tauri startup, plugin setup, command registration, and application-wide wiring.
+- `apps/tauri/src-tauri/src/commands/`: thin Tauri command handlers. Validate/deserialize command inputs, call a service, and return serializable results; keep filesystem, process, Git, and other business logic out of command handlers.
+- `apps/tauri/src-tauri/src/services/`: native capabilities and side effects, including filesystem/workspace access, processes, Git, automation, sandboxing, and chat-server lifecycle management.
+- `apps/tauri/src-tauri/src/models/`: Rust data structures shared by commands and services, especially `serde` request/response models. Keep transport models separate from service implementation details.
+- `apps/tauri/src-tauri/capabilities/`: Tauri permission and capability declarations. Update these when adding or changing native commands or plugins.
+- `apps/tauri/src-tauri/sidecar/`: source for JavaScript sidecar workers. Generated sidecars and build output are not hand-edited.
 
 Frontend code should call native functionality through a small adapter in `apps/desktop/src/lib/` (using Tauri APIs there), not by placing `invoke` calls throughout pages or components. Native code must not depend on browser UI code.
 
@@ -104,10 +104,10 @@ Frontend code should call native functionality through a small adapter in `apps/
 - `scripts/`: repository build, development orchestration, packaging, and other developer tooling. Keep these scripts independent from page rendering. Local data migrations go through `pnpm migrate <command>` (`scripts/migrate.mjs`) and are documented in [`docs/data-migration.md`](docs/data-migration.md); do not add new top-level `migrate:*` or `chat:sessions:*` package scripts.
 - `docs/`: architecture notes, operational guidance, and decisions. Update the relevant document when a change alters a documented boundary or workflow.
 - Root configuration files (`package.json`, `pnpm-workspace.yaml`, `biome.json`, and similar): workspace-wide tooling/configuration only. Desktop-specific TypeScript/Vite/Tauri configuration belongs under `apps/desktop/`.
-- `.data/`, `.cache/`, `dist/`, `apps/desktop/src-tauri/target/`, and generated sidecar/binary output: local or generated artifacts. Do not add application source code or secrets to these paths, and do not edit generated output by hand.
+- `.data/`, `.cache/`, `dist/`, `apps/tauri/src-tauri/target/`, and generated sidecar/binary output: local or generated artifacts. Do not add application source code or secrets to these paths, and do not edit generated output by hand.
 
 ### Dependencies and Tests
 
-- Keep the dependency direction explicit: pages/layouts/components may use `apps/desktop/src/lib/`, `packages/shared/`, and `apps/desktop/src/components/ui/`; `apps/desktop/src/lib/` may use `packages/shared/`; `packages/shared/` stays platform-neutral; `apps/server` may use only `packages/shared/` across runtimes; `apps/desktop/src-tauri` remains a separate native boundary.
+- Keep the dependency direction explicit: pages/layouts/components may use `apps/desktop/src/lib/`, `packages/shared/`, and `apps/desktop/src/components/ui/`; `apps/desktop/src/lib/` may use `packages/shared/`; `packages/shared/` stays platform-neutral; `apps/server` may use only `packages/shared/` across runtimes; `apps/tauri/src-tauri` remains a separate native boundary.
 - Put a test beside the implementation it exercises (`*.test.ts` or `*.test.tsx`) and use the test runner for that runtime. Do not introduce a second test framework or a frontend test setup in an unrelated directory without documenting the choice.
 - When a change crosses a boundary, update the adapter and its contract at that boundary instead of reaching through it. For example, add a Chat Server endpoint in `apps/server`, its browser request wrapper in `apps/desktop/src/lib/chat-server.ts`, and the consuming query/mutation in the owning page or component.

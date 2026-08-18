@@ -1,4 +1,3 @@
-import { Channel, invoke } from "@tauri-apps/api/core";
 import { FitAddon } from "@xterm/addon-fit";
 import { type ITheme, Terminal } from "@xterm/xterm";
 import { getDesktopBridge } from "@/lib/desktop-bridge";
@@ -17,6 +16,7 @@ type TerminalEvent =
 type TerminalSpawnResult = {
   id: string;
   shell: string;
+  unsubscribe?: () => void;
 };
 
 type StatusListener = (status: TerminalSessionStatus) => void;
@@ -120,11 +120,7 @@ export class TerminalSessionRegistry {
     entry.terminal.dispose();
     if (entry.id) {
       const bridge = getDesktopBridge();
-      if (bridge?.runtime === "electron") {
-        await bridge.call("terminal_close", { id: entry.id });
-      } else {
-        await invoke("terminal_close", { id: entry.id });
-      }
+      await bridge?.call("terminal_close", { id: entry.id });
     }
   }
 
@@ -158,10 +154,8 @@ export class TerminalSessionRegistry {
     terminal.onData((data) => {
       if (!entry.id || entry.status.phase !== "running") return;
       const bridge = getDesktopBridge();
-      const write =
-        bridge?.runtime === "electron"
-          ? bridge.call("terminal_write", { id: entry.id, data })
-          : invoke("terminal_write", { id: entry.id, data });
+      if (!bridge) return;
+      const write = bridge.call("terminal_write", { id: entry.id, data });
       void write.catch((error) => {
         this.setStatus(entry, { phase: "error", message: describeError(error) });
       });
@@ -192,47 +186,27 @@ export class TerminalSessionRegistry {
       }
     };
 
-    let unsubscribe: (() => void) | undefined;
     try {
       const bridge = getDesktopBridge();
-      let result: TerminalSpawnResult;
-      if (bridge?.runtime === "electron") {
-        const id = crypto.randomUUID();
-        unsubscribe = await bridge.subscribe(`terminal:${id}`, (payload) =>
-          onEvent(payload as TerminalEvent),
-        );
-        result = await bridge.call<TerminalSpawnResult>("terminal_spawn", {
-          id,
+      if (!bridge) throw new Error("桌面宿主 bridge 不可用");
+      const result: TerminalSpawnResult = await bridge.terminalSpawn(
+        {
           cwd: entry.cwd,
           cols: entry.terminal.cols,
           rows: entry.terminal.rows,
-        });
-      } else {
-        const channel = new Channel<TerminalEvent>();
-        channel.onmessage = onEvent;
-        result = await invoke<TerminalSpawnResult>("terminal_spawn", {
-          cwd: entry.cwd,
-          cols: entry.terminal.cols,
-          rows: entry.terminal.rows,
-          onEvent: channel,
-        });
-      }
+        },
+        onEvent,
+      );
       if (entry.disposed) {
-        unsubscribe?.();
-        if (bridge?.runtime === "electron") {
-          await bridge.call("terminal_close", { id: result.id });
-        } else {
-          await invoke("terminal_close", { id: result.id });
-        }
+        await bridge.call("terminal_close", { id: result.id });
         return;
       }
       entry.id = result.id;
-      entry.unsubscribe = unsubscribe;
+      entry.unsubscribe = result.unsubscribe;
       entry.spawning = false;
       this.setStatus(entry, { phase: "running", shell: result.shell });
       this.fit(key);
     } catch (error) {
-      unsubscribe?.();
       entry.unsubscribe?.();
       entry.unsubscribe = undefined;
       entry.spawning = false;
@@ -257,10 +231,8 @@ export class TerminalSessionRegistry {
     }
     entry.lastSize = nextSize;
     const bridge = getDesktopBridge();
-    const resize =
-      bridge?.runtime === "electron"
-        ? bridge.call("terminal_resize", { id: entry.id, ...nextSize })
-        : invoke("terminal_resize", { id: entry.id, ...nextSize });
+    if (!bridge) return;
+    const resize = bridge.call("terminal_resize", { id: entry.id, ...nextSize });
     void resize.catch((error) => {
       this.setStatus(entry, { phase: "error", message: describeError(error) });
     });

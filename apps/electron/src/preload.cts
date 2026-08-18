@@ -15,6 +15,21 @@ type DesktopBridge = {
   saveImageFile(bytes: number[], fileName: string): Promise<boolean>;
   setTrayEnabled(enabled: boolean): Promise<void>;
   toggleWindowMaximize(): Promise<void>;
+  httpRequest(request: {
+    url: string;
+    method: string;
+    headers: Array<[string, string]>;
+    body?: string;
+  }): Promise<{
+    status: number;
+    statusText: string;
+    headers: Array<[string, string]>;
+    body: number[];
+  }>;
+  terminalSpawn(
+    args: { cwd: string; cols: number; rows: number },
+    onEvent: (event: unknown) => void,
+  ): Promise<{ id: string; shell: string; unsubscribe: () => void }>;
 };
 
 const bridge: DesktopBridge = {
@@ -42,6 +57,26 @@ const bridge: DesktopBridge = {
     ipcRenderer.invoke(IPC_CHANNEL, { command: "set_tray_enabled", args: { enabled } }),
   toggleWindowMaximize: () =>
     ipcRenderer.invoke(IPC_CHANNEL, { command: "toggle_window_maximize", args: {} }),
+  httpRequest: (request) => ipcRenderer.invoke(IPC_CHANNEL, { command: "http_request", args: request }),
+  terminalSpawn: async (args, onEvent) => {
+    const id = crypto.randomUUID();
+    const channel = `${IPC_EVENT_PREFIX}terminal:${id}`;
+    const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => onEvent(payload);
+    ipcRenderer.on(channel, handler);
+    try {
+      const result = await ipcRenderer.invoke(IPC_CHANNEL, {
+        command: "terminal_spawn",
+        args: { ...args, id },
+      });
+      return {
+        ...result,
+        unsubscribe: () => ipcRenderer.removeListener(channel, handler),
+      };
+    } catch (error) {
+      ipcRenderer.removeListener(channel, handler);
+      throw error;
+    }
+  },
 };
 
 contextBridge.exposeInMainWorld("__CHATDESK_DESKTOP_BRIDGE__", bridge);

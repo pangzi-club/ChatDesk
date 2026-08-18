@@ -6,8 +6,8 @@
   "build": {
     "beforeDevCommand": "pnpm --dir ../.. --filter chatdesk-desktop exec vite",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm --dir ../.. build",
-    "frontendDist": "../dist"
+    "beforeBuildCommand": "pnpm --dir ../.. build:web",
+    "frontendDist": "../../desktop/dist"
   },
   "app": {
     "windows": [

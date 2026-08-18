@@ -40,6 +40,16 @@ describe("desktopFetch", () => {
         saveImageFile: async () => false,
         setTrayEnabled: async () => undefined,
         toggleWindowMaximize: async () => undefined,
+        httpRequest: async (request) => {
+          callSpy("http_request", request);
+          return {
+            status: 200,
+            statusText: "OK",
+            headers: [["content-type", "application/json"]],
+            body: [...new TextEncoder().encode('{"ok":true}')],
+          };
+        },
+        terminalSpawn: async () => ({ id: "test", shell: "sh" }),
       } satisfies DesktopBridge,
     } as unknown as Window & typeof globalThis.window;
 
