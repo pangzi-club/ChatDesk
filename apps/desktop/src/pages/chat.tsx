@@ -44,22 +44,20 @@ import {
   Folder,
   GitBranch,
   Hammer,
-  History,
   Laptop,
+  List,
   LoaderCircle,
   MessageSquarePlus,
   Mic,
   MoreHorizontal,
   Paperclip,
   Play,
-  Plus,
   RefreshCw,
   SearchCode,
   Settings,
   Settings2,
   ShieldCheck,
   Sparkles,
-  Trash2,
   Upload,
   Wrench,
   X,
@@ -76,9 +74,7 @@ import {
 } from "@/components/chat-conversation-menu-items";
 import { ChatGitSummary } from "@/components/chat-git-summary";
 import { ChatMarkdown } from "@/components/chat-markdown";
-import { ChatMemoryDialog } from "@/components/chat-memory-dialog";
 import { ChatPlanQuestionnaire } from "@/components/chat-plan-questionnaire";
-import { ChatSettingsDialog } from "@/components/chat-settings-dialog";
 import { ChatSkillsPicker } from "@/components/chat-skills-picker";
 import { ChatTodoPanel } from "@/components/chat-todo-panel";
 import { type ChatToolCallCardProps, ChatToolCallGroup } from "@/components/chat-tool-call-card";
@@ -128,13 +124,7 @@ import {
 import { appendComposerSelection, readWindowSelectionText } from "@/lib/chat-composer-selection";
 import { materializeGeneratedImages } from "@/lib/chat-image-generation";
 import { appendLiveDraftText, mergeLiveDraft } from "@/lib/chat-live-draft";
-import {
-  type ChatMemoryStore,
-  DEFAULT_CHAT_MEMORY,
-  formatMemoryForInject,
-  loadChatMemory,
-  saveChatMemory,
-} from "@/lib/chat-memory";
+import { DEFAULT_CHAT_MEMORY, formatMemoryForInject, loadChatMemory } from "@/lib/chat-memory";
 import { isWorkspaceMemoryExcludedTool, scheduleMemoryUpdateFromTurn } from "@/lib/chat-memory-ops";
 import {
   type ChatFilePart,
@@ -186,14 +176,11 @@ import {
   type ChatDisplaySettings,
   DEFAULT_CHAT_DISPLAY,
   loadChatDisplaySettings,
-  saveChatDisplaySettings,
 } from "@/lib/chat-settings";
 import {
   type ChatAttachment,
-  type ChatIndexItem,
   type ChatSession,
   createSessionId,
-  deleteChatSession,
   loadChatIndex,
   loadChatSession,
   saveChatSession,
@@ -416,14 +403,11 @@ function ChatPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const shouldFollowScrollRef = useRef(true);
   const isComposingRef = useRef(false);
-  const [sessionToDelete, setSessionToDelete] = useState<ChatIndexItem | null>(null);
   const [conversationIdCopied, setConversationIdCopied] = useState(false);
   const [conversationMenuOpen, setConversationMenuOpen] = useState(false);
   const conversationMenuCloseTimerRef = useRef<number | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [gitCommitOpen, setGitCommitOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
-  const [memoryOpen, setMemoryOpen] = useState(false);
   const [toolLogOpen, setToolLogOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
@@ -910,16 +894,6 @@ function ChatPage() {
   useEffect(() => {
     void loadChatDisplaySettings().then(setChatDisplay);
   }, []);
-
-  const updateChatDisplay = (next: ChatDisplaySettings) => {
-    setChatDisplay(next);
-    void saveChatDisplaySettings(next);
-  };
-
-  const updateChatMemory = (next: ChatMemoryStore) => {
-    queryClient.setQueryData(["chat-memory"], next);
-    void saveChatMemory(next).catch((error) => console.error("Failed to save chat memory", error));
-  };
 
   const updateChatTools = (next: ChatToolsSettings) => {
     queryClient.setQueryData(["chat-tools"], next);
@@ -1791,11 +1765,6 @@ function ChatPage() {
     [addToolOutput],
   );
 
-  function openSession(item: ChatIndexItem) {
-    if (item.id === sessionId) return;
-    navigate(chatSessionPath(item.id));
-  }
-
   async function copyConversationId() {
     const copied = await copyChatConversationId(sessionId);
     setConversationIdCopied(copied);
@@ -1845,22 +1814,6 @@ function ChatPage() {
       conversationMenuCloseTimerRef.current = null;
       setConversationMenuOpen(false);
     }, 140);
-  }
-
-  async function confirmRemoveSession() {
-    const item = sessionToDelete;
-    if (!item) return;
-    try {
-      await deleteChatSession(item.id);
-      await queryClient.invalidateQueries({ queryKey: ["chat-index"] });
-      if (item.id === sessionId) {
-        startNewSession(item.workspaceId ?? (item.cwd ? `cwd:${item.cwd}` : ""), item.cwd ?? "");
-      }
-    } catch (deleteError) {
-      console.error("Failed to delete chat session", deleteError);
-    } finally {
-      setSessionToDelete(null);
-    }
   }
 
   const commandTrigger = useMemo(
@@ -2025,53 +1978,29 @@ function ChatPage() {
           </div>
         </div>
         <div className="chat-header-actions">
-          <Button
-            aria-label="新建对话"
-            className="chat-icon-button"
-            size="icon"
-            variant="ghost"
-            type="button"
-            onClick={() => startNewSession(workspaceKey, selectedCwd)}
-          >
-            <Plus className="size-4" />
-          </Button>
-          <Button
-            aria-label="查看 System Prompt"
-            className="chat-header-action-secondary chat-icon-button"
-            onClick={() => setContextOpen(true)}
-            size="icon"
-            title="查看 System Prompt"
-            type="button"
-            variant="ghost"
-          >
-            <FileText className="size-4" />
-          </Button>
-          <Button
-            aria-label="Tool 记录"
-            className="chat-header-action-secondary chat-icon-button"
-            size="icon"
-            title="查看当前对话的 Tool 记录"
-            variant="ghost"
-            type="button"
-            onClick={() => setToolLogOpen(true)}
-          >
-            <Wrench className="size-4" />
-          </Button>
-          <Button
-            aria-label="长期记忆"
-            className="chat-header-action-secondary chat-icon-button"
-            size="icon"
-            variant="ghost"
-            type="button"
-            onClick={() => setMemoryOpen(true)}
-          >
-            <Brain className="size-4" />
-          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
-                aria-label="提交或推送 Git 改动"
+                aria-label="打开 Chat 工具菜单"
                 className="chat-header-action-secondary chat-icon-button"
+                size="icon"
+                title="打开 Chat 工具菜单"
+                type="button"
+                variant="ghost"
+              >
+                <List className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="chat-select-menu" sideOffset={8}>
+              <DropdownMenuItem onSelect={() => setContextOpen(true)}>
+                <FileText className="size-3.5" />
+                查看 System Prompt
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setToolLogOpen(true)}>
+                <Wrench className="size-3.5" />
+                Tool 记录
+              </DropdownMenuItem>
+              <DropdownMenuItem
                 disabled={
                   !workspaceKey ||
                   !(
@@ -2079,87 +2008,13 @@ function ChatPage() {
                     (workspaceGitQuery.data?.summary?.ahead ?? 0) > 0
                   )
                 }
-                size="icon"
-                title="提交或推送 Git 改动"
-                type="button"
-                variant="ghost"
+                onSelect={() => setGitCommitOpen(true)}
               >
-                <Upload className="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="chat-select-menu" sideOffset={8}>
-              <DropdownMenuItem onSelect={() => setGitCommitOpen(true)}>
                 <Upload className="size-3.5" />
                 提交或推送
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                aria-label="更多选项"
-                className="chat-icon-button"
-                size="icon"
-                variant="ghost"
-                type="button"
-              >
-                <History className="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="chat-history-menu" sideOffset={8}>
-              <DropdownMenuLabel>
-                <span className="chat-history-menu-label">
-                  <History className="size-3.5" />
-                  历史对话
-                </span>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {isChatHistoryLoading && <DropdownMenuItem disabled>加载中...</DropdownMenuItem>}
-              {!isChatHistoryLoading && chatIndex.length === 0 && (
-                <DropdownMenuItem disabled>暂无历史对话</DropdownMenuItem>
-              )}
-              {chatIndex.map((item) => (
-                <div className="chat-history-menu-item" key={item.id}>
-                  <button
-                    className="chat-history-menu-open"
-                    type="button"
-                    onClick={() => openSession(item)}
-                  >
-                    <span className="min-w-0">
-                      <span className="chat-history-menu-title block">{item.title}</span>
-                      {item.cwd ? (
-                        <span className="block truncate text-[10px] text-muted-foreground">
-                          {pathBasename(item.cwd)}
-                        </span>
-                      ) : null}
-                    </span>
-                    <span className="chat-history-menu-count">{item.messageCount}</span>
-                  </button>
-                  <span className="chat-history-menu-actions">
-                    <button
-                      aria-label={`删除${item.title}`}
-                      className="chat-history-menu-delete"
-                      title="删除对话"
-                      type="button"
-                      onClick={() => setSessionToDelete(item)}
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
-                  </span>
-                </div>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Button
-            aria-label="显示设置"
-            className="chat-icon-button"
-            size="icon"
-            variant="ghost"
-            type="button"
-            onClick={() => setSettingsOpen(true)}
-          >
-            <Settings className="size-4" />
-          </Button>
         </div>
       </header>
 
@@ -2672,12 +2527,6 @@ function ChatPage() {
           </div>
         </div>
       </div>
-      <ChatSettingsDialog
-        onOpenChange={setSettingsOpen}
-        onSettingsChange={updateChatDisplay}
-        open={settingsOpen}
-        settings={chatDisplay}
-      />
       <GitCommitDialog
         branch={workspaceGitQuery.data?.summary?.branch}
         hasChanges={Boolean(workspaceGitQuery.data?.summary?.filesChanged)}
@@ -2701,34 +2550,7 @@ function ChatPage() {
         onOpenChange={setContextOpen}
         open={contextOpen}
       />
-      <ChatMemoryDialog
-        onOpenChange={setMemoryOpen}
-        onStoreChange={updateChatMemory}
-        open={memoryOpen}
-        store={chatMemory}
-      />
       <ChatToolLogDialog messages={messages} onOpenChange={setToolLogOpen} open={toolLogOpen} />
-      <AlertDialog
-        open={sessionToDelete !== null}
-        onOpenChange={(open) => {
-          if (!open) setSessionToDelete(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>删除历史对话？</AlertDialogTitle>
-            <AlertDialogDescription>
-              确定要删除“{sessionToDelete?.title ?? "这条对话"}”吗？删除后无法恢复。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={() => void confirmRemoveSession()}>
-              删除
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
       <AlertDialog
         onOpenChange={(open) => {
           if (open) environmentImportMutation.reset();
