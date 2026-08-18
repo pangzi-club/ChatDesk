@@ -1988,47 +1988,47 @@
 .git-commit-dialog {
   gap: 0;
   overflow: hidden;
-  border-color: rgb(255 255 255 / 12%);
-  border-radius: 18px;
-  background: #292929;
+  border-color: var(--border);
+  border-radius: 12px;
+  background: var(--popover);
   padding: 0;
-  color: #f3f3f3;
+  color: var(--popover-foreground);
 }
 .git-commit-dialog-header {
-  padding: 20px 22px 14px;
+  padding: 16px 18px 10px;
 }
 .git-commit-branch {
   display: flex;
   align-items: center;
-  gap: 9px;
-  font-size: 18px;
-  font-weight: 500;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
 }
 .git-commit-message {
-  min-height: 104px;
+  min-height: 80px;
   resize: none;
   border: 0;
   border-radius: 0;
   background: transparent;
-  padding: 10px 22px 18px;
-  color: #f3f3f3;
-  font-size: 16px;
+  padding: 8px 18px 14px;
+  color: var(--popover-foreground);
+  font-size: 14px;
   box-shadow: none;
 }
 .git-commit-message::placeholder {
-  color: rgb(255 255 255 / 43%);
+  color: var(--muted-foreground);
 }
 .git-commit-message:focus-visible {
   border: 0;
   box-shadow: none;
-  outline: none;
+  outline: 2px solid transparent;
 }
 .git-commit-scope {
   display: flex;
   align-items: center;
   gap: 10px;
-  border-bottom: 1px solid rgb(255 255 255 / 12%);
-  padding: 12px 22px;
+  border-bottom: 1px solid var(--border);
+  padding: 10px 18px;
 }
 .git-commit-scope-check {
   display: inline-flex;
@@ -2036,9 +2036,9 @@
   height: 23px;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgb(255 255 255 / 32%);
+  border: 1px solid var(--input);
   border-radius: 6px;
-  color: #f3f3f3;
+  color: var(--foreground);
 }
 .git-commit-scope-label {
   display: flex;
@@ -2049,7 +2049,7 @@
   font-weight: 600;
 }
 .git-commit-scope-count {
-  color: rgb(255 255 255 / 47%);
+  color: var(--muted-foreground);
   font-size: 11px;
   font-weight: 400;
 }
@@ -2063,23 +2063,23 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
-  padding: 6px 8px 10px;
+  padding: 5px 7px 8px;
 }
 .git-commit-action {
   width: 100%;
-  min-height: 42px;
+  min-height: 36px;
   justify-content: flex-start;
-  border-radius: 10px;
-  padding: 0 14px;
-  color: rgb(255 255 255 / 75%);
+  border-radius: 8px;
+  padding: 0 12px;
+  color: var(--muted-foreground);
   font-size: 14px;
 }
 .git-commit-action.is-selected {
-  background: rgb(255 255 255 / 11%);
-  color: #fff;
+  background: var(--accent);
+  color: var(--accent-foreground);
 }
 .git-commit-action:disabled {
-  color: rgb(255 255 255 / 25%);
+  color: color-mix(in srgb, var(--muted-foreground) 45%, transparent);
 }
 .git-commit-action-icon {
   display: inline-flex;
@@ -2101,9 +2101,9 @@
   display: inline-flex;
   gap: 5px;
   border-radius: 999px;
-  background: rgb(255 255 255 / 12%);
-  padding: 5px 10px;
-  color: rgb(255 255 255 / 72%);
+  background: color-mix(in srgb, var(--foreground) 9%, transparent);
+  padding: 3px 8px;
+  color: var(--muted-foreground);
   font-size: 12px;
 }
 .file-viewer {

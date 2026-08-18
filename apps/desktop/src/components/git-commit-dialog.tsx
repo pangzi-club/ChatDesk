@@ -155,7 +155,7 @@ export function GitCommitDialog({
         if (!mutation.isPending) onOpenChange(nextOpen);
       }}
     >
-      <DialogContent className="git-commit-dialog sm:max-w-[520px]" onKeyDown={handleKeyDown}>
+      <DialogContent className="git-commit-dialog sm:max-w-[460px]" onKeyDown={handleKeyDown}>
         <DialogHeader className="git-commit-dialog-header">
           <DialogTitle className="sr-only">提交或推送</DialogTitle>
           <DialogDescription className="sr-only">
@@ -185,11 +185,11 @@ export function GitCommitDialog({
             <span className="git-commit-scope-count">{filesChanged || "全部"} 个文件</span>
           </span>
           <span className="git-commit-stats">
-            <span className="text-emerald-400">
+            <span className="text-emerald-600 dark:text-emerald-400">
               <Plus className="inline size-4" />
               {insertions}
             </span>
-            <span className="text-rose-400">
+            <span className="text-rose-600 dark:text-rose-400">
               <Minus className="inline size-4" />
               {deletions}
             </span>
