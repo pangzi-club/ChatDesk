@@ -188,8 +188,8 @@ function applicationIconPath() {
   const fileName = process.platform === "win32" ? "icon.ico" : "icon.png";
   const candidates = [
     join(process.resourcesPath, `icons/${fileName}`),
-    join(app.getAppPath(), `apps/tauri/src-tauri/icons/${fileName}`),
-    join(moduleDirectory, `../../tauri/src-tauri/icons/${fileName}`),
+    join(app.getAppPath(), `apps/desktop/assets/icons/${fileName}`),
+    join(moduleDirectory, `../../desktop/assets/icons/${fileName}`),
   ];
   return candidates.find((candidate) => existsSync(candidate));
 }
@@ -357,7 +357,7 @@ function setTrayEnabled(enabled: boolean) {
   if (tray) return;
   const iconCandidates = [
     join(process.resourcesPath, "icons/32x32.png"),
-    join(app.getAppPath(), "apps/tauri/src-tauri/icons/32x32.png"),
+    join(app.getAppPath(), "apps/desktop/assets/icons/32x32.png"),
   ];
   const iconPath = iconCandidates.find((candidate) => existsSync(candidate));
   tray = new Tray(iconPath ? nativeImage.createFromPath(iconPath) : nativeImage.createEmpty());

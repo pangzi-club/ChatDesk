@@ -10,9 +10,9 @@ lerna-debug.log*
 node_modules
 .data/
 .cache/
-apps/tauri/src-tauri/binaries/*
-!apps/tauri/src-tauri/binaries/assistant-sidecar-x86_64-apple-darwin
-apps/tauri/src-tauri/resources/*
+apps/desktop/assets/binaries/*
+!apps/desktop/assets/binaries/assistant-sidecar-x86_64-apple-darwin
+apps/desktop/assets/resources/*
 dist
 dist-ssr
 *.local

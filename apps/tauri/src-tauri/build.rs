@@ -12,7 +12,7 @@ fn main() {
 
 fn ensure_node_runtime(manifest_dir: &str, target: &str) {
     let sidecar_base = std::path::Path::new(manifest_dir)
-        .join("binaries")
+        .join("../../desktop/assets/binaries")
         .join(format!("node-runtime-{target}"));
     let sidecar = if sidecar_base.exists() {
         sidecar_base
@@ -36,7 +36,8 @@ fn ensure_node_runtime(manifest_dir: &str, target: &str) {
 }
 
 fn ensure_debug_resources(manifest_dir: &str) {
-    let resources_dir = std::path::Path::new(manifest_dir).join("resources/node-runtime");
+    let resources_dir =
+        std::path::Path::new(manifest_dir).join("../../desktop/assets/resources/node-runtime");
     for worker in [
         "workers/chat-server.cjs",
         "workers/chat-server-sandbox.cjs",
@@ -59,7 +60,8 @@ fn ensure_debug_resources(manifest_dir: &str) {
     }
 
     let playwright_placeholder =
-        std::path::Path::new(manifest_dir).join("resources/playwright-browsers/placeholder.txt");
+        std::path::Path::new(manifest_dir)
+            .join("../../desktop/assets/resources/playwright-browsers/placeholder.txt");
     if !playwright_placeholder.exists() {
         std::fs::create_dir_all(
             playwright_placeholder
@@ -76,7 +78,8 @@ fn ensure_debug_resources(manifest_dir: &str) {
 }
 
 fn ensure_release_resources(manifest_dir: &str) {
-    let runtime_dir = std::path::Path::new(manifest_dir).join("resources/node-runtime");
+    let runtime_dir =
+        std::path::Path::new(manifest_dir).join("../../desktop/assets/resources/node-runtime");
     for relative in [
         "package.json",
         "workers/chat-server.cjs",

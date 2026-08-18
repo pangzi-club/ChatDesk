@@ -13,7 +13,7 @@ const token =
   process.env.CHATDESK_CHAT_SERVER_TOKEN || process.env.CHAT_SERVER_TOKEN || randomUUID();
 const workerCandidates = [
   process.env.CHATDESK_CHAT_SERVER_WORKER,
-  path.join(root, "apps/tauri/src-tauri/resources/node-runtime/workers/chat-server.cjs"),
+  path.join(root, "apps/desktop/assets/resources/node-runtime/workers/chat-server.cjs"),
   path.join(root, "apps/server/.cache/chat-server.cjs"),
 ].filter(Boolean);
 

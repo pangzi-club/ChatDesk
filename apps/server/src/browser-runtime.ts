@@ -14,11 +14,11 @@ type BrowserResponse = {
 };
 
 const SOURCE_WORKER_FROM_SRC = "../../tauri/src-tauri/src/sidecar/browser-worker.mjs";
-const SOURCE_BROWSERS_FROM_SRC = "../../tauri/src-tauri/resources/playwright-browsers";
+const SOURCE_BROWSERS_FROM_SRC = "../../desktop/assets/resources/playwright-browsers";
 const SOURCE_WORKER_FROM_REPO = "apps/tauri/src-tauri/src/sidecar/browser-worker.mjs";
-const SOURCE_BROWSERS_FROM_REPO = "apps/tauri/src-tauri/resources/playwright-browsers";
+const SOURCE_BROWSERS_FROM_REPO = "apps/desktop/assets/resources/playwright-browsers";
 const SOURCE_WORKER_FROM_SERVER = "../tauri/src-tauri/src/sidecar/browser-worker.mjs";
-const SOURCE_BROWSERS_FROM_SERVER = "../tauri/src-tauri/resources/playwright-browsers";
+const SOURCE_BROWSERS_FROM_SERVER = "../desktop/assets/resources/playwright-browsers";
 
 function chatServerSourceDir(): string | undefined {
   // Development (`pnpm server:dev`, vitest) runs this file as ESM, so

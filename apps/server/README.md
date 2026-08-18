@@ -47,7 +47,7 @@ pnpm --filter chatdesk-chat-server typecheck
 | `CHAT_SERVER_DATA_DIR` | macOS: `~/.chatdesk/chat-server`；其他平台: `.data/chat-server` | 会话、设置、记忆和归档数据目录 |
 | `CHAT_SERVER_PRODUCTION` | 未设置 | 设为 `1` 后启用致命错误处理和关闭时的运行清理 |
 | `CHAT_SERVER_BROWSER_WORKER` | 开发时回退到 `apps/tauri/src-tauri/src/sidecar/browser-worker.mjs`（ESM 用 `import.meta.url`，也可从仓库根/`apps/server` 的 cwd 解析） | 浏览器 worker 可执行文件或脚本路径。打包 sidecar 是 CJS，`import.meta` 为空，由桌面宿主注入；未配置时浏览器工具会直接报错 |
-| `CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH` | 未设置 | Playwright 浏览器资源目录。开发时若 `apps/tauri/src-tauri/resources/playwright-browsers` 中已有 Chromium 则自动使用，否则走 Playwright 默认缓存 |
+| `CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH` | 未设置 | Playwright 浏览器资源目录。开发时若 `apps/desktop/assets/resources/playwright-browsers` 中已有 Chromium 则自动使用，否则走 Playwright 默认缓存 |
 | `CHAT_SERVER_SHARP_PATH` | 未设置 | 打包后 Sharp native 运行时目录（含 `package.json` 与 `node_modules/sharp`）。开发态直接使用 `apps/server` 的 `sharp` 依赖 |
 
 示例：

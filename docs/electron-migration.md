@@ -136,4 +136,4 @@ pnpm desktop:sidecars
 pnpm electron:package
 ```
 
-Electron main 会从共享 runtime 或打包后的 `workers/chat-server.cjs` 启动 Chat Server；开发编排优先使用 `apps/tauri/src-tauri/resources/node-runtime/workers/chat-server.cjs`，再回退到 `apps/server/.cache/chat-server.cjs`。
+Electron main 会从共享 runtime 或打包后的 `workers/chat-server.cjs` 启动 Chat Server；开发编排优先使用 `apps/desktop/assets/resources/node-runtime/workers/chat-server.cjs`，再回退到 `apps/server/.cache/chat-server.cjs`。

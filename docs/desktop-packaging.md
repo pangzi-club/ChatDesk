@@ -48,7 +48,7 @@ both builds finish successfully. Keep the tag version aligned with the
 versions in `package.json`, `apps/desktop/package.json`,
 `apps/tauri/src-tauri/tauri.conf.json`, and `apps/tauri/src-tauri/Cargo.toml`.
 
-`pnpm desktop:sidecars` requires Node.js 22.20.0. It copies the current Node executable to `apps/tauri/src-tauri/binaries/node-runtime-<target-triple>`, bundles the TypeScript Chat Server and sandbox worker into CommonJS, and copies the browser worker as an ordinary ES module. These scripts live under `apps/tauri/src-tauri/resources/node-runtime/workers` and are all executed by the same Node binary.
+`pnpm desktop:sidecars` requires Node.js 22.20.0. It copies the current Node executable to `apps/desktop/assets/binaries/node-runtime-<target-triple>`, bundles the TypeScript Chat Server and sandbox worker into CommonJS, and copies the browser worker as an ordinary ES module. These scripts live under `apps/desktop/assets/resources/node-runtime/workers` and are all executed by the same Node binary.
 
 Playwright is not bundled into JavaScript or embedded in an executable. The build recursively copies the installed production package trees for Playwright and Sharp into `resources/node-runtime/node_modules`, including the native Sharp packages available for the current platform. This preserves Playwright's package metadata, browser registry, dynamic loads, and filesystem layout. Chromium Headless Shell remains under `resources/playwright-browsers` because browser executables must exist on the real filesystem.
 

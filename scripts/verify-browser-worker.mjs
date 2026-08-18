@@ -21,12 +21,12 @@ async function resolveLayout(args) {
   if (args[0] !== "--app" && args[0] !== "--electron-app") {
     const targetTriple = process.env.DESKTOP_TARGET_TRIPLE || platformTargetTriple();
     const extension = process.platform === "win32" ? ".exe" : "";
-    const resourcesDir = path.join(root, "apps/tauri/src-tauri/resources");
+    const resourcesDir = path.join(root, "apps/desktop/assets/resources");
     const runtimeRoot = path.join(resourcesDir, "node-runtime");
     return {
       nodeRuntime: path.join(
         root,
-        "apps/tauri/src-tauri/binaries",
+        "apps/desktop/assets/binaries",
         `node-runtime-${targetTriple}${extension}`,
       ),
       runtimeRoot,

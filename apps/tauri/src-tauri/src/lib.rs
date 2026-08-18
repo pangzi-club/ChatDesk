@@ -60,7 +60,11 @@ pub fn run() {
             TrayIconBuilder::with_id("main-tray")
                 .menu(&menu)
                 .show_menu_on_left_click(true)
-                .icon(Image::new(include_bytes!("../icons/tray.rgba"), 32, 32))
+                .icon(Image::new(
+                    include_bytes!("../../../desktop/assets/icons/tray.rgba"),
+                    32,
+                    32,
+                ))
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "quit" => app.exit(0),
                     "chat" => {

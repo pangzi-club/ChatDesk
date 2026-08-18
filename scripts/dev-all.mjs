@@ -16,7 +16,7 @@ const browserWorker =
   path.join(root, "apps/tauri/src-tauri/src/sidecar/browser-worker.mjs");
 const playwrightBrowsers =
   process.env.CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH ||
-  packagedPlaywrightBrowsers(path.join(root, "apps/tauri/src-tauri/resources/playwright-browsers"));
+  packagedPlaywrightBrowsers(path.join(root, "apps/desktop/assets/resources/playwright-browsers"));
 const sharedEnv = {
   ...process.env,
   CHAT_SERVER_TOKEN: token,

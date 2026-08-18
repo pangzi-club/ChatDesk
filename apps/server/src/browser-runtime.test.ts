@@ -56,7 +56,7 @@ describe("browser worker resolution", () => {
   it("uses packaged Playwright browsers only when Chromium is present", () => {
     const browsers = path.resolve(
       path.dirname(fileURLToPath(import.meta.url)),
-      "../../tauri/src-tauri/resources/playwright-browsers",
+      "../../desktop/assets/resources/playwright-browsers",
     );
     expect(
       resolvePlaywrightBrowsersPath(
