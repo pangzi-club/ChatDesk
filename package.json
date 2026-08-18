@@ -14,10 +14,10 @@
   "packageManager": "pnpm@11.19.0",
   "type": "module",
   "scripts": {
-    "dev": "pnpm electron:dev",
-    "dev:all": "pnpm electron:dev",
+    "dev": "node scripts/dev-electron.mjs",
+    "dev:all": "node scripts/dev-electron.mjs",
     "tauri:dev": "node scripts/dev-all.mjs",
-    "desktop:dev": "pnpm electron:dev",
+    "desktop:dev": "node scripts/dev-electron.mjs",
     "dev:web": "pnpm --filter chatdesk-desktop dev",
     "dev:server": "pnpm server:dev",
     "migrate": "node scripts/migrate.mjs",

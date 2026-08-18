@@ -8,6 +8,7 @@ import {
   nativeImage,
   net,
   protocol,
+  session,
   shell,
   Tray,
 } from "electron";
@@ -21,7 +22,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import {
   IPC_CHANNEL,
   IPC_EVENT_PREFIX,
@@ -30,16 +31,43 @@ import {
   validateUserStoreFile,
 } from "./ipc-contract.js";
 import { performHttpRequest } from "./http-bridge.js";
+import {
+  isRendererNavigation,
+  RENDERER_SCHEME,
+  rendererFileUrl,
+  rendererLoadUrl,
+  resolveRendererFile,
+} from "./renderer-protocol.js";
 import { TerminalManager } from "./terminal-manager.js";
 
 type DesktopUserStoreFile = "settings.json" | "bookmarks.json";
 
 protocol.registerSchemesAsPrivileged([
   {
+    scheme: RENDERER_SCHEME,
+    privileges: {
+      secure: true,
+      standard: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+    },
+  },
+  {
     scheme: "chatdesk-asset",
     privileges: { secure: true, standard: true, supportFetchAPI: true },
   },
 ]);
+app.commandLine.appendSwitch(
+  "disable-features",
+  [
+    "LocalNetworkAccessChecks",
+    "LocalNetworkAccessChecksForNavigations",
+    "PrivateNetworkAccessSendPreflights",
+    "PrivateNetworkAccessRespectPreflightResults",
+    "BlockInsecurePrivateNetworkRequests",
+  ].join(","),
+);
 
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
 let mainWindow: BrowserWindow | null = null;
@@ -56,17 +84,20 @@ function userStorePath(fileName: DesktopUserStoreFile) {
   return join(userDataDirectory(), fileName);
 }
 
+function rendererRoot() {
+  const candidates = [
+    join(process.resourcesPath, "desktop/dist"),
+    join(app.getAppPath(), "apps/desktop/dist"),
+    join(app.getAppPath(), "desktop/dist"),
+    join(moduleDirectory, "../../desktop/dist"),
+  ];
+  return candidates.find((candidate) => existsSync(join(candidate, "index.html")));
+}
+
 function rendererEntry() {
   if (process.env.CHATDESK_RENDERER_URL) return process.env.CHATDESK_RENDERER_URL;
-  const candidates = [
-    join(process.resourcesPath, "desktop/dist/index.html"),
-    join(app.getAppPath(), "apps/desktop/dist/index.html"),
-    join(app.getAppPath(), "desktop/dist/index.html"),
-    join(moduleDirectory, "../../desktop/dist/index.html"),
-  ];
-  const entry = candidates.find((candidate) => existsSync(candidate));
-  if (!entry) throw new Error("找不到 Electron renderer 构建产物");
-  return pathToFileURL(entry).toString();
+  if (!rendererRoot()) throw new Error("找不到 Electron renderer 构建产物");
+  return rendererLoadUrl();
 }
 
 function createWindow() {
@@ -94,7 +125,7 @@ function createWindow() {
     return { action: "deny" };
   });
   mainWindow.webContents.on("will-navigate", (event, url) => {
-    if (url !== entry) event.preventDefault();
+    if (!isRendererNavigation(url, entry)) event.preventDefault();
   });
   mainWindow.once("ready-to-show", () => mainWindow?.show());
   mainWindow.on("close", (event) => {
@@ -157,6 +188,15 @@ function chatServerRuntimeEnvironment(worker: string, usingElectronRuntime: bool
   };
 }
 
+function supervisorPort() {
+  const port = Number(process.env.CHAT_SERVER_PORT);
+  return Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : undefined;
+}
+
+function supervisorToken() {
+  return process.env.CHATDESK_CHAT_SERVER_TOKEN || process.env.CHAT_SERVER_TOKEN || undefined;
+}
+
 async function setupSupervisor() {
   const worker = resolveChatServerWorker();
   const nodeRuntime = resolveNodeRuntime(worker);
@@ -167,6 +207,8 @@ async function setupSupervisor() {
     cwd: dirname(worker),
     dataDir: join(userDataDirectory(), "chat-server"),
     env: chatServerRuntimeEnvironment(worker, usingElectronRuntime),
+    ...(supervisorPort() ? { port: supervisorPort() } : {}),
+    ...(supervisorToken() ? { token: supervisorToken() } : {}),
   });
   supervisor.subscribe((info) => emit("chat-server-state", info));
   await supervisor.start();
@@ -309,6 +351,26 @@ function setupIpc() {
   });
 }
 
+function setupNetworkPermissions() {
+  session.defaultSession.setPermissionCheckHandler(() => true);
+  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
+    callback(true);
+  });
+}
+
+function setupRendererProtocol() {
+  if (process.env.CHATDESK_RENDERER_URL) return;
+  const root = rendererRoot();
+  if (!root) throw new Error("找不到 Electron renderer 构建产物");
+  protocol.handle(RENDERER_SCHEME, (request) => {
+    try {
+      return net.fetch(rendererFileUrl(resolveRendererFile(root, request.url)));
+    } catch {
+      return new Response("Not found", { status: 404 });
+    }
+  });
+}
+
 function setupAssetProtocol() {
   const allowedRoots = [app.getPath("home"), app.getPath("downloads"), app.getPath("documents")];
   protocol.handle("chatdesk-asset", (request) => {
@@ -337,7 +399,9 @@ if (!gotSingleInstanceLock) {
     mainWindow?.focus();
   });
   void app.whenReady().then(async () => {
+    setupRendererProtocol();
     setupAssetProtocol();
+    setupNetworkPermissions();
     setupIpc();
     setTrayEnabled(true);
     await setupSupervisor().catch((error) => {

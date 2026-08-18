@@ -101,7 +101,11 @@ async function runtimeFetch(input: RequestInfo | URL, init: RequestInit | undefi
     const headers = new Headers(init?.headers);
     if (runtimeConfig.token) headers.set("Authorization", `Bearer ${runtimeConfig.token}`);
     else headers.delete("Authorization");
-    return fetch(input, { ...init, headers });
+    return fetch(input, {
+      ...init,
+      headers,
+      ...({ targetAddressSpace: "loopback" } as RequestInit),
+    });
   };
 
   let response: Response;
@@ -184,13 +188,33 @@ export async function restartChatServer() {
   return info;
 }
 
-export function chatServerUrl(port = CHAT_SERVER_DEFAULT_PORT) {
+export function chatServerPort(port = CHAT_SERVER_DEFAULT_PORT) {
   const stored = isDesktop()
     ? CHAT_SERVER_DEFAULT_PORT
     : normalizePort(window.localStorage.getItem(CHAT_SERVER_PORT_STORAGE_KEY));
-  const selectedPort =
-    port === CHAT_SERVER_DEFAULT_PORT ? (runtimePortKnown ? runtimeConfig.port : stored) : port;
-  return `http://127.0.0.1:${selectedPort}`;
+  return port === CHAT_SERVER_DEFAULT_PORT
+    ? runtimePortKnown
+      ? runtimeConfig.port
+      : stored
+    : port;
+}
+
+export function resolveChatServerBaseUrl(port: number, options?: { proxyOrigin?: string | null }) {
+  const origin = options?.proxyOrigin?.replace(/\/$/, "");
+  if (origin) return origin;
+  return `http://127.0.0.1:${port}`;
+}
+
+function electronDevProxyOrigin() {
+  if (!import.meta.env.DEV || typeof window === "undefined") return null;
+  if (getDesktopBridge()?.runtime !== "electron") return null;
+  return window.location.origin;
+}
+
+export function chatServerUrl(port = CHAT_SERVER_DEFAULT_PORT) {
+  return resolveChatServerBaseUrl(chatServerPort(port), {
+    proxyOrigin: electronDevProxyOrigin(),
+  });
 }
 
 export function chatServerHeaders() {
@@ -212,7 +236,8 @@ export async function refreshChatServerRuntime() {
   }
 }
 
-function applyChatServerRuntime(info: ChatServerRuntimeInfo) {
+function applyChatServerRuntime(info: ChatServerRuntimeInfo | null | undefined) {
+  if (!info) return;
   if (info.port !== undefined) {
     runtimeConfig.port = normalizePort(info.port);
     runtimePortKnown = true;
@@ -250,9 +275,8 @@ async function requestChatServerResponse(
 
 export async function updateChatServerPort(port: number) {
   await initializeChatServer();
-  const currentUrl = chatServerUrl();
   const savedPort = await saveChatServerPort(port);
-  const currentPort = normalizePort(new URL(currentUrl).port);
+  const currentPort = chatServerPort();
   const response = await requestChatServerResponse(
     "/v1/config",
     {
@@ -745,7 +769,7 @@ export async function loadChatServerSystemPromptPreview(
 
 export async function chatServerFetch(input: RequestInfo | URL, init?: RequestInit, port?: number) {
   const url = new URL(input instanceof Request ? input.url : String(input));
-  const selectedPort = port ?? normalizePort(new URL(chatServerUrl()).port);
+  const selectedPort = port ?? chatServerPort();
   return requestChatServerResponse(`${url.pathname}${url.search}`, init, selectedPort);
 }
 

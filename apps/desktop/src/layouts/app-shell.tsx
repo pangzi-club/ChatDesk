@@ -1083,6 +1083,7 @@ function ChatServerStatusBanner() {
     const state = statusQuery.data?.state;
     if (state === "running" && previousState.current && previousState.current !== "running") {
       void queryClient.invalidateQueries({ queryKey: ["chat-index"] });
+      void queryClient.invalidateQueries({ queryKey: ["workspace-projects"] });
       void queryClient.invalidateQueries({ queryKey: ["chat-server-config"] });
     }
     previousState.current = state;

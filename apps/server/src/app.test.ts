@@ -57,6 +57,46 @@ describe("chat server", () => {
     const sessions = await server.app.request("http://localhost/v1/sessions");
     assert.equal(sessions.status, 401);
 
+    const electronPreflight = await server.app.request("http://localhost/v1/sessions", {
+      method: "OPTIONS",
+      headers: {
+        Origin: "chatdesk://localhost",
+        "Access-Control-Request-Method": "GET",
+        "Access-Control-Request-Headers": "authorization",
+      },
+    });
+    assert.equal(electronPreflight.status, 204);
+    assert.equal(
+      electronPreflight.headers.get("Access-Control-Allow-Origin"),
+      "chatdesk://localhost",
+    );
+    assert.match(
+      electronPreflight.headers.get("Access-Control-Allow-Headers") ?? "",
+      /authorization/i,
+    );
+
+    const privateNetwork = await server.app.request("http://localhost/v1/sessions", {
+      method: "OPTIONS",
+      headers: {
+        Origin: "http://localhost:1420",
+        "Access-Control-Request-Method": "GET",
+        "Access-Control-Request-Headers": "authorization",
+        "Access-Control-Request-Private-Network": "true",
+      },
+    });
+    assert.equal(privateNetwork.status, 204);
+    assert.equal(
+      privateNetwork.headers.get("Access-Control-Allow-Origin"),
+      "http://localhost:1420",
+    );
+    assert.equal(privateNetwork.headers.get("Access-Control-Allow-Private-Network"), "true");
+
+    const fileOrigin = await server.app.request("http://localhost/v1/sessions", {
+      headers: { Origin: "null", ...auth() },
+    });
+    assert.equal(fileOrigin.status, 200);
+    assert.equal(fileOrigin.headers.get("Access-Control-Allow-Origin"), "null");
+
     const reviews = await server.app.request("http://localhost/v1/sandbox-reviews", {
       headers: auth(),
     });

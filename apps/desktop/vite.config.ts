@@ -7,6 +7,12 @@ import { defineConfig } from "vite";
 const host = process.env.TAURI_DEV_HOST;
 const require = createRequire(import.meta.url);
 const monacoRoot = path.dirname(require.resolve("monaco-editor/package.json"));
+const chatServerPort = Number(process.env.CHAT_SERVER_PORT || process.env.VITE_CHAT_SERVER_PORT);
+const chatServerTarget = `http://127.0.0.1:${
+  Number.isInteger(chatServerPort) && chatServerPort >= 1024 && chatServerPort <= 65535
+    ? chatServerPort
+    : 14317
+}`;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
@@ -39,6 +45,15 @@ export default defineConfig(async () => ({
     },
     fs: {
       allow: [path.resolve(__dirname), monacoRoot],
+    },
+    proxy: {
+      "/health": { target: chatServerTarget, changeOrigin: true },
+      "/v1": {
+        target: chatServerTarget,
+        changeOrigin: true,
+        timeout: 0,
+        proxyTimeout: 0,
+      },
     },
   },
 }));

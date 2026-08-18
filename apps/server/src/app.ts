@@ -14,6 +14,7 @@ import { AutomationScheduler, AutomationStore } from "./automation-store.ts";
 import { ChatConfigStore } from "./chat-config.ts";
 import { closeClientTools } from "./client-tools.ts";
 import type { ServerConfig } from "./config.ts";
+import { chatServerCorsOrigin } from "./cors.ts";
 import {
   importDeveloperEnvironment,
   inspectDeveloperEnvironment,
@@ -368,16 +369,18 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   await runs.initialize();
   const app = new Hono();
 
+  app.use("*", async (c, next) => {
+    await next();
+    if (c.req.header("Access-Control-Request-Private-Network") !== "true") return;
+    if (!chatServerCorsOrigin(c.req.header("origin") || "")) return;
+    c.res.headers.set("Access-Control-Allow-Private-Network", "true");
+  });
   app.use(
     "*",
     cors({
-      origin: [
-        "http://localhost:1420",
-        "http://127.0.0.1:1420",
-        "tauri://localhost",
-        "http://tauri.localhost",
-        "https://tauri.localhost",
-      ],
+      origin: chatServerCorsOrigin,
+      allowHeaders: ["Authorization", "Content-Type", "Accept"],
+      allowMethods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     }),
   );
   app.use("*", async (c, next) => {
