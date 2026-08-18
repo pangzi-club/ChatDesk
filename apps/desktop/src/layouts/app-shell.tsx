@@ -861,7 +861,7 @@ function AppShell() {
               <>
                 {/* 左列：红绿灯 + 侧栏同一背景，连成一体 */}
                 <aside
-                  className="app-shell-sidebar main-sidebar flex shrink-0 flex-col border-border border-r"
+                  className="app-shell-sidebar main-sidebar flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-border border-r"
                   ref={mainSidebarRef}
                   style={
                     {
@@ -883,7 +883,7 @@ function AppShell() {
                       <SidebarNavItem item={item} key={item.to} />
                     ))}
                   </nav>
-                  <div className="sidebar-scroll-area min-h-0 flex-1 overflow-y-auto">
+                  <div className="sidebar-scroll-area h-0 min-h-0 flex-1 overflow-y-auto">
                     <nav
                       className="space-y-0.5 px-2 pt-0 max-sm:px-1.5"
                       aria-label="Secondary navigation"
