@@ -850,8 +850,8 @@ function AppShell() {
             >
               <Outlet />
             </section>
-            <div className="absolute inset-x-0 top-0 z-10 flex h-8 items-center">
-              <TitlebarDragRegion />
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex h-8 items-center">
+              <TitlebarDragRegion className="pointer-events-auto" />
             </div>
           </div>
         ) : null}
@@ -872,7 +872,7 @@ function AppShell() {
                   <div className="flex h-8 shrink-0 items-center select-none">
                     <div className="h-full w-[72px] shrink-0" data-tauri-drag-region />
                     <MainSidebarToggleButton collapsed={false} onToggle={toggleMainSidebar} />
-                    <TitlebarDragRegion />
+                    <TitlebarDragRegion className="pointer-events-auto" />
                   </div>
                   <SidebarHeader />
                   <nav
@@ -1019,15 +1019,19 @@ function AppShell() {
                 </AnimatePresence>
               </div>
               <div
-                className={`absolute inset-x-0 top-0 z-10 flex h-8 items-center ${isChatPage ? "chat-top-actions-layer" : ""}`}
+                className={`pointer-events-none absolute inset-x-0 top-0 z-10 flex h-8 items-center ${isChatPage ? "chat-top-actions-layer" : ""}`}
               >
                 {mainSidebarState.collapsed ? (
-                  <div className="flex h-8 shrink-0 items-center self-start">
+                  <div className="pointer-events-auto flex h-8 shrink-0 items-center self-start">
                     <div className="h-full w-[72px] shrink-0" data-tauri-drag-region />
                     <MainSidebarToggleButton collapsed onToggle={toggleMainSidebar} />
                   </div>
                 ) : null}
-                <TitlebarDragRegion />
+                {!isChatPage ? (
+                  <TitlebarDragRegion className="pointer-events-auto" />
+                ) : (
+                  <div aria-hidden="true" className="min-w-0 flex-1" />
+                )}
                 <TopActions
                   isPanelOpen={isChatPanelOpen}
                   onTogglePanel={() => {
@@ -1155,7 +1159,7 @@ function MainSidebarToggleButton({
     <Button
       aria-label={label}
       aria-pressed={collapsed}
-      className={`relative z-20 size-7 shrink-0 translate-y-0.5 text-muted-foreground ${collapsed ? "" : "max-md:hidden"}`}
+      className={`relative z-20 size-7 shrink-0 translate-y-0.5 text-muted-foreground pointer-events-auto ${collapsed ? "" : "max-md:hidden"}`}
       data-tauri-drag-region="false"
       onClick={onToggle}
       size="icon"
@@ -3183,7 +3187,7 @@ function TopActions({
   showPanelToggle: boolean;
 }) {
   return (
-    <div className="top-actions flex items-center gap-1.5 pr-3 text-muted-foreground max-sm:gap-0.5 max-sm:px-2">
+    <div className="top-actions pointer-events-auto flex items-center gap-1.5 pr-3 text-muted-foreground max-sm:gap-0.5 max-sm:px-2">
       {showPanelToggle ? (
         <Button
           aria-label={isPanelOpen ? "关闭 Chat 独立窗口" : "打开 Chat 独立窗口"}

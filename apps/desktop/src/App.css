@@ -4156,11 +4156,16 @@
   background: var(--card);
 }
 
+:where(button, a, input, textarea, select, [role="button"], [data-tauri-drag-region="false"]) {
+  -webkit-app-region: no-drag;
+}
+
 .chat-header {
   position: relative;
   height: 48px;
   border-bottom-color: var(--chat-line);
   padding: 2px 22px auto;
+  -webkit-app-region: drag;
 }
 
 .chat-brand {
