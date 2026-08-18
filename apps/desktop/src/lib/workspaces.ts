@@ -20,6 +20,7 @@ export type WorkspaceProject = {
   name?: string;
   createdAt: string;
   updatedAt?: string;
+  removedAt?: string;
 };
 
 export type WorkspaceGitStatus = {

@@ -69,6 +69,7 @@ export type ServerWorkspaceProject = {
   name: string;
   createdAt: string;
   updatedAt: string;
+  removedAt?: string;
 };
 export type SystemPromptPreview = SystemPromptSnapshot;
 

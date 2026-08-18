@@ -135,7 +135,6 @@ import {
 } from "@/lib/chat-server";
 import {
   type ChatIndexItem,
-  clearChatSessionWorkspace,
   deleteChatSession,
   loadChatIndex,
   loadChatSession,
@@ -1225,9 +1224,6 @@ function WorkspaceConversationGroups() {
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
   const copiedResetTimerRef = useRef<number | null>(null);
   const [workspaceToDelete, setWorkspaceToDelete] = useState<WorkspaceProject | null>(null);
-  const [orphanWorkspaceToClear, setOrphanWorkspaceToClear] = useState<WorkspaceChatGroup | null>(
-    null,
-  );
   const [workspaceSort, setWorkspaceSort] = useState<WorkspaceSort>(loadWorkspaceSort);
   const [desktopStateRestored, setDesktopStateRestored] = useState(() => !isTauri());
   const [sidebarMotionEnabled, setSidebarMotionEnabled] = useState(false);
@@ -1302,20 +1298,6 @@ function WorkspaceConversationGroups() {
       setWorkspaceToDelete(null);
     },
   });
-  const clearOrphanWorkspaceMutation = useMutation({
-    mutationFn: async (group: WorkspaceChatGroup) => {
-      await Promise.all(
-        group.sessions.map(async (item) => {
-          await clearChatSessionWorkspace(item.id);
-        }),
-      );
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["chat-index"] });
-      setOrphanWorkspaceToClear(null);
-    },
-  });
-
   useEffect(() => {
     let active = true;
     void loadChatServerPort().then((port) => {
@@ -1647,21 +1629,14 @@ function WorkspaceConversationGroups() {
                     <button
                       aria-label={`${workspaceProjectsQuery.data?.some((project) => project.id === group.key) ? "移除" : "移出"} ${group.label}`}
                       className="mr-1 flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
-                      disabled={
-                        deleteWorkspaceMutation.isPending || clearOrphanWorkspaceMutation.isPending
-                      }
+                      disabled={deleteWorkspaceMutation.isPending}
                       onClick={() => {
                         const project = workspaceProjectsQuery.data?.find(
                           (item) => item.id === group.key,
                         );
                         if (project) setWorkspaceToDelete(project);
-                        else setOrphanWorkspaceToClear(group);
                       }}
-                      title={
-                        workspaceProjectsQuery.data?.some((project) => project.id === group.key)
-                          ? "移除 Workspace"
-                          : "移出 Workspace"
-                      }
+                      title="移除 Workspace"
                       type="button"
                     >
                       <Trash2 className="size-3.5" />
@@ -1845,7 +1820,7 @@ function WorkspaceConversationGroups() {
             <AlertDialogDescription>
               确定要移除“
               {workspaceToDelete ? pathBasename(workspaceToDelete.path) : "这个 Workspace"}”吗？
-              这只会移除保存的目录，不会删除历史对话。
+              这只会隐藏 Workspace，不会删除历史对话；之后添加同一路径可以恢复它。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1858,37 +1833,6 @@ function WorkspaceConversationGroups() {
               variant="destructive"
             >
               {deleteWorkspaceMutation.isPending ? "移除中..." : "移除"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      <AlertDialog
-        open={orphanWorkspaceToClear !== null}
-        onOpenChange={(open) => {
-          if (!open && !clearOrphanWorkspaceMutation.isPending) setOrphanWorkspaceToClear(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>移出历史 Workspace？</AlertDialogTitle>
-            <AlertDialogDescription>
-              将“{orphanWorkspaceToClear?.label ?? "这个 Workspace"}”下的
-              {orphanWorkspaceToClear?.sessions.length ?? 0} 条对话移到 Default。对话内容不会删除。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={clearOrphanWorkspaceMutation.isPending}>
-              取消
-            </AlertDialogCancel>
-            <AlertDialogAction
-              disabled={clearOrphanWorkspaceMutation.isPending}
-              onClick={() => {
-                if (orphanWorkspaceToClear)
-                  clearOrphanWorkspaceMutation.mutate(orphanWorkspaceToClear);
-              }}
-              variant="destructive"
-            >
-              {clearOrphanWorkspaceMutation.isPending ? "处理中..." : "移出"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1945,15 +1889,6 @@ function groupChatsByWorkspace(
       sessions: workspaceSessions,
     });
     sessionsByWorkspace.delete(project.id);
-  }
-
-  for (const [workspaceId, workspaceSessions] of sessionsByWorkspace) {
-    workspaceGroups.push({
-      key: workspaceId,
-      label: pathBasename(workspaceSessions[0]?.cwd ?? "") || "已移除的 Workspace",
-      cwd: workspaceSessions[0]?.cwd,
-      sessions: workspaceSessions,
-    });
   }
 
   return [...sortWorkspaceConversationGroups(workspaceGroups, sort), recentGroup];

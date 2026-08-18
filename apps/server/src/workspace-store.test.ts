@@ -106,4 +106,26 @@ describe("WorkspaceStore default tasks", () => {
     await assert.rejects(store.remove(DEFAULT_WORKSPACE_ID), /不能删除 Default workspace/);
     assert.ok(store.get(DEFAULT_WORKSPACE_ID));
   });
+
+  it("soft-removes a workspace and reactivates it when the path is added again", async () => {
+    const { store } = await createStore();
+    await store.ensureDefault();
+    const project = await store.add({ path: "/tmp/chatdesk-project", name: "project" });
+
+    assert.equal(await store.remove(project.id), true);
+    assert.equal(
+      store.list().some((item) => item.id === project.id),
+      false,
+    );
+    assert.equal(store.get(project.id)?.removedAt !== undefined, true);
+
+    const restored = await store.add({ path: project.path, name: "renamed" });
+    assert.equal(restored.id, project.id);
+    assert.equal(restored.removedAt, undefined);
+    assert.equal(restored.name, project.name);
+    assert.equal(
+      store.list().some((item) => item.id === project.id),
+      true,
+    );
+  });
 });

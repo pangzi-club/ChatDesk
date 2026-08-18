@@ -9,6 +9,7 @@ export type WorkspaceProject = {
   name: string;
   createdAt: string;
   updatedAt: string;
+  removedAt?: string;
 };
 
 export { DEFAULT_WORKSPACE_ID, DEFAULT_WORKSPACE_NAME };
@@ -21,7 +22,8 @@ function isWorkspace(value: unknown): value is WorkspaceProject {
     typeof item.path === "string" &&
     typeof item.name === "string" &&
     typeof item.createdAt === "string" &&
-    typeof item.updatedAt === "string"
+    typeof item.updatedAt === "string" &&
+    (item.removedAt === undefined || typeof item.removedAt === "string")
   );
 }
 
@@ -145,7 +147,9 @@ export class WorkspaceStore {
   }
 
   list() {
-    return structuredClone(this.value).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return structuredClone(this.value)
+      .filter((workspace) => !workspace.removedAt)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
   get(id: string) {
@@ -156,7 +160,14 @@ export class WorkspaceStore {
     const normalizedPath = normalizeWorkspacePath(input.path);
     if (!normalizedPath) throw new Error("workspace 路径不能为空");
     const existing = this.value.find((item) => item.path === normalizedPath);
-    if (existing) return structuredClone(existing);
+    if (existing) {
+      if (existing.removedAt) {
+        existing.removedAt = undefined;
+        existing.updatedAt = new Date().toISOString();
+        await this.save();
+      }
+      return structuredClone(existing);
+    }
     const now = new Date().toISOString();
     const project: WorkspaceProject = {
       id: randomUUID(),
@@ -172,10 +183,12 @@ export class WorkspaceStore {
 
   async remove(id: string) {
     if (id === DEFAULT_WORKSPACE_ID) throw new Error("不能删除 Default workspace");
-    const before = this.value.length;
-    this.value = this.value.filter((item) => item.id !== id);
-    if (this.value.length !== before) await this.save();
-    return before !== this.value.length;
+    const workspace = this.value.find((item) => item.id === id);
+    if (!workspace || workspace.removedAt) return false;
+    workspace.removedAt = new Date().toISOString();
+    workspace.updatedAt = workspace.removedAt;
+    await this.save();
+    return true;
   }
 
   private async save() {
