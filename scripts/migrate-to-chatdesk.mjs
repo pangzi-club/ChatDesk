@@ -1,5 +1,6 @@
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,11 +15,13 @@ const legacyAppData = path.join(
 );
 
 function parseArgs(argv) {
-  const options = { apply: false, sources: [], target: defaultTarget };
+  const options = { apply: false, rollback: false, sources: [], target: defaultTarget };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--apply") {
       options.apply = true;
+    } else if (argument === "--rollback") {
+      options.rollback = true;
     } else if (argument === "--source") {
       const source = argv[++index];
       if (!source) throw new Error("--source 需要路径");
@@ -43,9 +46,11 @@ function printHelp() {
   pnpm migrate chatdesk -- --apply
   pnpm migrate chatdesk -- --source <旧目录> [--source <旧目录>]
   pnpm migrate chatdesk -- --target <目标目录> --apply
+  pnpm migrate chatdesk -- --target <目标目录> --rollback
 
 默认目标：${defaultTarget}
 默认只预览；使用 --apply 才会复制文件。
+--rollback 只撤销最近一次由本脚本记录的迁移。
 详见 docs/data-migration.md。`);
 }
 
@@ -180,10 +185,11 @@ async function sameFile(left, right) {
   }
 }
 
-async function planCopy(mapping, apply) {
+async function planCopy(mapping, apply, beforeCopy) {
   const targetExists = existsSync(mapping.target);
   if (!targetExists) {
     if (apply) {
+      await beforeCopy(mapping);
       await mkdir(path.dirname(mapping.target), { recursive: true });
       await copyFile(mapping.source, mapping.target);
       return "copied";
@@ -194,8 +200,128 @@ async function planCopy(mapping, apply) {
   return "conflict";
 }
 
+function resolveManifestPath(targetRoot, relativePath) {
+  if (typeof relativePath !== "string" || relativePath.length === 0) {
+    throw new Error("迁移记录包含无效路径");
+  }
+  const root = path.resolve(targetRoot);
+  const resolved = path.resolve(root, relativePath);
+  if (resolved === root || !resolved.startsWith(`${root}${path.sep}`)) {
+    throw new Error(`迁移记录路径越界：${relativePath}`);
+  }
+  return resolved;
+}
+
+function relativeTargetPath(targetRoot, targetPath) {
+  const relativePath = path.relative(path.resolve(targetRoot), path.resolve(targetPath));
+  resolveManifestPath(targetRoot, relativePath);
+  return relativePath;
+}
+
+async function fileSha256(filePath) {
+  return createHash("sha256")
+    .update(await readFile(filePath))
+    .digest("hex");
+}
+
+async function readMigrationManifest(manifestPath) {
+  try {
+    return JSON.parse(await readFile(manifestPath, "utf8"));
+  } catch (error) {
+    if (error instanceof SyntaxError) throw new Error(`迁移记录格式错误：${manifestPath}`);
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+function validateRollbackManifest(manifest, targetRoot) {
+  const validCreatedFiles = manifest?.createdFiles?.every(
+    (file) =>
+      typeof file?.path === "string" &&
+      typeof file.sha256 === "string" &&
+      /^[a-f0-9]{64}$/.test(file.sha256),
+  );
+  const validBackups = manifest?.backups?.every(
+    (backup) =>
+      typeof backup?.target === "string" &&
+      typeof backup.backup === "string" &&
+      typeof backup.sha256 === "string" &&
+      /^[a-f0-9]{64}$/.test(backup.sha256),
+  );
+  if (
+    manifest?.version !== 1 ||
+    !["in-progress", "applied"].includes(manifest.status) ||
+    !Array.isArray(manifest.createdFiles) ||
+    !Array.isArray(manifest.backups) ||
+    !validCreatedFiles ||
+    !validBackups
+  ) {
+    throw new Error("迁移记录不包含可回滚信息，未修改目标数据");
+  }
+  if (path.resolve(manifest.target) !== path.resolve(targetRoot)) {
+    throw new Error(`迁移记录目标不匹配：${manifest.target}`);
+  }
+}
+
+async function rollbackMigration(targetRoot) {
+  const manifestPath = path.join(targetRoot, ".migration-v1.json");
+  const manifest = await readMigrationManifest(manifestPath);
+  if (!manifest) throw new Error(`没有可回滚的迁移记录：${manifestPath}`);
+  validateRollbackManifest(manifest, targetRoot);
+
+  for (const file of manifest.createdFiles) {
+    const target = resolveManifestPath(targetRoot, file.path);
+    if (existsSync(target) && (await fileSha256(target)) !== file.sha256) {
+      throw new Error(`迁移后文件已被修改，回滚已停止：${target}`);
+    }
+  }
+  for (const backup of manifest.backups) {
+    const source = resolveManifestPath(targetRoot, backup.backup);
+    if (!existsSync(source) || (await fileSha256(source)) !== backup.sha256) {
+      throw new Error(`迁移备份缺失或已被修改，回滚已停止：${source}`);
+    }
+  }
+
+  for (const file of [...manifest.createdFiles].reverse()) {
+    await rm(resolveManifestPath(targetRoot, file.path), { force: true });
+  }
+  for (const backup of manifest.backups) {
+    const target = resolveManifestPath(targetRoot, backup.target);
+    const source = resolveManifestPath(targetRoot, backup.backup);
+    await mkdir(path.dirname(target), { recursive: true });
+    await copyFile(source, target);
+  }
+  if (manifest.backupDirectory) {
+    await rm(resolveManifestPath(targetRoot, manifest.backupDirectory), {
+      recursive: true,
+      force: true,
+    });
+  }
+  await rm(manifestPath, { force: true });
+  console.log(`已回滚迁移：${targetRoot}`);
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
+  if (options.rollback) {
+    if (options.apply || options.sources.length > 0) {
+      throw new Error("--rollback 不能与 --apply 或 --source 同时使用");
+    }
+    await rollbackMigration(options.target);
+    return;
+  }
+
+  const manifestPath = path.join(options.target, ".migration-v1.json");
+  const existingManifest = await readMigrationManifest(manifestPath);
+  if (options.apply && existingManifest) {
+    validateRollbackManifest(existingManifest, options.target);
+    if (existingManifest.status === "in-progress") {
+      throw new Error(`上次迁移未完成，请先执行 --rollback：${manifestPath}`);
+    }
+    console.log(`迁移已经应用；如需重新执行，请先使用 --rollback：${manifestPath}`);
+    return;
+  }
+
   const sources = options.sources.length > 0 ? options.sources : defaultSources();
   if (sources.length === 0) {
     console.log("未发现可迁移的旧数据目录。");
@@ -214,13 +340,42 @@ async function main() {
   }
 
   const summary = { copied: 0, "would-copy": 0, skipped: 0, conflict: 0, failed: 0 };
+  const backupDirectory = `.migration-v1-backup-${randomUUID()}`;
+  const manifest = {
+    version: 1,
+    status: "in-progress",
+    sources,
+    target: options.target,
+    migratedAt: new Date().toISOString(),
+    createdFiles: [],
+    backups: [],
+    backupDirectory,
+    summary,
+  };
+  const writeManifest = async () => {
+    await mkdir(options.target, { recursive: true });
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  };
+
+  if (options.apply) await writeManifest();
   for (const mapping of mappings) {
     try {
-      const result = await planCopy(mapping, options.apply);
+      const result = await planCopy(mapping, options.apply, async (copyMapping) => {
+        const relativePath = relativeTargetPath(options.target, copyMapping.target);
+        if (!manifest.createdFiles.some((file) => file.path === relativePath)) {
+          manifest.createdFiles.push({
+            path: relativePath,
+            sha256: await fileSha256(copyMapping.source),
+          });
+          await writeManifest();
+        }
+      });
       summary[result] += 1;
+      if (options.apply) await writeManifest();
       console.log(`${result.padEnd(8)} ${mapping.source} -> ${mapping.target}`);
     } catch (error) {
       summary.failed += 1;
+      if (options.apply) await writeManifest();
       console.error(
         `failed   ${mapping.source}: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -228,22 +383,9 @@ async function main() {
   }
 
   if (options.apply && summary.failed === 0) {
-    await mkdir(options.target, { recursive: true });
-    await migrateLegacySettingsKeys(options.target, summary);
-    await writeFile(
-      path.join(options.target, ".migration-v1.json"),
-      JSON.stringify(
-        {
-          version: 1,
-          sources,
-          target: options.target,
-          migratedAt: new Date().toISOString(),
-          summary,
-        },
-        null,
-        2,
-      ),
-    );
+    await migrateLegacySettingsKeys(options.target, summary, manifest, writeManifest);
+    manifest.status = "applied";
+    await writeManifest();
   }
 
   console.log(
@@ -252,22 +394,55 @@ async function main() {
   if (summary.conflict > 0) {
     console.log("目标目录已有不同内容的文件，已跳过冲突；脚本不会覆盖目标数据。");
   }
+  if (options.apply && summary.failed > 0) {
+    throw new Error(`迁移未完成；修复问题后先使用 --rollback：${manifestPath}`);
+  }
 }
 
-async function migrateLegacySettingsKeys(targetRoot, summary) {
+async function migrateLegacySettingsKeys(targetRoot, summary, manifest, writeManifest) {
   const settingsPath = path.join(targetRoot, "settings.json");
   const logsPath = path.join(targetRoot, "system-logs.json");
   if (existsSync(logsPath)) return;
+  let settings;
   try {
-    const settings = JSON.parse(await readFile(settingsPath, "utf8"));
-    if (!Array.isArray(settings["system-logs"])) return;
-    await writeFile(logsPath, JSON.stringify(settings["system-logs"], null, 2));
-    delete settings["system-logs"];
-    await writeFile(settingsPath, JSON.stringify(settings, null, 2));
-    summary.copied += 1;
+    settings = JSON.parse(await readFile(settingsPath, "utf8"));
   } catch {
     // The key is optional and malformed legacy settings should remain untouched.
+    return;
   }
+  if (!Array.isArray(settings["system-logs"])) return;
+
+  const settingsRelative = relativeTargetPath(targetRoot, settingsPath);
+  const createdSettings = manifest.createdFiles.find((file) => file.path === settingsRelative);
+  if (!createdSettings) {
+    const backupPath = path.join(targetRoot, manifest.backupDirectory, "settings.json");
+    await mkdir(path.dirname(backupPath), { recursive: true });
+    await copyFile(settingsPath, backupPath);
+    manifest.backups.push({
+      target: settingsRelative,
+      backup: relativeTargetPath(targetRoot, backupPath),
+      sha256: await fileSha256(backupPath),
+    });
+    await writeManifest();
+  }
+
+  const logsRelative = relativeTargetPath(targetRoot, logsPath);
+  const logsContents = `${JSON.stringify(settings["system-logs"], null, 2)}\n`;
+  if (!manifest.createdFiles.some((file) => file.path === logsRelative)) {
+    manifest.createdFiles.push({
+      path: logsRelative,
+      sha256: createHash("sha256").update(logsContents).digest("hex"),
+    });
+    await writeManifest();
+  }
+  await writeFile(logsPath, logsContents);
+  delete settings["system-logs"];
+  await writeFile(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
+  if (createdSettings) {
+    createdSettings.sha256 = await fileSha256(settingsPath);
+    await writeManifest();
+  }
+  summary.copied += 1;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

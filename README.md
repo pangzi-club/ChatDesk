@@ -1,8 +1,8 @@
 # ChatDesk
 
-ChatDesk 是一个基于 Tauri、React 和 TypeScript 的本地 AI 工作台。它把多模型聊天、会话历史、工作区工具、Skills、MCP、自动化、图片生成和沙箱审批集中在一个桌面应用中。
+ChatDesk 是一个基于 Electron、React 和 TypeScript 的本地 AI 工作台。它把多模型聊天、会话历史、工作区工具、Skills、MCP、自动化、图片生成和沙箱审批集中在一个桌面应用中；Tauri 仍保留为回退宿主。
 
-项目默认在本机运行：前端由 Vite 提供，Node.js Chat Server 负责会话和模型运行，Tauri 负责桌面窗口、原生能力和 sidecar 生命周期管理。API key 和会话数据保存在本机，不会由本项目代为托管。
+项目默认在本机运行：Electron 负责桌面窗口和原生能力，Vite 提供 renderer，Node.js Chat Server 负责会话和模型运行。API key 和会话数据保存在本机，不会由本项目代为托管。
 
 ## 功能
 
@@ -10,14 +10,15 @@ ChatDesk 是一个基于 Tauri、React 和 TypeScript 的本地 AI 工作台。�
 - 多会话、流式响应、用量统计和历史归档导入
 - 工作区文件、终端、Git 和浏览器工具
 - MCP 服务、Skills 管理和可配置的沙箱审批
-- Tauri 桌面应用和独立运行的本地 Chat Server
+- Electron 桌面应用、Tauri 回退宿主和独立运行的本地 Chat Server
 
 ## 环境要求
 
 - Node.js 22 或更高版本
 - pnpm 11.19.0（项目通过 `packageManager` 固定）
 - 仅开发前端：无需 Rust
-- 构建桌面应用：需要 Rust、Tauri CLI 依赖和对应平台的构建工具，详见 [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)
+- Electron 开发和打包：需要 Node.js 22、pnpm 11.19.0，以及当前平台的 Electron native module 构建工具
+- Tauri 回退构建：额外需要 Rust、Tauri CLI 依赖和对应平台的构建工具，详见 [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)
 
 ## 快速开始
 
@@ -28,10 +29,10 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dev` 会启动 Tauri 桌面窗口、Vite 前端和 Chat Server，并为前后端生成同一个本地鉴权 token。开发模式下 Chat Server 会使用仓库内的 `apps/desktop/src-tauri/src/sidecar/browser-worker.mjs`；首次使用浏览器工具前需要安装 Chromium：
+`pnpm dev` 会启动 Electron 桌面窗口、Vite renderer 和由 Electron 监管的 Chat Server。首次运行如果没有共享 Chat Server worker，先执行一次：
 
 ```sh
-pnpm --filter chatdesk-desktop exec playwright install chromium --only-shell
+pnpm desktop:sidecars
 ```
 
 若只需要浏览器预览，可使用 `pnpm dev:web` 并打开 `http://localhost:1420`。如果需要固定端口或 token，可复制 `.env.example` 为 `.env.local`，在启动前导出其中的变量（例如 `set -a; source .env.local; set +a`）。
@@ -43,12 +44,14 @@ pnpm check       # Biome 格式和静态检查
 pnpm shared:typecheck # 检查 @chatdesk/shared 类型
 pnpm shared:test # 运行共享包测试
 pnpm build       # 完整代码构建：shared + Web 前端 + Chat Server
-pnpm desktop:build # 构建 Tauri 桌面安装包
+pnpm desktop:build # 构建 Electron 桌面安装包
+pnpm tauri:build   # 构建 Tauri 回退安装包
 pnpm desktop:sidecars # 仅构建桌面端 sidecar
 pnpm dev:web     # 仅启动 Vite 前端
 pnpm dev:server  # 仅启动 Chat Server
 pnpm server:test # Chat Server 测试
-pnpm desktop:dev # 启动桌面开发模式
+pnpm desktop:dev # 启动 Electron 桌面开发模式
+pnpm tauri:dev   # 启动 Tauri 回退开发模式
 ```
 
 不要把 `.env.local`、`.data/`、`~/.chatdesk/` 或包含 API key 的导出文件提交到版本库。
@@ -83,7 +86,8 @@ API key 在应用设置中配置并保存在本机。使用 `CHAT_SERVER_HOST=0.
 apps/desktop/src/    React 页面、组件和浏览器端适配器（桌面端 workspace package）
 apps/server/src/     Hono Chat Server、存储、运行时和 Node 测试（workspace package）
 packages/shared/     浏览器与服务端共用的运行时无关代码（`@chatdesk/shared`）
-apps/desktop/src-tauri/src/ Tauri 命令、原生服务和 sidecar 管理
+apps/electron/        Electron main/preload 和宿主服务
+apps/desktop/src-tauri/src/ Tauri 回退命令、原生服务和 sidecar 管理
 docs/                架构、沙箱、数据迁移和桌面打包说明
 scripts/             开发编排与本地数据迁移入口（`pnpm migrate`）
 ```

@@ -1,0 +1,29 @@
+appId: org.bohao.mdashboard
+productName: ChatDesk
+directories:
+  output: dist-electron
+files:
+  - dist/**/*
+  - package.json
+asarUnpack:
+  - node_modules/node-pty/**/*
+extraResources:
+  - from: ../desktop/dist
+    to: desktop/dist
+  - from: ../desktop/src-tauri/resources/node-runtime
+    to: node-runtime
+  - from: ../desktop/src-tauri/resources/playwright-browsers
+    to: playwright-browsers
+  - from: ../desktop/src-tauri/binaries
+    to: binaries
+    filter:
+      - node-runtime-*
+  - from: ../desktop/src-tauri/icons/32x32.png
+    to: icons/32x32.png
+mac:
+  category: public.app-category.developer-tools
+win:
+  target: nsis
+linux:
+  target: AppImage
+  category: Development

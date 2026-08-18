@@ -1,5 +1,4 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { generateText } from "ai";
 
 import {
@@ -13,6 +12,7 @@ import {
   saveChatMemory,
   shouldCompactMemory,
 } from "@/lib/chat-memory";
+import { desktopFetch } from "@/lib/desktop-fetch";
 import type { ModelConfig } from "@/lib/models";
 
 let memoryJobQueue: Promise<void> = Promise.resolve();
@@ -29,7 +29,7 @@ function isDemoModel(model: ModelConfig | undefined) {
 }
 
 function resolveFetch(): typeof fetch {
-  return ("__TAURI_INTERNALS__" in window ? tauriFetch : window.fetch.bind(window)) as typeof fetch;
+  return desktopFetch as typeof fetch;
 }
 
 function resolveOpenAICompatibleBaseURL(baseUrl: string): string {

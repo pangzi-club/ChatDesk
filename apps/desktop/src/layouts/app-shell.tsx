@@ -4,7 +4,6 @@ import {
   type WorkspaceGitFile,
 } from "@chatdesk/shared";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { listen } from "@tauri-apps/api/event";
 import {
   ArrowDown,
   ArrowUp,
@@ -139,6 +138,7 @@ import {
   loadChatIndex,
   loadChatSession,
 } from "@/lib/chat-store";
+import { getDesktopBridge, isDesktop } from "@/lib/desktop-bridge";
 import { explorerFileIconKind } from "@/lib/explorer-file-icon";
 import { subscribeFileViewerOpen } from "@/lib/file-viewer-events";
 import { subscribeImagePreviewOpen } from "@/lib/image-preview-events";
@@ -325,16 +325,12 @@ function loadMainSidebarState() {
 }
 
 async function saveMainSidebarState(state: MainSidebarState) {
-  if (isTauri()) {
+  if (isDesktop()) {
     await settingsStore.set(MAIN_SIDEBAR_STATE_STORE_KEY, state);
     await settingsStore.save();
     return;
   }
   window.localStorage.setItem(MAIN_SIDEBAR_STATE_STORAGE_KEY, JSON.stringify(state));
-}
-
-function isTauri() {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
 function loadUnreadChatIds() {
@@ -350,7 +346,7 @@ function loadUnreadChatIds() {
 }
 
 async function saveUnreadChatIds(ids: Set<string>) {
-  if (isTauri()) {
+  if (isDesktop()) {
     await settingsStore.set(CHAT_UNREAD_STORE_KEY, [...ids]);
     await settingsStore.save();
     return;
@@ -375,7 +371,7 @@ function loadWorkspaceCollapseState() {
 }
 
 async function saveWorkspaceCollapseState(state: Record<string, boolean>) {
-  if (isTauri()) {
+  if (isDesktop()) {
     await settingsStore.set(WORKSPACE_COLLAPSE_STORE_KEY, state);
     await settingsStore.save();
     return;
@@ -394,7 +390,7 @@ function loadWorkspaceSort() {
 }
 
 async function saveWorkspaceSort(sort: WorkspaceSort) {
-  if (isTauri()) {
+  if (isDesktop()) {
     await settingsStore.set(WORKSPACE_SORT_STORE_KEY, sort);
     await settingsStore.save();
     window.localStorage.removeItem(WORKSPACE_SORT_STORAGE_KEY);
@@ -490,7 +486,7 @@ function AppShell() {
   }, [chatWindowKey]);
 
   useEffect(() => {
-    if (!isTauri()) return;
+    if (!isDesktop()) return;
     let active = true;
     void settingsStore
       .get<unknown>(MAIN_SIDEBAR_STATE_STORE_KEY)
@@ -513,18 +509,21 @@ function AppShell() {
   }, []);
 
   useEffect(() => {
-    if (!("__TAURI_INTERNALS__" in window)) return;
+    const bridge = getDesktopBridge();
+    if (!bridge) return;
 
     let unlisten: (() => void) | undefined;
-    void listen("tray-chat", () => navigate(chatNewPath())).then((cleanup) => {
-      unlisten = cleanup;
-    });
+    void bridge
+      .subscribe("tray-chat", () => navigate(chatNewPath()))
+      .then((cleanup) => {
+        unlisten = cleanup;
+      });
 
     return () => unlisten?.();
   }, [navigate]);
 
   useEffect(() => {
-    if (!("__TAURI_INTERNALS__" in window)) return;
+    if (!isDesktop()) return;
     void loadTrayEnabled()
       .then((enabled) => applyTrayEnabled(enabled))
       .catch((error) => console.error("Failed to apply tray setting", error));
@@ -1225,7 +1224,7 @@ function WorkspaceConversationGroups() {
   const copiedResetTimerRef = useRef<number | null>(null);
   const [workspaceToDelete, setWorkspaceToDelete] = useState<WorkspaceProject | null>(null);
   const [workspaceSort, setWorkspaceSort] = useState<WorkspaceSort>(loadWorkspaceSort);
-  const [desktopStateRestored, setDesktopStateRestored] = useState(() => !isTauri());
+  const [desktopStateRestored, setDesktopStateRestored] = useState(() => !isDesktop());
   const [sidebarMotionEnabled, setSidebarMotionEnabled] = useState(false);
   const chatIndexQuery = useQuery({
     queryKey: ["chat-index"],
@@ -1309,7 +1308,7 @@ function WorkspaceConversationGroups() {
   }, []);
 
   useEffect(() => {
-    if (!isTauri()) return;
+    if (!isDesktop()) return;
     void Promise.all([
       settingsStore.get<unknown>(CHAT_UNREAD_STORE_KEY),
       settingsStore.get<unknown>(WORKSPACE_COLLAPSE_STORE_KEY),

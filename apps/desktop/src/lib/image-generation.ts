@@ -10,8 +10,8 @@ import {
   KIE_API_BASE_URL,
   KieApiError,
 } from "@chatdesk/shared";
-import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { loadChatServerConfig, saveChatServerConfig } from "@/lib/chat-server";
+import { desktopFetch } from "@/lib/desktop-fetch";
 
 export type {
   GenerateImageResult,
@@ -22,12 +22,8 @@ export type {
 };
 export { IMAGE_ASPECT_RATIOS, IMAGE_RESOLUTIONS, KIE_API_BASE_URL, KieApiError };
 
-function isTauri() {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
-
 function resolveFetch(): typeof fetch {
-  return (isTauri() ? tauriFetch : window.fetch.bind(window)) as typeof fetch;
+  return desktopFetch as typeof fetch;
 }
 
 export async function loadKieApiKey(): Promise<string> {

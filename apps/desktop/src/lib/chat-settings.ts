@@ -1,3 +1,4 @@
+import { isDesktop } from "@/lib/desktop-bridge";
 import { settingsStore } from "@/lib/settings-store";
 
 export type ChatFontSize = "large" | "default" | "small";
@@ -42,12 +43,8 @@ function normalizeChatDisplay(value: unknown): ChatDisplaySettings {
   };
 }
 
-function isTauri() {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
-
 export async function loadChatDisplaySettings(): Promise<ChatDisplaySettings> {
-  if (isTauri()) {
+  if (isDesktop()) {
     try {
       const stored = await settingsStore.get<unknown>(CHAT_DISPLAY_STORE_KEY);
       if (stored) {
@@ -71,7 +68,7 @@ export async function loadChatDisplaySettings(): Promise<ChatDisplaySettings> {
 }
 
 export async function saveChatDisplaySettings(settings: ChatDisplaySettings) {
-  if (isTauri()) {
+  if (isDesktop()) {
     try {
       await settingsStore.set(CHAT_DISPLAY_STORE_KEY, settings);
       await settingsStore.save();

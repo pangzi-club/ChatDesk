@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
+import { isDesktop } from "@/lib/desktop-bridge";
 import { settingsStore } from "@/lib/settings-store";
 import { appendSystemLog } from "@/lib/system-log";
 
@@ -68,10 +69,6 @@ function getSystemTheme(): "light" | "dark" {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-function isTauri() {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
-
 export function ThemeProvider({
   children,
   defaultTheme = "system",
@@ -83,12 +80,12 @@ export function ThemeProvider({
       return defaultTheme;
     }
 
-    const stored = isTauri() ? null : window.localStorage.getItem(storageKey);
+    const stored = isDesktop() ? null : window.localStorage.getItem(storageKey);
     return isTheme(stored) ? stored : defaultTheme;
   });
   const [themeColor, setThemeColorState] = useState<ThemeColor>(() => {
     if (typeof window === "undefined") return "ocean";
-    const stored = isTauri() ? null : window.localStorage.getItem("vite-ui-theme-color");
+    const stored = isDesktop() ? null : window.localStorage.getItem("vite-ui-theme-color");
     return isThemeColor(stored) ? stored : "ocean";
   });
 
@@ -133,7 +130,7 @@ export function ThemeProvider({
   }, []);
 
   useEffect(() => {
-    if (!isTauri()) {
+    if (!isDesktop()) {
       window.localStorage.removeItem("vite-ui-primary-color");
       return;
     }
@@ -178,7 +175,7 @@ export function ThemeProvider({
     theme,
     themeColor,
     setTheme: (theme: Theme) => {
-      if (!isTauri()) window.localStorage.setItem(storageKey, theme);
+      if (!isDesktop()) window.localStorage.setItem(storageKey, theme);
       setTheme(theme);
       void appendSystemLog({
         level: "success",
@@ -197,7 +194,7 @@ export function ThemeProvider({
         });
     },
     setThemeColor: (nextColor: ThemeColor) => {
-      if (!isTauri()) window.localStorage.setItem("vite-ui-theme-color", nextColor);
+      if (!isDesktop()) window.localStorage.setItem("vite-ui-theme-color", nextColor);
       setThemeColorState(nextColor);
       void appendSystemLog({
         level: "success",

@@ -1,6 +1,6 @@
 # Desktop Packaging
 
-The desktop release ships one shared Node.js runtime as a Tauri sidecar. The Chat Server, sandbox worker, and browser worker are normal JavaScript resources executed by that runtime. End users do not need a system Node.js installation or pnpm.
+The desktop release ships one shared Node.js runtime with the Electron package; the same staged runtime remains usable by the Tauri fallback. The Chat Server, sandbox worker, and browser worker are normal JavaScript resources executed by that runtime. End users do not need a system Node.js installation or pnpm.
 
 ## Local build
 
@@ -10,6 +10,8 @@ Use Node.js 22 or newer, Rust, pnpm 11.19.0, and the platform's Tauri prerequisi
 pnpm install
 pnpm desktop:build
 ```
+
+`pnpm desktop:build` creates the Electron installer. The legacy Tauri fallback is built with `pnpm tauri:build`.
 
 To execute the packaged browser worker against a real Chromium instance after building sidecars:
 
@@ -58,7 +60,7 @@ The Node runtime is copied from the build host, so `TAURI_TARGET_TRIPLE` must ma
 
 Tauri starts `chat-server` with a loopback host, a per-launch token, and a data directory under `~/.chatdesk/chat-server` on macOS. The frontend obtains the token through the `chat_server_info` command. Chat screenshots and other files under `~/.chatdesk` are shown with `convertFileSrc`; `assetProtocol.scope` must list `$HOME/.chatdesk/**` explicitly because Unix hidden directories are not matched by `$HOME/**`. The package also contains a separate `chat-server-sandbox` sidecar dedicated to Seatbelt file operations.
 
-Browser tools use a separate worker process. In development (`pnpm dev` / `pnpm server:dev`), Chat Server is the TypeScript ESM process: `scripts/dev-all.mjs` sets `CHAT_SERVER_BROWSER_WORKER`, and `browser-runtime.ts` can also locate `apps/desktop/src-tauri/src/sidecar/browser-worker.mjs` from `import.meta.url` or the repo-relative cwd. If that path is missing and the env var is unset, `browser_open` fails immediately with a configuration error. First-time Chromium setup is `pnpm --filter chatdesk-desktop exec playwright install chromium --only-shell`.
+Browser tools use a separate worker process. Electron development (`pnpm dev`) uses the shared staged Chat Server worker; the Tauri fallback (`pnpm tauri:dev`) uses the TypeScript ESM process and `scripts/dev-all.mjs` sets `CHAT_SERVER_BROWSER_WORKER`. If the staged worker is missing, run `pnpm desktop:sidecars` once. First-time Chromium setup is included by that sidecar build.
 
 In a packaged app, Tauri starts `node-runtime` with `chat-server.cjs`. It injects `CHAT_SERVER_BROWSER_WORKER` and `CHAT_SERVER_SANDBOX_WORKER` as JavaScript paths, `CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH` as the Chromium resource directory, and `CHAT_SERVER_SHARP_PATH` as the shared runtime root. The Chat Server starts both workers with its own `process.execPath`, so all three processes use the same Node binary. Missing runtime or worker resources are startup errors rather than delayed tool failures.
 

@@ -1,4 +1,5 @@
 import { installAiSdkWarningFilter } from "./ai-sdk-warnings.ts";
+import { acquireDataDirectoryLock } from "./data-directory-lock.ts";
 
 installAiSdkWarningFilter();
 
@@ -60,11 +61,25 @@ async function main() {
   const browserWorker = resolveBrowserWorkerScript();
   if (browserWorker) console.log(`[Chat Server] browser worker: ${browserWorker}`);
   else console.warn("[Chat Server] 未配置 browser worker，浏览器工具将不可用");
-  const server = await createChatServer(config);
-  const httpServer = serve(
-    { fetch: server.app.fetch, hostname: config.host, port: config.port },
-    (info) => console.log(`Chat server listening on http://${info.address}:${info.port}`),
-  );
+  const dataDirectoryLock = await acquireDataDirectoryLock(config.dataDir);
+  let server: Awaited<ReturnType<typeof createChatServer>>;
+  try {
+    server = await createChatServer(config);
+  } catch (error) {
+    await dataDirectoryLock.release();
+    throw error;
+  }
+  let httpServer: ReturnType<typeof serve>;
+  try {
+    httpServer = serve(
+      { fetch: server.app.fetch, hostname: config.host, port: config.port },
+      (info) => console.log(`Chat server listening on http://${info.address}:${info.port}`),
+    );
+  } catch (error) {
+    await server.shutdown();
+    await dataDirectoryLock.release();
+    throw error;
+  }
 
   let shuttingDown = false;
   async function shutdown(exitCode?: number) {
@@ -102,6 +117,8 @@ async function main() {
     }).catch((error) => {
       console.error(`[Chat Server] 关闭 HTTP 服务失败: ${errorText(error)}`);
     });
+
+    await dataDirectoryLock.release();
 
     if (forceExit) clearTimeout(forceExit);
     if (exitCode !== undefined) process.exit(exitCode);

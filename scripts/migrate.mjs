@@ -35,12 +35,14 @@ ${commandLines}
 
 常用选项：
   --apply              实际写入；默认只预览
+  --rollback           撤销最近一次 chatdesk 迁移
   --target <dir>       目标数据目录
   -h, --help           显示帮助
 
 示例：
   pnpm migrate
   pnpm migrate chatdesk -- --apply
+  pnpm migrate chatdesk -- --rollback
   pnpm migrate jsonl -- --apply
   pnpm migrate default-workspace -- --apply
   pnpm migrate dedupe -- --target ~/.chatdesk/chat-server --apply

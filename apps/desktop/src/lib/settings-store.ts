@@ -1,20 +1,24 @@
-import { invoke } from "@tauri-apps/api/core";
+import type { DesktopUserStoreFile } from "@chatdesk/shared";
+import { getDesktopBridge } from "@/lib/desktop-bridge";
 
 type JsonObject = Record<string, unknown>;
 
 /**
  * Desktop-only JSON storage backed by the native ~/.chatdesk file service.
- * The web preview intentionally falls back to localStorage in each owning module.
+ * The web preview falls back to an isolated localStorage record.
  */
 export class UserDataStore {
   private value: JsonObject = {};
   private loaded = false;
 
-  constructor(private readonly fileName: "settings.json" | "bookmarks.json") {}
+  constructor(private readonly fileName: DesktopUserStoreFile) {}
 
   private async load() {
     if (this.loaded) return;
-    const contents = await invoke<string>("read_user_store", { fileName: this.fileName });
+    const bridge = getDesktopBridge();
+    const contents = bridge
+      ? await bridge.readUserStore(this.fileName)
+      : (window.localStorage.getItem(storageKey(this.fileName)) ?? "");
     if (contents.trim()) {
       const parsed: unknown = JSON.parse(contents);
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
@@ -43,15 +47,22 @@ export class UserDataStore {
 
   async save() {
     await this.load();
-    await invoke("write_user_store", {
-      fileName: this.fileName,
-      contents: JSON.stringify(this.value, null, 2),
-    });
+    const contents = JSON.stringify(this.value, null, 2);
+    const bridge = getDesktopBridge();
+    if (bridge) {
+      await bridge.writeUserStore(this.fileName, contents);
+    } else {
+      window.localStorage.setItem(storageKey(this.fileName), contents);
+    }
   }
+}
+
+function storageKey(fileName: string) {
+  return `chatdesk-user-store:${fileName}`;
 }
 
 export const settingsStore = new UserDataStore("settings.json");
 
-export function createUserDataStore(fileName: "settings.json" | "bookmarks.json") {
+export function createUserDataStore(fileName: DesktopUserStoreFile) {
   return new UserDataStore(fileName);
 }

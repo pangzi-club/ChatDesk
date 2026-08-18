@@ -21,8 +21,8 @@ import type {
   WorkspaceGitDiff,
   WorkspaceListResult,
 } from "@chatdesk/shared";
-import { invoke, isTauri as tauriIsTauri } from "@tauri-apps/api/core";
 import type { UIMessage } from "ai";
+import { getDesktopBridge, isDesktop } from "@/lib/desktop-bridge";
 import { settingsStore } from "@/lib/settings-store";
 
 export const CHAT_SERVER_DEFAULT_PORT = 14317;
@@ -89,10 +89,6 @@ export type {
 };
 export type ChatPlan = ChatPlanSummary & { content: string };
 
-function isTauri() {
-  return tauriIsTauri() || (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window);
-}
-
 function normalizePort(value: unknown) {
   const port = typeof value === "number" ? value : Number(value);
   return Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : CHAT_SERVER_DEFAULT_PORT;
@@ -112,11 +108,11 @@ async function runtimeFetch(input: RequestInfo | URL, init: RequestInit | undefi
   try {
     response = await request();
   } catch (error) {
-    if (!isTauri() || !retryable) throw error;
+    if (!isDesktop() || !retryable) throw error;
     await refreshChatServerRuntime();
     response = await request();
   }
-  if (response.status === 401 && isTauri()) {
+  if (response.status === 401 && isDesktop()) {
     await refreshChatServerRuntime();
     response = await request();
   }
@@ -144,7 +140,7 @@ export function initializeChatServer() {
 
 export async function loadChatServerPort() {
   await initializeChatServer();
-  if (isTauri()) {
+  if (isDesktop()) {
     try {
       return normalizePort(await settingsStore.get<unknown>(CHAT_SERVER_PORT_KEY));
     } catch (error) {
@@ -157,7 +153,7 @@ export async function loadChatServerPort() {
 export async function saveChatServerPort(port: number) {
   await initializeChatServer();
   const next = normalizePort(port);
-  if (isTauri()) {
+  if (isDesktop()) {
     await settingsStore.set(CHAT_SERVER_PORT_KEY, next);
     await settingsStore.save();
     return next;
@@ -171,24 +167,25 @@ export function getChatServerToken() {
 }
 
 export function canRestartChatServer() {
-  return isTauri() && runtimeConfig.managed;
+  return isDesktop() && runtimeConfig.managed;
 }
 
 export function canMonitorChatServer() {
-  return isTauri();
+  return isDesktop();
 }
 
 export async function restartChatServer() {
   await initializeChatServer();
-  if (!isTauri()) throw new Error("只有 Tauri 应用可以重启 Chat Server");
-  const info = await invoke<ChatServerRuntimeInfo>("chat_server_restart");
+  const bridge = getDesktopBridge();
+  if (!bridge) throw new Error("只有桌面应用可以重启 Chat Server");
+  const info = await bridge.call<ChatServerRuntimeInfo>("chat_server_restart");
   applyChatServerRuntime(info);
   runtimeInitialization = Promise.resolve();
   return info;
 }
 
 export function chatServerUrl(port = CHAT_SERVER_DEFAULT_PORT) {
-  const stored = isTauri()
+  const stored = isDesktop()
     ? CHAT_SERVER_DEFAULT_PORT
     : normalizePort(window.localStorage.getItem(CHAT_SERVER_PORT_STORAGE_KEY));
   const selectedPort =
@@ -203,9 +200,10 @@ export function chatServerHeaders() {
 }
 
 export async function refreshChatServerRuntime() {
-  if (!isTauri()) return null;
+  const bridge = getDesktopBridge();
+  if (!bridge) return null;
   try {
-    const info = await invoke<ChatServerRuntimeInfo>("chat_server_info");
+    const info = await bridge.call<ChatServerRuntimeInfo>("chat_server_info");
     applyChatServerRuntime(info);
     return info;
   } catch (error) {

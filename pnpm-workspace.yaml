@@ -2,5 +2,7 @@ packages:
   - "apps/*"
   - "packages/*"
 allowBuilds:
+  electron-winstaller: true
   esbuild: true
+  node-pty: true
 enableGlobalVirtualStore: true

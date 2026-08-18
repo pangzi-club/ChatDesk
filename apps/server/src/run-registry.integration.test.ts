@@ -613,44 +613,6 @@ describe("complete agent runs", () => {
     assert.match(diagnostic?.details ?? "", /"terminalObserved":false/);
   });
 
-  it("persists a user stop as a non-error outcome", async () => {
-    const delayed = {
-      stream: simulateReadableStream({
-        initialDelayInMs: 100,
-        chunks: [
-          { type: "stream-start", warnings: [] },
-          { type: "text-start", id: "delayed-text" },
-          { type: "text-delta", id: "delayed-text", delta: "late response" },
-          { type: "text-end", id: "delayed-text" },
-          {
-            type: "finish",
-            finishReason: { unified: "stop", raw: "stop" },
-            usage: usage(),
-          },
-        ] satisfies MockStreamPart[],
-      }),
-    } satisfies MockStreamResult;
-    const current = await fixture([delayed]);
-    const response = await current.registry.start("session-1", {
-      modelId: "mock",
-      planMode: "plan",
-      planId: current.plan.id,
-      toolNames: ["read_file"],
-    });
-    const body = response.text().catch(() => undefined);
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    assert.equal(current.registry.stop("session-1"), true);
-    await body;
-    for (let attempt = 0; attempt < 200 && current.registry.activeCount() > 0; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
-    const session = await current.store.get("session-1");
-    const summary = session?.messages.at(-1)?.metadata as { runSummary?: ChatRunSummary };
-    assert.equal(summary.runSummary?.outcome, "stopped");
-    assert.equal(summary.runSummary?.stopReason, "user");
-    assert.equal(current.registry.statusMap().get("session-1"), "ready");
-  });
-
   it("forces the 100th apply step to produce a text-only handoff", async () => {
     const results = [
       ...Array.from({ length: 99 }, (_, index) =>

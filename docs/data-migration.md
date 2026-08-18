@@ -40,7 +40,7 @@ pnpm migrate default-workspace -- --apply
 pnpm migrate dedupe -- --apply
 ```
 
-每一步都可以先不加 `--apply` 预览。目标目录已有不同内容时，`chatdesk` 会跳过冲突文件，不会覆盖现有数据。
+每一步都可以先不加 `--apply` 预览。目标目录已有不同内容时，`chatdesk` 会跳过冲突文件，不会覆盖现有数据。`chatdesk --apply` 会在目标目录写入 `.migration-v1.json`，记录本次新增文件和设置备份；重复执行不会再次改写数据。
 
 ## 各命令说明
 
@@ -57,6 +57,14 @@ pnpm migrate dedupe -- --apply
 ```sh
 pnpm migrate chatdesk -- --source <旧目录> --target ~/.chatdesk --apply
 ```
+
+撤销最近一次由 `chatdesk` 脚本执行的迁移：
+
+```sh
+pnpm migrate chatdesk -- --target ~/.chatdesk --rollback
+```
+
+回滚只删除 manifest 中记录的本次新增文件，并恢复迁移前备份的设置。目标目录原有文件和迁移时跳过的冲突文件不会被删除。manifest 会记录内容哈希；本次新增文件或备份在迁移后发生变化时，回滚会在删除任何文件前停止。迁移异常中断时保留 `in-progress` manifest，修复磁盘或权限问题后先执行回滚，再重新迁移。
 
 ### `jsonl`
 

@@ -1,6 +1,7 @@
-import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { FitAddon } from "@xterm/addon-fit";
 import { type ITheme, Terminal } from "@xterm/xterm";
+import { getDesktopBridge } from "@/lib/desktop-bridge";
 
 export type TerminalSessionStatus =
   | { phase: "starting" }
@@ -9,7 +10,7 @@ export type TerminalSessionStatus =
   | { phase: "error"; message: string };
 
 type TerminalEvent =
-  | { type: "output"; data: number[] | Uint8Array }
+  | { type: "output"; data: string | number[] | Uint8Array }
   | { type: "exit"; code: number; signal?: string }
   | { type: "error"; message: string };
 
@@ -30,6 +31,7 @@ type TerminalEntry = {
   disposed: boolean;
   spawning: boolean;
   lastSize?: { cols: number; rows: number };
+  unsubscribe?: () => void;
 };
 
 export type MountedTerminalSession = {
@@ -65,7 +67,7 @@ function describeError(error: unknown) {
 }
 
 export function terminalSupported() {
-  return isTauri();
+  return getDesktopBridge() !== null;
 }
 
 export class TerminalSessionRegistry {
@@ -114,9 +116,15 @@ export class TerminalSessionRegistry {
     this.entries.delete(key);
     entry.disposed = true;
     entry.listeners.clear();
+    entry.unsubscribe?.();
     entry.terminal.dispose();
     if (entry.id) {
-      await invoke("terminal_close", { id: entry.id });
+      const bridge = getDesktopBridge();
+      if (bridge?.runtime === "electron") {
+        await bridge.call("terminal_close", { id: entry.id });
+      } else {
+        await invoke("terminal_close", { id: entry.id });
+      }
     }
   }
 
@@ -149,7 +157,12 @@ export class TerminalSessionRegistry {
     };
     terminal.onData((data) => {
       if (!entry.id || entry.status.phase !== "running") return;
-      void invoke("terminal_write", { id: entry.id, data }).catch((error) => {
+      const bridge = getDesktopBridge();
+      const write =
+        bridge?.runtime === "electron"
+          ? bridge.call("terminal_write", { id: entry.id, data })
+          : invoke("terminal_write", { id: entry.id, data });
+      void write.catch((error) => {
         this.setStatus(entry, { phase: "error", message: describeError(error) });
       });
     });
@@ -166,11 +179,12 @@ export class TerminalSessionRegistry {
     }
     entry.spawning = true;
 
-    const channel = new Channel<TerminalEvent>();
-    channel.onmessage = (event) => {
+    const onEvent = (event: TerminalEvent) => {
       if (entry.disposed) return;
       if (event.type === "output") {
-        entry.terminal.write(terminalEventBytes(event.data));
+        entry.terminal.write(
+          typeof event.data === "string" ? event.data : terminalEventBytes(event.data),
+        );
       } else if (event.type === "exit") {
         this.setStatus(entry, { phase: "exited", code: event.code, signal: event.signal });
       } else {
@@ -178,22 +192,49 @@ export class TerminalSessionRegistry {
       }
     };
 
+    let unsubscribe: (() => void) | undefined;
     try {
-      const result = await invoke<TerminalSpawnResult>("terminal_spawn", {
-        cwd: entry.cwd,
-        cols: entry.terminal.cols,
-        rows: entry.terminal.rows,
-        onEvent: channel,
-      });
+      const bridge = getDesktopBridge();
+      let result: TerminalSpawnResult;
+      if (bridge?.runtime === "electron") {
+        const id = crypto.randomUUID();
+        unsubscribe = await bridge.subscribe(`terminal:${id}`, (payload) =>
+          onEvent(payload as TerminalEvent),
+        );
+        result = await bridge.call<TerminalSpawnResult>("terminal_spawn", {
+          id,
+          cwd: entry.cwd,
+          cols: entry.terminal.cols,
+          rows: entry.terminal.rows,
+        });
+      } else {
+        const channel = new Channel<TerminalEvent>();
+        channel.onmessage = onEvent;
+        result = await invoke<TerminalSpawnResult>("terminal_spawn", {
+          cwd: entry.cwd,
+          cols: entry.terminal.cols,
+          rows: entry.terminal.rows,
+          onEvent: channel,
+        });
+      }
       if (entry.disposed) {
-        await invoke("terminal_close", { id: result.id });
+        unsubscribe?.();
+        if (bridge?.runtime === "electron") {
+          await bridge.call("terminal_close", { id: result.id });
+        } else {
+          await invoke("terminal_close", { id: result.id });
+        }
         return;
       }
       entry.id = result.id;
+      entry.unsubscribe = unsubscribe;
       entry.spawning = false;
       this.setStatus(entry, { phase: "running", shell: result.shell });
       this.fit(key);
     } catch (error) {
+      unsubscribe?.();
+      entry.unsubscribe?.();
+      entry.unsubscribe = undefined;
       entry.spawning = false;
       this.setStatus(entry, { phase: "error", message: describeError(error) });
     }
@@ -215,7 +256,12 @@ export class TerminalSessionRegistry {
       return;
     }
     entry.lastSize = nextSize;
-    void invoke("terminal_resize", { id: entry.id, ...nextSize }).catch((error) => {
+    const bridge = getDesktopBridge();
+    const resize =
+      bridge?.runtime === "electron"
+        ? bridge.call("terminal_resize", { id: entry.id, ...nextSize })
+        : invoke("terminal_resize", { id: entry.id, ...nextSize });
+    void resize.catch((error) => {
       this.setStatus(entry, { phase: "error", message: describeError(error) });
     });
   }

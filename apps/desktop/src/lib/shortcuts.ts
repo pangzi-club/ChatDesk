@@ -1,3 +1,4 @@
+import { isDesktop } from "@/lib/desktop-bridge";
 import { settingsStore } from "@/lib/settings-store";
 
 export type ShortcutAction = "chatSidebar" | "chatSidebarMaximize";
@@ -69,12 +70,8 @@ function keyToCode(key: string) {
   return /^[a-z]$/i.test(key) ? `Key${key.toUpperCase()}` : undefined;
 }
 
-function isTauri() {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
-
 export async function loadShortcutSettings(): Promise<ShortcutSettings> {
-  if (isTauri()) {
+  if (isDesktop()) {
     try {
       const stored = await settingsStore.get<unknown>(SHORTCUTS_STORE_KEY);
       if (stored) return normalizeShortcuts(stored);
@@ -94,7 +91,7 @@ export async function loadShortcutSettings(): Promise<ShortcutSettings> {
 }
 
 export async function saveShortcutSettings(settings: ShortcutSettings) {
-  if (isTauri()) {
+  if (isDesktop()) {
     try {
       await settingsStore.set(SHORTCUTS_STORE_KEY, settings);
       await settingsStore.save();

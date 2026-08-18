@@ -1,5 +1,5 @@
-import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { chatServerRequest, loadChatServerMcp, saveChatServerMcp } from "@/lib/chat-server";
+import { desktopFetch } from "@/lib/desktop-fetch";
 
 export type McpTransport = "npx" | "remote";
 export type McpStatus = "unknown" | "ready" | "error";
@@ -26,10 +26,6 @@ export type McpServerConfig = {
 export type McpRegistryEntry = McpServerConfig & { installed: boolean; popularity: number };
 
 const REGISTRY_URL = "https://registry.modelcontextprotocol.io/v0/servers";
-
-function isTauri() {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object";
@@ -121,7 +117,7 @@ export async function fetchMcpRegistry(query = ""): Promise<McpRegistryEntry[]> 
   const url = new URL(REGISTRY_URL);
   url.searchParams.set("limit", "100");
   if (query.trim()) url.searchParams.set("search", query.trim());
-  const response = await (isTauri() ? tauriFetch(url) : fetch(url));
+  const response = await desktopFetch(url);
   if (!response.ok) throw new Error(`MCP Registry 请求失败 (${response.status})`);
   const payload = (await response.json()) as { servers?: unknown[] } | unknown[];
   const rows = Array.isArray(payload) ? payload : (payload.servers ?? []);

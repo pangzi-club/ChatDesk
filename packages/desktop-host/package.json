@@ -1,0 +1,24 @@
+{
+  "name": "@chatdesk/desktop-host",
+  "private": true,
+  "version": "0.2.0",
+  "description": "Desktop host services shared by Tauri and Electron",
+  "license": "MIT",
+  "packageManager": "pnpm@11.19.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --root ../.. packages/desktop-host/src",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "typescript": "7.0.2"
+  }
+}
