@@ -8,6 +8,7 @@ import {
   nativeImage,
   net,
   protocol,
+  screen,
   session,
   shell,
   Tray,
@@ -41,6 +42,20 @@ import {
 import { TerminalManager } from "./terminal-manager.js";
 
 type DesktopUserStoreFile = "settings.json" | "bookmarks.json";
+type WindowState = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  isMaximized: boolean;
+};
+
+const DEFAULT_WINDOW_WIDTH = 1280;
+const DEFAULT_WINDOW_HEIGHT = 720;
+const MIN_WINDOW_WIDTH = 480;
+const MIN_WINDOW_HEIGHT = 320;
+const MAX_WINDOW_DIMENSION = 10000;
+let windowStateSaveTimer: NodeJS.Timeout | undefined;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -84,6 +99,75 @@ function userStorePath(fileName: DesktopUserStoreFile) {
   return join(userDataDirectory(), fileName);
 }
 
+function windowStatePath() {
+  return join(app.getPath("userData"), "window-state.json");
+}
+
+function readWindowState(): WindowState | null {
+  try {
+    const value: unknown = JSON.parse(readFileSync(windowStatePath(), "utf8"));
+    if (!value || typeof value !== "object") return null;
+    const state = value as Partial<WindowState>;
+    const { x, y, width, height, isMaximized } = state;
+    if (
+      typeof x !== "number" ||
+      typeof y !== "number" ||
+      typeof width !== "number" ||
+      typeof height !== "number" ||
+      ![x, y, width, height].every(Number.isFinite) ||
+      !Number.isInteger(width) ||
+      !Number.isInteger(height) ||
+      width < MIN_WINDOW_WIDTH ||
+      height < MIN_WINDOW_HEIGHT ||
+      width > MAX_WINDOW_DIMENSION ||
+      height > MAX_WINDOW_DIMENSION ||
+      typeof isMaximized !== "boolean"
+    ) {
+      return null;
+    }
+    return { x, y, width, height, isMaximized };
+  } catch {
+    return null;
+  }
+}
+
+function isWindowStateVisible(state: WindowState) {
+  return screen.getAllDisplays().some(({ workArea }) => {
+    const overlapWidth =
+      Math.min(state.x + state.width, workArea.x + workArea.width) - Math.max(state.x, workArea.x);
+    const overlapHeight =
+      Math.min(state.y + state.height, workArea.y + workArea.height) - Math.max(state.y, workArea.y);
+    return overlapWidth >= 64 && overlapHeight >= 64;
+  });
+}
+
+function saveWindowState() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    const bounds = mainWindow.getNormalBounds();
+    const target = windowStatePath();
+    mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
+    const temporary = `${target}.${process.pid}.tmp`;
+    writeFileSync(
+      temporary,
+      JSON.stringify({ ...bounds, isMaximized: mainWindow.isMaximized() } satisfies WindowState),
+      { mode: 0o600 },
+    );
+    renameSync(temporary, target);
+    if (process.platform !== "win32") chmodSync(target, 0o600);
+  } catch (error) {
+    console.error("保存窗口状态失败", error);
+  }
+}
+
+function scheduleSaveWindowState() {
+  if (windowStateSaveTimer) clearTimeout(windowStateSaveTimer);
+  windowStateSaveTimer = setTimeout(() => {
+    windowStateSaveTimer = undefined;
+    saveWindowState();
+  }, 250);
+}
+
 function rendererRoot() {
   const candidates = [
     join(process.resourcesPath, "desktop/dist"),
@@ -113,9 +197,17 @@ function applicationIconPath() {
 function createWindow() {
   const entry = rendererEntry();
   const iconPath = process.platform === "darwin" ? undefined : applicationIconPath();
+  const savedState = readWindowState();
+  const restoredState = savedState && isWindowStateVisible(savedState) ? savedState : null;
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 720,
+    ...(restoredState
+      ? {
+          x: restoredState.x,
+          y: restoredState.y,
+          width: restoredState.width,
+          height: restoredState.height,
+        }
+      : { width: DEFAULT_WINDOW_WIDTH, height: DEFAULT_WINDOW_HEIGHT }),
     show: false,
     title: "ChatDesk",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
@@ -127,6 +219,7 @@ function createWindow() {
       sandbox: true,
     },
   });
+  if (restoredState?.isMaximized) mainWindow.maximize();
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     try {
@@ -141,11 +234,16 @@ function createWindow() {
   });
   mainWindow.once("ready-to-show", () => mainWindow?.show());
   mainWindow.on("close", (event) => {
+    saveWindowState();
     if (!quitting) {
       event.preventDefault();
       mainWindow?.hide();
     }
   });
+  mainWindow.on("move", scheduleSaveWindowState);
+  mainWindow.on("resize", scheduleSaveWindowState);
+  mainWindow.on("maximize", scheduleSaveWindowState);
+  mainWindow.on("unmaximize", scheduleSaveWindowState);
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
@@ -427,6 +525,9 @@ if (!gotSingleInstanceLock) {
     if (quitting) return;
     quitting = true;
     event.preventDefault();
+    if (windowStateSaveTimer) clearTimeout(windowStateSaveTimer);
+    windowStateSaveTimer = undefined;
+    saveWindowState();
     terminalManager.shutdown();
     void (supervisor?.stop() ?? Promise.resolve()).finally(() => app.exit(0));
   });
