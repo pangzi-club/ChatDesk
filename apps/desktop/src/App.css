@@ -1075,7 +1075,7 @@
   --chat-message-gap: 14px;
   --chat-message-block-gap: 42px;
   --chat-content-padding-top: 16px;
-  --chat-content-padding-bottom: 180px;
+  --chat-content-padding-bottom: 40px;
   --chat-ink: var(--foreground);
   --chat-muted: var(--muted-foreground);
   --chat-line: var(--border);
@@ -1085,7 +1085,7 @@
   flex-direction: column;
   overflow: hidden;
   position: relative;
-  background: var(--background);
+  background: var(--card);
   color: var(--chat-ink);
 }
 .chat-history-menu-label {
@@ -1171,13 +1171,13 @@
   --chat-message-gap: 18px;
   --chat-message-block-gap: 52px;
   --chat-content-padding-top: 24px;
-  --chat-content-padding-bottom: 200px;
+  --chat-content-padding-bottom: 40px;
 }
 .chat-page[data-chat-spacing="compact"] {
   --chat-message-gap: 10px;
   --chat-message-block-gap: 28px;
   --chat-content-padding-top: 12px;
-  --chat-content-padding-bottom: 140px;
+  --chat-content-padding-bottom: 40px;
 }
 .chat-header {
   display: flex;
@@ -3807,7 +3807,8 @@
   gap: 8px;
   margin: 0 0 12px;
 }
-.chat-message-parts > .chat-tool-calls {
+.chat-message-parts > .chat-tool-calls,
+.chat-message-tool-block > .chat-tool-calls {
   margin: 0;
 }
 .chat-tool-call {
@@ -4217,7 +4218,7 @@
   --chat-surface: var(--card);
   --chat-surface-soft: color-mix(in srgb, var(--muted) 82%, var(--card));
   --chat-surface-strong: color-mix(in srgb, var(--primary) 10%, var(--card));
-  background: var(--background);
+  background: var(--card);
 }
 
 .chat-header {
