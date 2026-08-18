@@ -227,7 +227,7 @@ export type ChatTokenUsage = {
 
 export const DEFAULT_MODEL_CONTEXT_WINDOW = 128_000;
 export const CONTEXT_COMPACTION_RATIO = 0.75;
-export const MAX_CONTEXT_COMPACTION_TOKENS = 80_000;
+export const MAX_CONTEXT_COMPACTION_TOKENS = 750_000;
 
 export type ChatRunOutcome = "completed" | "awaiting-user" | "stopped" | "error";
 export type ChatRunStopReason =
@@ -516,7 +516,6 @@ export type ChatToolPackId =
   | "read_file"
   | "write_file"
   | "edit_file"
-  | "git"
   | "terminal"
   | "web_search"
   | "image_generation"

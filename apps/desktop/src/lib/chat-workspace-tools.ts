@@ -10,7 +10,6 @@ export const CHAT_WORKSPACE_TOOL_DISPLAY_NAMES: Record<string, string> = {
   write_file: "写入文件",
   edit_file: "编辑文件",
   apply_patch: "应用补丁",
-  git: "Git",
   bash: "终端 · Bash",
 };
 
@@ -23,7 +22,6 @@ export function createChatWorkspaceTools(
     | "write_file"
     | "edit_file"
     | "apply_patch"
-    | "git"
     | "terminal"
     | "all" = "all",
 ): ToolSet {
@@ -69,15 +67,6 @@ export function createChatWorkspaceTools(
           .string()
           .min(1)
           .max(256 * 1024),
-      }),
-    }),
-    git: tool({
-      description:
-        "执行受控的本地 Git 操作：查看 status、创建当前 workspace 内的新分支或提交当前 workspace 的改动。不执行 push、pull 或其他远端操作。",
-      inputSchema: z.object({
-        action: z.enum(["status", "create_branch", "commit"]),
-        branch: z.string().optional(),
-        message: z.string().optional(),
       }),
     }),
     bash: tool({

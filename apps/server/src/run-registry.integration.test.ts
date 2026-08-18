@@ -472,10 +472,10 @@ describe("complete agent runs", () => {
     );
   });
 
-  it("compacts when the previous provider input exceeds the 80K hard threshold", async () => {
+  it("compacts when the previous provider input exceeds the 750K hard threshold", async () => {
     const current = await fixture(
       [
-        toolResult("read-high-context", "read_file", { path: "source.txt" }, 90_000),
+        toolResult("read-high-context", "read_file", { path: "source.txt" }, 760_000),
         textResult("Completed after compaction.", "response-after-provider-compaction"),
       ],
       {

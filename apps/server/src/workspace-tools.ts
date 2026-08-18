@@ -6,7 +6,6 @@ import { z } from "zod";
 import { buildEditFailureMessage } from "./file-edit.ts";
 import { type ReadFileOptions, type ReadFileResult, readTextFileRange } from "./file-read.ts";
 import { type FileSearchResult, MAX_SEARCH_RESULTS, searchWorkspaceFiles } from "./file-search.ts";
-import { buildGitToolCommand, normalizeGitToolInput } from "./git-tools.ts";
 import type { SandboxMode } from "./protocol.ts";
 import { classifySandboxBoundary } from "./sandbox-boundary-reviewer.ts";
 import {
@@ -600,46 +599,6 @@ export function createWorkspaceTools(
         if (result.sandboxBlocked) throw new SandboxBlockedError(result.error);
         if (!result.result) throw new Error(result.error);
         return result.result as ApplyPatchResult;
-      },
-    }),
-    git: tool({
-      description:
-        "执行受控的本地 Git 操作：查看 status、创建当前 workspace 内的新分支或提交当前 workspace 的改动。不执行 push、pull 或其他远端操作。",
-      inputSchema: z.object({
-        action: z.enum(["status", "create_branch", "commit"]),
-        branch: z.string().optional().describe("create_branch 使用的分支名称"),
-        message: z.string().optional().describe("commit 使用的提交信息"),
-      }),
-      execute: async (input, { toolCallId }) => {
-        const normalized = normalizeGitToolInput(input);
-        const run = async () => {
-          const result = await runSandboxedShell(buildGitToolCommand(normalized), {
-            cwd: rootPath(cwd),
-            mode,
-            allowNetwork: false,
-            readablePaths,
-            developerToolPaths,
-          });
-          if (result.sandboxBlocked) throw new SandboxBlockedError(result.out);
-          if (result.code !== 0) throw new Error(result.out || "Git 操作失败");
-          const output = result.out.trim();
-          if (normalized.action === "status") return { action: normalized.action, output };
-          if (normalized.action === "create_branch") {
-            return { action: normalized.action, branch: normalized.branch, output };
-          }
-          const hash = output.split(/\s+/).at(-1) || "";
-          return { action: normalized.action, hash, message: normalized.message.trim(), output };
-        };
-        try {
-          return await run();
-        } catch (error) {
-          return retryAfterSandboxReview(error, onSandboxBlocked, {
-            toolName: "git",
-            toolCallId,
-            input,
-            retry: run,
-          });
-        }
       },
     }),
     bash: tool({

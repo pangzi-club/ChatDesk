@@ -5,7 +5,6 @@ export const WORKSPACE_TOOL_NAMES = [
   "write_file",
   "edit_file",
   "apply_patch",
-  "git",
   "bash",
 ] as const;
 

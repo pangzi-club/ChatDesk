@@ -22,11 +22,11 @@ ChatDesk 按以下优先级确定模型输入窗口：
 自动压缩阈值按以下公式计算：
 
 ```text
-min(floor(contextWindow * 0.75), 80,000)
+min(floor(contextWindow * 0.75), 750,000)
 ```
 
-因此，未知模型和更大窗口模型都最晚在 80K 触发；小于约 106K 的模型仍按窗口的 75%
-触发。
+因此，未知模型的默认 128K 窗口会在 96K 触发，1M 及更大窗口模型最多在 750K 触发；
+小于 1M 的模型仍按窗口的 75% 触发。
 
 ## 压缩规则
 
@@ -77,5 +77,5 @@ provider、model 和 token usage 持久化路径。
 
 当前估算只计算 `prepareStep` 中的消息，不包含 system prompt、工具 schema 或供应商特有的
 tokenizer 差异。上下文弹窗中最近一次 `inputTokens` 是供应商返回的实际用量，两者口径不同。
-75% 阈值和 80K 上限为 system prompt、工具定义、输出与估算误差保留空间，但不能代替供应商
+75% 阈值和 750K 上限为 system prompt、工具定义、输出与估算误差保留空间，但不能代替供应商
 的精确 tokenizer。第一版只剪枝 reasoning 和工具数据，不对早期自然语言对话生成摘要。

@@ -25,7 +25,6 @@ export const DEFAULT_CHAT_TOOLS: ChatToolsSettings = {
   read_file: false,
   write_file: false,
   edit_file: false,
-  git: false,
   terminal: false,
   web_search: false,
   image_generation: false,
@@ -63,16 +62,6 @@ export const CHAT_TOOL_PACKS: ChatToolPackMeta[] = [
     description: item.description,
     examples: [item.description],
   })),
-  {
-    id: "git",
-    label: "Git",
-    category: "development",
-    toolNames: ["git"],
-    requiresWorkspace: true,
-    description: "创建分支、查看状态和提交 workspace 改动。",
-    examples: ["创建一个功能分支", "提交当前改动"],
-    risk: "会修改当前 workspace 的 Git 分支或提交历史。",
-  },
   {
     id: "terminal",
     label: "终端",
@@ -134,7 +123,6 @@ function isChatToolPackId(value: unknown): value is ChatToolPackId {
     value === "read_file" ||
     value === "write_file" ||
     value === "edit_file" ||
-    value === "git" ||
     value === "terminal" ||
     value === "web_search" ||
     value === "image_generation" ||
@@ -162,7 +150,6 @@ function normalizeChatTools(value: unknown): ChatToolsSettings {
       record.write_file === true || legacyWorkspaceFiles || legacyChildren.write_file === true,
     edit_file:
       record.edit_file === true || legacyWorkspaceFiles || legacyChildren.edit_file === true,
-    git: record.git === true,
     terminal: record.terminal === true,
     web_search: record.web_search === true,
     image_generation: record.image_generation === true,

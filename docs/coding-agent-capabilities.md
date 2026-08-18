@@ -76,7 +76,6 @@
 | `write_file` | 创建或完整覆盖 `path` | Apply 模式、已选择 workspace，并启用对应工具包 | 写操作进入沙箱审批路径 |
 | `edit_file` | 对 `path` 做唯一 `oldText` → `newText` 替换 | Apply 模式、已选择 workspace，并启用对应工具包 | 写操作进入沙箱审批路径；拒绝 0 次或多次匹配 |
 | `apply_patch` | 应用最大 256 KiB 的 unified diff | 启用“编辑文件”工具包 | stdin 传给 helper；拒绝绝对路径、`..`、`.git`、binary patch；全部 hunk 检查通过后应用 |
-| `git` | 查看 status、创建 workspace 内分支、提交 workspace 改动 | Apply 模式、已选择 workspace，并启用 Git 工具包 | 受限 Shell 执行；创建分支和 commit 进入沙箱审批路径；不执行 push/pull |
 | `bash` | 在 workspace 中执行 `command` | 已选择 workspace，并启用“终端” | 默认 120 秒、128 KiB 头尾输出；返回 success/timedOut/truncated/totalOutputBytes；权限由 ask/auto/full 模式决定 |
 | `browser_open` | 打开 URL，创建或复用 browser session | 启用 Browser，且已配置 browser worker | 隔离 Headless Chromium，不继承用户登录态 |
 | `browser_screenshot` | 截取 browser session 页面，压缩后落入当前聊天 session 的 attachments | 启用 Browser，已有 session | Headless Chromium；内部写入 `sessions/<id>/attachments/`，可能是 WebP |

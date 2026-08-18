@@ -1,9 +1,4 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-import { promisify } from "node:util";
 import { describe, it } from "vitest";
 import { SandboxBlockedError } from "./sandbox-exec.ts";
 import {
@@ -12,8 +7,6 @@ import {
   resolveBashRetryPermissions,
   type WorkspaceToolPreflight,
 } from "./workspace-tools.ts";
-
-const execFileAsync = promisify(execFile);
 
 function bashExecute(
   preflight: WorkspaceToolPreflight,
@@ -34,39 +27,10 @@ function bashExecute(
 }
 
 describe("workspace bash approval permissions", () => {
-  it("creates a branch and commits through the controlled git tool", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-workspace-git-tool-"));
-    try {
-      await execFileAsync("git", ["init", "-q", "-b", "main"], { cwd: root });
-      await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: root });
-      await execFileAsync("git", ["config", "user.name", "Test"], { cwd: root });
-      await writeFile(path.join(root, "note.txt"), "before\n", "utf8");
-      await execFileAsync("git", ["add", "."], { cwd: root });
-      await execFileAsync("git", ["commit", "-q", "-m", "initial"], { cwd: root });
-
-      const tools = createWorkspaceTools(root, "full");
-      const execute = tools.git.execute;
-      assert(typeof execute === "function");
-      await execute(
-        { action: "create_branch", branch: "feature/chat-git" },
-        {} as Parameters<typeof execute>[1],
-      );
-      await writeFile(path.join(root, "note.txt"), "after\n", "utf8");
-      const result = await execute(
-        { action: "commit", message: "update note" },
-        {} as Parameters<typeof execute>[1],
-      );
-
-      assert.equal(result.action, "commit");
-      assert.match(result.hash, /^[0-9a-f]{40}$/);
-      assert.equal(await readFile(path.join(root, "note.txt"), "utf8"), "after\n");
-      assert.equal(
-        (await execFileAsync("git", ["branch", "--show-current"], { cwd: root })).stdout.trim(),
-        "feature/chat-git",
-      );
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
+  it("exposes Git through Bash instead of a dedicated tool", () => {
+    const tools = createWorkspaceTools("/tmp/workspace", "full");
+    assert.equal("git" in tools, false);
+    assert.equal(typeof tools.bash.execute, "function");
   });
 
   it("keeps network-only approvals inside the filesystem sandbox", () => {

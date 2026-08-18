@@ -35,7 +35,6 @@ import { createBusinessTools } from "./business-tools.ts";
 import type { ChatConfigStore } from "./chat-config.ts";
 import { createClientTools } from "./client-tools.ts";
 import type { EventHub } from "./events.ts";
-import { isGitMutation } from "./git-tools.ts";
 import { createConfiguredLanguageModel, supportsRequiredToolChoice } from "./model-adaptor.ts";
 import type { PlanStore } from "./plan-store.ts";
 import { createPlanWriteTool } from "./plan-tool.ts";
@@ -1721,7 +1720,7 @@ function createToolApproval(options: {
     }
     if (!assessment.requiresReview) {
       if (options.mode === "auto") return "not-applicable" as const;
-      if (!isWorkspaceMutationTool(toolName, toolCall?.input)) return "not-applicable" as const;
+      if (!isWorkspaceMutationTool(toolName)) return "not-applicable" as const;
       return "user-approval";
     }
 
@@ -1865,8 +1864,7 @@ function createSandboxEscalationHandler(options: {
   };
 }
 
-function isWorkspaceMutationTool(toolName: string, input?: unknown) {
-  if (toolName === "git") return isGitMutation(input);
+function isWorkspaceMutationTool(toolName: string) {
   return (
     toolName === "write_file" ||
     toolName === "edit_file" ||
@@ -1966,7 +1964,6 @@ function createWorkspaceToolsForInput(
       "write_file",
       "edit_file",
       "apply_patch",
-      "git",
       "terminal",
       "bash",
     ].some((name) => names.has(name))
