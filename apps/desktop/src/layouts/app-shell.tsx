@@ -1173,7 +1173,7 @@ function SidebarNavItem({ item }: { item: (typeof navItems)[number] }) {
   const Icon = item.icon;
   const isChatItem = item.to === "/chat";
   const to = isChatItem ? chatNewPath() : item.to;
-  const isItemActive = isChatItem ? isChatPath(location.pathname) : undefined;
+  const isItemActive = isChatItem ? location.pathname === "/chat/new" : undefined;
 
   return (
     <NavLink
@@ -1482,7 +1482,7 @@ function WorkspaceConversationGroups() {
       aria-labelledby="workspace-conversations-heading"
       className="px-2 pt-2 pb-2 max-md:hidden"
     >
-      <div className="group flex h-7 items-center rounded-md px-2">
+      <div className="group flex h-8 items-center rounded-md px-2">
         <h2
           className="min-w-0 flex-1 font-medium text-[13px] text-muted-foreground"
           id="workspace-conversations-heading"
@@ -1571,7 +1571,7 @@ function WorkspaceConversationGroups() {
       ) : isError ? (
         <p className="px-2 py-2 text-[12px] text-destructive">对话记录加载失败</p>
       ) : (
-        <div className="space-y-1.5">
+        <div className="space-y-0.5">
           {groups.map((group) => {
             const isExpanded = expandedGroups.has(group.key);
             const isRecent = group.key === DEFAULT_WORKSPACE_ID;
@@ -1584,7 +1584,7 @@ function WorkspaceConversationGroups() {
             return (
               <div className={isRecent ? "pt-2" : undefined} key={group.key}>
                 <div
-                  className={`group flex h-7 min-w-0 items-center rounded-md ${isRecent ? "px-2" : "transition-colors hover:bg-accent/60"}`}
+                  className={`group flex h-8 min-w-0 items-center rounded-md ${isRecent ? "px-2" : "transition-colors hover:bg-accent/60"}`}
                 >
                   {isRecent ? (
                     <h2 className="min-w-0 flex-1 font-medium text-[13px] text-muted-foreground">
@@ -1607,7 +1607,7 @@ function WorkspaceConversationGroups() {
                     <button
                       aria-expanded={!isCollapsed}
                       aria-label={isCollapsed ? `展开 ${group.label}` : `收起 ${group.label}`}
-                      className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left font-medium text-[13px] text-foreground"
+                      className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-3 text-left font-medium text-[13px] text-foreground"
                       onClick={() => toggleCollapsed(group)}
                       title={group.label}
                       type="button"
@@ -1677,7 +1677,7 @@ function WorkspaceConversationGroups() {
 
                               return (
                                 <motion.div
-                                  animate={{ height: "1.75rem", opacity: 1 }}
+                                  animate={{ height: "2rem", opacity: 1 }}
                                   className="overflow-hidden"
                                   exit={{ height: 0, opacity: 0 }}
                                   initial={
@@ -1694,7 +1694,7 @@ function WorkspaceConversationGroups() {
                                   <ContextMenu>
                                     <ContextMenuTrigger asChild>
                                       <div
-                                        className={`group flex h-7 w-full items-center rounded-md transition-colors ${
+                                        className={`group flex h-8 w-full items-center rounded-md transition-colors ${
                                           isActive
                                             ? "bg-accent text-accent-foreground font-medium"
                                             : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
@@ -1757,7 +1757,7 @@ function WorkspaceConversationGroups() {
                           {hiddenCount > 0 && !isRecent ? (
                             <button
                               aria-expanded={isExpanded}
-                              className="flex h-7 w-full items-center gap-1 rounded-md pr-2 pl-8 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+                              className="flex h-8 w-full items-center gap-1 rounded-md pr-2 pl-8 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
                               onClick={() => toggleExpanded(group.key)}
                               type="button"
                             >
@@ -1843,9 +1843,9 @@ function WorkspaceConversationGroups() {
 
 function WorkspaceConversationSkeleton() {
   return (
-    <div className="space-y-1.5" role="status" aria-label="正在加载 Workspace 对话记录">
+    <div className="space-y-0.5" role="status" aria-label="正在加载 Workspace 对话记录">
       {[0, 1, 2].map((group) => (
-        <div className="flex h-7 items-center gap-2 px-2" key={group}>
+        <div className="flex h-8 items-center gap-2 px-2" key={group}>
           <div className="size-4 animate-pulse rounded bg-muted" />
           <div className="h-3 w-24 animate-pulse rounded bg-muted" />
         </div>

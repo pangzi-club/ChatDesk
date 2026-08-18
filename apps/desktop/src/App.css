@@ -879,14 +879,14 @@
 }
 
 .sidebar-nav-item.is-active {
-  background: #e3e3e5;
-  color: #202123;
+  background: var(--accent);
+  color: var(--accent-foreground);
   box-shadow: none;
 }
 
 .sidebar-nav-item:not(.is-active):hover {
-  background: #e8e8e9;
-  color: #202123;
+  background: color-mix(in srgb, var(--accent) 60%, transparent);
+  color: var(--foreground);
 }
 
 .page-surface {
@@ -969,10 +969,14 @@
   color: #a6a7ab;
 }
 
-.dark .sidebar-nav-item.is-active,
+.dark .sidebar-nav-item.is-active {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
 .dark .sidebar-nav-item:not(.is-active):hover {
-  background: #343541;
-  color: #f1f1f2;
+  background: color-mix(in srgb, var(--accent) 60%, transparent);
+  color: var(--foreground);
 }
 
 .app-page-root {
