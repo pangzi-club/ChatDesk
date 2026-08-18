@@ -55,6 +55,7 @@ const DEFAULT_WINDOW_HEIGHT = 720;
 const MIN_WINDOW_WIDTH = 480;
 const MIN_WINDOW_HEIGHT = 320;
 const MAX_WINDOW_DIMENSION = 10000;
+const WINDOW_SHOW_FALLBACK_MS = 5_000;
 let windowStateSaveTimer: NodeJS.Timeout | undefined;
 
 protocol.registerSchemesAsPrivileged([
@@ -83,6 +84,14 @@ app.commandLine.appendSwitch(
     "BlockInsecurePrivateNetworkRequests",
   ].join(","),
 );
+
+if (!app.isPackaged) {
+  const developmentAppName = "ChatDesk Dev";
+  const developmentUserData = join(app.getPath("appData"), developmentAppName);
+  mkdirSync(developmentUserData, { recursive: true, mode: 0o700 });
+  app.setName(developmentAppName);
+  app.setPath("userData", developmentUserData);
+}
 
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
 let mainWindow: BrowserWindow | null = null;
@@ -199,7 +208,7 @@ function createWindow() {
   const iconPath = process.platform === "darwin" ? undefined : applicationIconPath();
   const savedState = readWindowState();
   const restoredState = savedState && isWindowStateVisible(savedState) ? savedState : null;
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     ...(restoredState
       ? {
           x: restoredState.x,
@@ -219,9 +228,10 @@ function createWindow() {
       sandbox: true,
     },
   });
-  if (restoredState?.isMaximized) mainWindow.maximize();
+  mainWindow = window;
+  if (restoredState?.isMaximized) window.maximize();
 
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+  window.webContents.setWindowOpenHandler(({ url }) => {
     try {
       void shell.openExternal(validateExternalUrl(url));
     } catch {
@@ -229,25 +239,45 @@ function createWindow() {
     }
     return { action: "deny" };
   });
-  mainWindow.webContents.on("will-navigate", (event, url) => {
+  window.webContents.on("will-navigate", (event, url) => {
     if (!isRendererNavigation(url, entry)) event.preventDefault();
   });
-  mainWindow.once("ready-to-show", () => mainWindow?.show());
-  mainWindow.on("close", (event) => {
+  let showFallbackTimer: NodeJS.Timeout | undefined;
+  const showWindow = () => {
+    if (showFallbackTimer) clearTimeout(showFallbackTimer);
+    showFallbackTimer = undefined;
+    if (window.isDestroyed()) return;
+    window.show();
+    window.focus();
+  };
+  window.once("ready-to-show", showWindow);
+  showFallbackTimer = setTimeout(showWindow, WINDOW_SHOW_FALLBACK_MS);
+  window.on("close", (event) => {
     saveWindowState();
     if (!quitting) {
       event.preventDefault();
-      mainWindow?.hide();
+      window.hide();
     }
   });
-  mainWindow.on("move", scheduleSaveWindowState);
-  mainWindow.on("resize", scheduleSaveWindowState);
-  mainWindow.on("maximize", scheduleSaveWindowState);
-  mainWindow.on("unmaximize", scheduleSaveWindowState);
-  mainWindow.on("closed", () => {
-    mainWindow = null;
+  window.on("move", scheduleSaveWindowState);
+  window.on("resize", scheduleSaveWindowState);
+  window.on("maximize", scheduleSaveWindowState);
+  window.on("unmaximize", scheduleSaveWindowState);
+  window.on("closed", () => {
+    if (showFallbackTimer) clearTimeout(showFallbackTimer);
+    if (mainWindow === window) mainWindow = null;
   });
-  void mainWindow.loadURL(entry);
+  void window.loadURL(entry).catch((error) => {
+    console.error("Renderer load failed", error);
+    showWindow();
+  });
+}
+
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
 }
 
 function emit(event: string, payload: unknown) {
@@ -505,18 +535,21 @@ if (!gotSingleInstanceLock) {
   app.quit();
 } else {
   app.on("second-instance", () => {
-    mainWindow?.show();
-    mainWindow?.focus();
+    showMainWindow();
   });
-  void app.whenReady().then(async () => {
+  void app.whenReady().then(() => {
     setupRendererProtocol();
     setupAssetProtocol();
     setupNetworkPermissions();
     setupIpc();
+    app.on("activate", () => {
+      if (!mainWindow || mainWindow.isDestroyed()) createWindow();
+      else showMainWindow();
+    });
     const iconPath = applicationIconPath();
     if (process.platform === "darwin" && iconPath) app.dock?.setIcon(iconPath);
     setTrayEnabled(true);
-    await setupSupervisor().catch((error) => {
+    void setupSupervisor().catch((error) => {
       console.error("Chat Server startup failed", error);
     });
     createWindow();

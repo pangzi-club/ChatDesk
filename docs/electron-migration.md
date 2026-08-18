@@ -124,7 +124,7 @@ pnpm install --frozen-lockfile
 pnpm electron:dev
 ```
 
-`electron:dev` 会编译 Electron main、启动 Vite renderer，并在 Chat Server 使用当前 token 通过鉴权后启动 Electron 窗口。首次运行且本地没有 Chat Server worker 时，先执行一次：
+`electron:dev` 会编译 Electron main、启动 Vite renderer，并以独立的 `ChatDesk Dev` 应用身份立即创建 Electron 窗口；Chat Server 使用当前 token 在后台完成启动和鉴权。首次运行且本地没有 Chat Server worker 时，先执行一次：
 
 ```sh
 pnpm desktop:sidecars

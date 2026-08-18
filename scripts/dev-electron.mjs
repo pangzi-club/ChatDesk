@@ -57,7 +57,7 @@ try {
 }
 
 if (!shuttingDown) {
-  start(resolveElectronBinary(), [path.join(root, "apps/electron/dist/main.js")], {
+  start(resolveElectronBinary(), [path.join(root, "apps/electron")], {
     cwd: path.join(root, "apps/electron"),
     env: {
       ...sharedEnv,
