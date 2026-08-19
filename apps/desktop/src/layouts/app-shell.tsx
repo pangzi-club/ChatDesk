@@ -68,6 +68,7 @@ import {
   useNavigate,
 } from "react-router-dom";
 import { ChatBrowser } from "@/components/chat-browser";
+import { ChatConversationHoverCard } from "@/components/chat-conversation-hover-card";
 import {
   ChatConversationMenuItems,
   copyChatConversationId,
@@ -1696,46 +1697,52 @@ function WorkspaceConversationGroups() {
                                   }
                                 >
                                   <ContextMenu>
-                                    <ContextMenuTrigger asChild>
-                                      <div
-                                        className={`group flex h-8 w-full items-center rounded-md transition-colors ${
-                                          isActive
-                                            ? "bg-accent text-accent-foreground font-medium"
-                                            : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-                                        }`}
-                                      >
-                                        <button
-                                          aria-current={isActive ? "page" : undefined}
-                                          className={`flex min-w-0 flex-1 items-center rounded-md py-0 pr-1 text-left font-medium text-[13px] ${isRecent ? "pl-2" : "pl-8"} ${isActive ? "text-accent-foreground" : "text-foreground"}`}
-                                          onClick={() => openSession(session.id)}
-                                          title={session.title}
-                                          type="button"
+                                    <ChatConversationHoverCard
+                                      cwd={session.cwd ?? group.cwd}
+                                      session={session}
+                                      workspaceId={group.key}
+                                      workspaceLabel={group.label}
+                                    >
+                                      <ContextMenuTrigger asChild>
+                                        <div
+                                          className={`group flex h-8 w-full items-center rounded-md transition-colors ${
+                                            isActive
+                                              ? "bg-accent text-accent-foreground font-medium"
+                                              : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                                          }`}
                                         >
-                                          <span className="truncate">{session.title}</span>
-                                          {isRenaming || isRunning ? (
-                                            <LoaderCircle
-                                              aria-hidden="true"
-                                              className="ml-auto size-3.5 shrink-0 animate-spin text-primary"
-                                            />
-                                          ) : isUnread ? (
-                                            <span
-                                              className="ml-auto size-1.5 shrink-0 rounded-full bg-primary"
-                                              title="未读消息"
-                                            />
-                                          ) : null}
-                                        </button>
-                                        <button
-                                          aria-label={`删除${session.title}`}
-                                          className="mr-1 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
-                                          disabled={deleteSessionMutation.isPending}
-                                          onClick={() => setSessionToDelete(session)}
-                                          title="删除对话"
-                                          type="button"
-                                        >
-                                          <Trash2 className="size-3" />
-                                        </button>
-                                      </div>
-                                    </ContextMenuTrigger>
+                                          <button
+                                            aria-current={isActive ? "page" : undefined}
+                                            className={`flex min-w-0 flex-1 items-center rounded-md py-0 pr-1 text-left font-medium text-[13px] ${isRecent ? "pl-2" : "pl-8"} ${isActive ? "text-accent-foreground" : "text-foreground"}`}
+                                            onClick={() => openSession(session.id)}
+                                            type="button"
+                                          >
+                                            <span className="truncate">{session.title}</span>
+                                            {isRenaming || isRunning ? (
+                                              <LoaderCircle
+                                                aria-hidden="true"
+                                                className="ml-auto size-3.5 shrink-0 animate-spin text-primary"
+                                              />
+                                            ) : isUnread ? (
+                                              <span
+                                                className="ml-auto size-1.5 shrink-0 rounded-full bg-primary"
+                                                title="未读消息"
+                                              />
+                                            ) : null}
+                                          </button>
+                                          <button
+                                            aria-label={`删除${session.title}`}
+                                            className="mr-1 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+                                            disabled={deleteSessionMutation.isPending}
+                                            onClick={() => setSessionToDelete(session)}
+                                            title="删除对话"
+                                            type="button"
+                                          >
+                                            <Trash2 className="size-3" />
+                                          </button>
+                                        </div>
+                                      </ContextMenuTrigger>
+                                    </ChatConversationHoverCard>
                                     <ContextMenuContent
                                       onCloseAutoFocus={(event) => event.preventDefault()}
                                     >
