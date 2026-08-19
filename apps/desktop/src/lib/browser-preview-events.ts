@@ -1,4 +1,7 @@
 export type BrowserPreviewOpenRequest = {
+  frameName?: string;
+  newTab?: boolean;
+  source?: "frame";
   url: string;
 };
 

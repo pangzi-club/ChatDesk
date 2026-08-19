@@ -106,8 +106,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { rememberReturnPath } from "@/lib/app-return-path";
-import { getBrowserPreviewTitle, normalizeBrowserPreviewUrl } from "@/lib/browser-preview";
-import { subscribeBrowserPreviewOpen } from "@/lib/browser-preview-events";
+import {
+  type BrowserNavigationState,
+  getBrowserNavigationState,
+  getBrowserPreviewTitle,
+  moveBrowserNavigation,
+  normalizeBrowserPreviewUrl,
+  pushBrowserNavigation,
+} from "@/lib/browser-preview";
+import { openBrowserPreview, subscribeBrowserPreviewOpen } from "@/lib/browser-preview-events";
 import {
   chatNewNavigationState,
   chatNewPath,
@@ -531,6 +538,46 @@ function AppShell() {
   }, [navigate]);
 
   useEffect(() => {
+    const bridge = getDesktopBridge();
+    if (bridge?.runtime !== "electron") return;
+
+    let active = true;
+    const unlisteners: Array<() => void> = [];
+    const subscribe = (event: string, listener: (payload: Record<string, unknown>) => void) => {
+      void bridge
+        .subscribe(event, (payload) => {
+          if (payload && typeof payload === "object") {
+            listener(payload as Record<string, unknown>);
+          }
+        })
+        .then((cleanup) => {
+          if (active) unlisteners.push(cleanup);
+          else cleanup();
+        });
+    };
+
+    subscribe("browser-preview-open", (payload) => {
+      if (typeof payload.url === "string") {
+        openBrowserPreview({ newTab: true, url: payload.url });
+      }
+    });
+    subscribe("browser-frame-navigate", (payload) => {
+      if (typeof payload.url === "string" && typeof payload.frameName === "string") {
+        openBrowserPreview({
+          frameName: payload.frameName,
+          source: "frame",
+          url: payload.url,
+        });
+      }
+    });
+
+    return () => {
+      active = false;
+      for (const unlisten of unlisteners) unlisten();
+    };
+  }, []);
+
+  useEffect(() => {
     if (!isDesktop()) return;
     void loadTrayEnabled()
       .then((enabled) => applyTrayEnabled(enabled))
@@ -786,7 +833,31 @@ function AppShell() {
       const key = getChatWindowKey(location.pathname, location.search);
       setChatWindowStates((current) => {
         const state = current[key] ?? createChatWindowState();
-        const existing = [...state.tabs].reverse().find((tab) => tab.kind === "browser");
+        if (request.source === "frame") {
+          const frameTab = state.tabs.find(
+            (tab) => tab.id === request.frameName && tab.kind === "browser",
+          );
+          if (!frameTab) return current;
+          return {
+            ...current,
+            [key]: {
+              ...state,
+              tabs: state.tabs.map((tab) =>
+                tab.id === frameTab.id
+                  ? {
+                      ...tab,
+                      browserNavigation: pushBrowserNavigation(tab, url),
+                      title: getBrowserPreviewTitle(url),
+                      url,
+                    }
+                  : tab,
+              ),
+            },
+          };
+        }
+        const existing = request.newTab
+          ? undefined
+          : [...state.tabs].reverse().find((tab) => tab.kind === "browser");
         const tab: ChatWindowTab = existing ?? {
           id: createChatWindowTabId(),
           title: getBrowserPreviewTitle(url),
@@ -794,6 +865,8 @@ function AppShell() {
         };
         const updatedTab = {
           ...tab,
+          browserNavigation: pushBrowserNavigation(tab, url),
+          browserLoadUrl: url,
           title: getBrowserPreviewTitle(url),
           url,
           refreshToken: Date.now(),
@@ -1961,6 +2034,8 @@ type ChatWindowTab = {
   explorerView?: "files" | "git";
   editorMode?: "source" | "diff";
   url?: string;
+  browserNavigation?: BrowserNavigationState;
+  browserLoadUrl?: string;
   sessionId?: string;
   planId?: string;
   canExecute?: boolean;
@@ -2044,6 +2119,7 @@ function ChatWorkspaceWindow({
       : null;
   const terminalTab = activeTab?.kind === "terminal" ? activeTab : null;
   const browserTab = activeTab?.kind === "browser" ? activeTab : null;
+  const browserNavigation = getBrowserNavigationState(browserTab ?? {});
   const imageTab = activeTab?.kind === "image" ? activeTab : null;
   const planTab = activeTab?.kind === "plan" ? activeTab : null;
   const activeTabWorkspaceId = workspaceTab?.workspaceId;
@@ -2631,11 +2707,40 @@ function ChatWorkspaceWindow({
 
   function navigateBrowser(url: string) {
     if (!browserTab) return;
+    const nextNavigation = pushBrowserNavigation(browserTab, url);
     onChange({
       ...state,
       tabs: state.tabs.map((tab) =>
         tab.id === browserTab.id
-          ? { ...tab, title: getBrowserPreviewTitle(url), url, refreshToken: Date.now() }
+          ? {
+              ...tab,
+              browserNavigation: nextNavigation,
+              browserLoadUrl: url,
+              title: getBrowserPreviewTitle(url),
+              url,
+              refreshToken: Date.now(),
+            }
+          : tab,
+      ),
+    });
+  }
+
+  function moveBrowser(offset: -1 | 1) {
+    if (!browserTab) return;
+    const next = moveBrowserNavigation(browserTab, offset);
+    if (!next) return;
+    onChange({
+      ...state,
+      tabs: state.tabs.map((tab) =>
+        tab.id === browserTab.id
+          ? {
+              ...tab,
+              browserNavigation: next.browserNavigation,
+              browserLoadUrl: next.url,
+              title: getBrowserPreviewTitle(next.url),
+              url: next.url,
+              refreshToken: Date.now(),
+            }
           : tab,
       ),
     });
@@ -2646,7 +2751,9 @@ function ChatWorkspaceWindow({
     onChange({
       ...state,
       tabs: state.tabs.map((tab) =>
-        tab.id === browserTab.id ? { ...tab, refreshToken: Date.now() } : tab,
+        tab.id === browserTab.id
+          ? { ...tab, browserLoadUrl: browserTab.url, refreshToken: Date.now() }
+          : tab,
       ),
     });
   }
@@ -3049,6 +3156,12 @@ function ChatWorkspaceWindow({
         <ChatTerminal cwd={terminalTab.cwd ?? cwd} sessionKey={terminalTab.id} />
       ) : browserTab ? (
         <ChatBrowser
+          canGoBack={browserNavigation.index > 0}
+          canGoForward={browserNavigation.index < browserNavigation.entries.length - 1}
+          frameName={browserTab.id}
+          loadUrl={browserTab.browserLoadUrl}
+          onBack={() => moveBrowser(-1)}
+          onForward={() => moveBrowser(1)}
           onNavigate={navigateBrowser}
           onRefresh={refreshBrowser}
           refreshToken={browserTab.refreshToken}

@@ -35,6 +35,14 @@ export function isRendererNavigation(url: string, entry: string) {
   }
 }
 
+export function isEmbeddedWindowOpen(
+  referrerUrl: string,
+  entry: string,
+  hasEmbeddedOpenerFrame = false,
+) {
+  return hasEmbeddedOpenerFrame || (Boolean(referrerUrl) && !isRendererNavigation(referrerUrl, entry));
+}
+
 export function resolveRendererFile(rendererRoot: string, requestUrl: string) {
   const url = new URL(requestUrl);
   if (url.protocol !== `${RENDERER_SCHEME}:` || url.hostname !== "localhost") {

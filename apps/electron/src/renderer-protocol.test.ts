@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   chatServerProxyUrl,
+  isEmbeddedWindowOpen,
   isRendererNavigation,
   isChatServerProxyPath,
   rendererLoadUrl,
@@ -52,6 +53,13 @@ describe("Electron renderer protocol", () => {
     expect(isRendererNavigation("chatdesk://localhost/settings", rendererLoadUrl())).toBe(true);
     expect(isRendererNavigation("chatdesk://untrusted/settings", rendererLoadUrl())).toBe(false);
     expect(isRendererNavigation("https://example.com", "http://localhost:1420")).toBe(false);
+  });
+
+  it("distinguishes embedded-page popups from renderer links", () => {
+    expect(isEmbeddedWindowOpen("https://example.com/docs", rendererLoadUrl())).toBe(true);
+    expect(isEmbeddedWindowOpen("chatdesk://localhost/settings", rendererLoadUrl())).toBe(false);
+    expect(isEmbeddedWindowOpen("", rendererLoadUrl())).toBe(false);
+    expect(isEmbeddedWindowOpen("", rendererLoadUrl(), true)).toBe(true);
   });
 
   it("maps Chat Server routes to the managed loopback port", () => {

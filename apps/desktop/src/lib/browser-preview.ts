@@ -7,18 +7,30 @@ export type LocalBrowserPreviewLink = {
   url: string;
 };
 
+export type BrowserNavigationState = {
+  entries: string[];
+  index: number;
+};
+
+type BrowserNavigationSource = {
+  browserNavigation?: BrowserNavigationState;
+  url?: string;
+};
+
 export function normalizeBrowserPreviewUrl(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
 
-  const isBareLocalAddress = /^(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]):/i.test(trimmed);
-  const hasScheme = /^[a-z][a-z\d+.-]*:/i.test(trimmed);
-  if (hasScheme && !isBareLocalAddress && !/^https?:/i.test(trimmed)) return null;
+  const isBareLocalAddress = /^(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::|\/|$)/i.test(
+    trimmed,
+  );
+  const hasHttpScheme = /^https?:\/\//i.test(trimmed);
+  if (/^[a-z][a-z\d+.-]*:\/\//i.test(trimmed) && !hasHttpScheme) return null;
   const candidate = trimmed.startsWith("//")
-    ? `http:${trimmed}`
-    : hasScheme && !isBareLocalAddress
+    ? `https:${trimmed}`
+    : hasHttpScheme
       ? trimmed
-      : `http://${trimmed}`;
+      : `${isBareLocalAddress ? "http" : "https"}://${trimmed}`;
 
   try {
     const url = new URL(candidate);
@@ -27,6 +39,43 @@ export function normalizeBrowserPreviewUrl(value: string): string | null {
   } catch {
     return null;
   }
+}
+
+export function getBrowserNavigationState({
+  browserNavigation,
+  url,
+}: BrowserNavigationSource): BrowserNavigationState {
+  if (
+    browserNavigation &&
+    browserNavigation.entries.length > 0 &&
+    browserNavigation.index >= 0 &&
+    browserNavigation.index < browserNavigation.entries.length &&
+    browserNavigation.entries[browserNavigation.index] === url
+  ) {
+    return browserNavigation;
+  }
+  return url ? { entries: [url], index: 0 } : { entries: [], index: -1 };
+}
+
+export function pushBrowserNavigation(
+  source: BrowserNavigationSource,
+  url: string,
+): BrowserNavigationState {
+  const current = getBrowserNavigationState(source);
+  if (current.entries[current.index] === url) return current;
+  const entries = [...current.entries.slice(0, current.index + 1), url];
+  return { entries, index: entries.length - 1 };
+}
+
+export function moveBrowserNavigation(
+  source: BrowserNavigationSource,
+  offset: -1 | 1,
+): { browserNavigation: BrowserNavigationState; url: string } | null {
+  const current = getBrowserNavigationState(source);
+  const index = current.index + offset;
+  const url = current.entries[index];
+  if (!url) return null;
+  return { browserNavigation: { ...current, index }, url };
 }
 
 export function isLocalBrowserPreviewUrl(value: string): boolean {

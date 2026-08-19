@@ -12,6 +12,7 @@ import {
   screen,
   shell,
   Tray,
+  webFrameMain,
 } from "electron";
 import {
   chmodSync,
@@ -35,6 +36,7 @@ import { chatServerLaunchArgs, chatServerRuntimeRoot } from "./chat-server-launc
 import { performHttpRequest } from "./http-bridge.js";
 import {
   chatServerProxyUrl,
+  isEmbeddedWindowOpen,
   isChatServerProxyPath,
   isRendererNavigation,
   RENDERER_SCHEME,
@@ -256,14 +258,55 @@ function createWindow() {
   mainWindow = window;
   if (restoredState?.isMaximized) window.maximize();
 
-  window.webContents.setWindowOpenHandler(({ url }) => {
+  window.webContents.setWindowOpenHandler(({ referrer, url }) => {
     try {
-      void shell.openExternal(validateExternalUrl(url));
+      const validatedUrl = validateExternalUrl(url);
+      const focusedFrame = window.webContents.focusedFrame;
+      const hasEmbeddedOpenerFrame = Boolean(focusedFrame?.parent && focusedFrame.name);
+      if (isEmbeddedWindowOpen(referrer.url, entry, hasEmbeddedOpenerFrame)) {
+        emit("browser-preview-open", { newTab: true, url: validatedUrl });
+      } else {
+        void shell.openExternal(validatedUrl);
+      }
     } catch {
       // Invalid protocols are denied below.
     }
     return { action: "deny" };
   });
+  const emitBrowserFrameNavigation = (
+    url: string,
+    frameProcessId: number,
+    frameRoutingId: number,
+  ) => {
+    const frame = webFrameMain.fromId(frameProcessId, frameRoutingId);
+    if (
+      !frame ||
+      !frame.name ||
+      frame.parent?.frameTreeNodeId !== window.webContents.mainFrame.frameTreeNodeId
+    ) {
+      return;
+    }
+    try {
+      emit("browser-frame-navigate", {
+        frameName: frame.name,
+        url: validateExternalUrl(url),
+      });
+    } catch {
+      // Ignore non-HTTP(S) frame navigations.
+    }
+  };
+  window.webContents.on(
+    "did-frame-navigate",
+    (_event, url, _httpResponseCode, _httpStatusText, isMainFrame, processId, routingId) => {
+      if (!isMainFrame) emitBrowserFrameNavigation(url, processId, routingId);
+    },
+  );
+  window.webContents.on(
+    "did-navigate-in-page",
+    (_event, url, isMainFrame, processId, routingId) => {
+      if (!isMainFrame) emitBrowserFrameNavigation(url, processId, routingId);
+    },
+  );
   window.webContents.on("will-navigate", (event, url) => {
     if (!isRendererNavigation(url, entry)) event.preventDefault();
   });
