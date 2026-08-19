@@ -446,9 +446,15 @@ function setupIpc() {
         setTrayEnabled(args.enabled);
         return undefined;
       case "show_notification":
-        if (typeof args.title !== "string" || typeof args.body !== "string") {
+        if (
+          typeof args.title !== "string" ||
+          typeof args.body !== "string" ||
+          (args.onlyWhenWindowUnfocused !== undefined &&
+            typeof args.onlyWhenWindowUnfocused !== "boolean")
+        ) {
           throw new Error("通知参数无效");
         }
+        if (args.onlyWhenWindowUnfocused === true && mainWindow?.isFocused()) return undefined;
         new Notification({ title: args.title, body: args.body }).show();
         return undefined;
       case "toggle_window_maximize":

@@ -891,15 +891,12 @@ function ChatPage() {
           }));
           if (runSummary.outcome === "completed") {
             void loadGeneralSettings().then((settings) => {
-              const windowUnfocused = document.visibilityState === "hidden" || !document.hasFocus();
-              if (
-                settings.notifyOnChatCompletion &&
-                (!settings.notifyOnlyWhenWindowUnfocused || windowUnfocused)
-              ) {
+              if (settings.notifyOnChatCompletion && getDesktopBridge()?.runtime === "electron") {
                 void notifyChatCompletion(
                   activeSessionRef.current === eventSessionId
                     ? sessionTitleRef.current
                     : "有一个对话已完成",
+                  settings.notifyOnlyWhenWindowUnfocused,
                 );
               }
             });

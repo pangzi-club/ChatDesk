@@ -69,8 +69,8 @@ export async function requestNotificationPermission() {
   return getDesktopBridge()?.runtime === "electron";
 }
 
-export async function notifyChatCompletion(title: string) {
+export async function notifyChatCompletion(title: string, onlyWhenWindowUnfocused: boolean) {
   const bridge = getDesktopBridge();
   if (bridge?.runtime !== "electron") return;
-  await bridge.showNotification?.("对话已完成", title);
+  await bridge.showNotification?.("对话已完成", title, onlyWhenWindowUnfocused);
 }
