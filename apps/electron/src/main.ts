@@ -31,6 +31,7 @@ import {
   validateExternalUrl,
   validateUserStoreFile,
 } from "./ipc-contract.js";
+import { chatServerLaunchArgs, chatServerRuntimeRoot } from "./chat-server-launch.js";
 import { performHttpRequest } from "./http-bridge.js";
 import {
   chatServerProxyUrl,
@@ -337,10 +338,15 @@ function resolveNodeRuntime(worker: string) {
 }
 
 function chatServerRuntimeEnvironment(worker: string, usingElectronRuntime: boolean) {
-  const runtimeRoot = dirname(dirname(worker));
+  const runtimeRoot = chatServerRuntimeRoot(
+    worker,
+    process.env.CHATDESK_CHAT_SERVER_RUNTIME_ROOT,
+  );
   const browserWorker = join(runtimeRoot, "workers/browser-worker.mjs");
   const sandboxWorker = join(runtimeRoot, "workers/chat-server-sandbox.cjs");
-  const playwrightBrowsers = join(process.resourcesPath, "playwright-browsers");
+  const playwrightBrowsers =
+    process.env.CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH ||
+    join(process.resourcesPath, "playwright-browsers");
   return {
     ...(usingElectronRuntime ? { ELECTRON_RUN_AS_NODE: "1" } : {}),
     ...(existsSync(browserWorker) ? { CHAT_SERVER_BROWSER_WORKER: browserWorker } : {}),
@@ -365,12 +371,14 @@ async function setupSupervisor() {
   const worker = resolveChatServerWorker();
   const nodeRuntime = resolveNodeRuntime(worker);
   const usingElectronRuntime = nodeRuntime === process.execPath;
+  const watch = process.env.CHATDESK_CHAT_SERVER_WATCH === "1";
   supervisor = new ChatServerSupervisor({
     command: nodeRuntime,
-    args: [worker],
+    args: chatServerLaunchArgs(worker, watch),
     cwd: dirname(worker),
     dataDir: join(userDataDirectory(), "chat-server"),
     env: chatServerRuntimeEnvironment(worker, usingElectronRuntime),
+    production: !watch,
     ...(supervisorPort() ? { port: supervisorPort() } : {}),
     ...(supervisorToken() ? { token: supervisorToken() } : {}),
   });

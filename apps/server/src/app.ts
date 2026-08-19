@@ -1022,9 +1022,12 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     }
   });
 
-  app.get("/v1/sessions", async (c) =>
-    c.json(await store.list(runs.statusMap(), runs.runStartedAtMap())),
-  );
+  app.get("/v1/sessions", async (c) => {
+    const query = c.req.query("query") ?? "";
+    const rawLimit = Number(c.req.query("limit"));
+    const limit = Number.isFinite(rawLimit) ? rawLimit : undefined;
+    return c.json(await store.list(runs.statusMap(), runs.runStartedAtMap(), { query, limit }));
+  });
 
   app.post("/v1/sessions", async (c) => {
     try {

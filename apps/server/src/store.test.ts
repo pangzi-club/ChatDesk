@@ -35,6 +35,94 @@ async function readMessages(root: string, id: string) {
   return readFile(path.join(root, "sessions", id, SESSION_MESSAGES_FILE), "utf8");
 }
 
+test("filters and limits the session index by recent title matches", async () => {
+  const { store } = await createStore();
+  await Promise.all([
+    store.save(
+      session({
+        id: "older-design",
+        title: "Design notes",
+        updatedAt: "2026-01-01T00:00:01.000Z",
+      }),
+    ),
+    store.save(
+      session({
+        id: "newer-design",
+        title: "DESIGN review",
+        updatedAt: "2026-01-01T00:00:03.000Z",
+      }),
+    ),
+    store.save(
+      session({
+        id: "unrelated",
+        title: "Release checklist",
+        updatedAt: "2026-01-01T00:00:04.000Z",
+      }),
+    ),
+  ]);
+
+  const matches = await store.list(new Map(), new Map(), { query: "design", limit: 1 });
+  assert.deepEqual(
+    matches.map((item) => item.id),
+    ["newer-design"],
+  );
+});
+
+test("matches session search against title and user message text, not cwd", async () => {
+  const { store } = await createStore();
+  await Promise.all([
+    store.save(
+      session({
+        id: "title-hit",
+        title: "成就系统",
+        cwd: "/tmp/other",
+        messages: [message("m1", "hello")],
+        updatedAt: "2026-01-01T00:00:01.000Z",
+      }),
+    ),
+    store.save(
+      session({
+        id: "message-hit",
+        title: "Daily notes",
+        cwd: "/tmp/other",
+        messages: [message("m1", "讨论成就解锁")],
+        updatedAt: "2026-01-01T00:00:03.000Z",
+      }),
+    ),
+    store.save(
+      session({
+        id: "workspace-only",
+        title: "查看依赖",
+        cwd: "/Users/bohaowang/Workspace/App/niuma2",
+        messages: [message("m1", "hello")],
+        updatedAt: "2026-01-01T00:00:01.000Z",
+      }),
+    ),
+  ]);
+
+  const matches = await store.list(new Map(), new Map(), { query: "成就" });
+  assert.deepEqual(
+    matches.map((item) => item.id),
+    ["title-hit", "message-hit"],
+  );
+  assert.equal(
+    matches.every((item) => typeof item.searchRelevance === "number"),
+    true,
+  );
+  const limitedMatches = await store.list(new Map(), new Map(), { query: "成就", limit: 1 });
+  assert.deepEqual(
+    limitedMatches.map((item) => item.id),
+    ["title-hit"],
+  );
+  const recents = await store.list(new Map(), new Map(), { limit: 1 });
+  assert.equal(recents[0]?.searchRelevance, undefined);
+  const workspaceHits = await store.list(new Map(), new Map(), { query: "niuma" });
+  assert.deepEqual(
+    workspaceHits.map((item) => item.id),
+    [],
+  );
+});
+
 test("appends a message without rewriting earlier jsonl lines", async () => {
   const { root, store } = await createStore();
   const first = message("m1", "one");

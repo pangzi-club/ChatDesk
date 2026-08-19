@@ -17,7 +17,6 @@ import {
   Clock3,
   CopyX,
   CornerDownLeft,
-  ExternalLink,
   FolderGit2,
   Globe2,
   Image,
@@ -139,6 +138,7 @@ import {
   deleteChatSession,
   loadChatIndex,
   loadChatSession,
+  searchChatIndex,
 } from "@/lib/chat-store";
 import { getDesktopBridge, isDesktop } from "@/lib/desktop-bridge";
 import { explorerFileIconKind } from "@/lib/explorer-file-icon";
@@ -149,7 +149,6 @@ import {
   subscribePlanViewerOpen,
   subscribePlanViewerUpdated,
 } from "@/lib/plan-viewer-events";
-import { openExternal } from "@/lib/platform";
 import { settingsStore } from "@/lib/settings-store";
 import {
   DEFAULT_SHORTCUTS,
@@ -415,6 +414,7 @@ function persistWorkspaceSort(sort: WorkspaceSort) {
 
 function AppShell() {
   const [isCommandMenuOpen, setIsCommandMenuOpen] = useState(false);
+  const [isChatSearchOpen, setIsChatSearchOpen] = useState(false);
   const [chatWindowStates, setChatWindowStates] = useState<Record<string, ChatWindowState>>({});
   const [shortcutSettings, setShortcutSettings] = useState<ShortcutSettings>(DEFAULT_SHORTCUTS);
   const [mainSidebarState, setMainSidebarState] = useState(loadMainSidebarState);
@@ -560,6 +560,7 @@ function AppShell() {
       if (isTerminalInput && !event.metaKey) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
+        setIsChatSearchOpen(false);
         setIsCommandMenuOpen((isOpen) => !isOpen);
         return;
       }
@@ -882,7 +883,12 @@ function AppShell() {
                     <MainSidebarToggleButton collapsed={false} onToggle={toggleMainSidebar} />
                     <TitlebarDragRegion className="pointer-events-auto" />
                   </div>
-                  <SidebarHeader />
+                  <SidebarHeader
+                    onOpenSearch={() => {
+                      setIsCommandMenuOpen(false);
+                      setIsChatSearchOpen(true);
+                    }}
+                  />
                   <nav
                     className="space-y-0.5 px-2 py-2 pb-1 max-sm:px-1.5"
                     aria-label="Main navigation"
@@ -1066,6 +1072,7 @@ function AppShell() {
         ) : null}
       </div>
       {isCommandMenuOpen && <CommandMenu onClose={() => setIsCommandMenuOpen(false)} />}
+      {isChatSearchOpen && <ChatSearchMenu onClose={() => setIsChatSearchOpen(false)} />}
     </main>
   );
 }
@@ -1145,12 +1152,23 @@ function ChatServerStatusBanner() {
   );
 }
 
-function SidebarHeader() {
+function SidebarHeader({ onOpenSearch }: { onOpenSearch: () => void }) {
   return (
-    <header className="flex items-center px-3 pt-3 pb-2 max-md:justify-center max-md:px-2 max-sm:px-1.5">
-      <h1 className="truncate pl-2 font-semibold text-[15px] text-foreground max-md:hidden">
+    <header className="flex items-center justify-between px-3 pt-3 pb-2 max-md:justify-center max-md:px-2 max-sm:px-1.5">
+      <h1 className="min-w-0 truncate pl-2 font-semibold text-[15px] text-foreground max-md:hidden">
         ChatDesk
       </h1>
+      <Button
+        aria-label="搜索聊天"
+        className="size-7 text-muted-foreground max-md:hidden"
+        onClick={onOpenSearch}
+        size="icon"
+        title="搜索聊天（⌘/Ctrl+K）"
+        type="button"
+        variant="ghost"
+      >
+        <Search className="size-4" />
+      </Button>
     </header>
   );
 }
@@ -3222,53 +3240,121 @@ function TopActions({
   );
 }
 
+type CommandMenuEntry =
+  | { type: "chat"; chat: ChatIndexItem }
+  | { type: "command"; command: CommandItem };
+
+const CHAT_SEARCH_DEBOUNCE_MS = 500;
+
+function useChatPaletteSearch(query: string) {
+  const typedQuery = query.trim();
+  const [debouncedQuery, setDebouncedQuery] = useState(typedQuery);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedQuery(typedQuery);
+    }, CHAT_SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [typedQuery]);
+
+  const recentsQuery = useQuery({
+    queryKey: ["chat-search", "recent"],
+    queryFn: () => searchChatIndex({ limit: 9 }),
+    enabled: typedQuery.length === 0,
+  });
+  const matchesQuery = useQuery({
+    queryKey: ["chat-search", "match", debouncedQuery],
+    queryFn: () => searchChatIndex({ query: debouncedQuery, limit: 10 }),
+    enabled: debouncedQuery.length > 0,
+  });
+
+  if (typedQuery.length > 0) {
+    const pending = typedQuery !== debouncedQuery || matchesQuery.isPending;
+    return {
+      pending,
+      chats: pending ? [] : (matchesQuery.data ?? []),
+      isError: matchesQuery.isError,
+      hasQuery: true,
+    };
+  }
+
+  return {
+    pending: recentsQuery.isPending,
+    chats: recentsQuery.data ?? [],
+    isError: recentsQuery.isError,
+    hasQuery: false,
+  };
+}
+
 function CommandMenu({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
-
-  const matches = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    if (!normalizedQuery) return commandItems;
+  const chatSearch = useChatPaletteSearch(query);
+  const chats = chatSearch.chats;
+  const commandMatches = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase();
+    if (!normalized) return commandItems;
     return commandItems.filter((item) =>
-      [item.label, item.to, ...item.keywords].some((value) =>
-        value.toLowerCase().includes(normalizedQuery),
+      [item.label, ...item.keywords].some((value) =>
+        value.toLocaleLowerCase().includes(normalized),
       ),
     );
   }, [query]);
-  const hasGoogleSearch = query.trim().length > 0 && matches.length === 0;
-  const resultCount = matches.length + (hasGoogleSearch ? 1 : 0);
+  const items = useMemo<CommandMenuEntry[]>(
+    () => [
+      ...chats.map((chat) => ({ type: "chat" as const, chat })),
+      ...commandMatches.map((command) => ({ type: "command" as const, command })),
+    ],
+    [chats, commandMatches],
+  );
+  const resultCount = items.length;
 
   useEffect(() => inputRef.current?.focus(), []);
-  async function selectItem(item: CommandItem | "google") {
-    if (item === "google") {
-      const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query.trim())}`;
-      await openExternal(searchUrl);
-    } else {
-      navigate(
-        item.to === "/chat" ? chatNewPath() : item.to,
-        item.to === "/chat" ? { state: chatNewNavigationState() } : undefined,
-      );
-    }
+
+  function selectChat(item: ChatIndexItem) {
+    navigate(chatSessionPath(item.id));
     onClose();
   }
-
+  function selectCommand(item: CommandItem) {
+    navigate(
+      item.to === "/chat" ? chatNewPath() : item.to,
+      item.to === "/chat" ? { state: chatNewNavigationState() } : undefined,
+    );
+    onClose();
+  }
+  function selectItem(item: CommandMenuEntry) {
+    if (item.type === "chat") {
+      selectChat(item.chat);
+      return;
+    }
+    selectCommand(item.command);
+  }
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "ArrowDown") {
+    const shortcutIndex = event.metaKey && /^[1-9]$/.test(event.key) ? Number(event.key) - 1 : -1;
+    if (shortcutIndex >= 0) {
+      event.preventDefault();
+      const chat = chats[shortcutIndex];
+      if (chat) selectChat(chat);
+      return;
+    }
+    if (event.key === "ArrowDown" && resultCount > 0) {
       event.preventDefault();
       setActiveIndex((index) => (index + 1) % resultCount);
-    } else if (event.key === "ArrowUp") {
+    } else if (event.key === "ArrowUp" && resultCount > 0) {
       event.preventDefault();
       setActiveIndex((index) => (index - 1 + resultCount) % resultCount);
-    } else if (event.key === "Enter") {
+    } else if (event.key === "Enter" && items[activeIndex]) {
       event.preventDefault();
-      selectItem(matches[activeIndex] ?? "google");
+      selectItem(items[activeIndex]);
     } else if (event.key === "Escape") {
       event.preventDefault();
       onClose();
     }
   }
+
+  const showEmpty = !chatSearch.pending && resultCount === 0;
 
   return (
     <div
@@ -3290,7 +3376,7 @@ function CommandMenu({ onClose }: { onClose: () => void }) {
         <div className="flex h-14 items-center gap-3 border-border border-b px-4">
           <Search className="size-4 shrink-0 text-muted-foreground" />
           <input
-            aria-label="Search commands"
+            aria-label="搜索聊天或菜单"
             autoCapitalize="none"
             autoCorrect="off"
             className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
@@ -3299,7 +3385,146 @@ function CommandMenu({ onClose }: { onClose: () => void }) {
               setActiveIndex(0);
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Search menus or Google..."
+            placeholder="搜索聊天标题、内容或菜单..."
+            ref={inputRef}
+            spellCheck={false}
+            value={query}
+          />
+          <kbd className="hidden rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline-block">
+            ESC
+          </kbd>
+        </div>
+        <div className="max-h-[min(55vh,360px)] overflow-y-auto p-2">
+          {chatSearch.pending ? <ChatSearchSkeleton /> : null}
+          {!chatSearch.pending && chatSearch.isError ? (
+            <p className="px-3 py-2 text-center text-sm text-destructive">聊天记录加载失败</p>
+          ) : null}
+          {showEmpty ? (
+            <p className="px-3 py-8 text-center text-sm text-muted-foreground">
+              {chatSearch.hasQuery ? "没有找到匹配结果" : "暂无结果"}
+            </p>
+          ) : (
+            items.map((item, index) => {
+              const isActive = activeIndex === index;
+              if (item.type === "chat") {
+                return (
+                  <button
+                    className={`flex h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors ${isActive ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/70 hover:text-accent-foreground"}`}
+                    key={`chat:${item.chat.id}`}
+                    onClick={() => selectChat(item.chat)}
+                    onMouseEnter={() => setActiveIndex(index)}
+                    type="button"
+                  >
+                    <MessageCircle className="size-4 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">{item.chat.title}</span>
+                    {index < 9 ? (
+                      <kbd className="hidden rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline-block">
+                        ⌘{index + 1}
+                      </kbd>
+                    ) : null}
+                  </button>
+                );
+              }
+              const Icon = item.command.icon;
+              return (
+                <button
+                  className={`flex h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors ${isActive ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/70 hover:text-accent-foreground"}`}
+                  key={`command:${item.command.to}`}
+                  onClick={() => selectCommand(item.command)}
+                  onMouseEnter={() => setActiveIndex(index)}
+                  type="button"
+                >
+                  <Icon className="size-4 shrink-0" />
+                  <span className="flex-1 truncate">{item.command.label}</span>
+                  {isActive ? <CornerDownLeft className="size-3.5 opacity-70" /> : null}
+                </button>
+              );
+            })
+          )}
+        </div>
+        <footer className="flex items-center gap-4 border-border border-t px-4 py-2 text-[11px] text-muted-foreground">
+          <span className="inline-flex items-center gap-1">
+            <ArrowUp className="size-3" />
+            <ArrowDown className="size-3" />
+            切换
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <CornerDownLeft className="size-3" />
+            打开
+          </span>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function ChatSearchMenu({ onClose }: { onClose: () => void }) {
+  const navigate = useNavigate();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
+  const chatSearch = useChatPaletteSearch(query);
+  const matches = chatSearch.chats;
+  const resultCount = matches.length;
+
+  useEffect(() => inputRef.current?.focus(), []);
+
+  function selectItem(item: ChatIndexItem) {
+    navigate(chatSessionPath(item.id));
+    onClose();
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    const shortcutIndex = event.metaKey && /^[1-9]$/.test(event.key) ? Number(event.key) - 1 : -1;
+    if (shortcutIndex >= 0) {
+      event.preventDefault();
+      const item = matches[shortcutIndex];
+      if (item) selectItem(item);
+    } else if (event.key === "ArrowDown" && resultCount > 0) {
+      event.preventDefault();
+      setActiveIndex((index) => (index + 1) % resultCount);
+    } else if (event.key === "ArrowUp" && resultCount > 0) {
+      event.preventDefault();
+      setActiveIndex((index) => (index - 1 + resultCount) % resultCount);
+    } else if (event.key === "Enter" && matches[activeIndex]) {
+      event.preventDefault();
+      selectItem(matches[activeIndex]);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      onClose();
+    }
+  }
+
+  return (
+    <div
+      aria-label="搜索聊天记录"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/35 px-4 pt-[13vh] backdrop-blur-[2px]"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") onClose();
+      }}
+      role="dialog"
+    >
+      <section
+        aria-label="搜索聊天记录"
+        className="w-full max-w-xl overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-2xl"
+        role="document"
+      >
+        <div className="flex h-14 items-center gap-3 border-border border-b px-4">
+          <Search className="size-4 shrink-0 text-muted-foreground" />
+          <input
+            aria-label="搜索聊天记录"
+            autoCapitalize="none"
+            autoCorrect="off"
+            className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setActiveIndex(0);
+            }}
+            onKeyDown={handleKeyDown}
+            placeholder="搜索聊天标题或内容"
             ref={inputRef}
             spellCheck={false}
             value={query}
@@ -3310,41 +3535,35 @@ function CommandMenu({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="max-h-[min(55vh,360px)] overflow-y-auto p-2">
-          {matches.map((item, index) => {
-            const Icon = item.icon;
-            const isActive = activeIndex === index;
-            return (
-              <button
-                className={`flex h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors ${isActive ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/70 hover:text-accent-foreground"}`}
-                key={item.to}
-                onClick={() => selectItem(item)}
-                onMouseEnter={() => setActiveIndex(index)}
-                type="button"
-              >
-                <Icon className="size-4 shrink-0" />
-                <span className="flex-1 truncate">{item.label}</span>
-                {isActive && <CornerDownLeft className="size-3.5 opacity-70" />}
-              </button>
-            );
-          })}
-          {hasGoogleSearch && (
-            <button
-              className={`flex h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors ${activeIndex === matches.length ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/70 hover:text-accent-foreground"}`}
-              onClick={() => selectItem("google")}
-              onMouseEnter={() => setActiveIndex(matches.length)}
-              type="button"
-            >
-              <ExternalLink className="size-4 shrink-0" />
-              <span className="min-w-0 flex-1 truncate">
-                Search Google for <span className="font-medium">&quot;{query.trim()}&quot;</span>
-              </span>
-              {activeIndex === matches.length && <CornerDownLeft className="size-3.5 opacity-70" />}
-            </button>
-          )}
-          {resultCount === 0 && (
+          {chatSearch.pending ? (
+            <ChatSearchSkeleton />
+          ) : chatSearch.isError ? (
+            <p className="px-3 py-8 text-center text-sm text-destructive">聊天记录加载失败</p>
+          ) : matches.length === 0 ? (
             <p className="px-3 py-8 text-center text-sm text-muted-foreground">
-              Type a search to open Google.
+              {chatSearch.hasQuery ? "没有找到匹配的聊天" : "暂无聊天记录"}
             </p>
+          ) : (
+            matches.map((item, index) => {
+              const isActive = activeIndex === index;
+              return (
+                <button
+                  className={`flex h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors ${isActive ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/70 hover:text-accent-foreground"}`}
+                  key={item.id}
+                  onClick={() => selectItem(item)}
+                  onMouseEnter={() => setActiveIndex(index)}
+                  type="button"
+                >
+                  <MessageCircle className="size-4 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">{item.title}</span>
+                  {index < 9 ? (
+                    <kbd className="hidden rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline-block">
+                      ⌘{index + 1}
+                    </kbd>
+                  ) : null}
+                </button>
+              );
+            })
           )}
         </div>
 
@@ -3352,14 +3571,27 @@ function CommandMenu({ onClose }: { onClose: () => void }) {
           <span className="inline-flex items-center gap-1">
             <ArrowUp className="size-3" />
             <ArrowDown className="size-3" />
-            Navigate
+            切换
           </span>
           <span className="inline-flex items-center gap-1">
             <CornerDownLeft className="size-3" />
-            Select
+            打开
           </span>
         </footer>
       </section>
+    </div>
+  );
+}
+
+function ChatSearchSkeleton() {
+  return (
+    <div className="space-y-1" role="status" aria-label="正在搜索聊天记录">
+      {[0, 1, 2, 3].map((index) => (
+        <div className="flex h-11 items-center gap-3 rounded-md px-3" key={index}>
+          <div className="size-4 animate-pulse rounded bg-muted" />
+          <div className="h-3.5 w-3/4 animate-pulse rounded bg-muted" />
+        </div>
+      ))}
     </div>
   );
 }

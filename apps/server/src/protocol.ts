@@ -31,6 +31,8 @@ export {
   resolveContextCompactionThreshold,
   resolveSessionTitle,
   SESSION_STATUSES,
+  sessionMatchesQuery,
+  sessionSearchRelevance,
   textFromMessage,
 } from "@chatdesk/shared";
 

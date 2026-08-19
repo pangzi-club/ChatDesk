@@ -10,7 +10,12 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
-import type { ChatSession, SessionIndexItem, SessionStatus } from "./protocol.ts";
+import {
+  type ChatSession,
+  type SessionIndexItem,
+  type SessionStatus,
+  sessionSearchRelevance,
+} from "./protocol.ts";
 import {
   cacheFromRawLines,
   cacheFromSerializedLines,
@@ -109,29 +114,47 @@ export class SessionStore {
   async list(
     statuses: ReadonlyMap<string, SessionStatus> = new Map(),
     runStartedAts: ReadonlyMap<string, string> = new Map(),
+    options: { query?: string; limit?: number } = {},
   ) {
+    const query = options.query?.trim() ?? "";
+    const limit = Number.isFinite(options.limit)
+      ? Math.max(1, Math.min(100, options.limit ?? 100))
+      : 100;
     const entries = await readdir(this.sessionsRoot, { withFileTypes: true }).catch(() => []);
-    const sessions: SessionIndexItem[] = [];
+    const sessions: Array<{ item: SessionIndexItem; relevance: number }> = [];
     for (const entry of entries) {
       if (!entry.isDirectory() || !validId(entry.name)) continue;
       const session = await this.get(entry.name);
       if (!session) continue;
+      const relevance = sessionSearchRelevance(session, query);
+      if (relevance < 0) continue;
       const runStartedAt = runStartedAts.get(session.id);
       sessions.push({
-        id: session.id,
-        title: session.title,
-        createdAt: session.createdAt,
-        updatedAt: session.updatedAt,
-        messageCount: session.messages.length,
-        attachmentCount: session.attachments.length,
-        workspaceId: session.workspaceId,
-        cwd: session.cwd,
-        status: statuses.get(session.id) ?? "idle",
-        lastRunSummary: latestRunSummary(session),
-        ...(runStartedAt ? { runStartedAt } : {}),
+        relevance,
+        item: {
+          id: session.id,
+          title: session.title,
+          createdAt: session.createdAt,
+          updatedAt: session.updatedAt,
+          messageCount: session.messages.length,
+          attachmentCount: session.attachments.length,
+          workspaceId: session.workspaceId,
+          cwd: session.cwd,
+          status: statuses.get(session.id) ?? "idle",
+          lastRunSummary: latestRunSummary(session),
+          ...(runStartedAt ? { runStartedAt } : {}),
+          ...(query ? { searchRelevance: relevance } : {}),
+        },
       });
     }
-    return sessions.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return sessions
+      .sort(
+        (a, b) =>
+          (query ? b.relevance - a.relevance : 0) ||
+          b.item.updatedAt.localeCompare(a.item.updatedAt),
+      )
+      .slice(0, limit)
+      .map(({ item }) => item);
   }
 
   async get(id: string): Promise<ChatSession | null> {

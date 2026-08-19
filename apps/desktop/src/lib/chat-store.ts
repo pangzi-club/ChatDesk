@@ -127,6 +127,23 @@ export async function loadChatIndex(): Promise<ChatIndexItem[]> {
   return sortIndex(serverItems);
 }
 
+export function filterChatSearchResponse(
+  items: Array<ChatIndexItem & { searchRelevance?: number }>,
+  query?: string,
+) {
+  if (!query?.trim()) return items;
+  return items.filter((item) => typeof item.searchRelevance === "number");
+}
+
+export async function searchChatIndex(options: {
+  query?: string;
+  limit: number;
+}): Promise<ChatIndexItem[]> {
+  await initializeChatServer();
+  const serverItems = await loadChatServerSessions(options);
+  return filterChatSearchResponse(serverItems, options.query);
+}
+
 export async function loadChatSession(id: string): Promise<ChatSession | null> {
   await initializeChatServer();
   const serverSession = await loadChatServerSession<ChatSession>(id);

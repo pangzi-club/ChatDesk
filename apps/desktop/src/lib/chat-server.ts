@@ -334,8 +334,11 @@ export async function checkChatServer(port = CHAT_SERVER_DEFAULT_PORT) {
   return (await response.json()) as ChatServerHealth;
 }
 
-export async function loadChatServerSessions(port = CHAT_SERVER_DEFAULT_PORT) {
-  return (await createClient(port).listSessions()) as ChatServerSession[];
+export async function loadChatServerSessions(
+  options: { query?: string; limit?: number } = {},
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  return (await createClient(port).listSessions(options)) as ChatServerSession[];
 }
 
 export async function chatServerRequest(

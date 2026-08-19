@@ -139,6 +139,35 @@ describe("chat server", () => {
     assert.equal(await server.store.get("session-test"), null);
   });
 
+  it("filters and limits session list requests", async () => {
+    const server = await createTestServer();
+    for (const [id, title] of [
+      ["search-one", "搜索设计稿"],
+      ["search-two", "搜索发布计划"],
+      ["search-three", "其他会话"],
+    ]) {
+      const response = await server.app.request("http://localhost/v1/sessions", {
+        method: "POST",
+        headers: { ...auth(), "Content-Type": "application/json" },
+        body: JSON.stringify({ id, title }),
+      });
+      assert.equal(response.status, 201);
+    }
+
+    const response = await server.app.request(
+      "http://localhost/v1/sessions?query=%E6%90%9C%E7%B4%A2&limit=1",
+      { headers: auth() },
+    );
+    assert.equal(response.status, 200);
+    const sessions = (await response.json()) as Array<{
+      title: string;
+      searchRelevance?: number;
+    }>;
+    assert.equal(sessions.length, 1);
+    assert.match(sessions[0]?.title ?? "", /搜索/);
+    assert.equal(typeof sessions[0]?.searchRelevance, "number");
+  });
+
   it("binds new sessions without a workspace to a unique default task directory", async () => {
     const server = await createTestServer();
     const first = await server.app.request("http://localhost/v1/sessions", {
