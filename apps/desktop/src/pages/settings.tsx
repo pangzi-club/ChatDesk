@@ -95,6 +95,12 @@ import {
   updateChatServerPort,
 } from "@/lib/chat-server";
 import {
+  type ChatDisplaySettings,
+  DEFAULT_CHAT_DISPLAY,
+  loadChatDisplaySettings,
+  saveChatDisplaySettings,
+} from "@/lib/chat-settings";
+import {
   type ChatToolsSettings as ChatToolsSettingsValue,
   DEFAULT_CHAT_TOOLS,
   loadChatToolsSettings,
@@ -546,6 +552,19 @@ function SettingsHeading({
 
 function ThemeSettingsPage() {
   const { theme, setTheme, themeColor, setThemeColor } = useTheme();
+  const [chatDisplay, setChatDisplay] = useState<ChatDisplaySettings>(DEFAULT_CHAT_DISPLAY);
+
+  useEffect(() => {
+    void loadChatDisplaySettings().then(setChatDisplay);
+  }, []);
+
+  const updateChatDisplay = (next: ChatDisplaySettings) => {
+    setChatDisplay(next);
+    void saveChatDisplaySettings(next).catch((error) =>
+      console.error("Failed to save chat display settings", error),
+    );
+  };
+
   return (
     <>
       <SettingsHeading
@@ -617,7 +636,93 @@ function ThemeSettingsPage() {
           ))}
         </RadioGroup>
       </section>
+      <section className="mt-5 overflow-hidden rounded-lg border border-border bg-card">
+        <div className="border-border border-b px-5 py-4">
+          <h2 className="font-medium text-sm">对话字体</h2>
+          <p className="mt-1 text-muted-foreground text-xs">
+            使用系统自带字体优化中文、英文、代码和数学公式的阅读体验。
+          </p>
+        </div>
+        <div className="divide-y divide-border">
+          <ChatFontSettingRow
+            description="系统 UI 字体，自动适配当前平台的中文和英文"
+            label="正文（中文 / 英文）"
+            onChange={(value) => updateChatDisplay({ ...chatDisplay, bodyFont: value })}
+            options={[
+              { value: "system", label: "系统默认" },
+              { value: "pingfang", label: "苹方 PingFang SC" },
+              { value: "hiragino", label: "冬青黑体 Hiragino" },
+              { value: "segoe", label: "Segoe UI" },
+              { value: "noto", label: "Noto Sans" },
+              { value: "inter", label: "Inter" },
+              { value: "serif", label: "Georgia / 宋体" },
+            ]}
+            value={chatDisplay.bodyFont}
+          />
+          <ChatFontSettingRow
+            description="用于代码块、内联代码和路径"
+            label="代码"
+            onChange={(value) => updateChatDisplay({ ...chatDisplay, codeFont: value })}
+            options={[
+              { value: "system", label: "系统等宽字体" },
+              { value: "sf-mono", label: "SF Mono" },
+              { value: "menlo", label: "Menlo" },
+              { value: "cascadia", label: "Cascadia Code" },
+              { value: "consolas", label: "Consolas" },
+              { value: "courier", label: "Courier New" },
+            ]}
+            value={chatDisplay.codeFont}
+          />
+          <ChatFontSettingRow
+            description="用于 KaTeX 数学公式的字形"
+            label="数学公式"
+            onChange={(value) => updateChatDisplay({ ...chatDisplay, mathFont: value })}
+            options={[
+              { value: "katex", label: "KaTeX 默认" },
+              { value: "cambria", label: "Cambria Math" },
+              { value: "stix", label: "STIX Two Math" },
+              { value: "times", label: "Times New Roman" },
+            ]}
+            value={chatDisplay.mathFont}
+          />
+        </div>
+      </section>
     </>
+  );
+}
+
+function ChatFontSettingRow<T extends string>({
+  description,
+  label,
+  onChange,
+  options,
+  value,
+}: {
+  description: string;
+  label: string;
+  onChange: (value: T) => void;
+  options: Array<{ value: T; label: string }>;
+  value: T;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
+      <div className="min-w-0">
+        <p className="font-medium text-sm">{label}</p>
+        <p className="mt-1 text-muted-foreground text-xs">{description}</p>
+      </div>
+      <Select onValueChange={(next) => onChange(next as T)} value={value}>
+        <SelectTrigger aria-label={`${label}字体`} className="w-[190px]" size="sm">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 

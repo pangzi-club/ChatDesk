@@ -1,4 +1,5 @@
 import { code } from "@streamdown/code";
+import { cjk } from "@streamdown/cjk";
 import { createMathPlugin } from "@streamdown/math";
 import type { ComponentProps, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { defaultRemarkPlugins, Streamdown } from "streamdown";
@@ -9,7 +10,11 @@ import { openBrowserPreview } from "@/lib/browser-preview-events";
 import { resolveMarkdownImageSrc } from "@/lib/chat-markdown-images";
 import { remarkLocalBrowserLinks } from "@/lib/chat-markdown-links";
 
-const STREAMDOWN_PLUGINS = { code, math: createMathPlugin({ singleDollarTextMath: true }) };
+const STREAMDOWN_PLUGINS = {
+  cjk,
+  code,
+  math: createMathPlugin({ singleDollarTextMath: true }),
+};
 const CHAT_REMARK_PLUGINS = [...Object.values(defaultRemarkPlugins), remarkLocalBrowserLinks];
 
 type ChatMarkdownProps = {

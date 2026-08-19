@@ -13,3 +13,13 @@ describe("ChatMarkdown math", () => {
     expect(markup).not.toContain("$x^2$");
   });
 });
+
+describe("ChatMarkdown CJK", () => {
+  it("renders Chinese text with adjacent emphasis", () => {
+    const markup = renderToStaticMarkup(
+      <ChatMarkdown isAnimating={false}>{"中文**强调**文本"}</ChatMarkdown>,
+    );
+
+    expect(markup).toContain("中文<strong>强调</strong>文本");
+  });
+});

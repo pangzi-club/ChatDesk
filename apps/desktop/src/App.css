@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @source "../node_modules/streamdown/dist/*.js";
 @source "../node_modules/@streamdown/code/dist/*.js";
+@source "../node_modules/@streamdown/cjk/dist/*.js";
 @source "../node_modules/@streamdown/math/dist/*.js";
 
 @custom-variant dark (&:is(.dark *));
@@ -1081,6 +1082,11 @@
   --chat-text-size: 15px;
   --chat-text-line-height: 1.75;
   --chat-composer-text-size: 14px;
+  --chat-body-font:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  --chat-code-font: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --chat-math-font: KaTeX_Main, "Times New Roman", serif;
   --chat-message-gap: 14px;
   --chat-message-block-gap: 42px;
   --chat-content-padding-top: 16px;
@@ -1096,6 +1102,48 @@
   position: relative;
   background: var(--card);
   color: var(--chat-ink);
+}
+.chat-page[data-chat-body-font="pingfang"] {
+  --chat-body-font: "PingFang SC", "PingFang TC", sans-serif;
+}
+.chat-page[data-chat-body-font="hiragino"] {
+  --chat-body-font: "Hiragino Sans GB", "Hiragino Kaku Gothic ProN", sans-serif;
+}
+.chat-page[data-chat-body-font="segoe"] {
+  --chat-body-font: "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+.chat-page[data-chat-body-font="noto"] {
+  --chat-body-font: "Noto Sans", "Noto Sans CJK SC", sans-serif;
+}
+.chat-page[data-chat-body-font="inter"] {
+  --chat-body-font: Inter, "PingFang SC", sans-serif;
+}
+.chat-page[data-chat-body-font="serif"] {
+  --chat-body-font: Georgia, "Songti SC", "Times New Roman", serif;
+}
+.chat-page[data-chat-code-font="sf-mono"] {
+  --chat-code-font: "SF Mono", "SFMono-Regular", monospace;
+}
+.chat-page[data-chat-code-font="menlo"] {
+  --chat-code-font: Menlo, Monaco, monospace;
+}
+.chat-page[data-chat-code-font="cascadia"] {
+  --chat-code-font: "Cascadia Code", monospace;
+}
+.chat-page[data-chat-code-font="consolas"] {
+  --chat-code-font: Consolas, monospace;
+}
+.chat-page[data-chat-code-font="courier"] {
+  --chat-code-font: "Courier New", Courier, monospace;
+}
+.chat-page[data-chat-math-font="cambria"] {
+  --chat-math-font: "Cambria Math", KaTeX_Main, serif;
+}
+.chat-page[data-chat-math-font="stix"] {
+  --chat-math-font: "STIX Two Math", "STIXGeneral", KaTeX_Main, serif;
+}
+.chat-page[data-chat-math-font="times"] {
+  --chat-math-font: "Times New Roman", Times, KaTeX_Main, serif;
 }
 .chat-page[data-chat-font-size="large"] {
   --chat-text-size: 17px;
@@ -2299,6 +2347,7 @@
 .chat-message-text {
   overflow-wrap: anywhere;
   color: var(--chat-ink);
+  font-family: var(--chat-body-font);
   font-size: var(--chat-text-size);
   line-height: var(--chat-text-line-height);
 }
@@ -2593,13 +2642,18 @@
   line-height: inherit;
 }
 .chat-message-text :where([data-streamdown="code-block-body"]) code {
-  font-family: "SFMono-Regular", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+  font-family: var(--chat-code-font);
 }
 .chat-message-text :where(:not(pre) > code) {
+  font-family: var(--chat-code-font);
   border-radius: 4px;
   background: color-mix(in srgb, var(--chat-line) 55%, transparent);
   padding: 2px 5px;
   font-size: 0.9em;
+}
+.chat-message-text .katex,
+.chat-message-text .katex-display {
+  font-family: var(--chat-math-font);
 }
 .chat-local-preview-code {
   appearance: none;

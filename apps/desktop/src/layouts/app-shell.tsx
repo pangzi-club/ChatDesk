@@ -213,7 +213,7 @@ const commandItems = [
     to: "/settings/theme",
     label: "主题",
     icon: Palette,
-    keywords: ["theme", "外观", "配色", "颜色", "灰白"],
+    keywords: ["theme", "外观", "配色", "颜色", "灰白", "字体", "中文", "英文", "代码", "数学"],
   },
   {
     to: "/settings/shortcuts",

@@ -932,6 +932,16 @@ function ChatPage() {
     void loadChatDisplaySettings().then(setChatDisplay);
   }, []);
 
+  useEffect(() => {
+    const handleDisplaySettingsChange = (event: Event) => {
+      const settings = (event as CustomEvent<ChatDisplaySettings>).detail;
+      if (settings) setChatDisplay(settings);
+    };
+    window.addEventListener("chat-display-settings-change", handleDisplaySettingsChange);
+    return () =>
+      window.removeEventListener("chat-display-settings-change", handleDisplaySettingsChange);
+  }, []);
+
   const updateChatTools = (next: ChatToolsSettings) => {
     queryClient.setQueryData(["chat-tools"], next);
     void saveChatToolsSettings(next).catch((error) =>
@@ -2147,6 +2157,9 @@ function ChatPage() {
       data-chat-empty={showEmptyState ? "true" : "false"}
       data-chat-font-size={chatDisplay.fontSize}
       data-chat-spacing={chatDisplay.spacing}
+      data-chat-body-font={chatDisplay.bodyFont}
+      data-chat-code-font={chatDisplay.codeFont}
+      data-chat-math-font={chatDisplay.mathFont}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
