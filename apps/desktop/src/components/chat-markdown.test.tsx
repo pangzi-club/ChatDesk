@@ -20,6 +20,8 @@ describe("ChatMarkdown CJK", () => {
       <ChatMarkdown isAnimating={false}>{"中文**强调**文本"}</ChatMarkdown>,
     );
 
-    expect(markup).toContain("中文<strong>强调</strong>文本");
+    expect(markup).toContain(
+      `<div class="space-y-4 whitespace-normal [&amp;&gt;*:first-child]:mt-0 [&amp;&gt;*:last-child]:mb-0"><p>中文<span class="font-semibold" data-streamdown="strong">强调</span>文本</p></div>`,
+    );
   });
 });
