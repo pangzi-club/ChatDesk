@@ -39,14 +39,14 @@ To publish a version, update the app versions, push the commit, then create and
 push a tag:
 
 ```sh
-git tag v0.3.0
-git push origin v0.3.0
+git tag v0.4.0
+git push origin v0.4.0
 ```
 
 The tag starts the two architecture builds. The release job runs only after
-both builds finish successfully. Keep the tag version aligned with the
-versions in `package.json`, `apps/desktop/package.json`,
-`apps/tauri/src-tauri/tauri.conf.json`, and `apps/tauri/src-tauri/Cargo.toml`.
+both builds finish successfully. Keep the tag version aligned with every
+workspace `package.json`, `apps/tauri/src-tauri/tauri.conf.json`, and
+`apps/tauri/src-tauri/Cargo.toml`.
 
 `pnpm desktop:sidecars` requires Node.js 22.20.0. It copies the current Node executable to `apps/desktop/assets/binaries/node-runtime-<target-triple>`, bundles the TypeScript Chat Server and sandbox worker into CommonJS, and copies the browser worker as an ordinary ES module. These scripts live under `apps/desktop/assets/resources/node-runtime/workers` and are all executed by the same Node binary.
 

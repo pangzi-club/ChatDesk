@@ -89,7 +89,7 @@ export class McpRuntime {
     await this.rpc(server.id, "initialize", {
       protocolVersion: "2025-06-18",
       capabilities: {},
-      clientInfo: { name: "ChatDesk", version: "0.2.0" },
+      clientInfo: { name: "ChatDesk", version: "0.4.0" },
     });
     child.stdin.write(
       `${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`,
