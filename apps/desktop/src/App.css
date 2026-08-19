@@ -2687,6 +2687,78 @@
   gap: 8px;
   transform: translateX(50%);
 }
+.chat-composer-float-stack {
+  position: absolute;
+  right: 50%;
+  bottom: calc(100% + 8px);
+  display: flex;
+  max-width: calc(100% - 16px);
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  transform: translateX(50%);
+}
+.chat-queue-float {
+  display: flex;
+  width: min(560px, calc(100vw - 64px));
+  max-height: 172px;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--card);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--foreground) 10%, transparent);
+  padding: 4px;
+}
+.chat-queue-float-row {
+  display: flex;
+  min-width: 0;
+  height: 28px;
+  align-items: center;
+  gap: 7px;
+  border-radius: 6px;
+  padding: 0 5px;
+  color: var(--chat-muted);
+  font-size: 11px;
+}
+.chat-queue-float-row:hover {
+  background: var(--muted);
+  color: var(--chat-ink);
+}
+.chat-queue-float-index {
+  width: 14px;
+  flex: 0 0 auto;
+  color: var(--primary);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  text-align: center;
+}
+.chat-queue-float-text {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-queue-float-cancel {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+}
+.chat-queue-float-cancel:hover,
+.chat-queue-float-cancel:focus-visible {
+  background: color-mix(in srgb, var(--foreground) 9%, transparent);
+  color: var(--chat-ink);
+}
 .chat-git-summary-float {
   display: inline-flex;
   align-items: center;
@@ -2998,6 +3070,41 @@
 }
 .chat-composer textarea::placeholder {
   color: #9ca9a4;
+}
+.chat-queued-message {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  margin: 0 10px 8px;
+  border-top: 1px solid color-mix(in srgb, var(--primary) 14%, var(--border));
+  padding: 8px 6px 0;
+  color: var(--chat-muted);
+  font-size: 11px;
+}
+.chat-queued-message-text {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-queued-message-cancel {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+}
+.chat-queued-message-cancel:hover,
+.chat-queued-message-cancel:focus-visible {
+  background: var(--muted);
+  color: var(--chat-ink);
 }
 .chat-command-popup {
   position: absolute;

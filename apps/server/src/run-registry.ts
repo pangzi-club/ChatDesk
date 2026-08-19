@@ -91,7 +91,9 @@ type ActiveRun = {
   id: string;
   sessionId: string;
   controller: AbortController;
+  completed: Promise<void>;
   done?: Promise<void>;
+  resolveCompleted: () => void;
   startedAt: string;
 };
 
@@ -624,7 +626,18 @@ export class RunRegistry {
     const runId = randomUUID();
     await this.journal.begin({ sessionId, runId, startedAt: now });
     const controller = new AbortController();
-    const activeRun: ActiveRun = { id: runId, sessionId, controller, startedAt: now };
+    let resolveCompleted = () => {};
+    const completed = new Promise<void>((resolve) => {
+      resolveCompleted = resolve;
+    });
+    const activeRun: ActiveRun = {
+      id: runId,
+      sessionId,
+      controller,
+      completed,
+      resolveCompleted,
+      startedAt: now,
+    };
     this.active.set(sessionId, activeRun);
     this.drafts.set(sessionId, assistantMessage(runId, ""));
     this.setStatus(sessionId, "submitted", runId);
@@ -1179,50 +1192,55 @@ export class RunRegistry {
       );
       return withSseKeepAlive(createUIMessageStreamResponse({ stream: observedClientStream }));
     } catch (error) {
-      this.active.delete(sessionId);
-      const runSummary = withRunDuration(
-        {
+      try {
+        const runSummary = withRunDuration(
+          {
+            runId,
+            outcome: "error",
+            stopReason: error instanceof RunFailure ? error.stopReason : "incomplete-response",
+            stepCount: 0,
+            modelCallCount: 0,
+            toolCallCount: 0,
+            duplicateToolCallCount: 0,
+            compactionCount: 0,
+            planWritten: false,
+          },
+          now,
+        );
+        const failedDraft: UIMessage = {
+          ...assistantMessage(runId, `运行启动失败：${errorMessage(error)}`),
+          metadata: { runSummary },
+        };
+        this.drafts.set(sessionId, failedDraft);
+        await this.persistDraft(sessionId, failedDraft).catch((persistError) => {
+          console.error("Failed to persist Chat Server startup failure", persistError);
+        });
+        this.drafts.delete(sessionId);
+        await this.journal.clear(runId);
+        this.setStatus(sessionId, "error", runId);
+        await this.logRunOutcome(runSummary).catch((logError) => {
+          console.error("Failed to persist Chat Server startup outcome", logError);
+        });
+        this.events.publish({
+          type: "run.error",
+          sessionId,
           runId,
-          outcome: "error",
-          stopReason: error instanceof RunFailure ? error.stopReason : "incomplete-response",
-          stepCount: 0,
-          modelCallCount: 0,
-          toolCallCount: 0,
-          duplicateToolCallCount: 0,
-          compactionCount: 0,
-          planWritten: false,
-        },
-        now,
-      );
-      const failedDraft: UIMessage = {
-        ...assistantMessage(runId, `运行启动失败：${errorMessage(error)}`),
-        metadata: { runSummary },
-      };
-      this.drafts.set(sessionId, failedDraft);
-      await this.persistDraft(sessionId, failedDraft).catch((persistError) => {
-        console.error("Failed to persist Chat Server startup failure", persistError);
-      });
-      this.drafts.delete(sessionId);
-      await this.journal.clear(runId);
-      this.setStatus(sessionId, "error", runId);
-      await this.logRunOutcome(runSummary).catch((logError) => {
-        console.error("Failed to persist Chat Server startup outcome", logError);
-      });
-      this.events.publish({
-        type: "run.error",
-        sessionId,
-        runId,
-        error: errorMessage(error),
-        runSummary,
-      });
+          error: errorMessage(error),
+          runSummary,
+        });
+      } finally {
+        if (this.active.get(sessionId)?.id === runId) this.active.delete(sessionId);
+        activeRun.resolveCompleted();
+      }
       throw error;
     }
   }
 
-  stop(sessionId: string) {
+  async stop(sessionId: string) {
     const run = this.active.get(sessionId);
     if (!run) return false;
     run.controller.abort();
+    await run.completed;
     return true;
   }
 
@@ -1484,7 +1502,11 @@ export class RunRegistry {
         runSummary,
       });
     } finally {
-      this.active.delete(sessionId);
+      const activeRun = this.active.get(sessionId);
+      if (activeRun?.id === runId) {
+        this.active.delete(sessionId);
+        activeRun.resolveCompleted();
+      }
       await this.journal.clear(runId).catch((error) => {
         console.error("Failed to clear Chat Server run journal", error);
       });

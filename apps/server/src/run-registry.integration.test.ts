@@ -210,6 +210,36 @@ async function finishRun(
 }
 
 describe("complete agent runs", () => {
+  it("waits for an aborted run to leave the active registry", async () => {
+    const current = await fixture([
+      streamResult(
+        [
+          { type: "stream-start", warnings: [] },
+          { type: "response-metadata", id: "slow-response", modelId: "mock-model" },
+          { type: "text-start", id: "slow-text" },
+          { type: "text-delta", id: "slow-text", delta: "partial" },
+          { type: "text-end", id: "slow-text" },
+          { type: "finish", finishReason: { unified: "stop", raw: "stop" }, usage: usage() },
+        ],
+        { initialDelayInMs: 1_000 },
+      ),
+    ]);
+
+    const response = await current.registry.start("session-1", {
+      modelId: "mock",
+      planMode: current.planMode,
+      planId: current.plan.id,
+      toolNames: ["read_file"],
+    });
+    const clientStream = response.text().catch(() => undefined);
+
+    assert.equal(current.registry.activeCount(), 1);
+    assert.equal(await current.registry.stop("session-1"), true);
+    await clientStream;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(current.registry.activeCount(), 0);
+  }, 15_000);
+
   it("records model lifecycle and streaming errors without prompt contents", async () => {
     const current = await fixture([
       streamResult([

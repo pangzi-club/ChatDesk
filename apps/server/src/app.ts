@@ -1197,7 +1197,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
 
   app.delete("/v1/sessions/:id", async (c) => {
     const id = c.req.param("id");
-    runs.stop(id);
+    await runs.stop(id);
     await store.delete(id);
     return c.body(null, 204);
   });
@@ -1301,7 +1301,9 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     }
   });
 
-  app.post("/v1/sessions/:id/runs/stop", (c) => c.json({ stopped: runs.stop(c.req.param("id")) }));
+  app.post("/v1/sessions/:id/runs/stop", async (c) =>
+    c.json({ stopped: await runs.stop(c.req.param("id")) }),
+  );
 
   app.get("/v1/events", async (c) => {
     const sessionId = c.req.query("sessionId");

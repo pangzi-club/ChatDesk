@@ -36,7 +36,7 @@ import {
   ChevronDown,
   ChevronUp,
   CircleAlert,
-  CircleStop,
+  Clock3,
   Copy,
   Download,
   ExternalLink,
@@ -58,6 +58,7 @@ import {
   Settings2,
   ShieldCheck,
   Sparkles,
+  Square,
   Upload,
   Wrench,
   X,
@@ -122,6 +123,7 @@ import {
   findActiveCommandTrigger,
 } from "@/lib/chat-commands";
 import { appendComposerSelection, readWindowSelectionText } from "@/lib/chat-composer-selection";
+import { resolveComposerEnterAction } from "@/lib/chat-composer-submit";
 import { materializeGeneratedImages } from "@/lib/chat-image-generation";
 import { appendLiveDraftText, mergeLiveDraft } from "@/lib/chat-live-draft";
 import { DEFAULT_CHAT_MEMORY, formatMemoryForInject, loadChatMemory } from "@/lib/chat-memory";
@@ -236,6 +238,12 @@ const CHAT_MESSAGE_COLLAPSE_CHAR_LIMIT = 1200;
 const CHAT_MESSAGE_COLLAPSE_LINE_LIMIT = 18;
 const CHAT_STREAM_UPDATE_THROTTLE_MS = 50;
 type PlanTransitionState = "idle" | "entering" | "exiting";
+type QueuedComposerMessage = {
+  id: string;
+  sessionId: string;
+  text: string;
+  pending: PendingAttachment[];
+};
 type ChatPlanAttachment = {
   fileName: string;
   isGenerating: boolean;
@@ -352,6 +360,11 @@ function ChatPage() {
   const sortedModels = sortModelsByName(models);
   const [selectedModelId, setSelectedModelId] = useState("");
   const [input, setInput] = useState("");
+  const [queuedMessages, setQueuedMessages] = useState<QueuedComposerMessage[]>([]);
+  const queuedMessagesRef = useRef<QueuedComposerMessage[]>([]);
+  queuedMessagesRef.current = queuedMessages;
+  const [followUpPending, setFollowUpPending] = useState(false);
+  const [stopPending, setStopPending] = useState(false);
   const [planMode, setPlanMode] = useState<ChatPlanMode>("apply");
   const [activePlanId, setActivePlanId] = useState<string | undefined>();
   const [activePlanHasContent, setActivePlanHasContent] = useState(false);
@@ -390,6 +403,16 @@ function ChatPage() {
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const pendingAttachmentsRef = useRef<PendingAttachment[]>([]);
   pendingAttachmentsRef.current = pendingAttachments;
+  const sendPreparedMessageRef = useRef<
+    (
+      text: string,
+      pending: PendingAttachment[],
+      options?: { clearComposer?: boolean },
+    ) => Promise<void>
+  >(async () => {});
+  const queueDispatchInFlightRef = useRef(false);
+  const followUpInFlightRef = useRef(false);
+  const stopInFlightRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const dragCounterRef = useRef(0);
@@ -680,6 +703,16 @@ function ChatPage() {
       }
       setPendingAttachments([]);
       pendingAttachmentsRef.current = [];
+      for (const message of queuedMessagesRef.current) {
+        for (const item of message.pending) {
+          if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+        }
+      }
+      setQueuedMessages([]);
+      setFollowUpPending(false);
+      setStopPending(false);
+      followUpInFlightRef.current = false;
+      stopInFlightRef.current = false;
       pendingSessionRef.current = null;
       systemPromptRef.current = undefined;
       setSessionTitle("新对话");
@@ -1589,8 +1622,13 @@ function ChatPage() {
     return /^(开始执行|确认执行|按计划执行|开始实施|执行计划|apply)$/i.test(text.trim());
   }
 
-  function sendPreparedMessage(text: string, pending: PendingAttachment[]) {
+  async function sendPreparedMessage(
+    text: string,
+    pending: PendingAttachment[],
+    options: { clearComposer?: boolean } = {},
+  ) {
     if (!text && pending.length === 0) return;
+    const clearComposer = options.clearComposer ?? true;
     promoteDraftSession();
     const readyPending = pending.filter((item) => item.status === "ready");
     if (readyPending.length > 0) {
@@ -1613,9 +1651,11 @@ function ChatPage() {
     for (const item of pending) {
       if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
     }
-    setPendingAttachments([]);
-    pendingAttachmentsRef.current = [];
-    setInput("");
+    if (clearComposer) {
+      setPendingAttachments([]);
+      pendingAttachmentsRef.current = [];
+      setInput("");
+    }
     setContextCompaction(null);
     setPlanModeError("");
     setAttachmentError("");
@@ -1624,31 +1664,138 @@ function ChatPage() {
     attachedStreamSessionRef.current = sessionId;
     transportStartedAtRef.current = Date.now();
     if (filesToSend.length > 0) {
-      void (async () => {
-        const files: FileUIPart[] = [];
-        for (const file of filesToSend) {
-          try {
-            const dataUrl = await fileToDataUrl(file);
-            files.push({
-              type: "file",
-              mediaType: file.type || "application/octet-stream",
-              filename: file.name,
-              url: dataUrl,
-            });
-          } catch (error) {
-            console.error("Failed to convert file to data URL", file.name, error);
-          }
+      const files: FileUIPart[] = [];
+      for (const file of filesToSend) {
+        try {
+          const dataUrl = await fileToDataUrl(file);
+          files.push({
+            type: "file",
+            mediaType: file.type || "application/octet-stream",
+            filename: file.name,
+            url: dataUrl,
+          });
+        } catch (error) {
+          console.error("Failed to convert file to data URL", file.name, error);
         }
-        if (text) {
-          await sendMessage({ text, files });
-        } else {
-          await sendMessage({ files });
-        }
-      })();
-    } else {
-      void sendMessage({ text });
+      }
+      if (text) {
+        await sendMessage({ text, files });
+      } else {
+        await sendMessage({ files });
+      }
+      return;
+    }
+    await sendMessage({ text });
+  }
+  sendPreparedMessageRef.current = sendPreparedMessage;
+
+  function queuePreparedMessage(text: string, pending: PendingAttachment[]) {
+    if ((!text && pending.length === 0) || !isGenerating) return;
+    promoteDraftSession();
+    const nextMessages = [
+      ...queuedMessagesRef.current,
+      { id: crypto.randomUUID(), sessionId, text, pending },
+    ];
+    queuedMessagesRef.current = nextMessages;
+    setQueuedMessages(nextMessages);
+    setInput("");
+    setPendingAttachments([]);
+    pendingAttachmentsRef.current = [];
+    setContextCompaction(null);
+    setPlanModeError("");
+    setAttachmentError("");
+  }
+
+  function cancelQueuedMessage(messageId: string) {
+    const target = queuedMessagesRef.current.find((message) => message.id === messageId);
+    for (const item of target?.pending ?? []) {
+      if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+    }
+    const nextMessages = queuedMessagesRef.current.filter((message) => message.id !== messageId);
+    queuedMessagesRef.current = nextMessages;
+    setQueuedMessages(nextMessages);
+  }
+
+  async function sendFollowUpMessage() {
+    const text = input.trim();
+    const pending = pendingAttachmentsRef.current;
+    const hasUploading = pending.some((item) => item.status === "uploading");
+    if (
+      (!text && pending.length === 0) ||
+      hasUploading ||
+      !isGenerating ||
+      followUpInFlightRef.current ||
+      planTransitionRef.current !== "idle"
+    ) {
+      return;
+    }
+    followUpInFlightRef.current = true;
+    setFollowUpPending(true);
+    try {
+      if (!(await stopCurrentRun())) return;
+      if (activeSessionRef.current !== sessionId) return;
+      await sendPreparedMessage(text, pending);
+    } catch (error) {
+      console.error("Failed to send chat follow-up", error);
+    } finally {
+      followUpInFlightRef.current = false;
+      setFollowUpPending(false);
     }
   }
+
+  useEffect(() => {
+    if (
+      isGenerating ||
+      !queuedMessages.some((message) => message.sessionId === sessionId) ||
+      queueDispatchInFlightRef.current ||
+      followUpInFlightRef.current ||
+      stopPending ||
+      planTransition !== "idle"
+    ) {
+      return;
+    }
+    const targetSessionId = sessionId;
+    queueDispatchInFlightRef.current = true;
+    void (async () => {
+      try {
+        while (
+          !isGenerating &&
+          activeSessionRef.current === targetSessionId &&
+          planTransitionRef.current === "idle" &&
+          !followUpInFlightRef.current &&
+          !stopInFlightRef.current
+        ) {
+          const next = queuedMessagesRef.current.find(
+            (message) => message.sessionId === targetSessionId,
+          );
+          if (!next) break;
+          const remaining = queuedMessagesRef.current.filter((message) => message.id !== next.id);
+          queuedMessagesRef.current = remaining;
+          setQueuedMessages(remaining);
+          await sendPreparedMessageRef.current(next.text, next.pending, {
+            clearComposer: false,
+          });
+        }
+      } finally {
+        queueDispatchInFlightRef.current = false;
+      }
+    })();
+  }, [isGenerating, planTransition, queuedMessages, sessionId, stopPending]);
+
+  useEffect(() => {
+    setQueuedMessages((current) => {
+      const stale = current.filter((message) => message.sessionId !== sessionId);
+      if (stale.length === 0) return current;
+      for (const message of stale) {
+        for (const item of message.pending) {
+          if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+        }
+      }
+      const nextMessages = current.filter((message) => message.sessionId === sessionId);
+      queuedMessagesRef.current = nextMessages;
+      return nextMessages;
+    });
+  }, [sessionId]);
 
   function confirmPlanExecution() {
     if (planModeRef.current !== "plan") return;
@@ -1671,7 +1818,7 @@ function ChatPage() {
     }
     planModeRef.current = "apply";
     setPlanMode("apply");
-    sendPreparedMessage("确认开始执行当前计划，请按计划修改代码并完成必要验证。", []);
+    void sendPreparedMessage("确认开始执行当前计划，请按计划修改代码并完成必要验证。", []);
   }
   confirmPlanExecutionRef.current = confirmPlanExecution;
 
@@ -1717,7 +1864,7 @@ function ChatPage() {
       setCommandDismissed(true);
       void enterPlanMode().then((entered) => {
         if (entered) {
-          sendPreparedMessage(remaining, pending);
+          void sendPreparedMessage(remaining, pending);
           return;
         }
         setInput(remaining);
@@ -1730,12 +1877,31 @@ function ChatPage() {
       confirmPlanExecution();
       return;
     }
-    sendPreparedMessage(text, pending);
+    void sendPreparedMessage(text, pending);
   }
 
-  function stopCurrentRun() {
-    stop();
-    void stopChatServerRun(sessionId).catch((error) => {
+  async function stopCurrentRun() {
+    if (stopInFlightRef.current) return false;
+    const targetSessionId = sessionId;
+    stopInFlightRef.current = true;
+    setStopPending(true);
+    try {
+      await stop();
+      await stopChatServerRun(targetSessionId);
+      const canonicalSession = await loadChatSession(targetSessionId);
+      if (canonicalSession && activeSessionRef.current === targetSessionId) {
+        liveDraftsRef.current.delete(targetSessionId);
+        setMessages(canonicalSession.messages);
+      }
+      return true;
+    } finally {
+      stopInFlightRef.current = false;
+      setStopPending(false);
+    }
+  }
+
+  function stopCurrentRunFromButton() {
+    void stopCurrentRun().catch((error) => {
       console.error("Failed to stop Chat Server run", error);
     });
   }
@@ -1894,6 +2060,15 @@ function ChatPage() {
       !isComposingRef.current
     ) {
       event.preventDefault();
+      const action = resolveComposerEnterAction({ isGenerating, metaKey: event.metaKey });
+      if (action === "follow-up") {
+        void sendFollowUpMessage();
+        return;
+      }
+      if (action === "queue") {
+        queuePreparedMessage(input.trim(), pendingAttachmentsRef.current);
+        return;
+      }
       submitMessage();
     }
   }
@@ -2166,39 +2341,63 @@ function ChatPage() {
       </ContextMenu>
 
       <div className="chat-composer-wrap">
-        <div className="chat-composer-floats">
-          {workspaceGitQuery.data?.summary &&
-          workspaceGitQuery.data.isRepository &&
-          workspaceGitQuery.data.summary.filesChanged > 0 ? (
-            <ChatGitSummary
-              summary={workspaceGitQuery.data.summary}
-              onOpenDiff={async () => {
-                const result = await workspaceGitQuery.refetch();
-                const firstFile = result.data?.summary?.files[0];
-                if (firstFile) {
-                  openFileViewer({
-                    mode: "diff",
-                    path: firstFile.path,
-                    workspaceId: workspaceKey,
-                    cwd: selectedCwd,
-                  });
-                }
-              }}
-            />
+        <div className="chat-composer-float-stack">
+          {queuedMessages.length > 0 ? (
+            <div aria-live="polite" className="chat-queue-float" role="status">
+              {queuedMessages.map((message, index) => (
+                <div className="chat-queue-float-row" key={message.id}>
+                  <span className="chat-queue-float-index">{index + 1}</span>
+                  <Clock3 aria-hidden="true" className="size-3.5" />
+                  <span className="chat-queue-float-text">
+                    {message.text || `${message.pending.length} 个附件`}
+                  </span>
+                  <button
+                    aria-label={`取消排队消息 ${index + 1}`}
+                    className="chat-queue-float-cancel"
+                    onClick={() => cancelQueuedMessage(message.id)}
+                    title="取消排队消息"
+                    type="button"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
           ) : null}
-          <ChatTodoPanel messages={messages} />
-          {showPlanStartAction ? (
-            <Button
-              aria-label="执行计划"
-              className="chat-plan-start-float"
-              onClick={confirmPlanExecution}
-              title="执行当前计划"
-              type="button"
-            >
-              <Play aria-hidden="true" className="size-3.5 fill-current" />
-              执行计划
-            </Button>
-          ) : null}
+          <div className="chat-composer-floats">
+            {workspaceGitQuery.data?.summary &&
+            workspaceGitQuery.data.isRepository &&
+            workspaceGitQuery.data.summary.filesChanged > 0 ? (
+              <ChatGitSummary
+                summary={workspaceGitQuery.data.summary}
+                onOpenDiff={async () => {
+                  const result = await workspaceGitQuery.refetch();
+                  const firstFile = result.data?.summary?.files[0];
+                  if (firstFile) {
+                    openFileViewer({
+                      mode: "diff",
+                      path: firstFile.path,
+                      workspaceId: workspaceKey,
+                      cwd: selectedCwd,
+                    });
+                  }
+                }}
+              />
+            ) : null}
+            <ChatTodoPanel messages={messages} />
+            {showPlanStartAction ? (
+              <Button
+                aria-label="执行计划"
+                className="chat-plan-start-float"
+                onClick={confirmPlanExecution}
+                title="执行当前计划"
+                type="button"
+              >
+                <Play aria-hidden="true" className="size-3.5 fill-current" />
+                执行计划
+              </Button>
+            ) : null}
+          </div>
         </div>
         {error || planModeError || titleError || attachmentError ? (
           <p className="chat-error" role="alert">
@@ -2305,7 +2504,7 @@ function ChatPage() {
             aria-label="输入消息"
             autoCapitalize="none"
             autoCorrect="off"
-            disabled={planTransition !== "idle"}
+            disabled={planTransition !== "idle" || followUpPending || stopPending}
             ref={inputRef}
             role="combobox"
             spellCheck={false}
@@ -2507,21 +2706,28 @@ function ChatPage() {
                 <Mic className="size-4" />
               </Button>
               <Button
-                aria-label={isGenerating ? "停止生成" : "发送消息"}
+                aria-label={stopPending ? "正在停止" : isGenerating ? "停止生成" : "发送消息"}
                 className="chat-send-button !size-9 !rounded-[10px]"
                 disabled={
-                  ((!input.trim() && !pendingAttachments.some((a) => a.status === "ready")) ||
+                  stopPending ||
+                  (((!input.trim() && !pendingAttachments.some((a) => a.status === "ready")) ||
                     !selectedModel ||
                     pendingAttachments.some((a) => a.status === "uploading") ||
                     planTransition !== "idle") &&
-                  !isGenerating
+                    !isGenerating)
                 }
-                onClick={isGenerating ? stopCurrentRun : submitMessage}
+                onClick={isGenerating ? stopCurrentRunFromButton : submitMessage}
                 size="icon"
-                title={isGenerating ? "停止生成" : "发送消息"}
+                title={stopPending ? "正在停止" : isGenerating ? "停止生成" : "发送消息"}
                 type="button"
               >
-                {isGenerating ? <CircleStop className="size-4" /> : <ArrowUp className="size-4" />}
+                {stopPending ? (
+                  <LoaderCircle className="size-4 animate-spin" />
+                ) : isGenerating ? (
+                  <Square className="size-4 fill-current" />
+                ) : (
+                  <ArrowUp className="size-4" />
+                )}
               </Button>
             </div>
           </div>
