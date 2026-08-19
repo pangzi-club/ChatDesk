@@ -207,6 +207,7 @@ import {
   getMessageRunStateLabel,
   getMessageUsage,
 } from "@/lib/chat-usage";
+import { getDesktopBridge } from "@/lib/desktop-bridge";
 import { detectMissingDevelopmentTools } from "@/lib/developer-environment";
 import { openFileViewer } from "@/lib/file-viewer-events";
 import { loadGeneralSettings, notifyChatCompletion } from "@/lib/general-settings";
