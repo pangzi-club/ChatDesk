@@ -209,6 +209,7 @@ import {
 } from "@/lib/chat-usage";
 import { detectMissingDevelopmentTools } from "@/lib/developer-environment";
 import { openFileViewer } from "@/lib/file-viewer-events";
+import { loadGeneralSettings, notifyChatCompletion } from "@/lib/general-settings";
 import { openImagePreview } from "@/lib/image-preview-events";
 import { loadMcpServers, saveMcpServers } from "@/lib/mcp";
 import { formatModelLabel, loadModels, type ModelConfig, sortModelsByName } from "@/lib/models";
@@ -888,6 +889,21 @@ function ChatPage() {
             ...current,
             [eventSessionId]: runSummary,
           }));
+          if (runSummary.outcome === "completed") {
+            void loadGeneralSettings().then((settings) => {
+              const windowUnfocused = document.visibilityState === "hidden" || !document.hasFocus();
+              if (
+                settings.notifyOnChatCompletion &&
+                (!settings.notifyOnlyWhenWindowUnfocused || windowUnfocused)
+              ) {
+                void notifyChatCompletion(
+                  activeSessionRef.current === eventSessionId
+                    ? sessionTitleRef.current
+                    : "有一个对话已完成",
+                );
+              }
+            });
+          }
         },
         onPlanUpdated: ({
           sessionId: eventSessionId,

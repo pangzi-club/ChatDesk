@@ -7,6 +7,7 @@ import {
   Menu,
   nativeImage,
   net,
+  Notification,
   protocol,
   screen,
   shell,
@@ -443,6 +444,12 @@ function setupIpc() {
       case "set_tray_enabled":
         if (typeof args.enabled !== "boolean") throw new Error("托盘开关参数无效");
         setTrayEnabled(args.enabled);
+        return undefined;
+      case "show_notification":
+        if (typeof args.title !== "string" || typeof args.body !== "string") {
+          throw new Error("通知参数无效");
+        }
+        new Notification({ title: args.title, body: args.body }).show();
         return undefined;
       case "toggle_window_maximize":
         if (mainWindow?.isMaximized()) mainWindow.unmaximize();

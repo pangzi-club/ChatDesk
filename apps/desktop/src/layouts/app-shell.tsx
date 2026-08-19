@@ -7,6 +7,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/rea
 import {
   ArrowDown,
   ArrowUp,
+  Bell,
   Brain,
   ChartColumn,
   Check,
@@ -210,6 +211,12 @@ const commandItems = [
     keywords: ["图片", "生成", "image"],
   },
   { to: "/settings", label: "Settings", icon: Settings, keywords: ["设置"] },
+  {
+    to: "/settings/general",
+    label: "常规",
+    icon: Bell,
+    keywords: ["设置", "常规", "通知", "系统通知", "对话完成"],
+  },
   {
     to: "/settings/theme",
     label: "主题",

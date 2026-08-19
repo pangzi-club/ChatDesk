@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  Bell,
   Brain,
   ChartColumn,
   Check,
@@ -106,6 +107,13 @@ import {
   loadChatToolsSettings,
   saveChatToolsSettings,
 } from "@/lib/chat-tools";
+import {
+  DEFAULT_GENERAL_SETTINGS,
+  type GeneralSettings,
+  loadGeneralSettings,
+  requestNotificationPermission,
+  saveGeneralSettings,
+} from "@/lib/general-settings";
 import { clearKieApiKey, loadKieApiKey, saveKieApiKey } from "@/lib/image-generation";
 import {
   fetchMcpRegistry,
@@ -336,6 +344,7 @@ function SettingsLayout() {
           工作区
         </p>
         <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto" aria-label="设置导航">
+          <SettingsNavItem to="/settings/general" icon={Bell} label="常规" />
           <SettingsNavItem to="/settings/theme" icon={Palette} label="主题" />
           <SettingsNavItem to="/settings/shortcuts" icon={Keyboard} label="快捷键" />
           <SettingsNavItem to="/settings/models" icon={Package} label="模型" />
@@ -686,6 +695,122 @@ function ThemeSettingsPage() {
             value={chatDisplay.mathFont}
           />
         </div>
+      </section>
+    </>
+  );
+}
+
+function GeneralSettingsPage() {
+  const [settings, setSettings] = useState<GeneralSettings>(DEFAULT_GENERAL_SETTINGS);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    void loadGeneralSettings()
+      .then((value) => {
+        if (active) setSettings(value);
+      })
+      .catch(() => {
+        if (active) setNotice("读取常规设置失败，请重试。");
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function handleNotificationsChange(enabled: boolean) {
+    const previous = settings.notifyOnChatCompletion;
+    setNotice("");
+    if (enabled && !(await requestNotificationPermission())) {
+      setNotice("系统通知权限未开启，请在系统设置中允许 ChatDesk 发送通知。");
+      return;
+    }
+    const next = { ...settings, notifyOnChatCompletion: enabled };
+    setSettings(next);
+    setIsSaving(true);
+    try {
+      await saveGeneralSettings(next);
+    } catch {
+      setSettings({ ...settings, notifyOnChatCompletion: previous });
+      setNotice("保存通知设置失败，请重试。");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleUnfocusedOnlyChange(enabled: boolean) {
+    const next = { ...settings, notifyOnlyWhenWindowUnfocused: enabled };
+    setSettings(next);
+    setIsSaving(true);
+    setNotice("");
+    try {
+      await saveGeneralSettings(next);
+    } catch {
+      setSettings(settings);
+      setNotice("保存通知设置失败，请重试。");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <>
+      <SettingsHeading
+        eyebrow="General"
+        title="常规"
+        description="管理 ChatDesk 的通用行为和通知偏好。"
+      />
+      <section className="overflow-hidden rounded-lg border border-border bg-card">
+        <div className="border-border border-b px-5 py-4">
+          <h2 className="font-medium text-sm">通知设置</h2>
+          <p className="mt-1 text-muted-foreground text-xs">
+            控制对话完成时是否发送系统通知，以及何时发送。
+          </p>
+        </div>
+        <label
+          className="flex cursor-pointer items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-accent/40"
+          htmlFor="notify-chat-completion"
+        >
+          <span className="min-w-0">
+            <span className="block font-medium text-sm">对话完成时显示通知</span>
+            <span className="mt-1 block text-muted-foreground text-xs">
+              仅在系统已授予 ChatDesk 通知权限时生效。
+            </span>
+          </span>
+          <Switch
+            aria-label="对话完成时显示通知"
+            checked={settings.notifyOnChatCompletion}
+            disabled={isLoading || isSaving}
+            id="notify-chat-completion"
+            onCheckedChange={(checked) => void handleNotificationsChange(checked === true)}
+          />
+        </label>
+        <label
+          className="flex cursor-pointer items-center justify-between gap-4 border-border border-t px-5 py-4 transition-colors hover:bg-accent/40"
+          htmlFor="notify-chat-completion-unfocused"
+        >
+          <span className="min-w-0">
+            <span className="block font-medium text-sm">窗口非聚焦时才发送</span>
+            <span className="mt-1 block text-muted-foreground text-xs">
+              ChatDesk 窗口处于后台或失去焦点时才显示完成通知。
+            </span>
+          </span>
+          <Switch
+            aria-label="窗口非聚焦时才发送通知"
+            checked={settings.notifyOnlyWhenWindowUnfocused}
+            disabled={isLoading || isSaving || !settings.notifyOnChatCompletion}
+            id="notify-chat-completion-unfocused"
+            onCheckedChange={(checked) => void handleUnfocusedOnlyChange(checked === true)}
+          />
+        </label>
+        {notice ? (
+          <p className="border-border border-t px-5 py-3 text-muted-foreground text-xs">{notice}</p>
+        ) : null}
       </section>
     </>
   );
@@ -3215,6 +3340,7 @@ export {
   ApiKeysSettingsPage,
   ChatServerSettingsPage,
   EnvironmentSettingsPage,
+  GeneralSettingsPage,
   McpSettingsPage,
   MemorySettingsPage,
   ModelsSettingsPage,

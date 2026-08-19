@@ -38,6 +38,11 @@ Durable project-specific notes live in [`MEMORY.md`](MEMORY.md). Read it when lo
 - Never start or open a development server.
 - Never attempt to repair, recreate, reinstall, or otherwise modify `node_modules`; report dependency issues instead.
 
+## Desktop Runtime
+
+- New features must target Electron only. Do not add or extend Tauri implementations unless a task explicitly requests Tauri support or maintenance.
+- Treat the existing Tauri layer as legacy compatibility code; do not use it as the target runtime for new product behavior.
+
 ## List Data and Loading States
 
 - Use `@tanstack/react-query` for asynchronous list fetching, caching, refetching, and request state. Do not implement list request lifecycles with ad hoc `useEffect` and local loading state.

@@ -17,6 +17,7 @@ type DesktopBridge = {
   assetUrl(path: string): string;
   saveImageFile(bytes: number[], fileName: string): Promise<boolean>;
   setTrayEnabled(enabled: boolean): Promise<void>;
+  showNotification(title: string, body: string): Promise<void>;
   toggleWindowMaximize(): Promise<void>;
   httpRequest(request: {
     url: string;
@@ -58,6 +59,8 @@ const bridge: DesktopBridge = {
     ipcRenderer.invoke(IPC_CHANNEL, { command: "save_image_file", args: { bytes, fileName } }),
   setTrayEnabled: (enabled: boolean) =>
     ipcRenderer.invoke(IPC_CHANNEL, { command: "set_tray_enabled", args: { enabled } }),
+  showNotification: (title: string, body: string) =>
+    ipcRenderer.invoke(IPC_CHANNEL, { command: "show_notification", args: { title, body } }),
   toggleWindowMaximize: () =>
     ipcRenderer.invoke(IPC_CHANNEL, { command: "toggle_window_maximize", args: {} }),
   httpRequest: (request) => ipcRenderer.invoke(IPC_CHANNEL, { command: "http_request", args: request }),

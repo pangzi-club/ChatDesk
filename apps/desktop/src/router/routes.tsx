@@ -17,6 +17,7 @@ import {
   ApiKeysSettingsPage,
   ChatServerSettingsPage,
   EnvironmentSettingsPage,
+  GeneralSettingsPage,
   McpSettingsPage,
   MemorySettingsPage,
   ModelsSettingsPage,
@@ -65,7 +66,8 @@ const router = createHashRouter([
         path: "settings",
         element: <SettingsLayout />,
         children: [
-          { index: true, element: <Navigate replace to="theme" /> },
+          { index: true, element: <Navigate replace to="general" /> },
+          { path: "general", element: <GeneralSettingsPage /> },
           { path: "theme", element: <ThemeSettingsPage /> },
           { path: "shortcuts", element: <ShortcutsSettingsPage /> },
           { path: "keys", element: <ApiKeysSettingsPage /> },
