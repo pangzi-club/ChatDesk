@@ -1,13 +1,15 @@
 import { code } from "@streamdown/code";
+import { createMathPlugin } from "@streamdown/math";
 import type { ComponentProps, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { defaultRemarkPlugins, Streamdown } from "streamdown";
+import "katex/dist/katex.min.css";
 import "streamdown/styles.css";
 import { isLocalBrowserPreviewUrl, normalizeBrowserPreviewUrl } from "@/lib/browser-preview";
 import { openBrowserPreview } from "@/lib/browser-preview-events";
 import { resolveMarkdownImageSrc } from "@/lib/chat-markdown-images";
 import { remarkLocalBrowserLinks } from "@/lib/chat-markdown-links";
 
-const STREAMDOWN_PLUGINS = { code };
+const STREAMDOWN_PLUGINS = { code, math: createMathPlugin({ singleDollarTextMath: true }) };
 const CHAT_REMARK_PLUGINS = [...Object.values(defaultRemarkPlugins), remarkLocalBrowserLinks];
 
 type ChatMarkdownProps = {
