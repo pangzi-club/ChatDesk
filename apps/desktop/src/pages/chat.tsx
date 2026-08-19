@@ -210,7 +210,11 @@ import {
 import { getDesktopBridge } from "@/lib/desktop-bridge";
 import { detectMissingDevelopmentTools } from "@/lib/developer-environment";
 import { openFileViewer } from "@/lib/file-viewer-events";
-import { loadGeneralSettings, notifyChatCompletion } from "@/lib/general-settings";
+import {
+  loadGeneralSettings,
+  notifyChatCompletion,
+  saveGeneralSettings,
+} from "@/lib/general-settings";
 import { openImagePreview } from "@/lib/image-preview-events";
 import { loadMcpServers, saveMcpServers } from "@/lib/mcp";
 import { formatModelLabel, loadModels, type ModelConfig, sortModelsByName } from "@/lib/models";
@@ -898,7 +902,14 @@ function ChatPage() {
                     ? sessionTitleRef.current
                     : "有一个对话已完成",
                   settings.notifyOnlyWhenWindowUnfocused,
-                );
+                ).then((shown) => {
+                  if (shown) return;
+                  void saveGeneralSettings({
+                    ...settings,
+                    notifyOnChatCompletion: false,
+                    notificationPermissionVerified: false,
+                  });
+                });
               }
             });
           }

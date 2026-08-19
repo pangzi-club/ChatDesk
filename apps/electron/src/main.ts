@@ -58,7 +58,40 @@ const MIN_WINDOW_WIDTH = 480;
 const MIN_WINDOW_HEIGHT = 320;
 const MAX_WINDOW_DIMENSION = 10000;
 const WINDOW_SHOW_FALLBACK_MS = 5_000;
+const NOTIFICATION_RESULT_TIMEOUT_MS = 60_000;
+const NOTIFICATION_RETENTION_MS = 10 * 60_000;
 let windowStateSaveTimer: NodeJS.Timeout | undefined;
+const activeNotifications = new Set<Notification>();
+
+function showNativeNotification(title: string, body: string) {
+  if (!Notification.isSupported()) return Promise.resolve(false);
+  return new Promise<boolean>((resolve) => {
+    const notification = new Notification({ title, body });
+    activeNotifications.add(notification);
+    const retentionTimer = setTimeout(() => activeNotifications.delete(notification), NOTIFICATION_RETENTION_MS);
+    retentionTimer.unref();
+
+    let settled = false;
+    const settle = (shown: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(resultTimer);
+      notification.removeAllListeners("show");
+      notification.removeAllListeners("failed");
+      resolve(shown);
+    };
+    const resultTimer = setTimeout(() => settle(false), NOTIFICATION_RESULT_TIMEOUT_MS);
+    resultTimer.unref();
+    notification.once("show", () => settle(true));
+    notification.once("failed", (_event, error) => {
+      console.error("Failed to show desktop notification", error);
+      activeNotifications.delete(notification);
+      settle(false);
+    });
+    notification.once("close", () => activeNotifications.delete(notification));
+    notification.show();
+  });
+}
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -445,6 +478,11 @@ function setupIpc() {
         if (typeof args.enabled !== "boolean") throw new Error("托盘开关参数无效");
         setTrayEnabled(args.enabled);
         return undefined;
+      case "request_notification_permission":
+        return showNativeNotification(
+          "ChatDesk 通知已开启",
+          "对话完成后会通过系统通知提醒你。",
+        );
       case "show_notification":
         if (
           typeof args.title !== "string" ||
@@ -454,9 +492,8 @@ function setupIpc() {
         ) {
           throw new Error("通知参数无效");
         }
-        if (args.onlyWhenWindowUnfocused === true && mainWindow?.isFocused()) return undefined;
-        new Notification({ title: args.title, body: args.body }).show();
-        return undefined;
+        if (args.onlyWhenWindowUnfocused === true && mainWindow?.isFocused()) return true;
+        return showNativeNotification(args.title, args.body);
       case "toggle_window_maximize":
         if (mainWindow?.isMaximized()) mainWindow.unmaximize();
         else mainWindow?.maximize();

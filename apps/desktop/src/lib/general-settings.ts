@@ -4,11 +4,13 @@ import { settingsStore } from "@/lib/settings-store";
 export type GeneralSettings = {
   notifyOnChatCompletion: boolean;
   notifyOnlyWhenWindowUnfocused: boolean;
+  notificationPermissionVerified: boolean;
 };
 
 export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
-  notifyOnChatCompletion: true,
+  notifyOnChatCompletion: false,
   notifyOnlyWhenWindowUnfocused: true,
+  notificationPermissionVerified: false,
 };
 
 const GENERAL_SETTINGS_STORE_KEY = "general";
@@ -17,15 +19,15 @@ const GENERAL_SETTINGS_STORAGE_KEY = "m-dashboard-general-settings-v1";
 function normalizeGeneralSettings(value: unknown): GeneralSettings {
   if (!value || typeof value !== "object") return DEFAULT_GENERAL_SETTINGS;
   const record = value as Record<string, unknown>;
+  const notificationPermissionVerified = record.notificationPermissionVerified === true;
   return {
     notifyOnChatCompletion:
-      typeof record.notifyOnChatCompletion === "boolean"
-        ? record.notifyOnChatCompletion
-        : DEFAULT_GENERAL_SETTINGS.notifyOnChatCompletion,
+      notificationPermissionVerified && record.notifyOnChatCompletion === true,
     notifyOnlyWhenWindowUnfocused:
       typeof record.notifyOnlyWhenWindowUnfocused === "boolean"
         ? record.notifyOnlyWhenWindowUnfocused
         : DEFAULT_GENERAL_SETTINGS.notifyOnlyWhenWindowUnfocused,
+    notificationPermissionVerified,
   };
 }
 
@@ -66,11 +68,23 @@ export async function saveGeneralSettings(settings: GeneralSettings) {
 }
 
 export async function requestNotificationPermission() {
-  return getDesktopBridge()?.runtime === "electron";
+  const bridge = getDesktopBridge();
+  if (bridge?.runtime !== "electron") return false;
+  try {
+    return (await bridge.requestNotificationPermission?.()) ?? false;
+  } catch (error) {
+    console.error("Failed to request desktop notification permission", error);
+    return false;
+  }
 }
 
 export async function notifyChatCompletion(title: string, onlyWhenWindowUnfocused: boolean) {
   const bridge = getDesktopBridge();
-  if (bridge?.runtime !== "electron") return;
-  await bridge.showNotification?.("对话已完成", title, onlyWhenWindowUnfocused);
+  if (bridge?.runtime !== "electron") return false;
+  try {
+    return (await bridge.showNotification?.("对话已完成", title, onlyWhenWindowUnfocused)) ?? false;
+  } catch (error) {
+    console.error("Failed to show chat completion notification", error);
+    return false;
+  }
 }

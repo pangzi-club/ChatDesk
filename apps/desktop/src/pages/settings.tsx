@@ -727,14 +727,21 @@ function GeneralSettingsPage() {
     const previous = settings.notifyOnChatCompletion;
     setNotice("");
     if (enabled && !(await requestNotificationPermission())) {
-      setNotice("系统通知权限未开启，请在系统设置中允许 ChatDesk 发送通知。");
+      setNotice(
+        "系统未能显示通知，请在系统设置中允许 ChatDesk 发送通知。macOS 开发构建还需要完成代码签名。",
+      );
       return;
     }
-    const next = { ...settings, notifyOnChatCompletion: enabled };
+    const next = {
+      ...settings,
+      notifyOnChatCompletion: enabled,
+      notificationPermissionVerified: enabled || settings.notificationPermissionVerified,
+    };
     setSettings(next);
     setIsSaving(true);
     try {
       await saveGeneralSettings(next);
+      if (enabled) setNotice("通知已开启，并已发送一条验证通知。");
     } catch {
       setSettings({ ...settings, notifyOnChatCompletion: previous });
       setNotice("保存通知设置失败，请重试。");

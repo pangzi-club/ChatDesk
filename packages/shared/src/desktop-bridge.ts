@@ -38,7 +38,12 @@ export type DesktopBridge = {
   assetUrl(path: string): string;
   saveImageFile(bytes: number[], fileName: string): Promise<boolean>;
   setTrayEnabled(enabled: boolean): Promise<void>;
-  showNotification?(title: string, body: string, onlyWhenWindowUnfocused?: boolean): Promise<void>;
+  requestNotificationPermission?(): Promise<boolean>;
+  showNotification?(
+    title: string,
+    body: string,
+    onlyWhenWindowUnfocused?: boolean,
+  ): Promise<boolean>;
   toggleWindowMaximize(): Promise<void>;
   httpRequest(request: DesktopHttpRequest): Promise<DesktopHttpResponse>;
   terminalSpawn(
