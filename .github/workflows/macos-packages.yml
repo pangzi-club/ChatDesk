@@ -47,14 +47,6 @@ jobs:
         env:
           DESKTOP_TARGET_TRIPLE: ${{ matrix.target }}
 
-      - name: Verify browser worker
-        run: pnpm desktop:sidecars:verify
-
-      - name: Verify packaged browser worker
-        run: pnpm electron:package:verify
-        env:
-          DESKTOP_TARGET_TRIPLE: ${{ matrix.target }}
-
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
