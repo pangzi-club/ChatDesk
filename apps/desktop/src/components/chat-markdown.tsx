@@ -1,5 +1,5 @@
-import { code } from "@streamdown/code";
 import { cjk } from "@streamdown/cjk";
+import { code } from "@streamdown/code";
 import { createMathPlugin } from "@streamdown/math";
 import type { ComponentProps, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { defaultRemarkPlugins, Streamdown } from "streamdown";
