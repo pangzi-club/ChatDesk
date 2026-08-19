@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @source "../node_modules/streamdown/dist/*.js";
 @source "../node_modules/@streamdown/code/dist/*.js";
+@source "../node_modules/@streamdown/math/dist/*.js";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -2247,6 +2248,16 @@
   overflow-y: auto;
   scroll-behavior: smooth;
   user-select: text;
+}
+.chat-selection-toolbar {
+  position: fixed;
+  z-index: 50;
+  transform: translateX(-50%);
+  border: 1px solid var(--border);
+  background: var(--card);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 12%);
+  color: var(--foreground);
+  white-space: nowrap;
 }
 .chat-content {
   width: min(850px, calc(100% - 48px));

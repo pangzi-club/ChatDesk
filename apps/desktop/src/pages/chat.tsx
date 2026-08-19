@@ -360,6 +360,9 @@ function ChatPage() {
   const sortedModels = sortModelsByName(models);
   const [selectedModelId, setSelectedModelId] = useState("");
   const [input, setInput] = useState("");
+  const [selectionToolbar, setSelectionToolbar] = useState<{ left: number; top: number } | null>(
+    null,
+  );
   const [queuedMessages, setQueuedMessages] = useState<QueuedComposerMessage[]>([]);
   const queuedMessagesRef = useRef<QueuedComposerMessage[]>([]);
   queuedMessagesRef.current = queuedMessages;
@@ -376,6 +379,7 @@ function ChatPage() {
   const [isRenamingTitle, setIsRenamingTitle] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const selectedSnippetRef = useRef("");
+  const selectionToolbarTimerRef = useRef<number | null>(null);
   const [commandCaret, setCommandCaret] = useState(0);
   const [commandIndex, setCommandIndex] = useState(0);
   const [commandDismissed, setCommandDismissed] = useState(false);
@@ -1832,8 +1836,19 @@ function ChatPage() {
   function addSelectionToComposer() {
     const snippet = selectedSnippetRef.current;
     if (!snippet) return;
+    setSelectionToolbar(null);
     setInput((current) => appendComposerSelection(current, snippet));
     requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
+  async function copySelection() {
+    const snippet = selectedSnippetRef.current;
+    if (!snippet || !navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(snippet);
+    } catch (error) {
+      console.error("Failed to copy selected chat text", error);
+    }
   }
 
   function captureTranscriptSelection(event: React.MouseEvent) {
@@ -1844,6 +1859,54 @@ function ChatPage() {
       event.stopPropagation();
     }
   }
+
+  useEffect(() => {
+    function updateSelectionToolbar() {
+      const selection = window.getSelection();
+      const text = selection?.toString().trim() ?? "";
+      const range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+      const stage = scrollRef.current;
+      if (!text || !range || !stage?.contains(range.commonAncestorContainer)) {
+        if (selectionToolbarTimerRef.current !== null) {
+          window.clearTimeout(selectionToolbarTimerRef.current);
+          selectionToolbarTimerRef.current = null;
+        }
+        selectedSnippetRef.current = "";
+        setSelectionToolbar(null);
+        return;
+      }
+      const rect = range.getBoundingClientRect();
+      if (!rect.width && !rect.height) {
+        setSelectionToolbar(null);
+        return;
+      }
+      selectedSnippetRef.current = text;
+      if (selectionToolbarTimerRef.current !== null) {
+        window.clearTimeout(selectionToolbarTimerRef.current);
+      }
+      selectionToolbarTimerRef.current = window.setTimeout(() => {
+        selectionToolbarTimerRef.current = null;
+        const currentSelection = window.getSelection();
+        if (currentSelection?.toString().trim() !== selectedSnippetRef.current) return;
+        setSelectionToolbar({
+          left: Math.min(Math.max(rect.left + rect.width / 2, 72), window.innerWidth - 72),
+          top: Math.max(rect.top - 42, 8),
+        });
+      }, 1000);
+    }
+
+    document.addEventListener("selectionchange", updateSelectionToolbar);
+    window.addEventListener("resize", updateSelectionToolbar);
+    scrollRef.current?.addEventListener("scroll", updateSelectionToolbar);
+    return () => {
+      document.removeEventListener("selectionchange", updateSelectionToolbar);
+      window.removeEventListener("resize", updateSelectionToolbar);
+      scrollRef.current?.removeEventListener("scroll", updateSelectionToolbar);
+      if (selectionToolbarTimerRef.current !== null) {
+        window.clearTimeout(selectionToolbarTimerRef.current);
+      }
+    };
+  }, []);
 
   function submitMessage() {
     const text = input.trim();
@@ -2193,6 +2256,20 @@ function ChatPage() {
         </div>
       </header>
 
+      {selectionToolbar ? (
+        <Button
+          aria-label="添加选中文本到对话"
+          className="chat-selection-toolbar"
+          onClick={addSelectionToComposer}
+          onMouseDown={(event) => event.preventDefault()}
+          size="sm"
+          style={{ left: selectionToolbar.left, top: selectionToolbar.top }}
+          type="button"
+        >
+          <MessageSquarePlus className="size-3.5" />
+          添加到对话
+        </Button>
+      ) : null}
       <ContextMenu>
         <ContextMenuTrigger asChild onContextMenu={captureTranscriptSelection}>
           <div className="chat-stage" ref={scrollRef}>
@@ -2333,9 +2410,9 @@ function ChatPage() {
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
-          <ContextMenuItem onSelect={addSelectionToComposer}>
-            <MessageSquarePlus className="size-4" />
-            添加到聊天框
+          <ContextMenuItem onSelect={() => void copySelection()}>
+            <Copy className="size-4" />
+            复制
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
