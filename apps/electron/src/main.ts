@@ -9,7 +9,6 @@ import {
   net,
   protocol,
   screen,
-  session,
   shell,
   Tray,
 } from "electron";
@@ -33,6 +32,8 @@ import {
 } from "./ipc-contract.js";
 import { performHttpRequest } from "./http-bridge.js";
 import {
+  chatServerProxyUrl,
+  isChatServerProxyPath,
   isRendererNavigation,
   RENDERER_SCHEME,
   rendererFileUrl,
@@ -74,17 +75,6 @@ protocol.registerSchemesAsPrivileged([
     privileges: { secure: true, standard: true, supportFetchAPI: true },
   },
 ]);
-app.commandLine.appendSwitch(
-  "disable-features",
-  [
-    "LocalNetworkAccessChecks",
-    "LocalNetworkAccessChecksForNavigations",
-    "PrivateNetworkAccessSendPreflights",
-    "PrivateNetworkAccessRespectPreflightResults",
-    "BlockInsecurePrivateNetworkRequests",
-  ].join(","),
-);
-
 if (!app.isPackaged) {
   const developmentAppName = "ChatDesk Dev";
   const developmentUserData = join(app.getPath("appData"), developmentAppName);
@@ -491,21 +481,36 @@ function setupIpc() {
   });
 }
 
-function setupNetworkPermissions() {
-  session.defaultSession.setPermissionCheckHandler(() => true);
-  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
-    callback(true);
-  });
-}
-
 function setupRendererProtocol() {
   if (process.env.CHATDESK_RENDERER_URL) return;
   const root = rendererRoot();
   if (!root) throw new Error("找不到 Electron renderer 构建产物");
-  protocol.handle(RENDERER_SCHEME, (request) => {
+  protocol.handle(RENDERER_SCHEME, async (request) => {
+    let chatServerRequest = false;
     try {
-      return net.fetch(rendererFileUrl(resolveRendererFile(root, request.url)));
-    } catch {
+      const requestUrl = new URL(request.url);
+      chatServerRequest = isChatServerProxyPath(requestUrl.pathname);
+      if (chatServerRequest) {
+        const port = supervisor?.info().port ?? supervisorPort() ?? 14317;
+        const headers = new Headers(request.headers);
+        headers.delete("origin");
+        for (const name of [...headers.keys()]) {
+          if (name.startsWith("sec-fetch-")) headers.delete(name);
+        }
+        return await net.fetch(chatServerProxyUrl(request.url, port), {
+          method: request.method,
+          headers,
+          ...(request.method === "GET" || request.method === "HEAD"
+            ? {}
+            : { body: request.body }),
+        });
+      }
+      return await net.fetch(rendererFileUrl(resolveRendererFile(root, request.url)));
+    } catch (error) {
+      if (chatServerRequest) {
+        console.error("Chat Server proxy request failed", request.url, error);
+        return Response.json({ error: "Chat Server 代理请求失败" }, { status: 502 });
+      }
       return new Response("Not found", { status: 404 });
     }
   });
@@ -540,7 +545,6 @@ if (!gotSingleInstanceLock) {
   void app.whenReady().then(() => {
     setupRendererProtocol();
     setupAssetProtocol();
-    setupNetworkPermissions();
     setupIpc();
     app.on("activate", () => {
       if (!mainWindow || mainWindow.isDestroyed()) createWindow();

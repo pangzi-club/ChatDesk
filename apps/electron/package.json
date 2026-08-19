@@ -9,7 +9,7 @@
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
-    "build": "pnpm --filter @chatdesk/desktop-host build && tsc -p tsconfig.build.json",
+    "build": "pnpm --filter @chatdesk/desktop-host build && tsc -p tsconfig.build.json && node ../../scripts/verify-electron-preload.mjs",
     "typecheck": "pnpm --filter @chatdesk/desktop-host build && tsc -p tsconfig.json --noEmit",
     "test": "vitest run --config vitest.config.ts",
     "package": "pnpm --dir ../.. desktop:sidecars && pnpm --dir ../.. build:web && pnpm build && electron-builder --config electron-builder.yml",

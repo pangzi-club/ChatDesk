@@ -1,5 +1,8 @@
 import { contextBridge, ipcRenderer } from "electron";
-import { IPC_CHANNEL, IPC_EVENT_PREFIX } from "./ipc-contract.js";
+
+// Sandboxed Electron preloads cannot require sibling files, so keep transport constants local.
+const IPC_CHANNEL = "chatdesk:invoke";
+const IPC_EVENT_PREFIX = "chatdesk:event:";
 
 type DesktopUserStoreFile = "settings.json" | "bookmarks.json";
 

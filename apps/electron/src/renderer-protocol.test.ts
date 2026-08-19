@@ -3,7 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  chatServerProxyUrl,
   isRendererNavigation,
+  isChatServerProxyPath,
   rendererLoadUrl,
   resolveRendererFile,
 } from "./renderer-protocol.js";
@@ -48,6 +50,18 @@ describe("Electron renderer protocol", () => {
   it("allows in-app navigation on the same renderer origin", () => {
     expect(isRendererNavigation("http://localhost:1420/chat", "http://localhost:1420")).toBe(true);
     expect(isRendererNavigation("chatdesk://localhost/settings", rendererLoadUrl())).toBe(true);
+    expect(isRendererNavigation("chatdesk://untrusted/settings", rendererLoadUrl())).toBe(false);
     expect(isRendererNavigation("https://example.com", "http://localhost:1420")).toBe(false);
+  });
+
+  it("maps Chat Server routes to the managed loopback port", () => {
+    expect(isChatServerProxyPath("/health")).toBe(true);
+    expect(isChatServerProxyPath("/v1/sessions")).toBe(true);
+    expect(isChatServerProxyPath("/settings")).toBe(false);
+    expect(chatServerProxyUrl("chatdesk://localhost/v1/sessions?limit=20", 19000)).toBe(
+      "http://127.0.0.1:19000/v1/sessions?limit=20",
+    );
+    expect(() => chatServerProxyUrl("chatdesk://localhost/settings", 19000)).toThrow();
+    expect(() => chatServerProxyUrl("chatdesk://untrusted/v1/sessions", 19000)).toThrow();
   });
 });

@@ -9,9 +9,27 @@ export function rendererLoadUrl() {
   return `${RENDERER_ORIGIN}/`;
 }
 
+export function isChatServerProxyPath(pathname: string) {
+  return pathname === "/health" || pathname === "/v1" || pathname.startsWith("/v1/");
+}
+
+export function chatServerProxyUrl(requestUrl: string, port: number) {
+  const url = new URL(requestUrl);
+  if (
+    url.protocol !== `${RENDERER_SCHEME}:` ||
+    url.hostname !== "localhost" ||
+    !isChatServerProxyPath(url.pathname)
+  ) {
+    throw new Error("不是 Chat Server 代理请求");
+  }
+  return `http://127.0.0.1:${port}${url.pathname}${url.search}`;
+}
+
 export function isRendererNavigation(url: string, entry: string) {
   try {
-    return new URL(url).origin === new URL(entry).origin;
+    const target = new URL(entry);
+    const candidate = new URL(url);
+    return candidate.protocol === target.protocol && candidate.host === target.host;
   } catch {
     return url === entry;
   }
@@ -19,7 +37,7 @@ export function isRendererNavigation(url: string, entry: string) {
 
 export function resolveRendererFile(rendererRoot: string, requestUrl: string) {
   const url = new URL(requestUrl);
-  if (url.protocol !== `${RENDERER_SCHEME}:`) {
+  if (url.protocol !== `${RENDERER_SCHEME}:` || url.hostname !== "localhost") {
     throw new Error("不是 renderer 协议请求");
   }
   let pathname = decodeURIComponent(url.pathname);

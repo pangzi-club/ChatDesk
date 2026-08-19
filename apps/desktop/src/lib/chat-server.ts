@@ -23,6 +23,7 @@ import type {
 } from "@chatdesk/shared";
 import type { UIMessage } from "ai";
 import { getDesktopBridge, isDesktop } from "@/lib/desktop-bridge";
+import { desktopFetch } from "@/lib/desktop-fetch";
 import { settingsStore } from "@/lib/settings-store";
 
 export const CHAT_SERVER_DEFAULT_PORT = 14317;
@@ -101,11 +102,20 @@ async function runtimeFetch(input: RequestInfo | URL, init: RequestInit | undefi
     const headers = new Headers(init?.headers);
     if (runtimeConfig.token) headers.set("Authorization", `Bearer ${runtimeConfig.token}`);
     else headers.delete("Authorization");
-    return fetch(input, {
-      ...init,
-      headers,
-      ...({ targetAddressSpace: "loopback" } as RequestInit),
-    });
+    const bridge = getDesktopBridge();
+    const useElectronBridge = bridge?.runtime === "electron" && !import.meta.env.DEV;
+    return (useElectronBridge ? desktopFetch : fetch)(
+      resolveChatServerRequestInput(input, {
+        runtime: bridge?.runtime,
+        development: import.meta.env.DEV,
+        port: runtimeConfig.port,
+      }),
+      {
+        ...init,
+        headers,
+        ...({ targetAddressSpace: "loopback" } as RequestInit),
+      },
+    );
   };
 
   let response: Response;
@@ -121,6 +131,17 @@ async function runtimeFetch(input: RequestInfo | URL, init: RequestInit | undefi
     response = await request();
   }
   return response;
+}
+
+export function resolveChatServerRequestInput(
+  input: RequestInfo | URL,
+  options: { runtime?: string; development: boolean; port: number },
+) {
+  if (options.runtime !== "electron" || options.development) return input;
+  const source = input instanceof Request ? input.url : String(input);
+  const url = new URL(source);
+  if (url.protocol !== "chatdesk:" || url.hostname !== "localhost") return input;
+  return `http://127.0.0.1:${normalizePort(options.port)}${url.pathname}${url.search}`;
 }
 
 function createClient(port = CHAT_SERVER_DEFAULT_PORT) {
@@ -205,15 +226,27 @@ export function resolveChatServerBaseUrl(port: number, options?: { proxyOrigin?:
   return `http://127.0.0.1:${port}`;
 }
 
-function electronDevProxyOrigin() {
-  if (!import.meta.env.DEV || typeof window === "undefined") return null;
-  if (getDesktopBridge()?.runtime !== "electron") return null;
-  return window.location.origin;
+function electronProxyOrigin() {
+  if (typeof window === "undefined") return null;
+  return resolveElectronProxyOrigin({
+    runtime: getDesktopBridge()?.runtime,
+    development: import.meta.env.DEV,
+    rendererOrigin: window.location.origin,
+  });
+}
+
+export function resolveElectronProxyOrigin(options: {
+  runtime?: string;
+  development: boolean;
+  rendererOrigin: string;
+}) {
+  if (options.runtime !== "electron") return null;
+  return options.development ? options.rendererOrigin : "chatdesk://localhost";
 }
 
 export function chatServerUrl(port = CHAT_SERVER_DEFAULT_PORT) {
   return resolveChatServerBaseUrl(chatServerPort(port), {
-    proxyOrigin: electronDevProxyOrigin(),
+    proxyOrigin: electronProxyOrigin(),
   });
 }
 
