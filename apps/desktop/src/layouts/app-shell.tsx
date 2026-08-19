@@ -1159,7 +1159,7 @@ function ChatServerStatusBanner() {
     queryKey: ["chat-server-status"],
     queryFn: getChatServerStatus,
     enabled,
-    refetchInterval: 5000,
+    refetchInterval: 60_000,
     refetchIntervalInBackground: true,
     retry: false,
   });
