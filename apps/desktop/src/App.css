@@ -1345,16 +1345,51 @@
 .chat-workspace-window-tab {
   position: relative;
   display: flex;
-  min-width: 0;
+  width: 180px;
+  min-width: 72px;
   max-width: 180px;
+  flex: 1 1 180px;
   height: 40px;
   align-items: center;
   border-radius: 8px 8px 0 0;
   color: var(--chat-muted);
+  cursor: grab;
   font-size: 12px;
   transition:
     background-color 140ms ease,
-    color 140ms ease;
+    box-shadow 120ms ease,
+    color 140ms ease,
+    opacity 120ms ease;
+}
+.chat-workspace-window-tab:active {
+  cursor: grabbing;
+}
+.chat-workspace-window-tab.is-dragging {
+  opacity: 0.45;
+}
+.chat-workspace-window-tab-drop-indicator {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--primary);
+  opacity: 0;
+  pointer-events: none;
+  transform: scaleY(0.65);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+}
+.chat-workspace-window-tab.is-drop-before .chat-workspace-window-tab-drop-indicator {
+  left: -1px;
+  opacity: 1;
+  transform: scaleY(1);
+}
+.chat-workspace-window-tab.is-drop-after .chat-workspace-window-tab-drop-indicator {
+  right: -1px;
+  opacity: 1;
+  transform: scaleY(1);
 }
 .chat-workspace-window-tab:not(.is-active):hover {
   background: color-mix(in srgb, var(--foreground) 6%, transparent);
@@ -1399,8 +1434,12 @@
   gap: 6px;
   overflow: hidden;
   padding: 0 4px 0 11px;
+  cursor: grab;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.chat-workspace-window-tab-select:active {
+  cursor: grabbing;
 }
 .chat-workspace-window-tab-select span {
   min-width: 0;

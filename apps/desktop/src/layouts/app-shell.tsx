@@ -53,6 +53,7 @@ import {
   type ComponentType,
   type CSSProperties,
   type KeyboardEvent,
+  type DragEvent as ReactDragEvent,
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
   useEffect,
@@ -2106,6 +2107,7 @@ function ChatWorkspaceWindow({
 }) {
   const interactionRef = useRef<WindowInteraction | null>(null);
   const sidebarResizeRef = useRef<{ startX: number; initialWidth: number } | null>(null);
+  const draggedTabIdRef = useRef<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const shouldReduceMotion = Boolean(useReducedMotion());
   const panelTransition = getWorkbenchLayoutTransition(shouldReduceMotion);
@@ -2124,6 +2126,11 @@ function ChatWorkspaceWindow({
   const planTab = activeTab?.kind === "plan" ? activeTab : null;
   const activeTabWorkspaceId = workspaceTab?.workspaceId;
   const explorerCwd = cwd.trim();
+  const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
+  const [tabDropTarget, setTabDropTarget] = useState<{
+    id: string;
+    edge: "before" | "after";
+  } | null>(null);
   const [selectedPath, setSelectedPath] = useState(workspaceTab?.path ?? "");
   const [explorerView, setExplorerView] = useState<"files" | "git">(
     workspaceTab?.explorerView ?? (workspaceTab?.kind === "git-diff" ? "git" : "files"),
@@ -2541,6 +2548,7 @@ function ChatWorkspaceWindow({
   }
 
   function beginInteraction(event: ReactPointerEvent, direction: ResizeDirection | "move") {
+    if (event.button !== 0 || event.ctrlKey) return;
     event.preventDefault();
     event.stopPropagation();
     interactionRef.current = {
@@ -2775,6 +2783,70 @@ function ChatWorkspaceWindow({
     onChange({ ...state, tabs: nextTabs, activeTabId: nextActive });
   }
 
+  function closeAllTabs() {
+    for (const tab of state.tabs) {
+      if (tab.kind === "terminal") {
+        void terminalSessions
+          .close(tab.id)
+          .catch((error) => console.error("Failed to close terminal session", error));
+      }
+    }
+    onChange({ ...state, tabs: [], activeTabId: null });
+  }
+
+  function finishTabDrag() {
+    draggedTabIdRef.current = null;
+    setDraggedTabId(null);
+    setTabDropTarget(null);
+  }
+
+  function beginTabDrag(event: ReactDragEvent<HTMLDivElement>, tabId: string) {
+    event.stopPropagation();
+    draggedTabIdRef.current = tabId;
+    setDraggedTabId(tabId);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", tabId);
+  }
+
+  function updateTabDropTarget(event: ReactDragEvent<HTMLDivElement>, targetId: string) {
+    const sourceId = draggedTabIdRef.current;
+    if (!sourceId || sourceId === targetId) {
+      setTabDropTarget(null);
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "move";
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const edge = event.clientX < bounds.left + bounds.width / 2 ? "before" : "after";
+    setTabDropTarget((current) =>
+      current?.id === targetId && current.edge === edge ? current : { id: targetId, edge },
+    );
+  }
+
+  function dropTab(event: ReactDragEvent<HTMLDivElement>, targetId: string) {
+    event.preventDefault();
+    event.stopPropagation();
+    const sourceId = draggedTabIdRef.current;
+    const draggedTab = state.tabs.find((tab) => tab.id === sourceId);
+    if (!draggedTab || sourceId === targetId) {
+      finishTabDrag();
+      return;
+    }
+
+    const remainingTabs = state.tabs.filter((tab) => tab.id !== sourceId);
+    const targetIndex = remainingTabs.findIndex((tab) => tab.id === targetId);
+    if (targetIndex < 0) {
+      finishTabDrag();
+      return;
+    }
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const edge = event.clientX < bounds.left + bounds.width / 2 ? "before" : "after";
+    remainingTabs.splice(targetIndex + (edge === "after" ? 1 : 0), 0, draggedTab);
+    onChange({ ...state, tabs: remainingTabs });
+    finishTabDrag();
+  }
+
   return (
     <motion.div
       animate={
@@ -2803,31 +2875,53 @@ function ChatWorkspaceWindow({
       >
         <div className="chat-workspace-window-tab-list">
           {state.tabs.map((tab) => (
-            <div
-              className={`chat-workspace-window-tab ${tab.id === state.activeTabId ? "is-active" : ""}`}
-              key={tab.id}
-            >
-              <button
-                className="chat-workspace-window-tab-select"
-                onClick={() => onChange({ ...state, activeTabId: tab.id })}
-                title={tab.title}
-                type="button"
-              >
-                {tab.kind === "terminal" ? <SquareTerminal className="size-3.5" /> : null}
-                {tab.kind === "browser" ? <Globe2 className="size-3.5" /> : null}
-                {tab.kind === "image" ? <Image className="size-3.5" /> : null}
-                {tab.kind === "plan" ? <ScrollText className="size-3.5" /> : null}
-                <span>{tab.title}</span>
-              </button>
-              <button
-                aria-label={`关闭${tab.title}`}
-                className="chat-workspace-window-tab-close"
-                onClick={() => closeTab(tab.id)}
-                type="button"
-              >
-                <X className="size-3" />
-              </button>
-            </div>
+            <ContextMenu key={tab.id}>
+              <ContextMenuTrigger asChild>
+                {/* biome-ignore lint/a11y/noStaticElementInteractions: native tab drag-and-drop target; tab controls remain keyboard accessible */}
+                <div
+                  className={`chat-workspace-window-tab ${tab.id === state.activeTabId ? "is-active" : ""} ${draggedTabId === tab.id ? "is-dragging" : ""} ${tabDropTarget?.id === tab.id ? `is-drop-${tabDropTarget.edge}` : ""}`}
+                  data-tauri-drag-region="false"
+                  draggable
+                  onDragEnd={finishTabDrag}
+                  onDragOver={(event) => updateTabDropTarget(event, tab.id)}
+                  onDragStart={(event) => beginTabDrag(event, tab.id)}
+                  onDrop={(event) => dropTab(event, tab.id)}
+                  onPointerDown={(event) => event.stopPropagation()}
+                >
+                  <button
+                    className="chat-workspace-window-tab-select"
+                    onClick={() => onChange({ ...state, activeTabId: tab.id })}
+                    title={tab.title}
+                    type="button"
+                  >
+                    {tab.kind === "terminal" ? <SquareTerminal className="size-3.5" /> : null}
+                    {tab.kind === "browser" ? <Globe2 className="size-3.5" /> : null}
+                    {tab.kind === "image" ? <Image className="size-3.5" /> : null}
+                    {tab.kind === "plan" ? <ScrollText className="size-3.5" /> : null}
+                    <span>{tab.title}</span>
+                  </button>
+                  <button
+                    aria-label={`关闭${tab.title}`}
+                    className="chat-workspace-window-tab-close"
+                    onClick={() => closeTab(tab.id)}
+                    type="button"
+                  >
+                    <X className="size-3" />
+                  </button>
+                  <span aria-hidden="true" className="chat-workspace-window-tab-drop-indicator" />
+                </div>
+              </ContextMenuTrigger>
+              <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
+                <ContextMenuItem onSelect={() => closeTab(tab.id)}>
+                  <X className="size-4" />
+                  关闭
+                </ContextMenuItem>
+                <ContextMenuItem onSelect={closeAllTabs}>
+                  <CopyX className="size-4" />
+                  关闭所有
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
           ))}
         </div>
         <DropdownMenu>
