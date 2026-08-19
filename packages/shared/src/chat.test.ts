@@ -9,6 +9,8 @@ import {
   resolveContextCompactionThreshold,
   resolveModelContextWindow,
   resolveSessionTitle,
+  sessionMatchesQuery,
+  sessionSearchRelevance,
   sortPlanUserInputOptions,
 } from "./chat.ts";
 
@@ -39,6 +41,53 @@ describe("shared chat contracts", () => {
       "帮我检查这个项目的构建问题",
     );
     assert.equal(resolveSessionTitle("修复构建失败", messages), "修复构建失败");
+  });
+
+  it("ranks session search against titles and user text without assistant or cwd noise", () => {
+    const titleHit = {
+      title: "成就系统",
+      cwd: "/tmp/other",
+      messages: [
+        { id: "m1", role: "user" as const, parts: [{ type: "text" as const, text: "hello" }] },
+      ],
+    };
+    const messageHit = {
+      title: "Daily notes",
+      cwd: "/tmp/other",
+      messages: [
+        {
+          id: "m1",
+          role: "user" as const,
+          parts: [{ type: "text" as const, text: "讨论成就解锁" }],
+        },
+      ],
+    };
+    const workspaceOnly = {
+      title: "查看依赖",
+      cwd: "/Users/bohaowang/Workspace/App/niuma2",
+      messages: [
+        { id: "m1", role: "user" as const, parts: [{ type: "text" as const, text: "hello" }] },
+      ],
+    };
+    const assistantOnly = {
+      title: "Daily notes",
+      messages: [
+        {
+          id: "m1",
+          role: "assistant" as const,
+          parts: [{ type: "text" as const, text: "搜索成就相关代码" }],
+        },
+      ],
+    };
+    assert.equal(sessionMatchesQuery(titleHit, "成就"), true);
+    assert.equal(sessionMatchesQuery(messageHit, "成就"), true);
+    assert.equal(sessionMatchesQuery(workspaceOnly, "niuma"), false);
+    assert.equal(sessionMatchesQuery(assistantOnly, "成就"), false);
+    assert.equal(sessionMatchesQuery(messageHit, "解锁 成就"), true);
+    assert.ok(
+      sessionSearchRelevance(titleHit, "成就") > sessionSearchRelevance(messageHit, "成就"),
+    );
+    assert.equal(sessionMatchesQuery(workspaceOnly, ""), true);
   });
 
   it("validates known session statuses", () => {

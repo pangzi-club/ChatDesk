@@ -148,8 +148,16 @@ export class ChatServerClient {
     return this.json<HealthResponse>("/health", undefined, "Chat Server 健康检查失败");
   }
 
-  listSessions() {
-    return this.json<ChatIndexItem[]>("/v1/sessions", undefined, "Chat Server 会话加载失败");
+  listSessions(options?: { query?: string; limit?: number }) {
+    const params = new URLSearchParams();
+    if (options?.query?.trim()) params.set("query", options.query.trim());
+    if (options?.limit !== undefined) params.set("limit", String(options.limit));
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return this.json<ChatIndexItem[]>(
+      `/v1/sessions${suffix}`,
+      undefined,
+      "Chat Server 会话加载失败",
+    );
   }
 
   createSession(options?: { id?: string; title?: string; workspaceId?: string; cwd?: string }) {

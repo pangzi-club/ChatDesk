@@ -25,6 +25,12 @@ describe("ChatServerClient", () => {
     assert.deepEqual(await client.listSessions(), []);
     assert.equal(requestUrl, "http://127.0.0.1:14317/v1/sessions");
     assert.equal(requestHeaders?.get("authorization"), "Bearer test-token");
+
+    assert.deepEqual(await client.listSessions({ query: "设计 方案", limit: 10 }), []);
+    assert.equal(
+      requestUrl,
+      "http://127.0.0.1:14317/v1/sessions?query=%E8%AE%BE%E8%AE%A1+%E6%96%B9%E6%A1%88&limit=10",
+    );
   });
 
   it("surfaces structured server errors", async () => {

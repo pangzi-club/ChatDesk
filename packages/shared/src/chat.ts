@@ -202,6 +202,7 @@ export type SessionIndexItem = ChatIndexItem & {
   status: SessionStatus;
   lastRunSummary?: ChatRunSummary;
   runStartedAt?: string;
+  searchRelevance?: number;
 };
 
 export type ServerModelConfig = {
@@ -603,6 +604,47 @@ export function textFromMessage(message: UIMessage) {
     .filter((part) => part.type === "text")
     .map((part) => part.text)
     .join(" ");
+}
+
+function normalizeSearchText(value: string) {
+  return value.normalize("NFKC").toLocaleLowerCase();
+}
+
+export function sessionSearchRelevance(
+  session: Pick<ChatSession, "title" | "messages">,
+  query: string,
+) {
+  const normalizedQuery = normalizeSearchText(query.trim());
+  if (!normalizedQuery) return 0;
+
+  const terms = normalizedQuery.split(/\s+/).filter(Boolean);
+  const title = normalizeSearchText(session.title);
+  const userMessages = session.messages
+    .filter((message) => message.role === "user")
+    .map((message) => normalizeSearchText(textFromMessage(message)));
+  const searchableFields = [title, ...userMessages];
+  if (!terms.every((term) => searchableFields.some((field) => field.includes(term)))) return -1;
+
+  let relevance = 0;
+  if (title === normalizedQuery) relevance += 10_000;
+  else if (title.startsWith(normalizedQuery)) relevance += 7_500;
+  else if (title.includes(normalizedQuery)) relevance += 5_000;
+  if (userMessages.some((message) => message.includes(normalizedQuery))) relevance += 1_000;
+
+  for (const term of terms) {
+    if (title === term) relevance += 1_000;
+    else if (title.startsWith(term)) relevance += 750;
+    else if (title.includes(term)) relevance += 500;
+    if (userMessages.some((message) => message.includes(term))) relevance += 100;
+  }
+  return relevance;
+}
+
+export function sessionMatchesQuery(
+  session: Pick<ChatSession, "title" | "messages">,
+  query: string,
+) {
+  return sessionSearchRelevance(session, query) >= 0;
 }
 
 export function deriveTitle(messages: UIMessage[]) {

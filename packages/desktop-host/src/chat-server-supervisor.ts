@@ -33,6 +33,7 @@ export type ChatServerSupervisorOptions = {
   host?: string;
   port?: number;
   token?: string;
+  production?: boolean;
   maxRestartAttempts?: number;
   stableRuntimeMs?: number;
   startupTimeoutMs?: number;
@@ -123,7 +124,7 @@ export class ChatServerSupervisor {
       CHAT_SERVER_HOST: host,
       CHAT_SERVER_PORT: String(port),
       CHAT_SERVER_TOKEN: this.current.token,
-      CHAT_SERVER_PRODUCTION: "1",
+      CHAT_SERVER_PRODUCTION: this.options.production === false ? "0" : "1",
       ...(this.options.dataDir ? { CHAT_SERVER_DATA_DIR: this.options.dataDir } : {}),
     };
     const spawn =

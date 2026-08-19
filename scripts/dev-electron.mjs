@@ -11,15 +11,20 @@ const rendererUrl = process.env.CHATDESK_RENDERER_URL || "http://localhost:1420"
 const port = process.env.CHAT_SERVER_PORT || "14317";
 const token =
   process.env.CHATDESK_CHAT_SERVER_TOKEN || process.env.CHAT_SERVER_TOKEN || randomUUID();
-const workerCandidates = [
-  process.env.CHATDESK_CHAT_SERVER_WORKER,
-  path.join(root, "apps/desktop/assets/resources/node-runtime/workers/chat-server.cjs"),
-  path.join(root, "apps/server/.cache/chat-server.cjs"),
-].filter(Boolean);
-
-const worker = workerCandidates.find((candidate) => existsSync(candidate));
-if (!worker) {
-  console.error("找不到 Chat Server worker。首次运行前请执行：pnpm desktop:sidecars");
+const configuredWorker = process.env.CHATDESK_CHAT_SERVER_WORKER;
+const worker = configuredWorker || path.join(root, "apps/server/src/server.ts");
+const runtimeRoot =
+  process.env.CHATDESK_CHAT_SERVER_RUNTIME_ROOT ||
+  (configuredWorker ? "" : path.join(root, "apps/desktop/assets/resources/node-runtime"));
+const playwrightBrowsers =
+  process.env.CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH ||
+  path.join(root, "apps/desktop/assets/resources/playwright-browsers");
+if (!existsSync(worker)) {
+  console.error(`找不到 Chat Server 入口：${worker}`);
+  process.exit(1);
+}
+if (runtimeRoot && !existsSync(runtimeRoot)) {
+  console.error("找不到 Chat Server runtime。首次运行前请执行：pnpm desktop:sidecars");
   process.exit(1);
 }
 
@@ -63,6 +68,12 @@ if (!shuttingDown) {
       ...sharedEnv,
       CHATDESK_RENDERER_URL: rendererUrl,
       CHATDESK_CHAT_SERVER_WORKER: worker,
+      CHATDESK_NODE_RUNTIME: process.env.CHATDESK_NODE_RUNTIME || process.execPath,
+      ...(runtimeRoot ? { CHATDESK_CHAT_SERVER_RUNTIME_ROOT: runtimeRoot } : {}),
+      ...(configuredWorker ? {} : { CHATDESK_CHAT_SERVER_WATCH: "1" }),
+      ...(existsSync(playwrightBrowsers)
+        ? { CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH: playwrightBrowsers }
+        : {}),
     },
   });
 }

@@ -60,6 +60,29 @@ describe("ChatServerSupervisor", () => {
     await supervisor.stop();
   });
 
+  it("can disable production shutdown behavior for Node watch development", async () => {
+    const child = new FakeHostProcess();
+    const spawnImpl = vi.fn(() => child);
+    const supervisor = new ChatServerSupervisor({
+      command: "node",
+      args: ["--watch", "server.ts"],
+      production: false,
+      spawnImpl,
+      fetchImpl: async () => new Response(null, { status: 200 }),
+    });
+
+    await supervisor.start();
+
+    expect(spawnImpl).toHaveBeenCalledWith(
+      "node",
+      ["--watch", "server.ts"],
+      expect.objectContaining({
+        env: expect.objectContaining({ CHAT_SERVER_PRODUCTION: "0" }),
+      }),
+    );
+    await supervisor.stop();
+  });
+
   it("does not accept an unrelated server that only owns the same port", async () => {
     const child = new FakeHostProcess();
     const supervisor = new ChatServerSupervisor({

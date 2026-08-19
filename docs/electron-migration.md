@@ -48,7 +48,7 @@ Renderer 不直接调用 Electron、Tauri 或 Node API。所有宿主能力通�
 - 新增 `apps/electron` main/preload/services 包。
 - Electron `43.4.0` 与 electron-builder `26.15.3` 已加入 workspace；安装命令：`pnpm install --frozen-lockfile`。
 - 使用 `BrowserWindow`、单实例锁、托盘、窗口状态和应用退出钩子。
-- 复用现有共享 Node runtime 启动 `chat-server.cjs`，不要直接用 Electron runtime 承载 Sharp/Playwright。
+- 生产打包复用共享 Node runtime 启动 `chat-server.cjs`；开发环境用同一 Node runtime 的 watch 模式直接运行 `apps/server/src/server.ts`，不要用 Electron runtime 承载 Sharp/Playwright。
 - 保留 loopback、随机 token、健康检查、自动重启和优雅退出。
 
 退出标准：Electron 可以独立启动、打开 Chat、重启 Chat Server，并在退出时完成清理。
@@ -136,4 +136,4 @@ pnpm desktop:sidecars
 pnpm electron:package
 ```
 
-Electron main 会从共享 runtime 或打包后的 `workers/chat-server.cjs` 启动 Chat Server；开发编排优先使用 `apps/desktop/assets/resources/node-runtime/workers/chat-server.cjs`，再回退到 `apps/server/.cache/chat-server.cjs`。
+Electron main 在打包环境从共享 runtime 或 `workers/chat-server.cjs` 启动 Chat Server。开发编排直接以 `node --watch --experimental-strip-types apps/server/src/server.ts` 运行源码，服务端及共享模块改动会自动重启；浏览器 worker、沙箱 worker、Sharp 和 Playwright 仍复用 `apps/desktop/assets/resources/node-runtime` 下的生成资源。显式设置 `CHATDESK_CHAT_SERVER_WORKER` 时会关闭默认 watch 行为并使用指定入口。
