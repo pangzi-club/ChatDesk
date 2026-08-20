@@ -2106,7 +2106,7 @@ function ChatPage() {
   const mentionQuery = mentionTrigger?.query ?? "";
   const [debouncedMentionQuery, setDebouncedMentionQuery] = useState("");
   useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedMentionQuery(mentionQuery), 250);
+    const timer = window.setTimeout(() => setDebouncedMentionQuery(mentionQuery), 500);
     return () => window.clearTimeout(timer);
   }, [mentionQuery]);
   const mentionQueryResult = useQuery({
