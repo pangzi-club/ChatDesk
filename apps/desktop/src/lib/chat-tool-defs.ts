@@ -34,6 +34,10 @@ export const CHAT_TOOL_DISPLAY_NAMES: Record<string, string> = {
   ...CHAT_BROWSER_TOOL_DISPLAY_NAMES,
   web_search: "Web Search · 联网搜索",
   image_generation: "Image Generation · 图片生成",
+  list_threads: "List Threads · 对话列表",
+  search_threads: "Search Threads · 对话搜索",
+  search_thread_occurrences: "Search Occurrences · 消息定位",
+  read_thread: "Read Thread · 读取对话",
 };
 
 export type ResolveActiveToolsResult = {
@@ -164,7 +168,9 @@ export async function resolveActiveTools(
   return {
     tools,
     activePacks,
-    toolNames: Object.keys(tools),
+    toolNames: CHAT_TOOL_PACKS.filter((pack) => activePacks.includes(pack.id)).flatMap(
+      (pack) => pack.toolNames,
+    ),
   };
 }
 

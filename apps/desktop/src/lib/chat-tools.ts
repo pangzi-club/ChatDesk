@@ -29,6 +29,7 @@ export const DEFAULT_CHAT_TOOLS: ChatToolsSettings = {
   web_search: false,
   image_generation: false,
   browser: false,
+  conversation_history: false,
 };
 
 export type ChatToolPackMeta = {
@@ -114,6 +115,14 @@ export const CHAT_TOOL_PACKS: ChatToolPackMeta[] = [
     ],
     risk: "高风险：可导航、点击并执行当前页面 JavaScript。",
   },
+  {
+    id: "conversation_history",
+    label: "对话历史",
+    description: "搜索、定位并读取 ChatDesk 中保存的历史对话。",
+    examples: ["搜索之前关于部署失败的对话", "打开这条历史对话的完整内容"],
+    category: "development",
+    toolNames: ["list_threads", "search_threads", "search_thread_occurrences", "read_thread"],
+  },
 ];
 
 function isChatToolPackId(value: unknown): value is ChatToolPackId {
@@ -126,7 +135,8 @@ function isChatToolPackId(value: unknown): value is ChatToolPackId {
     value === "terminal" ||
     value === "web_search" ||
     value === "image_generation" ||
-    value === "browser"
+    value === "browser" ||
+    value === "conversation_history"
   );
 }
 
@@ -154,6 +164,7 @@ function normalizeChatTools(value: unknown): ChatToolsSettings {
     web_search: record.web_search === true,
     image_generation: record.image_generation === true,
     browser: record.browser === true,
+    conversation_history: record.conversation_history === true,
   };
 }
 

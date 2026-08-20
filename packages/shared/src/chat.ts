@@ -520,7 +520,8 @@ export type ChatToolPackId =
   | "terminal"
   | "web_search"
   | "image_generation"
-  | "browser";
+  | "browser"
+  | "conversation_history";
 
 export type ChatToolsSettings = Record<ChatToolPackId, boolean>;
 

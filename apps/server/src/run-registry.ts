@@ -835,7 +835,7 @@ export class RunRegistry {
             ...workspaceTools,
             ...(planMode === "plan"
               ? {}
-              : selectTools(createBusinessTools(chatConfig.apiKeys), input.toolNames)),
+              : selectTools(createBusinessTools(chatConfig.apiKeys, this.store), input.toolNames)),
             ...(planMode !== "plan" && input.toolNames?.includes("web_search") && model.responsive
               ? { web_search: openai.tools.webSearch({}) as unknown as ToolSet[string] }
               : {}),
