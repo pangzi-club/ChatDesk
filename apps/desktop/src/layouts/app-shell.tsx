@@ -1588,18 +1588,18 @@ function WorkspaceConversationGroups() {
     >
       <div className="group flex h-8 items-center rounded-md px-2">
         <h2
-          className="min-w-0 flex-1 font-medium text-[13px] text-muted-foreground"
+          className="min-w-0 flex-1 font-medium text-[13px] text-muted-foreground/55"
           id="workspace-conversations-heading"
         >
           <button
             aria-expanded={!isWorkspaceSectionCollapsed}
             aria-label={isWorkspaceSectionCollapsed ? "展开 Workspace" : "收起 Workspace"}
-            className="flex w-full items-center gap-1 text-left"
+            className="flex w-full items-center gap-1 text-left text-muted-foreground/55"
             onClick={toggleWorkspaceSection}
             title="Workspace"
             type="button"
           >
-            <span className="truncate">Workspace</span>
+            <span className="truncate text-muted-foreground/55">Workspace</span>
             <ChevronRight
               aria-hidden="true"
               className={`size-3.5 shrink-0 opacity-0 transition-[transform,opacity] group-hover:opacity-100 group-focus-within:opacity-100 ${isWorkspaceSectionCollapsed ? "" : "rotate-90"}`}
@@ -1688,19 +1688,19 @@ function WorkspaceConversationGroups() {
             return (
               <div className={isRecent ? "pt-2" : undefined} key={group.key}>
                 <div
-                  className={`group flex h-8 min-w-0 items-center rounded-md ${isRecent ? "px-2" : "transition-colors hover:bg-accent/60"}`}
+                  className={`group flex h-8 min-w-0 items-center rounded-md ${isRecent ? "pl-2" : "transition-colors hover:bg-accent/60"}`}
                 >
                   {isRecent ? (
-                    <h2 className="min-w-0 flex-1 font-medium text-[13px] text-muted-foreground">
+                    <h2 className="min-w-0 flex-1 font-medium text-[13px] text-muted-foreground/55">
                       <button
                         aria-expanded={!isCollapsed}
                         aria-label={isCollapsed ? `展开 ${group.label}` : `收起 ${group.label}`}
-                        className="flex w-full items-center gap-1 text-left"
+                        className="flex w-full items-center gap-1 text-left text-muted-foreground/55"
                         onClick={() => toggleCollapsed(group)}
                         title={group.label}
                         type="button"
                       >
-                        <span className="truncate">{group.label}</span>
+                        <span className="truncate text-muted-foreground/55">{group.label}</span>
                         <ChevronRight
                           aria-hidden="true"
                           className={`size-3.5 shrink-0 opacity-0 transition-[transform,opacity] group-hover:opacity-100 group-focus-within:opacity-100 ${isCollapsed ? "" : "rotate-90"}`}
@@ -1722,7 +1722,7 @@ function WorkspaceConversationGroups() {
                   )}
                   <button
                     aria-label={`在 ${group.label} 中新建对话`}
-                    className="mr-0.5 flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100"
+                    className={`flex shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100 ${isRecent ? "mr-1 size-5" : "mr-0.5 size-6"}`}
                     onClick={() => startWorkspaceSession(group)}
                     title={`在 ${group.label} 中新建对话`}
                     type="button"
