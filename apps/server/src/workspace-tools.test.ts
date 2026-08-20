@@ -95,6 +95,18 @@ describe("workspace bash approval permissions", () => {
       ),
       { allowOutside: false, allowNetwork: true },
     );
+    assert.deepEqual(
+      resolveBashRetryPermissions(
+        {
+          command:
+            'curl -s -o /dev/null -w "%{http_code}" https://api.github.com/repos/openai/skills',
+        },
+        "/tmp/workspace",
+        [],
+        new SandboxBlockedError("000", "network"),
+      ),
+      { allowOutside: false, allowNetwork: true },
+    );
   });
 
   it("escalates a sandbox-blocked bash preflight instead of returning it as a normal failure", async () => {

@@ -5,6 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildSeatbeltProfile,
+  classifySandboxDenial,
   isSandboxBlockedOutput,
   resolveCommandCwd,
   resolveSandboxFileProcessOutput,
@@ -12,6 +13,7 @@ import {
   runSandboxedFile,
   runSandboxedShell,
   SandboxPathError,
+  sandboxBlockedErrorFromShell,
 } from "./sandbox-exec.ts";
 
 describe("sandbox execution errors", () => {
@@ -70,6 +72,54 @@ describe("sandbox execution errors", () => {
     ).toBe(true);
     expect(isSandboxBlockedOutput("ERR_PNPM_META_FETCH_FAIL request failed")).toBe(true);
     expect(isSandboxBlockedOutput(dns, { allowNetwork: true })).toBe(false);
+  });
+
+  it("classifies silent curl and wget network denials as blocked", () => {
+    const silentCurl =
+      'echo "== repo info =="; curl -s -o /dev/null -w "%{http_code}\\n" "https://api.github.com/repos/openai/skills"';
+    expect(isSandboxBlockedOutput("000", { command: silentCurl, code: 6 })).toBe(true);
+    expect(classifySandboxDenial("000", { command: silentCurl, code: 6 })).toBe("network");
+    expect(isSandboxBlockedOutput("", { command: "curl -s https://example.com", code: 7 })).toBe(
+      true,
+    );
+    expect(isSandboxBlockedOutput("", { command: "wget -q https://example.com", code: 4 })).toBe(
+      true,
+    );
+    expect(
+      isSandboxBlockedOutput("000", { command: silentCurl, code: 6, allowNetwork: true }),
+    ).toBe(false);
+    expect(isSandboxBlockedOutput("000", { command: silentCurl, code: 6, timedOut: true })).toBe(
+      false,
+    );
+    expect(
+      isSandboxBlockedOutput("000", { command: "curl -s -f https://example.com", code: 22 }),
+    ).toBe(false);
+    expect(
+      isSandboxBlockedOutput("JSONDecodeError: Expecting value: line 1 column 1 (char 0)", {
+        command:
+          'curl -s "https://api.github.com/repos/openai/skills/contents/skills/.curated" | python3 -c "import json,sys; json.load(sys.stdin)"',
+        code: 1,
+      }),
+    ).toBe(false);
+    expect(
+      isSandboxBlockedOutput("Username/Password Authentication Failed.", {
+        command: "wget https://example.com",
+        code: 6,
+      }),
+    ).toBe(false);
+    expect(isSandboxBlockedOutput("000", { code: 6 })).toBe(false);
+    expect(isSandboxBlockedOutput("000")).toBe(false);
+  });
+
+  it("preserves a network denial kind for silent curl retry", () => {
+    const error = sandboxBlockedErrorFromShell("curl -s https://api.github.com", {
+      out: "000",
+      code: 6,
+      sandboxDenialKind: "network",
+    });
+    expect(error.denialKind).toBe("network");
+    expect(error.message).toContain("000");
+    expect(error.message).toContain("被沙箱拦截了网络访问（curl 退出码 6）");
   });
 
   it("does not treat ordinary command failures as sandbox denials", () => {

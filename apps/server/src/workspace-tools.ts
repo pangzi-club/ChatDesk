@@ -14,9 +14,9 @@ import {
   resolveCommandCwd,
   runSandboxedFile,
   runSandboxedShell,
-  sandboxBlockedErrorFromShell,
   SandboxBlockedError,
   SandboxPathError,
+  sandboxBlockedErrorFromShell,
 } from "./sandbox-exec.ts";
 
 const SKIPPED_DIRECTORIES = new Set([".git", "node_modules", "target", "dist"]);
@@ -83,9 +83,7 @@ export function resolveBashRetryPermissions(
   }
   return {
     allowOutside:
-      classified.allowOutside ||
-      denialKind === "filesystem" ||
-      isFilesystemSandboxDenial(output),
+      classified.allowOutside || denialKind === "filesystem" || isFilesystemSandboxDenial(output),
     allowNetwork: false,
   };
 }

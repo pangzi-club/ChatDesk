@@ -22,12 +22,16 @@ const SAFE_ENV_KEYS = [
   "TMPDIR",
 ] as const;
 
+export type SandboxDenialKind = "network" | "filesystem";
+
 export class SandboxBlockedError extends Error {
   readonly code = "sandbox_blocked" as const;
+  readonly denialKind?: SandboxDenialKind;
 
-  constructor(message = "被沙箱拦截了") {
+  constructor(message = "被沙箱拦截了", denialKind?: SandboxDenialKind) {
     super(message);
     this.name = "SandboxBlockedError";
+    this.denialKind = denialKind;
   }
 }
 
@@ -43,7 +47,14 @@ export class SandboxPathError extends Error {
 const FILE_SANDBOX_DENIED_PATTERN =
   /(?:sandbox(?:-exec)?[^\n]*(?:deny|violation)|file system sandbox blocked|sandbox violation)/i;
 const NETWORK_SANDBOX_DENIED_PATTERN =
-  /nodename nor servname provided|failed to resolve address|could not resolve host|couldn['’]t resolve host|could not resolve hostname|ERR_PNPM_META_FETCH_FAIL|ERR_PNPM_FETCH|\bfetch failed\b|error when performing the request to https?:\/\/|\b(?:GET|request to)\s+https?:\/\/[^\s]*(?:npmjs\.org|registry\.)[^\n]*(?:fetch failed|failed)|\b(?:EAI_AGAIN|ENOTFOUND|ENETUNREACH|EHOSTUNREACH|ECONNREFUSED|ECONNRESET|ETIMEDOUT)\b/i;
+  /nodename nor servname provided|failed to resolve address|could not resolve host|couldn['’]t resolve host|could not resolve hostname|被沙箱拦截了网络访问|ERR_PNPM_META_FETCH_FAIL|ERR_PNPM_FETCH|\bfetch failed\b|error when performing the request to https?:\/\/|\b(?:GET|request to)\s+https?:\/\/[^\s]*(?:npmjs\.org|registry\.)[^\n]*(?:fetch failed|failed)|\b(?:EAI_AGAIN|ENOTFOUND|ENETUNREACH|EHOSTUNREACH|ECONNREFUSED|ECONNRESET|ETIMEDOUT)\b/i;
+
+export type SandboxDenialOptions = {
+  allowNetwork?: boolean;
+  command?: string;
+  code?: number;
+  timedOut?: boolean;
+};
 
 export function isFilesystemSandboxDenial(output: string) {
   return /file system sandbox blocked/i.test(output);
@@ -53,11 +64,68 @@ export function isNetworkSandboxDenial(output: string) {
   return NETWORK_SANDBOX_DENIED_PATTERN.test(output);
 }
 
-export function isSandboxBlockedOutput(output: string, options: { allowNetwork?: boolean } = {}) {
-  if (/sandbox_apply:\s*operation not permitted/i.test(output)) return false;
-  if (FILE_SANDBOX_DENIED_PATTERN.test(output)) return true;
-  if (!options.allowNetwork && isNetworkSandboxDenial(output)) return true;
-  return /operation not permitted/i.test(output);
+export function silentNetworkDenialReason(command: string, code: number) {
+  if (/\bcurl\b/i.test(command) && (code === 6 || code === 7)) {
+    return `被沙箱拦截了网络访问（curl 退出码 ${code}）`;
+  }
+  if (/\bwget\b/i.test(command) && code === 4) {
+    return `被沙箱拦截了网络访问（wget 退出码 ${code}）`;
+  }
+  return undefined;
+}
+
+export function classifySandboxDenial(
+  output: string,
+  options: SandboxDenialOptions = {},
+): SandboxDenialKind | null {
+  if (/sandbox_apply:\s*operation not permitted/i.test(output)) return null;
+  if (FILE_SANDBOX_DENIED_PATTERN.test(output)) return "filesystem";
+  if (!options.allowNetwork) {
+    if (isNetworkSandboxDenial(output)) return "network";
+    if (
+      !options.timedOut &&
+      typeof options.command === "string" &&
+      typeof options.code === "number" &&
+      silentNetworkDenialReason(options.command, options.code)
+    ) {
+      return "network";
+    }
+  }
+  if (/operation not permitted/i.test(output)) return "filesystem";
+  return null;
+}
+
+export function isSandboxBlockedOutput(output: string, options: SandboxDenialOptions = {}) {
+  return classifySandboxDenial(output, options) !== null;
+}
+
+export function sandboxBlockedErrorFromShell(
+  command: string,
+  result: {
+    out: string;
+    code: number;
+    timedOut?: boolean;
+    sandboxDenialKind?: SandboxDenialKind | null;
+  },
+) {
+  const kind =
+    result.sandboxDenialKind ??
+    classifySandboxDenial(result.out, {
+      command,
+      code: result.code,
+      timedOut: result.timedOut,
+    }) ??
+    undefined;
+  const output = result.out.trim();
+  const silentReason =
+    kind === "network" ? silentNetworkDenialReason(command, result.code) : undefined;
+  const message =
+    silentReason && !isNetworkSandboxDenial(output)
+      ? output
+        ? `${output}\n${silentReason}`
+        : silentReason
+      : output || "被沙箱拦截了";
+  return new SandboxBlockedError(message, kind);
 }
 
 export async function runSandboxedShell(
@@ -105,6 +173,16 @@ export async function runSandboxedShell(
     timeout,
     maxOutputBytes: MAX_OUTPUT_BYTES,
   });
+  const allowNetwork = options.allowNetwork ?? false;
+  const sandboxDenialKind =
+    effectiveMode === "full"
+      ? null
+      : classifySandboxDenial(result.out, {
+          allowNetwork,
+          command,
+          code: result.code,
+          timedOut: result.timedOut,
+        });
   return {
     code: result.code,
     out: result.out,
@@ -112,9 +190,8 @@ export async function runSandboxedShell(
     timedOut: result.timedOut,
     truncated: result.truncated,
     totalOutputBytes: result.totalOutputBytes,
-    sandboxBlocked:
-      effectiveMode !== "full" &&
-      isSandboxBlockedOutput(result.out, { allowNetwork: options.allowNetwork ?? false }),
+    sandboxBlocked: sandboxDenialKind !== null,
+    sandboxDenialKind: sandboxDenialKind ?? undefined,
   };
 }
 
