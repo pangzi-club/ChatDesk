@@ -59,7 +59,7 @@
 
 ### ✅ 工具生态
 - **MCP**：`mcp-runtime.ts` 支持 stdio 子进程 + remote HTTP 两种 transport，start / listTools / callTool / stop / test 全套，手写 JSON-RPC 2.0。
-- **Skills**：`skills-store.ts` 扫描本机 `.agents` / `.agent` / `.codex` / `.claude`（及对应 workspace 目录）的 `SKILL.md`，另扫描随应用打包的内置 skill（`apps/server/skills`，打包后在 worker 旁的 `skills/`）。本机 skill 由用户安装后全文注入；内置 skill 只把 name/description 放进 system prompt，正文通过 `read_skill` 按需读取。
+- **Skills**：`skills-store.ts` 扫描本机 `.agents` / `.agent` / `.codex` / `.claude`（及对应 workspace 目录）的 `SKILL.md`，另扫描随应用打包的内置 skill（`apps/server/skills`，打包后在 worker 旁的 `skills/`）。当前内置：`chatdesk-doc`、`skill-creator`、`skill-installer`。本机 skill 由用户安装后全文注入；内置 skill 只把 name/description 放进 system prompt，正文通过 `read_skill` 按需读取。
 - **内置工具**：web_search（responses 协议内置）、图片生成。
 
 ### 内置工具目录
@@ -95,7 +95,7 @@
 
 ### ✅ 安全与审批
 - **三层沙箱模式**：`sandboxMode` 支持 `ask`（工作区内读操作直接执行，写入/越界暂停等待用户批准）、`auto`（先在沙箱内执行，仅实际被拦截时交 reviewer 判断）、`full`（不使用 Seatbelt，允许外部路径）。
-- **Seatbelt 沙箱执行**：`sandbox-exec.ts` 使用 macOS Seatbelt `(deny default)` profile，限制工作区外写入和网络访问；macOS 通过 zsh `pipefail` 执行，最小化环境变量，并为每个 workspace 建立稳定且真实存在的临时、Corepack、pnpm 和编译缓存目录。
+- **Seatbelt 沙箱执行**：`sandbox-exec.ts` 使用 macOS Seatbelt `(deny default)` profile，限制工作区外写入和网络访问；macOS 通过 zsh `pipefail` 执行，最小化环境变量，并为每个 workspace 建立稳定且真实存在的临时、Corepack、pnpm 和编译缓存目录。禁网时除 DNS/Seatbelt 文案外，还将 `curl` 退出码 6/7 与 `wget` 退出码 4 视为网络拦截（覆盖 `curl -s` 吞掉错误文案的情况）；auto 重试只打开网络，不放行工作区外写入。
 - **工具审批**：`createToolApproval` 在 AI SDK `toolApproval` 回调中实现交互式审批，区分 workspace 工具与非 workspace 工具，支持已批准的 toolCallId 重放。
 - **边界 Reviewer**：`sandbox-boundary-reviewer.ts` 对越界操作做 AI 辅助判断，`auto` 模式下可自动批准或拒绝沙箱拦截后的重试。
 - **审批日志**：`sandbox-review-log.ts` 记录每次审批决策（approver/reviewer/user-approval）、原因和错误信息。

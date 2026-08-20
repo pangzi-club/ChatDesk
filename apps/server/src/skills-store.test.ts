@@ -68,14 +68,19 @@ describe("scanBuiltinSkills", () => {
     assert.match(skills[0]?.description ?? "", /Demo skill/);
   });
 
-  it("finds the shipped chatdesk-doc skill from the source tree", async () => {
+  it("finds the shipped builtin skills from the source tree", async () => {
     const skills = await scanBuiltinSkills({
       env: {},
       argv1: path.join(process.cwd(), "apps/server/src/server.ts"),
       cwd: process.cwd(),
     });
+    const ids = skills.map((skill) => skill.id).sort();
+    assert.deepEqual(ids, [
+      "builtin:chatdesk-doc",
+      "builtin:skill-creator",
+      "builtin:skill-installer",
+    ]);
     const doc = skills.find((skill) => skill.id === "builtin:chatdesk-doc");
-    assert.ok(doc);
     assert.match(doc?.description ?? "", /设置/);
   });
 });

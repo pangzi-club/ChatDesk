@@ -14,6 +14,7 @@ import {
   resolveCommandCwd,
   runSandboxedFile,
   runSandboxedShell,
+  sandboxBlockedErrorFromShell,
   SandboxBlockedError,
   SandboxPathError,
 } from "./sandbox-exec.ts";
@@ -75,12 +76,16 @@ export function resolveBashRetryPermissions(
   error: unknown,
 ) {
   const classified = resolveApprovedBashPermissions(input, workspace, readablePaths, true);
+  const denialKind = error instanceof SandboxBlockedError ? error.denialKind : undefined;
   const output = error instanceof Error ? error.message : String(error);
-  if (isNetworkSandboxDenial(output)) {
+  if (denialKind === "network" || isNetworkSandboxDenial(output)) {
     return { allowOutside: false, allowNetwork: true };
   }
   return {
-    allowOutside: classified.allowOutside || isFilesystemSandboxDenial(output),
+    allowOutside:
+      classified.allowOutside ||
+      denialKind === "filesystem" ||
+      isFilesystemSandboxDenial(output),
     allowNetwork: false,
   };
 }
@@ -146,7 +151,7 @@ export async function preflightWorkspaceTool(options: {
         readablePaths,
         developerToolPaths: options.developerToolPaths,
       });
-      if (result.sandboxBlocked) throw new SandboxBlockedError(result.out);
+      if (result.sandboxBlocked) throw sandboxBlockedErrorFromShell(input.command, result);
       return { status: "ok", result };
     }
     return { status: "error", error: new Error(`不支持对 ${options.toolName} 做沙箱预执行`) };
@@ -625,7 +630,7 @@ export function createWorkspaceTools(
             readablePaths,
             developerToolPaths,
           });
-          if (result.sandboxBlocked) throw new SandboxBlockedError(result.out);
+          if (result.sandboxBlocked) throw sandboxBlockedErrorFromShell(command, result);
           return result;
         };
         const escalateSandboxBlock = (error: unknown) =>
