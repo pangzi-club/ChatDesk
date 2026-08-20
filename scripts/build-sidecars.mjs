@@ -57,6 +57,11 @@ await writeFile(
 );
 await cp(browserWorkerSource, browserWorkerPath);
 
+const builtinSkillsSource = path.join(root, "apps/server/skills");
+if (existsSync(builtinSkillsSource)) {
+  await cp(builtinSkillsSource, path.join(runtimeWorkersDir, "skills"), { recursive: true });
+}
+
 if (process.env.M_DASHBOARD_SKIP_BROWSER_DOWNLOAD !== "1") {
   await runTool("playwright", ["install", "chromium", "--only-shell"], {
     PLAYWRIGHT_BROWSERS_PATH: browserPath,

@@ -36,10 +36,16 @@ function normalizeSkillIds(value: unknown): string[] {
     : [];
 }
 
+export function isBuiltinSkill(skill: { source?: string; id?: string }) {
+  return skill.source === "builtin" || Boolean(skill.id?.startsWith("builtin:"));
+}
+
 export async function loadAvailableSkills(): Promise<SkillDefinition[]> {
   try {
     const items = await loadChatServerSkills();
-    return Array.isArray(items) ? items.filter(isSkill) : [];
+    return Array.isArray(items)
+      ? items.filter((item) => isSkill(item) && !isBuiltinSkill(item))
+      : [];
   } catch (error) {
     console.error("Failed to scan local skills", error);
     return [];
@@ -68,8 +74,9 @@ export async function saveChatSkillSelection(ids: string[]) {
 }
 
 export function formatSkillsSystemHint(skills: SkillDefinition[]): string {
-  if (skills.length === 0) return "";
-  const sections = skills.map(
+  const localSkills = skills.filter((skill) => !isBuiltinSkill(skill));
+  if (localSkills.length === 0) return "";
+  const sections = localSkills.map(
     (skill) => `### ${skill.name}\n来源：${skill.source}\n\n${skill.content.trim()}`,
   );
   return [

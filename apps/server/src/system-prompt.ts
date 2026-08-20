@@ -40,6 +40,7 @@ export async function buildSystemPrompt(input: {
   workspaceToolInstructions?: string;
   planInstructions?: string;
   todoToolInstructions?: string;
+  skillToolInstructions?: string;
 }): Promise<SystemPrompt> {
   const cwd = input.cwd?.trim() || undefined;
   const agents = cwd ? await loadAgentsInstructions(cwd) : undefined;
@@ -55,6 +56,12 @@ export async function buildSystemPrompt(input: {
       label: "任务规划规则",
       content: input.todoToolInstructions?.trim() ?? "",
       included: Boolean(input.todoToolInstructions?.trim()),
+    },
+    {
+      id: "builtin-skills",
+      label: "内置 Skills",
+      content: input.skillToolInstructions?.trim() ?? "",
+      included: Boolean(input.skillToolInstructions?.trim()),
     },
     ...(input.planInstructions?.trim()
       ? [

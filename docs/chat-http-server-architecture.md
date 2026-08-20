@@ -110,7 +110,7 @@ Node HTTP Server
 - OpenAI 兼容 HTTP 流式调用；
 - `streamText` + tools 循环（含 Responses / chat 路径差异）；
 - 供应商差异由 [model-adaptor.md](model-adaptor.md) 收口（非 OpenAI Responses 关闭 `store`）；
-- system prompt 组装：memory、workspace hint、tools hint、skills hint；
+- system prompt 组装：memory、workspace hint、tools hint、本机 skills hint、内置 skills 目录（正文由 `read_skill` 按需加载）；
 - 错误归一与可观测日志。
 
 ### 3.6 工具编排边界

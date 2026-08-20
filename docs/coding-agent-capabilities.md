@@ -59,7 +59,7 @@
 
 ### ✅ 工具生态
 - **MCP**：`mcp-runtime.ts` 支持 stdio 子进程 + remote HTTP 两种 transport，start / listTools / callTool / stop / test 全套，手写 JSON-RPC 2.0。
-- **Skills**：`skills-store.ts` 扫描 8 个目录（`~/.agents`、`~/.agent`、`~/.codex`、`~/.claude` 及对应 workspace 目录），解析 SKILL.md frontmatter，可多选启用并注入。
+- **Skills**：`skills-store.ts` 扫描本机 `.agents` / `.agent` / `.codex` / `.claude`（及对应 workspace 目录）的 `SKILL.md`，另扫描随应用打包的内置 skill（`apps/server/skills`，打包后在 worker 旁的 `skills/`）。本机 skill 由用户安装后全文注入；内置 skill 只把 name/description 放进 system prompt，正文通过 `read_skill` 按需读取。
 - **内置工具**：web_search（responses 协议内置）、图片生成。
 
 ### 内置工具目录
@@ -69,6 +69,7 @@
 | 工具 | 用途与关键输入 | 前置条件 | 执行与权限 |
 |---|---|---|---|
 | `todo_write` | 全量更新任务步骤与状态 | Apply 模式、模型支持工具 | 服务端内存工具，不访问 workspace |
+| `read_skill` | 读取内置 skill 的 `SKILL.md` 或目录内相对文件 | 模型支持工具 | 只读应用内置 skill，不走沙箱审批 |
 | `plan_write` | 写入当前 session 的计划内容 | Plan 模式且存在 active plan | 服务端写入计划存储，不开放普通写文件工具 |
 | `list_dir` | 列出 `path` 下的文件和目录，支持 `offset` / `limit` | 已选择 workspace，并启用对应工具包 | 默认 200、最大 500；返回总数、截断与下一页 offset |
 | `search_files` | 用 `pattern` glob 搜文件名，或用 `query` 搜内容；返回路径及首个命中行 | 已选择 workspace，并启用对应工具包 | 优先 ripgrep，内置实现回退；遵循 Git ignore，结果上限 500 |
@@ -85,7 +86,7 @@
 | `web_search` | 查询近期公开信息 | 启用 Web Search，模型使用 Responses API | OpenAI Responses provider 内置工具 |
 | `image_generation` | 按 prompt、宽高比和分辨率生成图片 | 启用 Image Generation，并配置 KIE API Key | 服务端 KIE 请求，等待任务完成后返回 URL |
 
-固定工具的参数 schema 以 `client-tools.ts`、`workspace-tools.ts`、`business-tools.ts`、`todo-tool.ts` 和 `plan-tool.ts` 为准；设置页工具包及可用性以 `apps/desktop/src/lib/chat-tools.ts` 为准。
+固定工具的参数 schema 以 `client-tools.ts`、`workspace-tools.ts`、`business-tools.ts`、`todo-tool.ts`、`plan-tool.ts` 和 `skill-tool.ts` 为准；设置页工具包及可用性以 `apps/desktop/src/lib/chat-tools.ts` 为准。
 
 ### ✅ 模型与配置
 - 多模型配置（`chat-config.ts`），任意 OpenAI 兼容 baseUrl。

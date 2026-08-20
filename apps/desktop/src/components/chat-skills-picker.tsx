@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
-import type { SkillDefinition } from "@/lib/skills";
+import { isBuiltinSkill, type SkillDefinition } from "@/lib/skills";
 
 type ChatSkillsPickerProps = {
   skills: SkillDefinition[];
@@ -28,6 +28,7 @@ export function ChatSkillsPicker({
   onSelectionChange,
 }: ChatSkillsPickerProps) {
   const selected = new Set(selectedSkillIds);
+  const visibleSkills = skills.filter((skill) => !isBuiltinSkill(skill));
 
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange}>
@@ -53,8 +54,8 @@ export function ChatSkillsPicker({
         <DropdownMenuLabel className="!text-[11px]">启用已安装 Skills</DropdownMenuLabel>
         <DropdownMenuSeparator />
         <div className="chat-tools-menu-list">
-          {skills.length > 0 ? (
-            skills.map((skill) => {
+          {visibleSkills.length > 0 ? (
+            visibleSkills.map((skill) => {
               const switchId = `chat-skill-picker-${skill.id}`;
               return (
                 <label

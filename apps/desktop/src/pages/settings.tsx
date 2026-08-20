@@ -1908,7 +1908,7 @@ function SkillsSettingsPage() {
       <SettingsHeading
         eyebrow="Chat"
         title="Skills"
-        description="从本机 .agents、.codex 和 .claude 目录发现 SKILL.md，并选择哪些 skill 可在 Chat 中使用。"
+        description="从本机 .agents、.codex 和 .claude 目录发现 SKILL.md，并选择哪些 skill 可在 Chat 中使用。ChatDesk 会按需使用内置产品说明，无需安装。"
       />
       <div className="mb-4 flex gap-2 border-border border-b">
         <Button

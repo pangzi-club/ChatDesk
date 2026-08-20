@@ -70,6 +70,7 @@ import {
 } from "./sandbox-boundary-reviewer.ts";
 import { runSandboxedShell } from "./sandbox-exec.ts";
 import { SandboxReviewLogStore } from "./sandbox-review-log.ts";
+import { createReadSkillTool, loadBuiltinSkillsCatalog, SKILL_TOOL_NAME } from "./skill-tool.ts";
 import { withSseKeepAlive } from "./sse-keepalive.ts";
 import type { SessionStore } from "./store.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
@@ -605,6 +606,7 @@ export class RunRegistry {
       workspaceToolInstructions,
       planInstructions,
       todoToolInstructions: TODO_TOOL_INSTRUCTIONS,
+      skillToolInstructions: await loadBuiltinSkillsCatalog(),
     });
     const session: ChatSession = {
       ...current,
@@ -814,6 +816,7 @@ export class RunRegistry {
       });
       const tools = model.supportsTools
         ? {
+            [SKILL_TOOL_NAME]: createReadSkillTool(),
             ...(planMode === "plan"
               ? {
                   plan_write: createPlanWriteTool(

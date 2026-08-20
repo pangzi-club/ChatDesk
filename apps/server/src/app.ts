@@ -39,6 +39,7 @@ import {
   SESSION_TITLE_SYSTEM,
   sessionTitleMaxOutputTokens,
 } from "./session-title.ts";
+import { loadBuiltinSkillsCatalog } from "./skill-tool.ts";
 import { scanSkills } from "./skills-store.ts";
 import { SessionStore } from "./store.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
@@ -1312,6 +1313,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
           memory: body.memory,
           workspaceToolInstructions,
           todoToolInstructions: TODO_TOOL_INSTRUCTIONS,
+          skillToolInstructions: await loadBuiltinSkillsCatalog(),
         }),
       );
     } catch (error) {

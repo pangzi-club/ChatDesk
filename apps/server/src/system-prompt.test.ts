@@ -29,7 +29,7 @@ describe("buildSystemPrompt", () => {
 
     assert.deepEqual(
       prompt.sections.map((section) => section.id),
-      ["workspace-tools", "todo-tool", "agents", "system", "memory", "workspace"],
+      ["workspace-tools", "todo-tool", "builtin-skills", "agents", "system", "memory", "workspace"],
     );
     const agentsSection = prompt.sections.find((section) => section.id === "agents");
     assert.equal(agentsSection?.included, true);
@@ -57,5 +57,16 @@ describe("buildSystemPrompt", () => {
     assert.equal(prompt.cwd, undefined);
     assert.equal(prompt.sections.find((section) => section.id === "agents")?.included, false);
     assert.equal(prompt.text, "普通规则");
+  });
+
+  it("includes the builtin skills catalog when provided", async () => {
+    const prompt = await buildSystemPrompt({
+      skillToolInstructions: "## ChatDesk 内置 Skills\n\n- **chatdesk-doc**",
+    });
+    assert.equal(
+      prompt.sections.find((section) => section.id === "builtin-skills")?.included,
+      true,
+    );
+    assert.match(prompt.text, /ChatDesk 内置 Skills[\s\S]*chatdesk-doc/);
   });
 });
