@@ -28,7 +28,6 @@ import {
   SystemLogsSettingsPage,
   ThemeSettingsPage,
   ToolsSettingsPage,
-  TraySettingsPage,
 } from "@/pages/settings";
 import { StatisticsSettingsPage } from "@/pages/statistics";
 
@@ -82,7 +81,7 @@ const router = createHashRouter([
           { path: "history/analysis", element: <Navigate replace to="/settings/statistics" /> },
           { path: "history/:source/:id", element: <HistoryDetailPage /> },
           { path: "statistics", element: <StatisticsSettingsPage /> },
-          { path: "tray", element: <TraySettingsPage /> },
+          { path: "tray", element: <Navigate replace to="/settings/general" /> },
           { path: "chat-server", element: <ChatServerSettingsPage /> },
           { path: "logs", element: <SystemLogsSettingsPage /> },
         ],

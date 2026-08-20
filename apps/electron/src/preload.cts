@@ -16,7 +16,6 @@ type DesktopBridge = {
   openExternal(url: string): Promise<void>;
   assetUrl(path: string): string;
   saveImageFile(bytes: number[], fileName: string): Promise<boolean>;
-  setTrayEnabled(enabled: boolean): Promise<void>;
   requestNotificationPermission(): Promise<boolean>;
   showNotification(
     title: string,
@@ -62,8 +61,6 @@ const bridge: DesktopBridge = {
   assetUrl: (path: string) => `chatdesk-asset://local/?path=${encodeURIComponent(path)}`,
   saveImageFile: (bytes: number[], fileName: string) =>
     ipcRenderer.invoke(IPC_CHANNEL, { command: "save_image_file", args: { bytes, fileName } }),
-  setTrayEnabled: (enabled: boolean) =>
-    ipcRenderer.invoke(IPC_CHANNEL, { command: "set_tray_enabled", args: { enabled } }),
   requestNotificationPermission: () =>
     ipcRenderer.invoke(IPC_CHANNEL, { command: "request_notification_permission", args: {} }),
   showNotification: (title: string, body: string, onlyWhenWindowUnfocused = true) =>

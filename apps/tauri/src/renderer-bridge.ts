@@ -35,7 +35,6 @@ const tauriBridge: DesktopBridge = {
   openExternal: (url) => openUrl(url),
   assetUrl: (path) => convertFileSrc(path),
   saveImageFile: (bytes, fileName) => invoke<boolean>("save_image_file", { bytes, fileName }),
-  setTrayEnabled: (enabled) => invoke("set_tray_enabled", { enabled }),
   toggleWindowMaximize: () => getCurrentWindow().toggleMaximize(),
   httpRequest: requestHttp,
   terminalSpawn: (args, onEvent) => {

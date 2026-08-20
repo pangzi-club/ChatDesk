@@ -17,7 +17,6 @@ import {
   LoaderCircle,
   Package,
   Palette,
-  PanelTop,
   Pencil,
   PlugZap,
   Plus,
@@ -154,7 +153,6 @@ import {
   type SystemLog,
   type SystemLogLevel,
 } from "@/lib/system-log";
-import { loadTrayEnabled, saveTrayEnabled } from "@/lib/tray";
 
 const themes: Array<{ value: Theme; label: string; description: string }> = [
   { value: "system", label: "跟随系统", description: "根据操作系统自动切换" },
@@ -355,7 +353,6 @@ function SettingsLayout() {
           <SettingsNavItem to="/settings/environment" icon={SquareTerminal} label="环境" />
           <SettingsNavItem to="/settings/memory" icon={Brain} label="长期记忆" />
           <SettingsNavItem to="/settings/keys" icon={KeyRound} label="API Keys" />
-          <SettingsNavItem to="/settings/tray" icon={PanelTop} label="托盘" />
           <SettingsNavItem to="/settings/chat-server" icon={Server} label="Chat Server" />
           <SettingsNavItem to="/settings/statistics" icon={ChartColumn} label="使用量" />
           <SettingsNavItem to="/settings/logs" icon={ScrollText} label="活动记录" />
@@ -1987,78 +1984,6 @@ function SkillsSettingsPage() {
   );
 }
 
-function TraySettingsPage() {
-  const [enabled, setEnabled] = useState(true);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [notice, setNotice] = useState("");
-
-  useEffect(() => {
-    let active = true;
-    void loadTrayEnabled()
-      .then((value) => {
-        if (active) setEnabled(value);
-      })
-      .catch(() => {
-        if (active) setNotice("读取托盘设置失败，请重试。 ");
-      })
-      .finally(() => {
-        if (active) setIsLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  async function handleChange(nextEnabled: boolean) {
-    const previous = enabled;
-    setEnabled(nextEnabled);
-    setIsSaving(true);
-    setNotice("");
-    try {
-      await saveTrayEnabled(nextEnabled);
-    } catch {
-      setEnabled(previous);
-      setNotice("保存托盘设置失败，请重试。 ");
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  return (
-    <>
-      <SettingsHeading
-        eyebrow="System"
-        title="托盘"
-        description="控制 ChatDesk 是否显示在操作系统的菜单栏或系统托盘中。"
-      />
-      <section className="overflow-hidden rounded-lg border border-border bg-card">
-        <label
-          className="flex cursor-pointer items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-accent/40"
-          htmlFor="tray-enabled"
-        >
-          <span className="min-w-0">
-            <span className="block font-medium text-sm">显示托盘图标</span>
-            <span className="mt-1 block text-muted-foreground text-xs">
-              关闭后仍可从应用窗口正常使用 ChatDesk。
-            </span>
-          </span>
-          <Switch
-            aria-label="显示托盘图标"
-            checked={enabled}
-            disabled={isLoading || isSaving}
-            id="tray-enabled"
-            onCheckedChange={(checked) => void handleChange(checked === true)}
-          />
-        </label>
-        {notice ? (
-          <p className="border-border border-t px-5 py-3 text-muted-foreground text-xs">{notice}</p>
-        ) : null}
-      </section>
-    </>
-  );
-}
-
 function ChatServerSettingsPage() {
   const queryClient = useQueryClient();
   const configQuery = useQuery({
@@ -3358,5 +3283,4 @@ export {
   SystemLogsSettingsPage,
   ThemeSettingsPage,
   ToolsSettingsPage,
-  TraySettingsPage,
 };

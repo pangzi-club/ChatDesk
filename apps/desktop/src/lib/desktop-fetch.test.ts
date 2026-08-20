@@ -38,7 +38,6 @@ describe("desktopFetch", () => {
         openExternal: async () => undefined,
         assetUrl: (path) => path,
         saveImageFile: async () => false,
-        setTrayEnabled: async () => undefined,
         toggleWindowMaximize: async () => undefined,
         httpRequest: async (request) => {
           callSpy("http_request", request);

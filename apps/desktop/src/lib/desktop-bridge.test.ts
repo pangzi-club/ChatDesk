@@ -26,7 +26,6 @@ describe("desktop bridge", () => {
       openExternal: async () => undefined,
       assetUrl: (path) => `asset://${path}`,
       saveImageFile: async () => true,
-      setTrayEnabled: async () => undefined,
       toggleWindowMaximize: async () => undefined,
       httpRequest: async () => ({ status: 200, statusText: "OK", headers: [], body: [] }),
       terminalSpawn: async () => ({ id: "test", shell: "sh" }),

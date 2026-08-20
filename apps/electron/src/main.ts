@@ -45,6 +45,7 @@ import {
   resolveRendererFile,
 } from "./renderer-protocol.js";
 import { TerminalManager } from "./terminal-manager.js";
+import { createTrayIconBuffer, padTrayMenuLabel } from "./tray-icon.js";
 
 type DesktopUserStoreFile = "settings.json" | "bookmarks.json";
 type WindowState = {
@@ -123,6 +124,7 @@ if (!app.isPackaged) {
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+let trayIcon: ReturnType<typeof nativeImage.createEmpty> | null = null;
 let supervisor: ChatServerSupervisor | null = null;
 let quitting = false;
 const terminalManager = new TerminalManager((id, event) => emit(`terminal:${id}`, event));
@@ -453,31 +455,37 @@ function writeUserStore(fileName: DesktopUserStoreFile, contents: string) {
   if (process.platform !== "win32") chmodSync(target, 0o600);
 }
 
-function setTrayEnabled(enabled: boolean) {
-  if (!enabled) {
-    tray?.destroy();
-    tray = null;
+function createTrayIconImage() {
+  const { png, scaleFactor, template } = createTrayIconBuffer(process.platform);
+  const image = nativeImage.createFromBuffer(png, { scaleFactor });
+  if (template) image.setTemplateImage(true);
+  return image;
+}
+
+function openFromTray(path?: string) {
+  showMainWindow();
+  if (path) emit("tray-open", { path });
+}
+
+function ensureTray() {
+  if (tray) {
+    if (trayIcon && !trayIcon.isEmpty()) tray.setImage(trayIcon);
     return;
   }
-  if (tray) return;
-  const iconCandidates = [
-    join(process.resourcesPath, "icons/32x32.png"),
-    join(app.getAppPath(), "apps/desktop/assets/icons/32x32.png"),
-  ];
-  const iconPath = iconCandidates.find((candidate) => existsSync(candidate));
-  tray = new Tray(iconPath ? nativeImage.createFromPath(iconPath) : nativeImage.createEmpty());
+  trayIcon = createTrayIconImage();
+  tray = new Tray(trayIcon);
+  if (!trayIcon.isEmpty()) tray.setImage(trayIcon);
   tray.setToolTip("ChatDesk");
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      {
-        label: "Chat",
-        click: () => {
-          mainWindow?.show();
-          mainWindow?.focus();
-          emit("tray-chat", null);
-        },
-      },
-      { label: "退出", click: () => app.quit() },
+      { label: padTrayMenuLabel("显示 ChatDesk"), click: () => showMainWindow() },
+      { type: "separator" },
+      { label: padTrayMenuLabel("Chat"), click: () => openFromTray("/chat") },
+      { label: padTrayMenuLabel("Image"), click: () => openFromTray("/image-generation") },
+      { label: padTrayMenuLabel("Automations"), click: () => openFromTray("/automations") },
+      { label: padTrayMenuLabel("设置"), click: () => openFromTray("/settings/general") },
+      { type: "separator" },
+      { label: padTrayMenuLabel("退出 ChatDesk"), click: () => app.quit() },
     ]),
   );
 }
@@ -525,10 +533,6 @@ function setupIpc() {
         writeFileSync(result.filePath, Buffer.from(bytes));
         return true;
       }
-      case "set_tray_enabled":
-        if (typeof args.enabled !== "boolean") throw new Error("托盘开关参数无效");
-        setTrayEnabled(args.enabled);
-        return undefined;
       case "request_notification_permission":
         return showNativeNotification(
           "ChatDesk 通知已开启",
@@ -653,7 +657,7 @@ if (!gotSingleInstanceLock) {
     });
     const iconPath = applicationIconPath();
     if (process.platform === "darwin" && iconPath) app.dock?.setIcon(iconPath);
-    setTrayEnabled(true);
+    ensureTray();
     void setupSupervisor().catch((error) => {
       console.error("Chat Server startup failed", error);
     });

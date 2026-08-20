@@ -15,7 +15,6 @@
 | 沙箱 | `/settings/sandbox` | 受限 Bash 的额外只读目录；不能通过沙箱写入 |
 | 环境 | `/settings/environment` | 受限终端可调用的本机开发工具 PATH |
 | 长期记忆 | `/settings/memory` | 跨会话用户记忆 |
-| 托盘 | `/settings/tray` | 菜单栏 / 系统托盘 |
 | Chat Server | `/settings/chat-server` | 本地服务端口，或手动重启 |
 | 使用量 | `/settings/statistics` | 本机 token 统计；可导入对话 |
 | 活动记录 | `/settings/logs` | 本机运行日志 |

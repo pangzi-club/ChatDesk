@@ -37,7 +37,6 @@ export type DesktopBridge = {
   openExternal(url: string): Promise<void>;
   assetUrl(path: string): string;
   saveImageFile(bytes: number[], fileName: string): Promise<boolean>;
-  setTrayEnabled(enabled: boolean): Promise<void>;
   requestNotificationPermission?(): Promise<boolean>;
   showNotification?(
     title: string,

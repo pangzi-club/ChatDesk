@@ -30,7 +30,6 @@ import {
   Package,
   Palette,
   PanelLeft,
-  PanelTop,
   Play,
   PlugZap,
   Plus,
@@ -168,7 +167,6 @@ import {
 } from "@/lib/shortcuts";
 import { appendSystemLog } from "@/lib/system-log";
 import { terminalSessions } from "@/lib/terminal";
-import { applyTrayEnabled, loadTrayEnabled } from "@/lib/tray";
 import {
   getWorkspaceSessionKey,
   sortWorkspaceConversationGroups,
@@ -274,7 +272,6 @@ const commandItems = [
     icon: Brain,
     keywords: ["设置", "memory", "记忆", "长期记忆"],
   },
-  { to: "/settings/tray", label: "托盘", icon: PanelTop, keywords: ["设置", "tray"] },
   {
     to: "/settings/chat-server",
     label: "Chat Server",
@@ -528,14 +525,28 @@ function AppShell() {
     const bridge = getDesktopBridge();
     if (!bridge) return;
 
-    let unlisten: (() => void) | undefined;
-    void bridge
-      .subscribe("tray-chat", () => navigate(chatNewPath()))
-      .then((cleanup) => {
-        unlisten = cleanup;
+    let active = true;
+    const unlisteners: Array<() => void> = [];
+    const listen = (event: string, listener: (payload: unknown) => void) => {
+      void bridge.subscribe(event, listener).then((cleanup) => {
+        if (!active) cleanup();
+        else unlisteners.push(cleanup);
       });
+    };
+    const openTrayPath = (path: string) => {
+      navigate(path === "/chat" ? chatNewPath() : path);
+    };
+    listen("tray-chat", () => openTrayPath("/chat"));
+    listen("tray-open", (payload) => {
+      if (!payload || typeof payload !== "object") return;
+      const path = (payload as { path?: unknown }).path;
+      if (typeof path === "string" && path.startsWith("/")) openTrayPath(path);
+    });
 
-    return () => unlisten?.();
+    return () => {
+      active = false;
+      for (const unlisten of unlisteners) unlisten();
+    };
   }, [navigate]);
 
   useEffect(() => {
@@ -576,13 +587,6 @@ function AppShell() {
       active = false;
       for (const unlisten of unlisteners) unlisten();
     };
-  }, []);
-
-  useEffect(() => {
-    if (!isDesktop()) return;
-    void loadTrayEnabled()
-      .then((enabled) => applyTrayEnabled(enabled))
-      .catch((error) => console.error("Failed to apply tray setting", error));
   }, []);
 
   useEffect(() => {

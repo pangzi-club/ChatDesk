@@ -9,16 +9,8 @@ use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Emitter, Manager, RunEvent,
+    Emitter, Manager, RunEvent,
 };
-
-#[tauri::command]
-fn set_tray_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
-    let tray = app
-        .tray_by_id("main-tray")
-        .ok_or_else(|| "main tray is not available".to_string())?;
-    tray.set_visible(enabled).map_err(|error| error.to_string())
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -97,7 +89,6 @@ pub fn run() {
             commands::sandbox::workspace_write_file,
             commands::sandbox::workspace_edit_file,
             commands::sandbox::workspace_search_files,
-            set_tray_enabled,
             commands::automation::sync_automation_tasks,
             commands::chat_server::chat_server_info,
             commands::chat_server::chat_server_restart,
