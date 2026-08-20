@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
-import { searchWorkspaceFiles } from "./file-search.ts";
+import { searchWorkspaceFiles, suggestWorkspacePaths } from "./file-search.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -26,6 +26,25 @@ async function createGitWorkspace() {
 }
 
 describe("workspace file search", () => {
+  it("suggests visible files and directories by case-insensitive path prefix", async () => {
+    const root = await createGitWorkspace();
+    const result = await suggestWorkspacePaths(root, "SRC/", 20);
+
+    expect(result.suggestions).toEqual([
+      { path: "src/main.ts", kind: "file" },
+      { path: "src/nested/other.ts", kind: "file" },
+      { path: "src/nested", kind: "dir" },
+    ]);
+    expect(result.suggestions.some((item) => item.path.includes("ignored"))).toBe(false);
+  });
+
+  it("matches a file by its final name", async () => {
+    const root = await createGitWorkspace();
+    const result = await suggestWorkspacePaths(root, "MAIN.TS", 20);
+
+    expect(result.suggestions).toEqual([{ path: "src/main.ts", kind: "file" }]);
+  });
+
   it("supports recursive globs, Git ignores, and content previews", async () => {
     const root = await createGitWorkspace();
     const result = await searchWorkspaceFiles(root, root, {

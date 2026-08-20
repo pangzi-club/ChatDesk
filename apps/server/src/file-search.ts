@@ -31,6 +31,16 @@ export type FileSearchResult = {
   engine: "ripgrep" | "builtin";
 };
 
+export type WorkspacePathSuggestion = {
+  path: string;
+  kind: "dir" | "file";
+};
+
+export type WorkspacePathSuggestionResult = {
+  suggestions: WorkspacePathSuggestion[];
+  truncated: boolean;
+};
+
 function boundSearchResult(result: FileSearchResult): FileSearchResult {
   const next = {
     ...result,
@@ -326,4 +336,67 @@ export async function searchWorkspaceFiles(
     truncated: fallback.matches.length > limit,
     engine: "builtin",
   });
+}
+
+async function listVisibleFiles(root: string): Promise<string[]> {
+  const ripgrep = await runRipgrep(root, root, {});
+  if (ripgrep) return ripgrep as string[];
+  const gitFiles = await listGitFiles(root, root);
+  if (gitFiles) return gitFiles.map((file) => normalizeDisplayPath(root, file));
+
+  const files: string[] = [];
+  const visit = async (directory: string): Promise<void> => {
+    let entries: Dirent[];
+    try {
+      entries = await readdir(directory, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const target = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        if (!SKIPPED_DIRECTORIES.has(entry.name)) await visit(target);
+      } else if (entry.isFile()) {
+        files.push(normalizeDisplayPath(root, target));
+      }
+    }
+  };
+  await visit(root);
+  return files;
+}
+
+export async function suggestWorkspacePaths(
+  root: string,
+  query: string,
+  maxResults = 20,
+): Promise<WorkspacePathSuggestionResult> {
+  const canonicalRoot = realpathSync(root);
+  const normalizedQuery = query.trim().replaceAll("\\", "/").replace(/^\.\//, "").toLowerCase();
+  const files = await listVisibleFiles(canonicalRoot);
+  const suggestions = new Map<string, WorkspacePathSuggestion>();
+  for (const file of files) {
+    const normalizedFile = file.toLowerCase();
+    const basename = normalizedFile.slice(normalizedFile.lastIndexOf("/") + 1);
+    if (!normalizedFile.startsWith(normalizedQuery) && !basename.startsWith(normalizedQuery))
+      continue;
+    suggestions.set(file, { path: file, kind: "file" });
+    const segments = file.split("/");
+    for (let index = 1; index < segments.length; index += 1) {
+      const directory = segments.slice(0, index).join("/");
+      const directoryName = directory.slice(directory.lastIndexOf("/") + 1).toLowerCase();
+      if (
+        directory.toLowerCase().startsWith(normalizedQuery) ||
+        directoryName.startsWith(normalizedQuery)
+      ) {
+        suggestions.set(directory, { path: directory, kind: "dir" });
+      }
+    }
+  }
+  const sorted = [...suggestions.values()].sort(
+    (left, right) =>
+      Number(left.kind === "dir") - Number(right.kind === "dir") ||
+      left.path.localeCompare(right.path),
+  );
+  const limit = Math.min(Math.max(maxResults, 1), 20);
+  return { suggestions: sorted.slice(0, limit), truncated: sorted.length > limit };
 }

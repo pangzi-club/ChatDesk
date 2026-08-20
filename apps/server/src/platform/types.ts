@@ -3,6 +3,7 @@ import type {
   WorkspaceGitDiff,
   WorkspaceGitSummary,
   WorkspaceListResult,
+  WorkspacePathSuggestionResult,
 } from "@chatdesk/shared";
 import type { SandboxMode } from "../protocol.ts";
 
@@ -14,7 +15,12 @@ export type PlatformCapabilities = {
   processManagement: boolean;
 };
 
-export type { WorkspaceFileEntry, WorkspaceListResult } from "@chatdesk/shared";
+export type {
+  WorkspaceFileEntry,
+  WorkspaceListResult,
+  WorkspacePathSuggestion,
+  WorkspacePathSuggestionResult,
+} from "@chatdesk/shared";
 
 export type WorkspaceReadResult = {
   path: string;
@@ -84,6 +90,11 @@ export type PlatformAdapter = {
     root: string,
     options: { path?: string; pattern?: string; query?: string; maxResults?: number },
   ): Promise<WorkspaceSearchResult>;
+  suggestWorkspacePaths(
+    root: string,
+    query: string,
+    maxResults?: number,
+  ): Promise<WorkspacePathSuggestionResult>;
   inspectGit(root: string): Promise<WorkspaceGitInfo>;
   readGitDiff(root: string, relativePath: string): Promise<WorkspaceGitDiff>;
   restoreGit(root: string, relativePath?: string): Promise<void>;

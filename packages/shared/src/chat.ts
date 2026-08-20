@@ -540,6 +540,16 @@ export type WorkspaceFileEntry = {
   kind: "dir" | "file" | "other";
 };
 
+export type WorkspacePathSuggestion = {
+  path: string;
+  kind: "dir" | "file";
+};
+
+export type WorkspacePathSuggestionResult = {
+  suggestions: WorkspacePathSuggestion[];
+  truncated: boolean;
+};
+
 export type WorkspaceListResult = {
   path: string;
   entries: WorkspaceFileEntry[];

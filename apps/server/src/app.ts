@@ -662,6 +662,22 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
       return jsonError(error instanceof Error ? error.message : String(error));
     }
   });
+  app.post("/v1/workspaces/:id/path-suggestions", async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const resolved = await workspaceFsRoot(
+        workspaces,
+        c.req.param("id"),
+        requestCwd(c.req.query("cwd"), body),
+      );
+      if ("error" in resolved) return resolved.error;
+      const query = typeof body.query === "string" ? body.query : "";
+      const maxResults = typeof body.maxResults === "number" ? body.maxResults : 20;
+      return c.json(await nodePlatform.suggestWorkspacePaths(resolved.root, query, maxResults));
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
   app.post("/v1/workspaces/:id/shell", async (c) => {
     try {
       const body = await c.req.json();

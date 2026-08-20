@@ -20,6 +20,7 @@ import type {
   WorkspaceGitCommitResult,
   WorkspaceGitDiff,
   WorkspaceListResult,
+  WorkspacePathSuggestionResult,
 } from "@chatdesk/shared";
 import type { UIMessage } from "ai";
 import { getDesktopBridge, isDesktop } from "@/lib/desktop-bridge";
@@ -78,6 +79,7 @@ export type {
   WorkspaceGitCommitResult,
   WorkspaceGitDiff,
   WorkspaceListResult,
+  WorkspacePathSuggestionResult,
 } from "@chatdesk/shared";
 export type {
   ChatIndexItem,
@@ -419,6 +421,27 @@ export async function loadServerWorkspaceFiles(
     port,
   );
   return (await response.json()) as WorkspaceListResult;
+}
+
+export async function loadServerWorkspacePathSuggestions(
+  id: string,
+  query: string,
+  cwd?: string,
+  maxResults = 20,
+  signal?: AbortSignal,
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  const response = await chatServerRequest(
+    withWorkspaceCwd(`/v1/workspaces/${encodeURIComponent(id)}/path-suggestions`, cwd),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, maxResults }),
+      signal,
+    },
+    port,
+  );
+  return (await response.json()) as WorkspacePathSuggestionResult;
 }
 
 export async function loadServerWorkspaceGitDiff(

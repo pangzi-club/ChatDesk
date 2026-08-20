@@ -692,6 +692,20 @@ describe("chat server", () => {
       true,
     );
 
+    const suggestions = await server.app.request(
+      `http://localhost/v1/workspaces/${project.id}/path-suggestions`,
+      {
+        method: "POST",
+        headers: { ...auth(), "Content-Type": "application/json" },
+        body: JSON.stringify({ query: "workspace-" }),
+      },
+    );
+    assert.equal(suggestions.status, 200);
+    assert.deepEqual(await suggestions.json(), {
+      suggestions: [{ path: "workspace-test.txt", kind: "file" }],
+      truncated: false,
+    });
+
     const activity = await server.app.request("http://localhost/v1/activity-logs", {
       method: "POST",
       headers: { ...auth(), "Content-Type": "application/json" },

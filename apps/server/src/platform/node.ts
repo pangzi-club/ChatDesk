@@ -3,6 +3,7 @@ import { existsSync, realpathSync, statSync } from "node:fs";
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { suggestWorkspacePaths } from "../file-search.ts";
 import type { SandboxMode } from "../protocol.ts";
 import { resolveCommandCwd, runSandboxedShell } from "../sandbox-exec.ts";
 import {
@@ -19,6 +20,7 @@ import type {
   ViteProcess,
   WorkspaceGitInfo,
   WorkspaceListResult,
+  WorkspacePathSuggestionResult,
   WorkspaceReadResult,
 } from "./types.ts";
 
@@ -237,6 +239,14 @@ export class NodePlatformAdapter implements PlatformAdapter {
     }
     await visit(start);
     return { query: needle || undefined, pattern, matches, truncated: matches.length >= limit };
+  }
+
+  suggestWorkspacePaths(
+    rootValue: string,
+    query: string,
+    maxResults = 20,
+  ): Promise<WorkspacePathSuggestionResult> {
+    return suggestWorkspacePaths(rootPath(rootValue), query, maxResults);
   }
 
   inspectGit(rootValue: string) {

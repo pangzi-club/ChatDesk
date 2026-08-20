@@ -75,6 +75,7 @@ import {
 } from "@/components/chat-conversation-menu-items";
 import { ChatGitSummary } from "@/components/chat-git-summary";
 import { ChatMarkdown } from "@/components/chat-markdown";
+import { ChatPathSuggestionPopup } from "@/components/chat-path-suggestion-popup";
 import { ChatPlanQuestionnaire } from "@/components/chat-plan-questionnaire";
 import { ChatSkillsPicker } from "@/components/chat-skills-picker";
 import { ChatTodoPanel } from "@/components/chat-todo-panel";
@@ -122,6 +123,7 @@ import {
   filterChatCommands,
   findActiveCommandTrigger,
 } from "@/lib/chat-commands";
+import { applyMentionSelection, findActiveMentionTrigger } from "@/lib/chat-composer-mentions";
 import { appendComposerSelection, readWindowSelectionText } from "@/lib/chat-composer-selection";
 import { resolveComposerEnterAction } from "@/lib/chat-composer-submit";
 import { materializeGeneratedImages } from "@/lib/chat-image-generation";
@@ -168,6 +170,7 @@ import {
   loadChatServerSystemPromptPreview,
   loadDeveloperEnvironment,
   loadServerWorkspaceGit,
+  loadServerWorkspacePathSuggestions,
   regenerateChatSessionTitle,
   saveChatServerConfig,
   stopChatServerRun,
@@ -389,6 +392,8 @@ function ChatPage() {
   const [commandCaret, setCommandCaret] = useState(0);
   const [commandIndex, setCommandIndex] = useState(0);
   const [commandDismissed, setCommandDismissed] = useState(false);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const [mentionDismissed, setMentionDismissed] = useState(false);
   const [sessionId, setSessionId] = useState(() =>
     chatRoute.kind === "session" ? chatRoute.sessionId : createSessionId(),
   );
@@ -2094,12 +2099,68 @@ function ChatPage() {
   const activeCommand = commandPopupOpen
     ? commandMatches[Math.min(commandIndex, commandMatches.length - 1)]
     : undefined;
+  const mentionTrigger = useMemo(
+    () => findActiveMentionTrigger(input, commandCaret),
+    [input, commandCaret],
+  );
+  const mentionQuery = mentionTrigger?.query ?? "";
+  const [debouncedMentionQuery, setDebouncedMentionQuery] = useState("");
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedMentionQuery(mentionQuery), 250);
+    return () => window.clearTimeout(timer);
+  }, [mentionQuery]);
+  const mentionQueryResult = useQuery({
+    queryKey: ["workspace-path-suggestions", workspaceKey, selectedCwd, debouncedMentionQuery],
+    queryFn: ({ signal }) =>
+      loadServerWorkspacePathSuggestions(
+        workspaceKey,
+        debouncedMentionQuery,
+        selectedCwd,
+        20,
+        signal,
+      ),
+    enabled: Boolean(
+      mentionTrigger && debouncedMentionQuery.length >= 2 && workspaceKey && selectedCwd,
+    ),
+    staleTime: 10_000,
+    retry: false,
+  });
+  const mentionSuggestions = mentionQueryResult.data?.suggestions ?? [];
+  const mentionPopupOpen =
+    !commandPopupOpen &&
+    Boolean(mentionTrigger) &&
+    debouncedMentionQuery.length >= 2 &&
+    !mentionDismissed &&
+    (mentionQueryResult.isPending || mentionSuggestions.length > 0);
+  const activeMention = mentionPopupOpen
+    ? mentionSuggestions[Math.min(mentionIndex, mentionSuggestions.length - 1)]
+    : undefined;
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: 查询串变化时需要重置 popup 选中与关闭状态
   useEffect(() => {
     setCommandIndex(0);
     setCommandDismissed(false);
   }, [commandQuery]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mention 查询串变化时需要重置 popup 选中与关闭状态
+  useEffect(() => {
+    setMentionIndex(0);
+    setMentionDismissed(false);
+  }, [mentionQuery]);
+
+  function applyChatMention(suggestion: NonNullable<typeof activeMention>) {
+    const result = applyMentionSelection(input, commandCaret, suggestion.path, suggestion.kind);
+    if (!result) return;
+    setInput(result.text);
+    setCommandCaret(result.caret);
+    setMentionDismissed(!result.keepOpen);
+    requestAnimationFrame(() => {
+      const textarea = inputRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(result.caret, result.caret);
+    });
+  }
 
   function applyChatCommand(command: ChatCommand) {
     const trigger = findActiveCommandTrigger(input, commandCaret);
@@ -2147,6 +2208,32 @@ function ChatPage() {
       if (event.key === "Escape") {
         event.preventDefault();
         setCommandDismissed(true);
+        return;
+      }
+    }
+    if (
+      mentionPopupOpen &&
+      !event.nativeEvent.isComposing &&
+      event.keyCode !== 229 &&
+      !isComposingRef.current
+    ) {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        setMentionIndex((current) => {
+          const count = mentionSuggestions.length;
+          if (!count) return 0;
+          return event.key === "ArrowDown" ? (current + 1) % count : (current - 1 + count) % count;
+        });
+        return;
+      }
+      if ((event.key === "Enter" || event.key === "Tab") && activeMention) {
+        event.preventDefault();
+        applyChatMention(activeMention);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMentionDismissed(true);
         return;
       }
     }
@@ -2612,10 +2699,19 @@ function ChatPage() {
               onSelect={applyChatCommand}
             />
           )}
+          {mentionPopupOpen && (
+            <ChatPathSuggestionPopup
+              activeIndex={Math.min(mentionIndex, Math.max(mentionSuggestions.length - 1, 0))}
+              isLoading={mentionQueryResult.isPending}
+              onHover={setMentionIndex}
+              onSelect={applyChatMention}
+              suggestions={mentionSuggestions}
+            />
+          )}
           <textarea
             aria-autocomplete="list"
-            aria-controls="chat-command-popup"
-            aria-expanded={commandPopupOpen}
+            aria-controls={mentionPopupOpen ? "chat-path-suggestion-popup" : "chat-command-popup"}
+            aria-expanded={commandPopupOpen || mentionPopupOpen}
             aria-label="输入消息"
             autoCapitalize="none"
             autoCorrect="off"
@@ -2627,6 +2723,7 @@ function ChatPage() {
             onChange={(event) => {
               setInput(event.target.value);
               setCommandCaret(event.target.selectionStart ?? event.target.value.length);
+              setMentionDismissed(false);
             }}
             onClick={(event) => setCommandCaret(event.currentTarget.selectionStart ?? 0)}
             onKeyUp={(event) => setCommandCaret(event.currentTarget.selectionStart ?? 0)}
