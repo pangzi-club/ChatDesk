@@ -11,6 +11,7 @@ import {
 } from "./chat-tool-call-card";
 import {
   extractBrowserToolDetail,
+  extractReadSkillDetail,
   extractWorkspaceToolSummary,
   getToolCallInputFields,
   getToolCallOutputFields,
@@ -226,6 +227,29 @@ describe("chat tool call workspace file targets", () => {
       ),
     ).toContain("…");
     expect(headlineToolText("first line\nsecond line")).toBe("first line");
+  });
+
+  it("shows which skill read_skill is loading", () => {
+    expect(
+      getChatToolSummary(
+        toolCall({ toolName: "read_skill", input: { skillId: "builtin:chatdesk-doc" } }),
+      ),
+    ).toBe("读取 Skill · chatdesk-doc");
+    expect(
+      getChatToolRunningSummary(
+        toolCall({ toolName: "read_skill", input: { skillId: "builtin:chatdesk-doc" } }),
+      ),
+    ).toBe("正在读取 Skill · chatdesk-doc");
+    expect(
+      extractReadSkillDetail(
+        { skillId: "builtin:chatdesk-doc", path: "references/settings.md" },
+        { id: "builtin:chatdesk-doc", path: "references/settings.md" },
+      ),
+    ).toBe("chatdesk-doc / references/settings.md");
+    expect(getToolCallInputFields("read_skill", { skillId: "builtin:chatdesk-doc" })).toEqual([
+      { kind: "meta", label: "Skill", text: "builtin:chatdesk-doc" },
+      { kind: "meta", label: "文件", text: "SKILL.md" },
+    ]);
   });
 
   it("resolves editable workspace tools as openable file targets", () => {

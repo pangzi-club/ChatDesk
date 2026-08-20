@@ -148,6 +148,19 @@ export function extractBrowserToolDetail(toolName: string, input: unknown) {
   return "";
 }
 
+export function extractReadSkillDetail(input: unknown, output?: unknown) {
+  const skillId = getStringProperty(input, "skillId") || getStringProperty(output, "id");
+  if (!skillId) return "";
+  const colon = skillId.indexOf(":");
+  const name = (colon >= 0 ? skillId.slice(colon + 1) : skillId).trim();
+  if (!name) return "";
+  const relativePath = getStringProperty(input, "path") || getStringProperty(output, "path");
+  if (relativePath && relativePath !== "SKILL.md") {
+    return headlineToolText(`${name} / ${relativePath}`);
+  }
+  return headlineToolText(name);
+}
+
 export function extractBrowserToolTitle(toolName: string, input: unknown) {
   if (toolName === "browser_open") return getStringProperty(input, "url");
   if (toolName === "browser_click") return getStringProperty(input, "selector");
@@ -234,6 +247,16 @@ export function getToolCallInputFields(toolName: string, input: unknown): ToolCa
     return fields;
   }
 
+  if (toolName === "read_skill") {
+    const skillId = getStringProperty(input, "skillId");
+    const relativePath = getStringProperty(input, "path");
+    if (!skillId && !relativePath) return null;
+    const fields: ToolCallField[] = [];
+    pushMetaField(fields, "Skill", skillId);
+    pushMetaField(fields, "文件", relativePath || "SKILL.md");
+    return fields;
+  }
+
   return null;
 }
 
@@ -257,6 +280,16 @@ export function getToolCallOutputFields(toolName: string, output: unknown): Tool
       pushMetaField(fields, "输出字节", totalOutputBytes.toLocaleString("zh-CN"));
     }
     pushCodeField(fields, "输出", out || "(无输出)", "output");
+    return fields;
+  }
+
+  if (toolName === "read_skill") {
+    const skillId = getStringProperty(output, "id");
+    const relativePath = getStringProperty(output, "path");
+    if (!skillId && !relativePath) return null;
+    const fields: ToolCallField[] = [];
+    pushMetaField(fields, "Skill", skillId);
+    pushMetaField(fields, "文件", relativePath);
     return fields;
   }
 

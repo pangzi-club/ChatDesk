@@ -10,6 +10,7 @@ import {
   type LucideIcon,
   MousePointerClick,
   Search,
+  Sparkles,
   Terminal,
   UserRoundCheck,
   Wrench,
@@ -34,6 +35,7 @@ import { assetUrl } from "@/lib/platform";
 import {
   extractBrowserToolDetail,
   extractBrowserToolTitle,
+  extractReadSkillDetail,
   extractWorkspaceToolSummary,
   extractWorkspaceToolTitle,
   formatToolJson,
@@ -150,6 +152,9 @@ function getSummaryDetail(call: ChatToolCallCardProps) {
         : undefined;
     return typeof prompt === "string" ? headlineToolText(prompt) : "";
   }
+  if (call.toolName === "read_skill") {
+    return extractReadSkillDetail(call.input, call.output);
+  }
   return "";
 }
 
@@ -168,6 +173,9 @@ function getSummaryTooltip(call: ChatToolCallCardProps) {
         ? (call.input as { prompt?: unknown }).prompt
         : undefined;
     return typeof prompt === "string" ? headlineToolText(prompt, 400) : "";
+  }
+  if (call.toolName === "read_skill") {
+    return extractReadSkillDetail(call.input, call.output);
   }
   return "";
 }
@@ -190,6 +198,7 @@ function getChatToolIcon(toolName: string): LucideIcon {
   if (toolName === "browser_eval") return Code2;
   if (toolName === BROWSER_SCREENSHOT_TOOL_NAME || toolName === IMAGE_GENERATION_TOOL_NAME)
     return Image;
+  if (toolName === "read_skill") return Sparkles;
   return Wrench;
 }
 
@@ -472,6 +481,7 @@ export function ChatToolCallCard({
     ? extractWorkspaceToolSummary(toolName, input, output)
     : "";
   const browserDetail = extractBrowserToolDetail(toolName, input);
+  const skillDetail = toolName === "read_skill" ? extractReadSkillDetail(input, output) : "";
   const summaryTooltip = imageMeta?.fileName || getSummaryTooltip(callProps);
   const inputFields = getToolCallInputFields(toolName, input);
   const outputFields = getToolCallOutputFields(toolName, output);
@@ -546,6 +556,9 @@ export function ChatToolCallCard({
           ) : null}
           {!running && !summaryQuery && !imageMeta?.fileName && browserDetail ? (
             <span className="chat-tool-call-title-detail"> · {browserDetail}</span>
+          ) : null}
+          {!running && !summaryQuery && !imageMeta?.fileName && !browserDetail && skillDetail ? (
+            <span className="chat-tool-call-title-detail"> · {skillDetail}</span>
           ) : null}
           {!running && workspaceSummary ? (
             fileTarget ? (

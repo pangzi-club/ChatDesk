@@ -38,6 +38,7 @@ export const CHAT_TOOL_DISPLAY_NAMES: Record<string, string> = {
   search_threads: "Search Threads · 对话搜索",
   search_thread_occurrences: "Search Occurrences · 消息定位",
   read_thread: "Read Thread · 读取对话",
+  read_skill: "读取 Skill",
 };
 
 export type ResolveActiveToolsResult = {
