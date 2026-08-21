@@ -22,6 +22,7 @@ import {
   Image,
   Keyboard,
   KeyRound,
+  List,
   LoaderCircle,
   Maximize2,
   MessageCircle,
@@ -170,6 +171,10 @@ import { appendSystemLog } from "@/lib/system-log";
 import { terminalSessions } from "@/lib/terminal";
 import {
   getWorkspaceSessionKey,
+  groupConversationsByLocalDate,
+  resolveWorkspaceConversationLabel,
+  type SidebarConversationView,
+  sortConversationsByCreatedAt,
   sortWorkspaceConversationGroups,
   sortWorkspaceProjects,
   type WorkspaceSort,
@@ -306,6 +311,8 @@ const CHAT_UNREAD_STORE_KEY = "chatUnreadSessionIds";
 const WORKSPACE_COLLAPSE_STORE_KEY = "workspaceCollapseState";
 const WORKSPACE_SORT_STORE_KEY = "workspaceSort";
 const WORKSPACE_SECTION_COLLAPSE_KEY = "__workspace_section__";
+const SIDEBAR_VIEW_STORAGE_KEY = "m-dashboard-sidebar-conversation-view-v1";
+const SIDEBAR_VIEW_STORE_KEY = "sidebarConversationView";
 const MAIN_SIDEBAR_STATE_STORAGE_KEY = "m-dashboard-main-sidebar-v1";
 const MAIN_SIDEBAR_STATE_STORE_KEY = "mainSidebarState";
 const MAIN_SIDEBAR_DEFAULT_WIDTH = 248;
@@ -418,9 +425,32 @@ function persistWorkspaceSort(sort: WorkspaceSort) {
   );
 }
 
+function isSidebarConversationView(value: unknown): value is SidebarConversationView {
+  return value === "workspace" || value === "list";
+}
+
+function loadSidebarConversationView() {
+  if (typeof window === "undefined") return "workspace" as SidebarConversationView;
+  const stored = window.localStorage.getItem(SIDEBAR_VIEW_STORAGE_KEY);
+  return isSidebarConversationView(stored) ? stored : "workspace";
+}
+
+async function saveSidebarConversationView(view: SidebarConversationView) {
+  if (isDesktop()) {
+    await settingsStore.set(SIDEBAR_VIEW_STORE_KEY, view);
+    await settingsStore.save();
+    window.localStorage.removeItem(SIDEBAR_VIEW_STORAGE_KEY);
+    return;
+  }
+  window.localStorage.setItem(SIDEBAR_VIEW_STORAGE_KEY, view);
+}
+
 function AppShell() {
   const [isCommandMenuOpen, setIsCommandMenuOpen] = useState(false);
   const [isChatSearchOpen, setIsChatSearchOpen] = useState(false);
+  const [sidebarConversationView, setSidebarConversationView] = useState<SidebarConversationView>(
+    loadSidebarConversationView,
+  );
   const [chatWindowStates, setChatWindowStates] = useState<Record<string, ChatWindowState>>({});
   const [shortcutSettings, setShortcutSettings] = useState<ShortcutSettings>(DEFAULT_SHORTCUTS);
   const [mainSidebarState, setMainSidebarState] = useState(loadMainSidebarState);
@@ -428,6 +458,24 @@ function AppShell() {
   const mainSidebarWidthRef = useRef(mainSidebarState.width);
   const location = useLocation();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!isDesktop()) return;
+    void settingsStore
+      .get<unknown>(SIDEBAR_VIEW_STORE_KEY)
+      .then((stored) => {
+        if (isSidebarConversationView(stored)) setSidebarConversationView(stored);
+      })
+      .catch((error) => console.error("Failed to load sidebar conversation view", error));
+  }, []);
+
+  function toggleSidebarConversationView() {
+    const next = sidebarConversationView === "workspace" ? "list" : "workspace";
+    setSidebarConversationView(next);
+    void saveSidebarConversationView(next).catch((error) =>
+      console.error("Failed to save sidebar conversation view", error),
+    );
+  }
   const isChatPage = isChatPath(location.pathname);
   const chatWindowKey = getChatWindowKey(location.pathname, location.search);
   const previousChatWindowKeyRef = useRef(chatWindowKey);
@@ -963,10 +1011,12 @@ function AppShell() {
                     <TitlebarDragRegion className="pointer-events-auto" />
                   </div>
                   <SidebarHeader
+                    conversationView={sidebarConversationView}
                     onOpenSearch={() => {
                       setIsCommandMenuOpen(false);
                       setIsChatSearchOpen(true);
                     }}
+                    onToggleConversationView={toggleSidebarConversationView}
                   />
                   <nav
                     className="space-y-0.5 px-2 py-2 pb-1 max-sm:px-1.5"
@@ -985,7 +1035,7 @@ function AppShell() {
                         <SidebarNavItem item={item} key={item.to} />
                       ))}
                     </nav>
-                    <WorkspaceConversationGroups />
+                    <WorkspaceConversationGroups view={sidebarConversationView} />
                   </div>
 
                   <footer className="relative mt-auto border-border border-t px-2 py-1 max-sm:px-1.5">
@@ -1231,23 +1281,51 @@ function ChatServerStatusBanner() {
   );
 }
 
-function SidebarHeader({ onOpenSearch }: { onOpenSearch: () => void }) {
+function SidebarHeader({
+  conversationView,
+  onOpenSearch,
+  onToggleConversationView,
+}: {
+  conversationView: SidebarConversationView;
+  onOpenSearch: () => void;
+  onToggleConversationView: () => void;
+}) {
+  const nextView = conversationView === "workspace" ? "list" : "workspace";
+  const nextViewLabel = nextView === "list" ? "List" : "Workspace";
   return (
     <header className="flex items-center justify-between px-3 pt-3 pb-2 max-md:justify-center max-md:px-2 max-sm:px-1.5">
       <h1 className="min-w-0 truncate pl-2 font-semibold text-[15px] text-foreground max-md:hidden">
         ChatDesk
       </h1>
-      <Button
-        aria-label="搜索聊天"
-        className="size-7 text-muted-foreground max-md:hidden"
-        onClick={onOpenSearch}
-        size="icon"
-        title="搜索聊天（⌘/Ctrl+K）"
-        type="button"
-        variant="ghost"
-      >
-        <Search className="size-4" />
-      </Button>
+      <div className="flex items-center gap-1 max-md:hidden">
+        <Button
+          aria-label="搜索聊天"
+          className="size-7 text-muted-foreground"
+          onClick={onOpenSearch}
+          size="icon"
+          title="搜索聊天（⌘/Ctrl+K）"
+          type="button"
+          variant="ghost"
+        >
+          <Search className="size-4" />
+        </Button>
+        <Button
+          aria-label={`切换到 ${nextViewLabel} 视角`}
+          aria-pressed={conversationView === "list"}
+          className="size-7 text-muted-foreground"
+          onClick={onToggleConversationView}
+          size="icon"
+          title={`切换到 ${nextViewLabel} 视角`}
+          type="button"
+          variant="ghost"
+        >
+          {conversationView === "workspace" ? (
+            <List className="size-4" />
+          ) : (
+            <FolderGit2 className="size-4" />
+          )}
+        </Button>
+      </div>
     </header>
   );
 }
@@ -1312,7 +1390,139 @@ type WorkspaceChatGroup = {
   sessions: ChatIndexItem[];
 };
 
-function WorkspaceConversationGroups() {
+type ConversationSidebarRowProps = {
+  session: ChatIndexItem;
+  workspaceId: string;
+  workspaceLabel: string;
+  cwd?: string;
+  isActive: boolean;
+  isRecent: boolean;
+  isList: boolean;
+  isRunning: boolean;
+  isUnread: boolean;
+  isRenaming: boolean;
+  suppressSidebarEntrance: boolean;
+  sidebarMotionTransition: ReturnType<typeof getWorkbenchMotionTransition>;
+  copiedConversation: { id: string; kind: "id" | "markdown" } | null;
+  deletePending: boolean;
+  onOpen: (sessionId: string) => void;
+  onDelete: (session: ChatIndexItem) => void;
+  onCopyId: (sessionId: string) => void;
+  onCopyMarkdown: (session: ChatIndexItem) => void;
+  onRegenerateTitle: (session: ChatIndexItem) => void;
+};
+
+function ConversationSidebarRow({
+  session,
+  workspaceId,
+  workspaceLabel,
+  cwd,
+  isActive,
+  isRecent,
+  isList,
+  isRunning,
+  isUnread,
+  isRenaming,
+  suppressSidebarEntrance,
+  sidebarMotionTransition,
+  copiedConversation,
+  deletePending,
+  onOpen,
+  onDelete,
+  onCopyId,
+  onCopyMarkdown,
+  onRegenerateTitle,
+}: ConversationSidebarRowProps) {
+  return (
+    <motion.div
+      animate={{ height: isList ? "3rem" : "2rem", opacity: 1 }}
+      className="overflow-hidden"
+      exit={{ height: 0, opacity: 0 }}
+      initial={suppressSidebarEntrance ? false : { height: 0, opacity: 0 }}
+      layout={!suppressSidebarEntrance}
+      transition={suppressSidebarEntrance ? REDUCED_MOTION_TRANSITION : sidebarMotionTransition}
+    >
+      <ContextMenu>
+        <ChatConversationHoverCard
+          cwd={cwd}
+          session={session}
+          workspaceId={workspaceId}
+          workspaceLabel={workspaceLabel}
+        >
+          <ContextMenuTrigger asChild>
+            <div
+              className={`group flex w-full items-center rounded-md transition-colors ${
+                isList ? "h-12" : "h-8"
+              } ${
+                isActive
+                  ? "bg-accent text-accent-foreground font-medium"
+                  : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+              }`}
+            >
+              <button
+                aria-current={isActive ? "page" : undefined}
+                className={`flex min-w-0 flex-1 items-center rounded-md py-0 pr-1 text-left font-medium text-[13px] ${isList ? "pl-2" : isRecent ? "pl-2" : "pl-8"} ${isActive ? "text-accent-foreground" : "text-foreground"}`}
+                onClick={() => onOpen(session.id)}
+                type="button"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{session.title}</span>
+                  {isList ? (
+                    <span className="mt-0.5 flex items-center gap-1 truncate text-[11px] font-normal text-muted-foreground">
+                      <FolderGit2 aria-hidden="true" className="size-3 shrink-0" />
+                      <span className="truncate" title={workspaceLabel}>
+                        {workspaceLabel}
+                      </span>
+                    </span>
+                  ) : null}
+                </span>
+                {isRenaming || isRunning ? (
+                  <LoaderCircle
+                    aria-hidden="true"
+                    className="ml-auto size-3.5 shrink-0 animate-spin text-primary"
+                  />
+                ) : isUnread ? (
+                  <span
+                    className="ml-auto size-1.5 shrink-0 rounded-full bg-primary"
+                    title="未读消息"
+                  />
+                ) : null}
+              </button>
+              <button
+                aria-label={`删除${session.title}`}
+                className="mr-1 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+                disabled={deletePending}
+                onClick={() => onDelete(session)}
+                title="删除对话"
+                type="button"
+              >
+                <Trash2 className="size-3" />
+              </button>
+            </div>
+          </ContextMenuTrigger>
+        </ChatConversationHoverCard>
+        <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
+          <ChatConversationMenuItems
+            Item={ContextMenuItem}
+            canCopyAsMarkdown={session.messageCount > 0}
+            canRegenerateTitle={!isRunning && !isRenaming && session.messageCount > 0}
+            conversationIdCopied={
+              copiedConversation?.id === session.id && copiedConversation.kind === "id"
+            }
+            conversationMarkdownCopied={
+              copiedConversation?.id === session.id && copiedConversation.kind === "markdown"
+            }
+            onCopyAsMarkdown={() => onCopyMarkdown(session)}
+            onCopyConversationId={() => onCopyId(session.id)}
+            onRegenerateTitle={() => onRegenerateTitle(session)}
+          />
+        </ContextMenuContent>
+      </ContextMenu>
+    </motion.div>
+  );
+}
+
+function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }) {
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
@@ -1364,6 +1574,11 @@ function WorkspaceConversationGroups() {
       ),
     [chatIndexQuery.data, workspaceProjectsQuery.data, workspaceSort],
   );
+  const listSessions = useMemo(
+    () => sortConversationsByCreatedAt(chatIndexQuery.data ?? []),
+    [chatIndexQuery.data],
+  );
+  const listDateGroups = useMemo(() => groupConversationsByLocalDate(listSessions), [listSessions]);
   const isPending = chatIndexQuery.isPending || workspaceProjectsQuery.isPending;
   const isError = chatIndexQuery.isError || workspaceProjectsQuery.isError;
   // 首屏列表渲染与桌面状态恢复完成前，跳过 Sidebar 菜单的入场动画，保留展开/收起动画。
@@ -1610,89 +1825,100 @@ function WorkspaceConversationGroups() {
 
   return (
     <section
-      aria-labelledby="workspace-conversations-heading"
+      aria-labelledby="sidebar-conversations-heading"
       className="px-2 pt-2 pb-2 max-md:hidden"
     >
-      <div className="group flex h-8 items-center rounded-md px-2">
-        <h2
-          className="min-w-0 flex-1 font-medium text-[13px] text-muted-foreground/55"
-          id="workspace-conversations-heading"
-        >
-          <button
-            aria-expanded={!isWorkspaceSectionCollapsed}
-            aria-label={isWorkspaceSectionCollapsed ? "展开 Workspace" : "收起 Workspace"}
-            className="flex w-full items-center gap-1 text-left text-muted-foreground/55"
-            onClick={toggleWorkspaceSection}
-            title="Workspace"
-            type="button"
+      {view === "workspace" ? (
+        <div className="group flex h-8 items-center rounded-md px-2">
+          <h2
+            className="min-w-0 flex-1 font-medium text-[13px] text-muted-foreground/55"
+            id="sidebar-conversations-heading"
           >
-            <span className="truncate text-muted-foreground/55">Workspace</span>
-            <ChevronRight
-              aria-hidden="true"
-              className={`size-3.5 shrink-0 opacity-0 transition-[transform,opacity] group-hover:opacity-100 group-focus-within:opacity-100 ${isWorkspaceSectionCollapsed ? "" : "rotate-90"}`}
-            />
-          </button>
-        </h2>
-        <button
-          aria-label="添加 Workspace"
-          className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100"
-          disabled={addWorkspaceMutation.isPending}
-          onClick={addWorkspace}
-          title="添加 Workspace"
-          type="button"
-        >
-          <Plus className="size-3.5" />
-        </button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
             <button
-              aria-label="Workspace 排序"
-              className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100"
-              title="Workspace 排序"
+              aria-expanded={!isWorkspaceSectionCollapsed}
+              aria-label={isWorkspaceSectionCollapsed ? "展开 Workspace" : "收起 Workspace"}
+              className="flex w-full items-center gap-1 text-left text-muted-foreground/55"
+              onClick={toggleWorkspaceSection}
+              title="Workspace"
               type="button"
             >
-              <MoreHorizontal className="size-3.5" />
+              <span className="truncate text-muted-foreground/55">Workspace</span>
+              <ChevronRight
+                aria-hidden="true"
+                className={`size-3.5 shrink-0 opacity-0 transition-[transform,opacity] group-hover:opacity-100 group-focus-within:opacity-100 ${isWorkspaceSectionCollapsed ? "" : "rotate-90"}`}
+              />
             </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" sideOffset={6}>
-            <DropdownMenuLabel>排序方式</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onSelect={() => {
-                setWorkspaceSort("name");
-                persistWorkspaceSort("name");
-              }}
-            >
-              <span className="flex-1">按名称</span>
-              {workspaceSort === "name" ? <Check className="size-3.5" /> : null}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={() => {
-                setWorkspaceSort("updated");
-                persistWorkspaceSort("updated");
-              }}
-            >
-              <span className="flex-1">按更新</span>
-              {workspaceSort === "updated" ? <Check className="size-3.5" /> : null}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={() => {
-                setWorkspaceSort("count");
-                persistWorkspaceSort("count");
-              }}
-            >
-              <span className="flex-1">按对话数量</span>
-              {workspaceSort === "count" ? <Check className="size-3.5" /> : null}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-      {addWorkspaceMutation.error ? (
+          </h2>
+          <button
+            aria-label="添加 Workspace"
+            className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100"
+            disabled={addWorkspaceMutation.isPending}
+            onClick={addWorkspace}
+            title="添加 Workspace"
+            type="button"
+          >
+            <Plus className="size-3.5" />
+          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                aria-label="Workspace 排序"
+                className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100"
+                title="Workspace 排序"
+                type="button"
+              >
+                <MoreHorizontal className="size-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" sideOffset={6}>
+              <DropdownMenuLabel>排序方式</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={() => {
+                  setWorkspaceSort("name");
+                  persistWorkspaceSort("name");
+                }}
+              >
+                <span className="flex-1">按名称</span>
+                {workspaceSort === "name" ? <Check className="size-3.5" /> : null}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => {
+                  setWorkspaceSort("updated");
+                  persistWorkspaceSort("updated");
+                }}
+              >
+                <span className="flex-1">按更新</span>
+                {workspaceSort === "updated" ? <Check className="size-3.5" /> : null}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => {
+                  setWorkspaceSort("count");
+                  persistWorkspaceSort("count");
+                }}
+              >
+                <span className="flex-1">按对话数量</span>
+                {workspaceSort === "count" ? <Check className="size-3.5" /> : null}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      ) : (
+        <div className="flex h-8 items-center rounded-md px-2">
+          <h2
+            className="font-medium text-[13px] text-muted-foreground/55"
+            id="sidebar-conversations-heading"
+          >
+            List
+          </h2>
+        </div>
+      )}
+      {view === "workspace" && addWorkspaceMutation.error ? (
         <p className="px-2 py-1 text-[11px] text-destructive">
           {describeError(addWorkspaceMutation.error)}
         </p>
       ) : null}
-      {deleteWorkspaceMutation.error ? (
+      {view === "workspace" && deleteWorkspaceMutation.error ? (
         <p className="px-2 py-1 text-[11px] text-destructive">
           {describeError(deleteWorkspaceMutation.error)}
         </p>
@@ -1701,6 +1927,57 @@ function WorkspaceConversationGroups() {
         <WorkspaceConversationSkeleton />
       ) : isError ? (
         <p className="px-2 py-2 text-[12px] text-destructive">对话记录加载失败</p>
+      ) : view === "list" ? (
+        listDateGroups.length === 0 ? (
+          <p className="px-2 py-2 text-[12px] text-muted-foreground">暂无对话</p>
+        ) : (
+          <div className="space-y-1">
+            {listDateGroups.map((dateGroup) => (
+              <div key={dateGroup.key}>
+                <h3 className="px-2 pt-2 pb-1 font-medium text-[12px] text-muted-foreground/60">
+                  {dateGroup.label}
+                </h3>
+                <div className="space-y-0.5">
+                  <AnimatePresence initial={false}>
+                    {dateGroup.sessions.map((session) => (
+                      <ConversationSidebarRow
+                        copiedConversation={copiedConversation}
+                        cwd={session.cwd}
+                        deletePending={deleteSessionMutation.isPending}
+                        isActive={activeSessionId === session.id}
+                        isList
+                        isRecent={false}
+                        isRenaming={renamingSessionId === session.id}
+                        isRunning={
+                          serverStatuses[session.id] === "submitted" ||
+                          serverStatuses[session.id] === "streaming"
+                        }
+                        isUnread={unreadSessionIds.has(session.id)}
+                        key={session.id}
+                        onCopyId={(sessionId) => void copyConversationId(sessionId)}
+                        onCopyMarkdown={(item) => void copyConversationMarkdown(item)}
+                        onDelete={setSessionToDelete}
+                        onOpen={openSession}
+                        onRegenerateTitle={(item) => void regenerateConversationTitle(item)}
+                        session={session}
+                        sidebarMotionTransition={sidebarMotionTransition}
+                        suppressSidebarEntrance={suppressSidebarEntrance}
+                        workspaceId={
+                          getWorkspaceSessionKey(session, workspaceProjectsQuery.data ?? []) ??
+                          DEFAULT_WORKSPACE_ID
+                        }
+                        workspaceLabel={resolveWorkspaceConversationLabel(
+                          session,
+                          workspaceProjectsQuery.data ?? [],
+                        )}
+                      />
+                    ))}
+                  </AnimatePresence>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
       ) : (
         <div className="space-y-0.5">
           {groups.map((group) => {

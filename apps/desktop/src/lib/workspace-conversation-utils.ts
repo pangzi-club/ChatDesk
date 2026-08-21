@@ -1,13 +1,70 @@
+import { DEFAULT_WORKSPACE_ID } from "@chatdesk/shared";
 import type { ChatIndexItem } from "@/lib/chat-store";
 import { normalizeWorkspacePath } from "./workspace-path";
 import type { WorkspaceProject } from "./workspaces";
 
 export type WorkspaceSort = "name" | "updated" | "count";
+export type SidebarConversationView = "workspace" | "list";
 
 export type WorkspaceConversationGroup<T = unknown> = {
   label: string;
   sessions: T[];
 };
+
+export type ConversationDateGroup<T = unknown> = {
+  key: string;
+  label: string;
+  sessions: T[];
+};
+
+export function sortConversationsByCreatedAt<
+  T extends Pick<ChatIndexItem, "createdAt" | "updatedAt" | "id">,
+>(sessions: T[]) {
+  return [...sessions].sort((left, right) => {
+    const createdDifference = right.createdAt.localeCompare(left.createdAt);
+    if (createdDifference !== 0) return createdDifference;
+    const updatedDifference = right.updatedAt.localeCompare(left.updatedAt);
+    if (updatedDifference !== 0) return updatedDifference;
+    return left.id.localeCompare(right.id);
+  });
+}
+
+export function resolveWorkspaceConversationLabel(
+  session: Pick<ChatIndexItem, "workspaceId" | "cwd">,
+  projects: WorkspaceProject[],
+  fallback = "Task",
+) {
+  if (session.workspaceId === DEFAULT_WORKSPACE_ID) return fallback;
+  const workspaceKey = getWorkspaceSessionKey(session, projects);
+  if (!workspaceKey || workspaceKey === DEFAULT_WORKSPACE_ID) return fallback;
+
+  const project = projects.find((candidate) => candidate.id === workspaceKey);
+  if (project) return pathBasename(project.path);
+  if (session.cwd?.trim()) return pathBasename(session.cwd);
+  return session.workspaceId?.trim() || fallback;
+}
+
+export function groupConversationsByLocalDate<T extends Pick<ChatIndexItem, "createdAt">>(
+  sessions: T[],
+  now = new Date(),
+): ConversationDateGroup<T>[] {
+  const groups = new Map<string, ConversationDateGroup<T>>();
+  for (const session of sessions) {
+    const date = new Date(session.createdAt);
+    const key = Number.isNaN(date.getTime()) ? "unknown" : localDateKey(date);
+    const group = groups.get(key);
+    if (group) {
+      group.sessions.push(session);
+      continue;
+    }
+    groups.set(key, {
+      key,
+      label: formatConversationDateGroupLabel(date, now),
+      sessions: [session],
+    });
+  }
+  return [...groups.values()];
+}
 
 export function getWorkspaceSessionKey(
   session: Pick<ChatIndexItem, "workspaceId" | "cwd">,
@@ -84,4 +141,28 @@ function pathBasename(path: string) {
       .split(/[\\/]/)
       .pop() ?? path
   );
+}
+
+function localDateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function startOfLocalDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+}
+
+function formatConversationDateGroupLabel(date: Date, now: Date) {
+  if (Number.isNaN(date.getTime())) return "未知时间";
+  const dayDifference = Math.floor(
+    (startOfLocalDay(now) - startOfLocalDay(date)) / (24 * 60 * 60 * 1000),
+  );
+  if (dayDifference === 0) return "今天";
+  if (dayDifference === 1) return "昨天";
+  if (dayDifference >= 2 && dayDifference < 7) {
+    return ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"][date.getDay()];
+  }
+  if (date.getFullYear() === now.getFullYear()) {
+    return `${date.getMonth() + 1}月${date.getDate()}日`;
+  }
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
 }
