@@ -2304,6 +2304,14 @@ const providerPresets = {
         outputContext: 8_000,
       },
       {
+        name: "deepseek-v4-flash-vision-exp",
+        supportsTools: true,
+        supportsImages: true,
+        supportsReasoning: true,
+        inputContext: 1_000_000,
+        outputContext: 384_000,
+      },
+      {
         name: "deepseek-v4-pro",
         supportsTools: true,
         supportsImages: false,
@@ -2384,6 +2392,21 @@ const providerPresets = {
 } as const;
 
 type ProviderKey = keyof typeof providerPresets;
+const PROVIDER_KEYS: ProviderKey[] = ["deepseek", "kimi", "minimax", "custom"];
+
+function getProviderIcon(provider: ProviderKey) {
+  switch (provider) {
+    case "deepseek":
+      return Brain;
+    case "kimi":
+      return Sparkles;
+    case "minimax":
+      return Server;
+    case "custom":
+      return Wrench;
+  }
+}
+
 type ProviderPresetModel = {
   name: string;
   supportsTools: boolean;
@@ -2698,11 +2721,15 @@ function ModelDialog({
   const [providerModels, setProviderModels] = useState<ProviderPresetModel[]>(() => {
     const initialProviderKey = providerKeyForLabel(initialModel.provider);
     const models: ProviderPresetModel[] =
-      initialProviderKey === "kimi" || initialProviderKey === "minimax"
+      initialProviderKey === "deepseek" ||
+      initialProviderKey === "kimi" ||
+      initialProviderKey === "minimax"
         ? providerPresets[initialProviderKey].models.map((item) => ({ ...item }))
         : [];
     if (
-      (initialProviderKey === "kimi" || initialProviderKey === "minimax") &&
+      (initialProviderKey === "deepseek" ||
+        initialProviderKey === "kimi" ||
+        initialProviderKey === "minimax") &&
       initialModel.name &&
       !models.some((item) => item.name === initialModel.name)
     ) {
@@ -2719,14 +2746,15 @@ function ModelDialog({
   });
   const [providerModelsProvider, setProviderModelsProvider] = useState<ProviderKey | null>(() => {
     const key = providerKeyForLabel(initialModel.provider);
-    return key === "kimi" || key === "minimax" ? key : null;
+    return key === "deepseek" || key === "kimi" || key === "minimax" ? key : null;
   });
   const [testState, setTestState] = useState<
     { type: "success" | "error"; message: string } | undefined
   >();
   const providerKey = providerKeyForLabel(model.provider);
   const presetModels: ProviderPresetModel[] =
-    (providerKey === "kimi" || providerKey === "minimax") && providerModelsProvider === providerKey
+    (providerKey === "deepseek" || providerKey === "kimi" || providerKey === "minimax") &&
+    providerModelsProvider === providerKey
       ? providerModels
       : providerPresets[providerKey].models.map((item) => ({ ...item }));
   const providerBaseUrl = model.baseUrl.trim();
@@ -2778,7 +2806,12 @@ function ModelDialog({
         queryFn: () => listChatServerModels({ baseUrl, apiKey }),
         staleTime: 5 * 60 * 1000,
       });
-      const modelPrefix = providerKey === "minimax" ? /^minimax-/i : /^(kimi-|moonshot-)/i;
+      const modelPrefix =
+        providerKey === "deepseek"
+          ? /^deepseek-/i
+          : providerKey === "minimax"
+            ? /^minimax-/i
+            : /^(kimi-|moonshot-)/i;
       const nextModels: ProviderPresetModel[] = (listed as ListedProviderModel[])
         .filter((item) => modelPrefix.test(item.id))
         .map((item: ChatServerProviderModel) => ({
@@ -2940,11 +2973,17 @@ function ModelDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {(Object.keys(providerPresets) as ProviderKey[]).map((key) => (
-                    <SelectItem key={key} value={key}>
-                      {providerPresets[key].label}
-                    </SelectItem>
-                  ))}
+                  {PROVIDER_KEYS.map((key) => {
+                    const ProviderIcon = getProviderIcon(key);
+                    return (
+                      <SelectItem key={key} value={key}>
+                        <span className="flex items-center gap-2">
+                          <ProviderIcon className="size-4 text-muted-foreground" />
+                          <span>{providerPresets[key].label}</span>
+                        </span>
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>
@@ -2977,7 +3016,10 @@ function ModelDialog({
               </a>
             ) : null}
           </div>
-          {providerKey === "custom" || providerKey === "kimi" || providerKey === "minimax" ? (
+          {providerKey === "custom" ||
+          providerKey === "deepseek" ||
+          providerKey === "kimi" ||
+          providerKey === "minimax" ? (
             <div className="block text-sm">
               <label className="font-medium" htmlFor="model-base-url">
                 接口地址
@@ -2993,7 +3035,7 @@ function ModelDialog({
                 }
                 value={model.baseUrl}
               />
-              {providerKey === "kimi" || providerKey === "minimax" ? (
+              {providerKey === "deepseek" || providerKey === "kimi" || providerKey === "minimax" ? (
                 <Button
                   className="mt-2"
                   disabled={isLoadingProviderModels || isTesting || isSaving}
@@ -3011,34 +3053,6 @@ function ModelDialog({
               ) : null}
             </div>
           ) : null}
-          <fieldset>
-            <legend className="font-medium text-sm">用量价格（USD / 1M tokens）</legend>
-            <p className="mt-1 text-muted-foreground text-xs">
-              用于 Statistics 页费用估算，可留空。
-            </p>
-            <div className="mt-3 grid gap-4 sm:grid-cols-2">
-              <PriceField
-                label="输入价格"
-                value={model.inputPricePerMillion}
-                onChange={(value) => update("inputPricePerMillion", value)}
-              />
-              <PriceField
-                label="输出价格"
-                value={model.outputPricePerMillion}
-                onChange={(value) => update("outputPricePerMillion", value)}
-              />
-              <PriceField
-                label="缓存读取价格"
-                value={model.cacheReadPricePerMillion}
-                onChange={(value) => update("cacheReadPricePerMillion", value)}
-              />
-              <PriceField
-                label="缓存写入价格"
-                value={model.cacheWritePricePerMillion}
-                onChange={(value) => update("cacheWritePricePerMillion", value)}
-              />
-            </div>
-          </fieldset>
           <div className="block text-sm">
             <label className="font-medium" htmlFor="model-api-key">
               API Key
@@ -3269,37 +3283,6 @@ function NumberField({
           </button>
         ))}
       </div>
-    </div>
-  );
-}
-
-function PriceField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value?: number;
-  onChange: (value?: number) => void;
-}) {
-  return (
-    <div className="block text-sm">
-      <label className="font-medium" htmlFor={`model-price-${label}`}>
-        {label}
-      </label>
-      <Input
-        className="mt-2 h-10 bg-background"
-        id={`model-price-${label}`}
-        min="0"
-        onChange={(event) => {
-          const next = event.target.value ? Number(event.target.value) : undefined;
-          onChange(next !== undefined && Number.isFinite(next) && next >= 0 ? next : undefined);
-        }}
-        placeholder="例如 0.50"
-        step="any"
-        type="number"
-        value={value ?? ""}
-      />
     </div>
   );
 }

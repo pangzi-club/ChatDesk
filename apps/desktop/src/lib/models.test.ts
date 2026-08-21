@@ -42,5 +42,6 @@ describe("model context normalization", () => {
 
   it("uses the known window when a preset model has no saved value", () => {
     expect(resolveModelInputContext({ name: "deepseek-v4-flash" })).toBe(1_000_000);
+    expect(resolveModelInputContext({ name: "deepseek-v4-flash-vision-exp" })).toBe(1_000_000);
   });
 });

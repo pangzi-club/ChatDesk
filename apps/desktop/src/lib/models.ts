@@ -5,6 +5,7 @@ export const MODELS_STORE_KEY = "models";
 
 const KNOWN_MODEL_CONTEXT_WINDOWS: Record<string, number> = {
   "deepseek-v4-flash": 1_000_000,
+  "deepseek-v4-flash-vision-exp": 1_000_000,
   "deepseek-v4-pro": 1_000_000,
   "kimi-k3": 1_000_000,
   "kimi-k2.7-code": 256_000,
