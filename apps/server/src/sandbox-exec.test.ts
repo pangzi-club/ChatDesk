@@ -210,7 +210,7 @@ describe("sandbox execution errors", () => {
     }
   });
 
-  it("keeps tool caches outside the workspace without exposing the real home", async () => {
+  it("keeps tool caches outside the workspace and uses the real home", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-sandbox-cache-env-"));
     const result = await runSandboxedShell(
       'printf "%s\\n%s\\n%s" "$HOME" "$npm_config_cache" "$GOCACHE"',
@@ -218,14 +218,11 @@ describe("sandbox execution errors", () => {
     );
     const [home, npmCache, goCache] = result.out.split("\n");
 
-    expect(home).toContain(path.join(os.tmpdir(), "chatdesk-sandbox-cache"));
-    expect(home).not.toBe(os.homedir());
-    expect(home).not.toContain(root);
+    expect(home).toBe(os.homedir());
     expect(npmCache).toContain(path.join(os.tmpdir(), "chatdesk-sandbox-cache"));
     expect(goCache).toContain(path.join(os.tmpdir(), "chatdesk-sandbox-cache"));
     expect(npmCache).not.toContain(root);
     expect(goCache).not.toContain(root);
-    expect(existsSync(home)).toBe(true);
     expect(existsSync(npmCache)).toBe(true);
     expect(existsSync(goCache)).toBe(true);
   });

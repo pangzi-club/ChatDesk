@@ -433,7 +433,6 @@ function sandboxEnvironment(cwd: string, developerToolPaths: string[] = []) {
   for (const directory of [
     cacheRoot,
     tempRoot,
-    path.join(cacheRoot, "home"),
     path.join(cacheRoot, "xdg-cache"),
     path.join(cacheRoot, "xdg-data"),
     path.join(cacheRoot, "corepack"),
@@ -449,7 +448,7 @@ function sandboxEnvironment(cwd: string, developerToolPaths: string[] = []) {
     mkdirSync(directory, { recursive: true });
   }
   env.TMPDIR = tempRoot;
-  env.HOME = path.join(cacheRoot, "home");
+  env.HOME = os.homedir();
   env.XDG_CACHE_HOME = path.join(cacheRoot, "xdg-cache");
   env.XDG_DATA_HOME = path.join(cacheRoot, "xdg-data");
   env.COREPACK_HOME = path.join(cacheRoot, "corepack");

@@ -60,7 +60,8 @@ sandbox-exec -p "$PROFILE" \
 - 限制 stdout 与 stderr 的最大长度；
 - 使用每次执行独立的临时目录；
 - 清理 API Key、Token、代理地址等环境变量；
-- 设置独立的 `HOME`，避免加载真实用户配置；
+- 保留真实 `HOME`；默认沙箱靠 Seatbelt 限制家目录读写，不另造隔离主目录；
+- 把包管理器缓存指到系统临时目录下的隔离路径，避免写入失败或弄脏工作区；
 - 固定 `PATH`；
 - 使用 `--noprofile --norc`，避免加载 Shell 启动文件；
 - 对高风险操作展示完整命令并请求确认。
@@ -68,8 +69,9 @@ sandbox-exec -p "$PROFILE" \
 例如，可以为子进程设置最小化环境：
 
 ```text
-HOME=$TMPDIR/chatdesk-sandbox-cache-<process>/<workspace-hash>/home
-TMPDIR=<workspace>/.sandbox-tmp
+HOME=<real-home>
+TMPDIR=$TMPDIR/chatdesk-sandbox-cache-<workspace-hash>/tmp
+npm_config_cache=$TMPDIR/chatdesk-sandbox-cache-<workspace-hash>/npm
 PATH=/usr/bin:/bin
 ```
 
