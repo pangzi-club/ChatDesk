@@ -141,6 +141,10 @@ import {
   getChatMessageBlocks,
 } from "@/lib/chat-message-blocks";
 import {
+  previewCollapsedChatUserMessage,
+  shouldCollapseChatUserMessage,
+} from "@/lib/chat-message-collapse";
+import {
   findLatestPlanWriteAnchor,
   findLatestPlanWriteContent,
   isPlanExecutionReady,
@@ -246,8 +250,6 @@ import {
 import { loadWorkspaceProjects, workspaceGitQueryKey } from "@/lib/workspaces";
 
 const EMPTY_STRING_ARRAY: string[] = [];
-const CHAT_MESSAGE_COLLAPSE_CHAR_LIMIT = 1200;
-const CHAT_MESSAGE_COLLAPSE_LINE_LIMIT = 18;
 const CHAT_STREAM_UPDATE_THROTTLE_MS = 50;
 type PlanTransitionState = "idle" | "entering" | "exiting";
 type QueuedComposerMessage = {
@@ -3239,10 +3241,7 @@ const MessageBubble = memo(function MessageBubble({
     .filter(Boolean)
     .join(" · ");
   const runErrorLabel = getMessageRunErrorLabel(message);
-  const shouldCollapse =
-    isUser &&
-    (text.length > CHAT_MESSAGE_COLLAPSE_CHAR_LIMIT ||
-      text.split("\n").length > CHAT_MESSAGE_COLLAPSE_LINE_LIMIT);
+  const shouldCollapse = isUser && shouldCollapseChatUserMessage(text);
   const showMessageActions = !generationStatus && (!isUser || Boolean(text.trim()));
 
   async function copyMessage() {
@@ -3376,15 +3375,22 @@ const MessageBubble = memo(function MessageBubble({
               return <ChatMessageFiles key={block.key} parts={block.parts} />;
             }
             const collapseBlock = isUser && shouldCollapse;
+            const collapsed = collapseBlock && !expanded;
             return (
               <div
-                className={`chat-message-text-wrap ${collapseBlock && !expanded ? "is-collapsed" : ""}`}
+                className={`chat-message-text-wrap ${collapsed ? "is-collapsed" : ""}`}
                 key={block.key}
               >
                 <div className="chat-message-text">
-                  <ChatMarkdown isAnimating={!isUser && isStreaming}>{block.text}</ChatMarkdown>
+                  {collapsed ? (
+                    <div className="chat-user-message-preview">
+                      {previewCollapsedChatUserMessage(block.text)}
+                    </div>
+                  ) : (
+                    <ChatMarkdown isAnimating={!isUser && isStreaming}>{block.text}</ChatMarkdown>
+                  )}
+                  {collapsed ? <div className="chat-message-fade" /> : null}
                 </div>
-                {collapseBlock && !expanded ? <div className="chat-message-fade" /> : null}
                 {collapseBlock ? (
                   <Button
                     aria-expanded={expanded}
