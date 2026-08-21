@@ -115,6 +115,7 @@ import {
   pushBrowserNavigation,
 } from "@/lib/browser-preview";
 import { openBrowserPreview, subscribeBrowserPreviewOpen } from "@/lib/browser-preview-events";
+import { copyChatConversationMarkdown } from "@/lib/chat-conversation-markdown";
 import {
   chatNewNavigationState,
   chatNewPath,
@@ -1328,7 +1329,10 @@ function WorkspaceConversationGroups() {
   const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(loadUnreadChatIds);
   const [serverPort, setServerPort] = useState(14317);
   const [sessionToDelete, setSessionToDelete] = useState<ChatIndexItem | null>(null);
-  const [copiedSessionId, setCopiedSessionId] = useState<string | null>(null);
+  const [copiedConversation, setCopiedConversation] = useState<{
+    id: string;
+    kind: "id" | "markdown";
+  } | null>(null);
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
   const copiedResetTimerRef = useRef<number | null>(null);
   const [workspaceToDelete, setWorkspaceToDelete] = useState<WorkspaceProject | null>(null);
@@ -1549,20 +1553,39 @@ function WorkspaceConversationGroups() {
     navigate(chatSessionPath(sessionId));
   }
 
-  async function copyConversationId(sessionId: string) {
-    const copied = await copyChatConversationId(sessionId);
-    if (!copied) {
-      setCopiedSessionId(null);
-      return;
-    }
-    setCopiedSessionId(sessionId);
+  function markCopiedConversation(id: string, kind: "id" | "markdown") {
+    setCopiedConversation({ id, kind });
     if (copiedResetTimerRef.current !== null) {
       window.clearTimeout(copiedResetTimerRef.current);
     }
     copiedResetTimerRef.current = window.setTimeout(() => {
-      setCopiedSessionId(null);
+      setCopiedConversation(null);
       copiedResetTimerRef.current = null;
     }, 1500);
+  }
+
+  async function copyConversationId(sessionId: string) {
+    const copied = await copyChatConversationId(sessionId);
+    if (!copied) {
+      setCopiedConversation(null);
+      return;
+    }
+    markCopiedConversation(sessionId, "id");
+  }
+
+  async function copyConversationMarkdown(session: ChatIndexItem) {
+    const loaded = await loadChatSession(session.id);
+    const copied = loaded
+      ? await copyChatConversationMarkdown({
+          title: loaded.title,
+          messages: loaded.messages,
+        })
+      : false;
+    if (!copied) {
+      setCopiedConversation(null);
+      return;
+    }
+    markCopiedConversation(session.id, "markdown");
   }
 
   async function regenerateConversationTitle(session: ChatIndexItem) {
@@ -1851,10 +1874,21 @@ function WorkspaceConversationGroups() {
                                     >
                                       <ChatConversationMenuItems
                                         Item={ContextMenuItem}
+                                        canCopyAsMarkdown={session.messageCount > 0}
                                         canRegenerateTitle={
                                           !isRunning && !isRenaming && session.messageCount > 0
                                         }
-                                        conversationIdCopied={copiedSessionId === session.id}
+                                        conversationIdCopied={
+                                          copiedConversation?.id === session.id &&
+                                          copiedConversation.kind === "id"
+                                        }
+                                        conversationMarkdownCopied={
+                                          copiedConversation?.id === session.id &&
+                                          copiedConversation.kind === "markdown"
+                                        }
+                                        onCopyAsMarkdown={() =>
+                                          void copyConversationMarkdown(session)
+                                        }
                                         onCopyConversationId={() =>
                                           void copyConversationId(session.id)
                                         }

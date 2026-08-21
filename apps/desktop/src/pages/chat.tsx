@@ -126,6 +126,10 @@ import {
 import { applyMentionSelection, findActiveMentionTrigger } from "@/lib/chat-composer-mentions";
 import { appendComposerSelection, readWindowSelectionText } from "@/lib/chat-composer-selection";
 import { resolveComposerEnterAction } from "@/lib/chat-composer-submit";
+import {
+  canFormatChatConversationMarkdown,
+  copyChatConversationMarkdown,
+} from "@/lib/chat-conversation-markdown";
 import { materializeGeneratedImages } from "@/lib/chat-image-generation";
 import { appendLiveDraftText, mergeLiveDraft } from "@/lib/chat-live-draft";
 import { DEFAULT_CHAT_MEMORY, formatMemoryForInject, loadChatMemory } from "@/lib/chat-memory";
@@ -440,7 +444,9 @@ function ChatPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const shouldFollowScrollRef = useRef(true);
   const isComposingRef = useRef(false);
-  const [conversationIdCopied, setConversationIdCopied] = useState(false);
+  const [conversationCopiedKind, setConversationCopiedKind] = useState<"id" | "markdown" | null>(
+    null,
+  );
   const [conversationMenuOpen, setConversationMenuOpen] = useState(false);
   const conversationMenuCloseTimerRef = useRef<number | null>(null);
   const [gitCommitOpen, setGitCommitOpen] = useState(false);
@@ -2021,11 +2027,30 @@ function ChatPage() {
 
   async function copyConversationId() {
     const copied = await copyChatConversationId(sessionId);
-    setConversationIdCopied(copied);
+    setConversationCopiedKind(copied ? "id" : null);
     if (copied) {
-      window.setTimeout(() => setConversationIdCopied(false), 1500);
+      window.setTimeout(
+        () => setConversationCopiedKind((current) => (current === "id" ? null : current)),
+        1500,
+      );
     }
   }
+
+  async function copyConversationMarkdown() {
+    const copied = await copyChatConversationMarkdown({
+      title: sessionTitleRef.current,
+      messages,
+    });
+    setConversationCopiedKind(copied ? "markdown" : null);
+    if (copied) {
+      window.setTimeout(
+        () => setConversationCopiedKind((current) => (current === "markdown" ? null : current)),
+        1500,
+      );
+    }
+  }
+
+  const canCopyConversationMarkdown = canFormatChatConversationMarkdown(messages);
 
   const canRegenerateConversationTitle =
     !isGenerating &&
@@ -2315,8 +2340,11 @@ function ChatPage() {
                 >
                   <ChatConversationMenuItems
                     Item={DropdownMenuItem}
+                    canCopyAsMarkdown={canCopyConversationMarkdown}
                     canRegenerateTitle={canRegenerateConversationTitle}
-                    conversationIdCopied={conversationIdCopied}
+                    conversationIdCopied={conversationCopiedKind === "id"}
+                    conversationMarkdownCopied={conversationCopiedKind === "markdown"}
+                    onCopyAsMarkdown={() => void copyConversationMarkdown()}
                     onCopyConversationId={() => void copyConversationId()}
                     onRegenerateTitle={() => void regenerateConversationTitle()}
                   />

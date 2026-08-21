@@ -1,4 +1,4 @@
-import { Check, Copy, Sparkles } from "lucide-react";
+import { Check, Copy, FileText, Sparkles } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
 
 type ConversationMenuItemProps = {
@@ -9,16 +9,22 @@ type ConversationMenuItemProps = {
 
 type ChatConversationMenuItemsProps = {
   Item: ComponentType<ConversationMenuItemProps>;
+  canCopyAsMarkdown: boolean;
   canRegenerateTitle: boolean;
   conversationIdCopied: boolean;
+  conversationMarkdownCopied: boolean;
+  onCopyAsMarkdown: () => void;
   onCopyConversationId: () => void;
   onRegenerateTitle: () => void;
 };
 
 export function ChatConversationMenuItems({
   Item,
+  canCopyAsMarkdown,
   canRegenerateTitle,
   conversationIdCopied,
+  conversationMarkdownCopied,
+  onCopyAsMarkdown,
   onCopyConversationId,
   onRegenerateTitle,
 }: ChatConversationMenuItemsProps) {
@@ -31,6 +37,14 @@ export function ChatConversationMenuItems({
           <Copy className="size-4" />
         )}
         {conversationIdCopied ? "已复制对话 ID" : "复制对话 ID"}
+      </Item>
+      <Item disabled={!canCopyAsMarkdown} onSelect={onCopyAsMarkdown}>
+        {conversationMarkdownCopied ? (
+          <Check className="size-4 text-primary" />
+        ) : (
+          <FileText className="size-4" />
+        )}
+        {conversationMarkdownCopied ? "已复制为 Markdown" : "复制为 Markdown"}
       </Item>
       <Item disabled={!canRegenerateTitle} onSelect={onRegenerateTitle}>
         <Sparkles className="size-4" />
