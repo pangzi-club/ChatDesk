@@ -11,7 +11,7 @@ description: 把外部 skill 安装到本机供 ChatDesk 扫描。用户说安�
 
 默认：`$HOME/.agents/skills/<name>/`
 
-ChatDesk 也会扫描 `~/.codex/skills` 和 `~/.claude/skills`。用户指定了其中之一就用用户的。
+ChatDesk 只扫描 `~/.agents/skills`。若用户指定了其他目录，说明 ChatDesk 不会自动发现，并建议改放到默认位置。
 
 ## 流程
 
@@ -19,7 +19,7 @@ ChatDesk 也会扫描 `~/.codex/skills` 和 `~/.claude/skills`。用户指定了
 2. 预览 `SKILL.md` 的 `name` / `description`，让用户确认后再写入。
 3. 目标目录已存在则停止，除非用户明确要求覆盖。
 4. 只复制 skill 目录（必须含 `SKILL.md`）。不要执行其中的 `scripts/`。
-5. 装完后 **不要** 改 ChatDesk 的安装/启用开关。告诉用户：Settings → Skills → 刷新 → 安装 → Chat 工具栏启用。
+5. 装完后 **不要** 改 ChatDesk 的启用开关。告诉用户：Settings → Skills → 刷新。新 skill 默认启用，可在 Chat 工具栏按会话临时关闭。
 
 第三方 skill 启用后会把整份 SKILL.md 注入对话。来源不明时先警告再装。
 

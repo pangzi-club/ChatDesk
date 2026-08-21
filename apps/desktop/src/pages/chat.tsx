@@ -228,12 +228,11 @@ import {
 } from "@/lib/plan-viewer-events";
 import { openExternal } from "@/lib/platform";
 import {
+  filterAllowedSkills,
   formatSkillsSystemHint,
   loadAvailableSkills,
-  loadChatSkillSelection,
-  loadInstalledSkillIds,
+  loadDisabledSkillIds,
   type SkillDefinition,
-  saveChatSkillSelection,
 } from "@/lib/skills";
 import {
   defaultTaskCwd,
@@ -333,17 +332,13 @@ function ChatPage() {
     queryKey: ["mcp-servers"],
     queryFn: loadMcpServers,
   });
-  const { data: availableSkills = [] } = useQuery({
+  const { data: availableSkills = [], isPending: isSkillsPending } = useQuery({
     queryKey: ["skills-available"],
     queryFn: loadAvailableSkills,
   });
-  const installedSkillsQuery = useQuery({
-    queryKey: ["skills-installed"],
-    queryFn: loadInstalledSkillIds,
-  });
-  const chatSkillSelectionQuery = useQuery({
-    queryKey: ["chat-skills-selected"],
-    queryFn: loadChatSkillSelection,
+  const disabledSkillsQuery = useQuery({
+    queryKey: ["skills-disabled"],
+    queryFn: loadDisabledSkillIds,
   });
   const chatSandboxModeQuery = useQuery({
     queryKey: ["chat-sandbox-mode"],
@@ -353,8 +348,12 @@ function ChatPage() {
     queryKey: ["developer-environment"],
     queryFn: () => loadDeveloperEnvironment(),
   });
-  const installedSkillIds = installedSkillsQuery.data ?? EMPTY_STRING_ARRAY;
-  const savedChatSkillIds = chatSkillSelectionQuery.data ?? EMPTY_STRING_ARRAY;
+  const disabledSkillIds = disabledSkillsQuery.data ?? EMPTY_STRING_ARRAY;
+  const allowedSkills = useMemo(
+    () => filterAllowedSkills(availableSkills, disabledSkillIds),
+    [availableSkills, disabledSkillIds],
+  );
+  const allowedSkillIds = useMemo(() => allowedSkills.map((skill) => skill.id), [allowedSkills]);
   const { data: workspaceProjects = [] } = useQuery({
     queryKey: ["workspace-projects"],
     queryFn: loadWorkspaceProjects,
@@ -412,7 +411,7 @@ function ChatPage() {
   const appliedRouteKeyRef = useRef(chatRoute.kind === "new" ? chatRouteKey(chatRoute) : "");
   const loadingSessionIdRef = useRef<string | null>(null);
   const handledResetKeyRef = useRef<string | null>(null);
-  const skillsSelectionInitializedRef = useRef(false);
+  const sessionSkillOverrideRef = useRef(false);
   const sessionCreatedAtRef = useRef(new Date().toISOString());
   const sessionAttachmentsRef = useRef<ChatAttachment[]>([]);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
@@ -507,7 +506,10 @@ function ChatPage() {
     const workspaceId = isDefaultWorkspaceId(workspaceKey)
       ? DEFAULT_WORKSPACE_ID
       : workspaceKey.trim();
-    const skills = skillsRef.current.filter((skill) => selectedSkillIds.includes(skill.id));
+    const allowed = new Set(allowedSkillIds);
+    const skills = skillsRef.current.filter(
+      (skill) => selectedSkillIds.includes(skill.id) && allowed.has(skill.id),
+    );
     const activeTools = await resolveActiveTools(
       toolsRef.current,
       selectedModelRef.current,
@@ -528,7 +530,7 @@ function ChatPage() {
       workspaceId: workspaceId || undefined,
       toolNames: activeTools.toolNames,
     } satisfies Pick<RunStartInput, "system" | "memory" | "cwd" | "workspaceId" | "toolNames">;
-  }, [selectedSkillIds, workspaceKey]);
+  }, [allowedSkillIds, selectedSkillIds, workspaceKey]);
   const promptKey = [
     selectedCwd,
     workspaceKey,
@@ -553,14 +555,17 @@ function ChatPage() {
         selectedModel,
         () => toolsRef.current,
         () => sandboxModeRef.current,
-        () => skillsRef.current.filter((skill) => selectedSkillIds.includes(skill.id)),
+        () =>
+          skillsRef.current.filter(
+            (skill) => selectedSkillIds.includes(skill.id) && allowedSkillIds.includes(skill.id),
+          ),
         () => selectedMcpIds,
         () => planModeRef.current,
         () => activePlanIdRef.current,
         () => sessionTitleRef.current,
         getPromptInput,
       ),
-    [getPromptInput, selectedMcpIds, selectedModel, selectedSkillIds, sessionId],
+    [allowedSkillIds, getPromptInput, selectedMcpIds, selectedModel, selectedSkillIds, sessionId],
   );
   const {
     addToolApprovalResponse,
@@ -697,8 +702,8 @@ function ChatPage() {
       workspaceSelectionInitializedRef.current = true;
       setWorkspaceKey(isDefault ? DEFAULT_WORKSPACE_ID : normalizedWorkspaceId);
       setSessionCwd(nextCwd);
-      const installed = new Set(installedSkillIds);
-      setSelectedSkillIds(savedChatSkillIds.filter((id) => installed.has(id)));
+      sessionSkillOverrideRef.current = false;
+      setSelectedSkillIds(allowedSkillIds);
       sessionCreatedAtRef.current = new Date().toISOString();
       sessionAttachmentsRef.current = [];
       planCreationRequestRef.current += 1;
@@ -738,15 +743,7 @@ function ChatPage() {
       setMessages([]);
       setInput("");
     },
-    [
-      installedSkillIds,
-      location.pathname,
-      location.search,
-      navigate,
-      savedChatSkillIds,
-      setMessages,
-      workspaceProjects,
-    ],
+    [allowedSkillIds, location.pathname, location.search, navigate, setMessages, workspaceProjects],
   );
 
   const promoteDraftSession = useCallback(() => {
@@ -1000,31 +997,21 @@ function ChatPage() {
   };
 
   const updateSkillSelection = (ids: string[]) => {
-    const installed = new Set(installedSkillIds);
-    const next = [...new Set(ids)].filter((id) => installed.has(id));
+    const allowed = new Set(allowedSkillIds);
+    const next = [...new Set(ids)].filter((id) => allowed.has(id));
+    sessionSkillOverrideRef.current = true;
     setSelectedSkillIds(next);
-    queryClient.setQueryData(["chat-skills-selected"], next);
-    void saveChatSkillSelection(next).catch((error) =>
-      console.error("Failed to save chat skill selection", error),
-    );
   };
 
   useEffect(() => {
-    if (
-      skillsSelectionInitializedRef.current ||
-      installedSkillsQuery.isPending ||
-      chatSkillSelectionQuery.isPending
-    )
+    if (isSkillsPending || disabledSkillsQuery.isPending) return;
+    if (!sessionSkillOverrideRef.current) {
+      setSelectedSkillIds(allowedSkillIds);
       return;
-    const installed = new Set(installedSkillIds);
-    setSelectedSkillIds(savedChatSkillIds.filter((id) => installed.has(id)));
-    skillsSelectionInitializedRef.current = true;
-  }, [
-    chatSkillSelectionQuery.isPending,
-    installedSkillIds,
-    installedSkillsQuery.isPending,
-    savedChatSkillIds,
-  ]);
+    }
+    const allowed = new Set(allowedSkillIds);
+    setSelectedSkillIds((current) => current.filter((id) => allowed.has(id)));
+  }, [allowedSkillIds, disabledSkillsQuery.isPending, isSkillsPending]);
 
   const isGenerating =
     serverRunActive || (localRunActive && attachedStreamSessionRef.current === sessionId);
@@ -1234,12 +1221,7 @@ function ChatPage() {
 
   useEffect(() => {
     const session = pendingSessionRef.current;
-    if (
-      !session ||
-      session.id !== sessionId ||
-      installedSkillsQuery.isPending ||
-      chatSkillSelectionQuery.isPending
-    )
+    if (!session || session.id !== sessionId || isSkillsPending || disabledSkillsQuery.isPending)
       return;
     void sessionHydrateGeneration;
     pendingSessionRef.current = null;
@@ -1277,8 +1259,12 @@ function ChatPage() {
       if (scrollElement) scrollChatToBottom(scrollElement);
     });
     if (session.modelId) setSelectedModelId(session.modelId);
-    const sessionSkillIds = session.skillIds ?? savedChatSkillIds;
-    setSelectedSkillIds(sessionSkillIds.filter((id) => installedSkillIds.includes(id)));
+    const allowed = new Set(allowedSkillIds);
+    sessionSkillOverrideRef.current = Array.isArray(session.skillIds);
+    const sessionSkillIds = session.skillIds;
+    setSelectedSkillIds(
+      sessionSkillIds ? sessionSkillIds.filter((id) => allowed.has(id)) : allowedSkillIds,
+    );
     setPlanMode(session.planMode ?? "apply");
     setActivePlanId(session.activePlanId);
     setActivePlanHasContent(false);
@@ -1306,10 +1292,9 @@ function ChatPage() {
     }
     setIsHydratingSession(false);
   }, [
-    chatSkillSelectionQuery.isPending,
-    installedSkillIds,
-    installedSkillsQuery.isPending,
-    savedChatSkillIds,
+    allowedSkillIds,
+    disabledSkillsQuery.isPending,
+    isSkillsPending,
     sessionHydrateGeneration,
     sessionId,
     setMessages,
@@ -2892,7 +2877,7 @@ function ChatPage() {
                 onOpenChange={setSkillsOpen}
                 onSelectionChange={updateSkillSelection}
                 selectedSkillIds={selectedSkillIds}
-                skills={availableSkills.filter((skill) => installedSkillIds.includes(skill.id))}
+                skills={allowedSkills}
               />
               {configuredModels?.length === 0 && (
                 <Link className="chat-settings-link" to="/settings/models">
@@ -3536,7 +3521,6 @@ function createModelTransport(
         models,
         chatTools: getToolsSettings(),
         apiKeys: { ...serverConfig.apiKeys, [model.id]: model.apiKey },
-        selectedSkillIds: getSkills().map((skill) => skill.id),
       });
       return {
         body: {

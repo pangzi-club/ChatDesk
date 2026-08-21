@@ -23,6 +23,7 @@ export type BuiltinSkillsResolveOptions = {
   cwd?: string;
   exists?: (file: string) => boolean;
   sourceDir?: string | undefined;
+  homeDir?: string;
 };
 
 function chatServerSourceDir(): string | undefined {
@@ -173,28 +174,8 @@ export async function readBuiltinSkillFile(
 }
 
 export async function scanSkills(options: BuiltinSkillsResolveOptions = {}) {
-  const home = os.homedir();
-  const cwd = options.cwd ?? process.cwd();
-  const roots = [
-    ["agents", path.join(home, ".agents/skills")],
-    ["agent", path.join(home, ".agent/skills")],
-    ["codex", path.join(home, ".codex/skills")],
-    ["claude", path.join(home, ".claude/skills")],
-    ["workspace-agents", path.join(cwd, ".agents/skills")],
-    ["workspace-agent", path.join(cwd, ".agent/skills")],
-    ["workspace-codex", path.join(cwd, ".codex/skills")],
-    ["workspace-claude", path.join(cwd, ".claude/skills")],
-  ] as const;
+  const home = options.homeDir ?? os.homedir();
   const builtin = await scanBuiltinSkills(options);
-  const values: ServerSkill[] = [];
-  for (const [source, root] of roots) {
-    values.push(...(await scanSkillRoot(source, root)));
-  }
-  const seen = new Set<string>();
-  const local = values.filter((item) => {
-    if (seen.has(item.path)) return false;
-    seen.add(item.path);
-    return true;
-  });
+  const local = await scanSkillRoot("agents", path.join(home, ".agents/skills"));
   return [...builtin, ...sortSkills(local)];
 }

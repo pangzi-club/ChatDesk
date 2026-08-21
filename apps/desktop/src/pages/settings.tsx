@@ -143,9 +143,9 @@ import {
 } from "@/lib/shortcuts";
 import {
   loadAvailableSkills,
-  loadInstalledSkillIds,
+  loadDisabledSkillIds,
   type SkillDefinition,
-  saveInstalledSkillIds,
+  saveDisabledSkillIds,
 } from "@/lib/skills";
 import {
   clearSystemLogs,
@@ -1868,36 +1868,29 @@ function McpSettingsPage() {
 
 function SkillsSettingsPage() {
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<"available" | "installed">("available");
   const [search, setSearch] = useState("");
   const skillsQuery = useQuery({ queryKey: ["skills-available"], queryFn: loadAvailableSkills });
-  const installedQuery = useQuery({
-    queryKey: ["skills-installed"],
-    queryFn: loadInstalledSkillIds,
+  const disabledQuery = useQuery({
+    queryKey: ["skills-disabled"],
+    queryFn: loadDisabledSkillIds,
   });
   const skills = skillsQuery.data ?? [];
-  const installedIds = installedQuery.data ?? [];
-  const installedSet = new Set(installedIds);
+  const disabledIds = disabledQuery.data ?? [];
+  const disabledSet = new Set(disabledIds);
   const visibleSkills = skills.filter((skill) => {
     const query = search.trim().toLowerCase();
     return (
       !query ||
       skill.name.toLowerCase().includes(query) ||
       skill.description.toLowerCase().includes(query) ||
-      skill.source.toLowerCase().includes(query)
+      skill.path.toLowerCase().includes(query)
     );
   });
-  const listedSkills =
-    tab === "installed"
-      ? visibleSkills.filter((skill) => installedSet.has(skill.id))
-      : visibleSkills;
 
   async function toggle(skill: SkillDefinition, enabled: boolean) {
-    const next = enabled
-      ? [...installedIds, skill.id]
-      : installedIds.filter((id) => id !== skill.id);
-    await saveInstalledSkillIds(next);
-    queryClient.setQueryData(["skills-installed"], [...new Set(next)]);
+    const next = enabled ? disabledIds.filter((id) => id !== skill.id) : [...disabledIds, skill.id];
+    await saveDisabledSkillIds(next);
+    queryClient.setQueryData(["skills-disabled"], [...new Set(next)]);
   }
 
   return (
@@ -1905,26 +1898,16 @@ function SkillsSettingsPage() {
       <SettingsHeading
         eyebrow="Chat"
         title="Skills"
-        description="从本机 .agents、.codex 和 .claude 目录发现 SKILL.md，并选择哪些 skill 可在 Chat 中使用。ChatDesk 会按需使用内置产品说明，无需安装。"
+        description="选择哪些本机 skill 可在 Chat 中使用。ChatDesk 会按需使用内置产品说明，无需在此启用。"
       />
-      <div className="mb-4 flex gap-2 border-border border-b">
-        <Button
-          onClick={() => setTab("available")}
-          size="sm"
-          type="button"
-          variant={tab === "available" ? "default" : "ghost"}
-        >
-          可安装 ({skills.length})
-        </Button>
-        <Button
-          onClick={() => setTab("installed")}
-          size="sm"
-          type="button"
-          variant={tab === "installed" ? "default" : "ghost"}
-        >
-          已安装 ({installedIds.length})
-        </Button>
-      </div>
+      <p className="mb-4 max-w-2xl text-muted-foreground text-sm leading-6">
+        当前列表来自本机{" "}
+        <code className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[12px]">
+          ~/.agents/skills
+        </code>
+        。默认全部启用，取消后不会出现在 Chat 中。Chat
+        里还可以按会话临时关闭，不会改这里的全局设置。
+      </p>
       <section className="rounded-lg border border-border bg-card">
         <div className="flex gap-2 border-border border-b p-4">
           <Input
@@ -1943,7 +1926,7 @@ function SkillsSettingsPage() {
             刷新
           </Button>
         </div>
-        {skillsQuery.isPending || installedQuery.isPending ? (
+        {skillsQuery.isPending || disabledQuery.isPending ? (
           <div aria-busy="true" className="space-y-3 p-5" role="status">
             <div className="h-16 animate-pulse rounded-md bg-accent" />
             <div className="h-16 animate-pulse rounded-md bg-accent" />
@@ -1952,9 +1935,9 @@ function SkillsSettingsPage() {
           <p className="p-8 text-center text-destructive text-sm">
             扫描本机 skill 失败，请稍后重试。
           </p>
-        ) : listedSkills.length ? (
+        ) : visibleSkills.length ? (
           <div className="divide-y divide-border">
-            {listedSkills.map((skill) => (
+            {visibleSkills.map((skill) => (
               <div className="flex items-center gap-3 p-4" key={skill.id}>
                 <Sparkles className="size-5 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
@@ -1962,13 +1945,11 @@ function SkillsSettingsPage() {
                   <p className="mt-1 truncate text-muted-foreground text-xs">
                     {skill.description || "暂无描述"}
                   </p>
-                  <p className="mt-1 truncate text-muted-foreground text-[11px]">
-                    {skill.source} · {skill.path}
-                  </p>
+                  <p className="mt-1 truncate text-muted-foreground text-[11px]">{skill.path}</p>
                 </div>
                 <Switch
-                  aria-label={`${installedSet.has(skill.id) ? "卸载" : "安装"} ${skill.name}`}
-                  checked={installedSet.has(skill.id)}
+                  aria-label={`${disabledSet.has(skill.id) ? "启用" : "停用"} ${skill.name}`}
+                  checked={!disabledSet.has(skill.id)}
                   onCheckedChange={(checked) => void toggle(skill, checked === true)}
                 />
               </div>
@@ -1976,7 +1957,9 @@ function SkillsSettingsPage() {
           </div>
         ) : (
           <p className="p-8 text-center text-muted-foreground text-sm">
-            {tab === "installed" ? "还没有安装 skill。" : "未发现本机 skill。"}
+            {search.trim()
+              ? "没有匹配的 skill。"
+              : "未在 ~/.agents/skills 发现 skill。把含 SKILL.md 的目录放到该路径后刷新即可。"}
           </p>
         )}
       </section>

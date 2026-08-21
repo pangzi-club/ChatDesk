@@ -7,6 +7,7 @@ import {
   readBuiltinSkillFile,
   resolveBuiltinSkillsRoot,
   scanBuiltinSkills,
+  scanSkills,
 } from "./skills-store.ts";
 
 const temporaryDirectories: string[] = [];
@@ -113,6 +114,53 @@ describe("readBuiltinSkillFile", () => {
     await assert.rejects(
       () => readBuiltinSkillFile("builtin:../demo-guide", "SKILL.md", options),
       /无效的 skill id/,
+    );
+  });
+});
+
+describe("scanSkills", () => {
+  it("only scans ~/.agents/skills for local skills", async () => {
+    const home = await mkdtemp(path.join(os.tmpdir(), "chatdesk-home-skills-"));
+    temporaryDirectories.push(home);
+    const agentsSkill = path.join(home, ".agents/skills/alpha");
+    const ignored = [
+      path.join(home, ".agent/skills/beta"),
+      path.join(home, ".codex/skills/gamma"),
+      path.join(home, ".claude/skills/delta"),
+      path.join(home, ".agents/workspace-should-not-count"),
+    ];
+    await mkdir(agentsSkill, { recursive: true });
+    await writeFile(
+      path.join(agentsSkill, "SKILL.md"),
+      "---\nname: Alpha\ndescription: Agents skill.\n---\n\n# Alpha\n",
+      "utf8",
+    );
+    for (const directory of ignored) {
+      await mkdir(directory, { recursive: true });
+      await writeFile(
+        path.join(directory, "SKILL.md"),
+        "---\nname: Ignored\ndescription: Should not be scanned.\n---\n\n# Ignored\n",
+        "utf8",
+      );
+    }
+    const workspaceAgents = path.join(home, "project/.agents/skills/workspace");
+    await mkdir(workspaceAgents, { recursive: true });
+    await writeFile(
+      path.join(workspaceAgents, "SKILL.md"),
+      "---\nname: Workspace\ndescription: Workspace skill.\n---\n\n# Workspace\n",
+      "utf8",
+    );
+
+    const skills = await scanSkills({
+      homeDir: home,
+      cwd: path.join(home, "project"),
+      env: {},
+      exists: () => false,
+      sourceDir: undefined,
+    });
+    assert.deepEqual(
+      skills.map((skill) => skill.id),
+      ["agents:alpha"],
     );
   });
 });

@@ -7,7 +7,7 @@
   SKILL.md
 ```
 
-也可放到 `~/.codex/skills` 或 `~/.claude/skills`（ChatDesk 同样会扫描）。不要依赖 workspace 内的 `.agents/skills`，扫描用的是 Chat Server 进程目录，不一定是当前项目。
+不要依赖 workspace 内的 `.agents/skills`，扫描只看用户主目录下的 `~/.agents/skills`。
 
 ## Frontmatter
 

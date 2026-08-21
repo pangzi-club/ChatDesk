@@ -59,7 +59,7 @@
 
 ### ✅ 工具生态
 - **MCP**：`mcp-runtime.ts` 支持 stdio 子进程 + remote HTTP 两种 transport，start / listTools / callTool / stop / test 全套，手写 JSON-RPC 2.0。
-- **Skills**：`skills-store.ts` 扫描本机 `.agents` / `.agent` / `.codex` / `.claude`（及对应 workspace 目录）的 `SKILL.md`，另扫描随应用打包的内置 skill（`apps/server/skills`，打包后在 worker 旁的 `skills/`）。当前内置：`chatdesk-doc`、`skill-creator`、`skill-installer`。本机 skill 由用户安装后全文注入；内置 skill 只把 name/description 放进 system prompt，正文通过 `read_skill` 按需读取。
+- **Skills**：`skills-store.ts` 扫描本机 `~/.agents/skills` 的 `SKILL.md`，另扫描随应用打包的内置 skill（`apps/server/skills`，打包后在 worker 旁的 `skills/`）。当前内置：`chatdesk-doc`、`skill-creator`、`skill-installer`。本机 skill 默认全部启用，用户可在设置中全局关闭；Chat 内可按会话临时取消。启用后全文注入。内置 skill 只把 name/description 放进 system prompt，正文通过 `read_skill` 按需读取。
 - **内置工具**：web_search（responses 协议内置）、图片生成。
 
 ### 内置工具目录

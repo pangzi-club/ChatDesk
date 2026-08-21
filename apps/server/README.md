@@ -97,7 +97,7 @@ Authorization: Bearer local-dev-token
 
 - `GET/PATCH /v1/chat-config`：模型、工具、沙箱、MCP、Skills 和 API key 配置。
 - `GET/PUT /v1/memory`：读取或保存长期记忆。
-- `GET /v1/skills`、`GET/PUT /v1/skills/selection`：扫描 Skills（含内置）和保存本机 skill 选择结果。桌面端列表会隐藏内置 skill。
+- `GET /v1/skills`、`GET/PUT /v1/skills/selection`：扫描 Skills（`~/.agents/skills` 与内置）和保存本机 skill 选择结果。桌面端列表会隐藏内置 skill，并用 `disabledSkillIds` 表示全局关闭项。
 - `GET/PUT /v1/mcp`、`POST /v1/mcp/start`、`POST /v1/mcp/test`：管理 MCP 服务。
 - `GET /v1/mcp/:id/tools`、`POST /v1/mcp/:id/call`、`POST /v1/mcp/:id/stop`：查看、调用或停止 MCP 工具。
 - `GET /v1/sandbox-reviews`：读取沙箱审批记录，可按 `sessionId` 过滤。

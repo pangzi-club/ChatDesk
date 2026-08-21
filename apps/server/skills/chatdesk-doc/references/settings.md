@@ -10,7 +10,7 @@
 | API Keys | `/settings/keys` | 本机密钥；不回显，输入新值即覆盖 |
 | 模型 | `/settings/models` | OpenAI 兼容模型，以及自动审批用的 Reviewer |
 | MCP | `/settings/mcp` | 从 Registry 添加 MCP，并在 Chat 里选用 |
-| Skills | `/settings/skills` | 安装本机 `.agents` / `.codex` / `.claude` 的 SKILL.md，供 Chat 工具栏启用。产品说明、创建 skill、从 GitHub 安装是内置的，不必在这里安装 |
+| Skills | `/settings/skills` | 列出本机 `~/.agents/skills` 的 SKILL.md，默认全部启用。取消后不会出现在 Chat；Chat 里还可按会话临时关闭。产品说明、创建 skill、从 GitHub 安装是内置的，不必在这里启用 |
 | Tools | `/settings/tools` | Chat 可调用的本地开发、终端、联网和业务工具包 |
 | 沙箱 | `/settings/sandbox` | 受限 Bash 的额外只读目录；不能通过沙箱写入 |
 | 环境 | `/settings/environment` | 受限终端可调用的本机开发工具 PATH |

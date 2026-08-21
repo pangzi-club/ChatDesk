@@ -40,7 +40,9 @@ export function ChatSkillsPicker({
         >
           <Sparkles className="size-3.5" />
           <span className="chat-picker-value !text-[11px]">
-            {selectedSkillIds.length > 0 ? `Skills ${selectedSkillIds.length}` : "Skills"}
+            {visibleSkills.length > 0
+              ? `Skills ${selectedSkillIds.length}/${visibleSkills.length}`
+              : "Skills"}
           </span>
           <ChevronDown className="size-3.5" />
         </button>
@@ -51,7 +53,7 @@ export function ChatSkillsPicker({
         side="top"
         sideOffset={8}
       >
-        <DropdownMenuLabel className="!text-[11px]">启用已安装 Skills</DropdownMenuLabel>
+        <DropdownMenuLabel className="!text-[11px]">本次对话使用的 Skills</DropdownMenuLabel>
         <DropdownMenuSeparator />
         <div className="chat-tools-menu-list">
           {visibleSkills.length > 0 ? (
@@ -89,7 +91,9 @@ export function ChatSkillsPicker({
               );
             })
           ) : (
-            <p className="px-3 py-5 text-center text-muted-foreground text-xs">还没有安装 Skill</p>
+            <p className="px-3 py-5 text-center text-muted-foreground text-xs">
+              没有可用来自 ~/.agents/skills 的 Skill
+            </p>
           )}
         </div>
         <DropdownMenuSeparator />

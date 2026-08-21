@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { formatSkillsSystemHint, isBuiltinSkill, type SkillDefinition } from "@/lib/skills";
+import {
+  filterAllowedSkills,
+  formatSkillsSystemHint,
+  isBuiltinSkill,
+  type SkillDefinition,
+} from "@/lib/skills";
 
 function skill(overrides: Partial<SkillDefinition>): SkillDefinition {
   return {
@@ -18,6 +23,20 @@ describe("isBuiltinSkill", () => {
     expect(isBuiltinSkill({ source: "builtin", id: "builtin:chatdesk-doc" })).toBe(true);
     expect(isBuiltinSkill({ source: "agents", id: "builtin:chatdesk-doc" })).toBe(true);
     expect(isBuiltinSkill(skill({}))).toBe(false);
+  });
+});
+
+describe("filterAllowedSkills", () => {
+  it("keeps all skills when none are disabled", () => {
+    const demo = skill({});
+    const other = skill({ id: "agents:other", name: "other" });
+    expect(filterAllowedSkills([demo, other], [])).toEqual([demo, other]);
+  });
+
+  it("omits globally disabled skills", () => {
+    const demo = skill({});
+    const other = skill({ id: "agents:other", name: "other" });
+    expect(filterAllowedSkills([demo, other], ["agents:demo"])).toEqual([other]);
   });
 });
 

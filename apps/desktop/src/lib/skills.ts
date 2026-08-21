@@ -1,9 +1,7 @@
 import {
   loadChatServerConfig,
-  loadChatServerSkillSelection,
   loadChatServerSkills,
   saveChatServerConfig,
-  saveChatServerSkillSelection,
 } from "@/lib/chat-server";
 
 export type SkillSource = "agents" | "agent" | "codex" | "claude" | "workspace" | string;
@@ -40,6 +38,14 @@ export function isBuiltinSkill(skill: { source?: string; id?: string }) {
   return skill.source === "builtin" || Boolean(skill.id?.startsWith("builtin:"));
 }
 
+export function filterAllowedSkills(
+  skills: SkillDefinition[],
+  disabledSkillIds: readonly string[],
+) {
+  const disabled = new Set(disabledSkillIds);
+  return skills.filter((skill) => !disabled.has(skill.id));
+}
+
 export async function loadAvailableSkills(): Promise<SkillDefinition[]> {
   try {
     const items = await loadChatServerSkills();
@@ -52,24 +58,14 @@ export async function loadAvailableSkills(): Promise<SkillDefinition[]> {
   }
 }
 
-export async function loadInstalledSkillIds(): Promise<string[]> {
+export async function loadDisabledSkillIds(): Promise<string[]> {
   const config = await loadChatServerConfig();
-  return config.installedSkillIds;
+  return normalizeSkillIds(config.disabledSkillIds);
 }
 
-export async function saveInstalledSkillIds(ids: string[]) {
-  const next = [...new Set(ids)];
-  await saveChatServerConfig({ installedSkillIds: next });
-  return next;
-}
-
-export async function loadChatSkillSelection(): Promise<string[]> {
-  return normalizeSkillIds(await loadChatServerSkillSelection());
-}
-
-export async function saveChatSkillSelection(ids: string[]) {
+export async function saveDisabledSkillIds(ids: string[]) {
   const next = normalizeSkillIds(ids);
-  await saveChatServerSkillSelection(next);
+  await saveChatServerConfig({ disabledSkillIds: next });
   return next;
 }
 

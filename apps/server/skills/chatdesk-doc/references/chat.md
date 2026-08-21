@@ -9,7 +9,7 @@ Chat 在主导航第一项。空对话时围绕当前 workspace 提问，而不�
 - 模型：来自 Settings → 模型
 - 沙箱：ask / auto / full，细节在 Settings → 沙箱
 - Tools：启用已在 Settings → Tools 里打开的工具包
-- Skills：启用已在 Settings → Skills 安装的**本机** skill。内置说明（产品用法、创建 skill、安装 skill）不出现在这里，会按需自动使用
+- Skills：在 Settings → Skills 全局启用的 **~/.agents/skills** 本机 skill 中，按当前会话勾选。内置说明（产品用法、创建 skill、安装 skill）不出现在这里，会按需自动使用
 - 附件
 
 ## 分屏工作区

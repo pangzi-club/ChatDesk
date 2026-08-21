@@ -15,6 +15,7 @@ const DEFAULT_CONFIG: ChatServerConfigData = {
   mcpServers: [],
   installedSkillIds: [],
   selectedSkillIds: [],
+  disabledSkillIds: [],
   apiKeys: {},
 };
 
@@ -72,6 +73,13 @@ function normalize(value: unknown): ChatServerConfigData {
       : [],
     selectedSkillIds: Array.isArray(record.selectedSkillIds)
       ? record.selectedSkillIds.filter((item): item is string => typeof item === "string")
+      : [],
+    disabledSkillIds: Array.isArray(record.disabledSkillIds)
+      ? [
+          ...new Set(
+            record.disabledSkillIds.filter((item): item is string => typeof item === "string"),
+          ),
+        ]
       : [],
     apiKeys:
       record.apiKeys && typeof record.apiKeys === "object"

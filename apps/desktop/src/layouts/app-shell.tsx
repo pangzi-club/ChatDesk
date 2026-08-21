@@ -246,7 +246,7 @@ const commandItems = [
     to: "/settings/skills",
     label: "Skills",
     icon: Sparkles,
-    keywords: ["设置", "skills", "skill", "技能", "提示词", "工作流"],
+    keywords: ["设置", "skills", "skill", "技能", "提示词", "工作流", "agents"],
   },
   {
     to: "/settings/tools",

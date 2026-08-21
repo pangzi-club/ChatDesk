@@ -465,6 +465,7 @@ export type ChatServerConfigData = {
   mcpServers: unknown[];
   installedSkillIds: string[];
   selectedSkillIds: string[];
+  disabledSkillIds: string[];
   apiKeys: Record<string, string>;
 };
 

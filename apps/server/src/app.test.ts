@@ -600,6 +600,7 @@ describe("chat server", () => {
       body: JSON.stringify({
         apiKeys: { dataer: "secret" },
         selectedSkillIds: ["skill-a"],
+        disabledSkillIds: ["agents:demo"],
         sandboxMode: "auto",
         sandboxReadablePaths: ["/"],
         developerToolPaths: ["relative/bin", "/usr/bin", "/usr/bin", "/"],
@@ -615,6 +616,7 @@ describe("chat server", () => {
     assert.equal(loadedConfigData.sandboxMode, "auto");
     assert.deepEqual(loadedConfigData.sandboxReadablePaths, ["/"]);
     assert.deepEqual(loadedConfigData.developerToolPaths, ["/usr/bin"]);
+    assert.deepEqual(loadedConfigData.disabledSkillIds, ["agents:demo"]);
 
     const memory = await server.app.request("http://localhost/v1/memory", {
       method: "PUT",
