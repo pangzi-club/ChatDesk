@@ -69,6 +69,23 @@ describe("scanBuiltinSkills", () => {
     assert.match(skills[0]?.description ?? "", /Demo skill/);
   });
 
+  it("ignores SKILL.md files that omit frontmatter name", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-builtin-skills-"));
+    temporaryDirectories.push(root);
+    const skillDir = path.join(root, "header-only");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(
+      path.join(skillDir, "SKILL.md"),
+      "---\ndescription: Directory fallback test.\n---\n\n# Header Title\n\nBody text.\n",
+      "utf8",
+    );
+
+    const skills = await scanBuiltinSkills({
+      env: { CHATDESK_BUILTIN_SKILLS_DIR: root },
+    });
+    assert.equal(skills.length, 0);
+  });
+
   it("finds the shipped builtin skills from the source tree", async () => {
     const skills = await scanBuiltinSkills({
       env: {},

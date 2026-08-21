@@ -11,6 +11,7 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  FileText,
   FolderOpen,
   Keyboard,
   KeyRound,
@@ -39,7 +40,7 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
-
+import { ChatMarkdown } from "@/components/chat-markdown";
 import { ChatMemorySettings } from "@/components/chat-memory-settings";
 import { ChatToolsSettings } from "@/components/chat-tools-settings";
 import { type Theme, type ThemeColor, useTheme } from "@/components/theme-provider";
@@ -162,6 +163,20 @@ const themes: Array<{ value: Theme; label: string; description: string }> = [
 
 function describeError(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function stripSkillFrontmatter(content: string) {
+  const lines = content.split(/\r?\n/);
+  if (lines[0]?.trim() !== "---") return content;
+  for (let index = 1; index < lines.length; index += 1) {
+    if (lines[index]?.trim() === "---") {
+      return lines
+        .slice(index + 1)
+        .join("\n")
+        .trimStart();
+    }
+  }
+  return content;
 }
 
 const themeColors: Array<{
@@ -1869,6 +1884,7 @@ function McpSettingsPage() {
 function SkillsSettingsPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const [viewingSkill, setViewingSkill] = useState<SkillDefinition | null>(null);
   const skillsQuery = useQuery({ queryKey: ["skills-available"], queryFn: loadAvailableSkills });
   const disabledQuery = useQuery({
     queryKey: ["skills-disabled"],
@@ -1947,6 +1963,17 @@ function SkillsSettingsPage() {
                   </p>
                   <p className="mt-1 truncate text-muted-foreground text-[11px]">{skill.path}</p>
                 </div>
+                <Button
+                  aria-label={`查看 ${skill.name} 的 SKILL.md`}
+                  className="shrink-0"
+                  onClick={() => setViewingSkill(skill)}
+                  size="icon"
+                  title="查看 SKILL.md"
+                  type="button"
+                  variant="ghost"
+                >
+                  <FileText className="size-4" />
+                </Button>
                 <Switch
                   aria-label={`${disabledSet.has(skill.id) ? "启用" : "停用"} ${skill.name}`}
                   checked={!disabledSet.has(skill.id)}
@@ -1963,6 +1990,32 @@ function SkillsSettingsPage() {
           </p>
         )}
       </section>
+      <Dialog
+        open={viewingSkill !== null}
+        onOpenChange={(open) => {
+          if (!open) setViewingSkill(null);
+        }}
+      >
+        <DialogContent className="flex max-h-[85vh] w-[960px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden p-0 sm:max-w-[960px]">
+          {viewingSkill ? (
+            <>
+              <DialogHeader className="border-border border-b px-5 py-4 text-left">
+                <DialogTitle className="text-base">{viewingSkill.name}</DialogTitle>
+                <DialogDescription className="truncate text-xs">
+                  {viewingSkill.source} · {viewingSkill.path}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
+                <div className="[&>div]:max-w-none">
+                  <ChatMarkdown isAnimating={false}>
+                    {stripSkillFrontmatter(viewingSkill.content)}
+                  </ChatMarkdown>
+                </div>
+              </div>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

@@ -74,26 +74,29 @@ function parseSkill(file: string, source: string): Promise<ServerSkill | null> {
       const directory = path.basename(path.dirname(file));
       let name = directory;
       let description = "";
+      let hasName = false;
       let frontmatter = false;
       for (const line of content.split(/\r?\n/).slice(0, 80)) {
         const trimmed = line.trim();
         if (trimmed === "---") {
           frontmatter = !frontmatter;
         } else if (frontmatter && trimmed.startsWith("name:")) {
-          name =
-            trimmed
-              .slice(5)
-              .trim()
-              .replace(/^['"]|['"]$/g, "") || name;
+          const parsedName = trimmed
+            .slice(5)
+            .trim()
+            .replace(/^['"]|['"]$/g, "");
+          if (parsedName) {
+            name = parsedName;
+            hasName = true;
+          }
         } else if (frontmatter && trimmed.startsWith("description:")) {
           description = trimmed
             .slice(12)
             .trim()
             .replace(/^['"]|['"]$/g, "");
-        } else if (!frontmatter && name === directory && trimmed.startsWith("#")) {
-          name = trimmed.replace(/^#+/, "").trim() || name;
         }
       }
+      if (!hasName) return null;
       if (!description)
         description =
           content
