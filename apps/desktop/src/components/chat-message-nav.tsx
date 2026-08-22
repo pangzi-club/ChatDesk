@@ -114,7 +114,7 @@ export function ChatMessageNav({ items, onJump, scrollRef }: ChatMessageNavProps
     [onJump, scrollRef],
   );
 
-  if (!wideEnough || items.length === 0) return null;
+  if (!wideEnough || items.length < 3) return null;
 
   return (
     <nav aria-label="跳转到用户消息" className="chat-message-nav">
