@@ -12,7 +12,7 @@
 |---|---|---|
 | 核心循环 | Agentic loop | 思考 → 调工具 → 看结果 → 继续，直到任务完成或达到步数上限 |
 | 环境感知 | 文件系统工具 | list / read / write / edit / search |
-| | 终端执行 | 跑命令、超时、输出截断 |
+| | 终端执行 | 跑命令、超时、输出截断、后台托管（block_until） |
 | | 浏览器 | 打开、截图、点击、执行 JS |
 | | 代码搜索 | 内容 grep、文件名模式、语义检索 |
 | 上下文 | 会话历史 | 多轮对话、流式输出 |
@@ -49,7 +49,7 @@
 ### ✅ 环境感知
 - **文件工具**：`workspace-tools.ts` 提供 list_dir / read_file / write_file / edit_file / apply_patch / search_files。`list_dir` 默认返回 200 项、最多 500 项并支持 offset 分页；`read_file` 单次最多返回 64 KiB；`apply_patch` 最大 256 KiB，先检查全部 hunk 再原子应用。
 - **文件搜索**：`file-search.ts` 优先调用 ripgrep，支持 glob、大小写不敏感的固定文本搜索、命中行摘要和 `.gitignore`；没有 `rg` 时回退到 Git 文件清单与内置遍历。只启用终端而未启用 `search_files` 时，模型可直接通过 Bash 使用 `rg`。
-- **终端**：`bash` 工具，120s 超时，macOS 使用支持 `pipefail` 的 shell；输出采用 128 KiB 固定头尾缓冲，超限只标记截断而不终止命令。
+- **终端**：`bash` 工具，120s 超时，macOS 使用支持 `pipefail` 的 shell；输出采用 128 KiB 固定头尾缓冲，超限只标记截断而不终止命令。命令始终同步等待，超时杀进程树；没有 job id，也没有 `block_until` / 后台托管。
 - **浏览器**：`client-tools.ts` + `browser-runtime.ts`，隔离的 headless Chromium session，open / screenshot / click / eval / close 全套。`browser_screenshot` 把截图写入当前聊天 session 的 `attachments/`（与用户上传、生成图同一目录），落盘前走统一 Sharp 压缩，输出可能是 WebP。开发态用 `import.meta.url` / 仓库相对路径回退到源码 `browser-worker.mjs`；打包态由 Tauri 注入普通 JS worker 路径，Chat Server 使用共享 Node 的 `process.execPath` 启动，缺失则启动失败。
 
 ### ✅ 上下文与记忆
@@ -79,7 +79,7 @@
 | `write_file` | 创建或完整覆盖 `path` | Apply 模式、已选择 workspace，并启用对应工具包 | 写操作进入沙箱审批路径 |
 | `edit_file` | 对 `path` 做唯一 `oldText` → `newText` 替换 | Apply 模式、已选择 workspace，并启用对应工具包 | 写操作进入沙箱审批路径；拒绝 0 次或多次匹配 |
 | `apply_patch` | 应用最大 256 KiB 的 unified diff | 启用“编辑文件”工具包 | stdin 传给 helper；拒绝绝对路径、`..`、`.git`、binary patch；全部 hunk 检查通过后应用 |
-| `bash` | 在 workspace 中执行 `command` | 已选择 workspace，并启用“终端” | 默认 120 秒、128 KiB 头尾输出；返回 success/timedOut/truncated/totalOutputBytes；权限由 ask/auto/full 模式决定 |
+| `bash` | 在 workspace 中执行 `command` | 已选择 workspace，并启用“终端” | 默认 120 秒、128 KiB 头尾输出；返回 success/timedOut/truncated/totalOutputBytes；权限由 ask/auto/full 模式决定。同步阻塞，超时杀进程，无后台托管 |
 | `browser_open` | 打开 URL，创建或复用 browser session | 启用 Browser，且已配置 browser worker | 隔离 Headless Chromium，不继承用户登录态 |
 | `browser_screenshot` | 截取 browser session 页面，压缩后落入当前聊天 session 的 attachments | 启用 Browser，已有 session | Headless Chromium；内部写入 `sessions/<id>/attachments/`，可能是 WebP |
 | `browser_click` | 按 CSS selector 点击页面元素 | 启用 Browser，已有 session | Headless Chromium |
@@ -119,6 +119,7 @@
 |---|---|---|
 | 上下文管理 | 已支持基于窗口阈值剪枝旧 reasoning 与工具结果 | 第一版不生成早期自然语言对话摘要 |
 | 并行工具调用 | 依赖模型单次返回多个 tool call（AI SDK 支持并行执行） | 无显式编排 |
+| 终端后台托管 | `bash` 可执行命令，默认 120s 超时后杀进程树 | 无 `block_until`：不能先等一阵、未完成则转后台并返回 job id 再轮询 |
 | Checkpoint / 回滚 | Git diff/restore/commit 接口已实现（`app.ts`） | 无基于 run 生命周期的自动快照 |
 
 ## 四、apps/server 未实现（→ TODO）
@@ -138,14 +139,20 @@
 3. **Web Fetch 工具**
    - 已有 web_search，缺 `web_fetch`（打开 URL 读正文）。对调研类任务很常用。
 
-4. **终端交互增强**
+4. **终端后台托管（block_until）**
+   - 对齐 Cursor Shell：调用时指定最多阻塞多久（`block_until`，`0` 则立刻后台）。时间内结束则直接返回输出；超时仍在跑则**不杀进程**，转为运行时托管并返回 job id，模型可继续其它步骤。
+   - 后台任务可按 job id 再等待、读增量输出、在出现就绪标记后继续，或取消。结束时通知当前 run。
+   - 典型场景：下载大文件、安装依赖、跑长时间测试、启动开发服务器。当前 `bash` 同步等待、120s 杀进程树，`nohup`/`&` 也不能作为正式后台机制。
+   - `create_task` 不能替代：它另开子会话并流式进度，但父 tool 仍等到子任务结束才返回。
+
+5. **终端交互增强**
    - 交互式命令（sudo 密码、选择器）目前无法处理。
    - 至少：检测到交互时提示用户或直接失败并给替代方案。
 
-5. **语义代码搜索 / RAG**
+6. **语义代码搜索 / RAG**
     - 现在只有 grep 级搜索。可接入代码索引（如 ripgrep + embedding），对大仓库提升显著。
 
-6. **会话分享 / 导出**
+7. **会话分享 / 导出**
     - 归档已有 JSON，可加 Markdown/HTML 导出，或生成可分享链接。
 
 ## 五、结论
@@ -157,4 +164,4 @@ apps/server 已经是一个**结构完整的编码 agent**：核心循环、文�
 - 编排：checkpoint —— 决定长任务变更能否回滚；计划模式已实现，`create_task` 已支持并行子代理。
 - 生命周期：Hooks 系统 —— 决定能否接入自定义工作流。
 
-这些方向对应文档开头全景表里「任务编排」和「可靠性」两行，建议按 TODO 顺序优先做 1–4 项。
+这些方向对应文档开头全景表里「任务编排」和「可靠性」两行，建议按 TODO 顺序优先做 1–5 项。
