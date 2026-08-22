@@ -39,6 +39,9 @@ export const CHAT_TOOL_DISPLAY_NAMES: Record<string, string> = {
   search_thread_occurrences: "Search Occurrences · 消息定位",
   read_thread: "Read Thread · 读取对话",
   read_skill: "读取 Skill",
+  bash_wait: "Bash · 等待后台任务",
+  bash_output: "Bash · 读取后台输出",
+  bash_stop: "Bash · 停止后台任务",
 };
 
 export type ResolveActiveToolsResult = {

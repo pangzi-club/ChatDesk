@@ -89,9 +89,14 @@ Authorization: Bearer local-dev-token
 - `POST/GET/DELETE /v1/sessions/:id/attachments...`：上传、读取或删除附件。图片会在落盘前经 Sharp 压缩。
 - `POST /v1/sessions/:id/runs`：启动一次模型运行；同一会话已有运行时返回 `409`。
 - `POST /v1/sessions/:id/runs/stop`：停止当前运行。
+- `GET /v1/jobs?sessionId=...`、`GET /v1/jobs/:id`：查询当前会话的后台 Bash Job。
+- `GET /v1/jobs/:id/output?sessionId=...&cursor=...`：读取 Job 增量输出。
+- `POST /v1/jobs/:id/wait`、`POST /v1/jobs/:id/stop`：等待或停止后台 Job。
 - `GET /v1/events`：SSE 事件流；可用 `sessionId` 查询参数过滤会话。
 
 会话列表中的 `status` 取值为 `idle`、`submitted`、`streaming`、`error` 或 `ready`。事件流会先发送 `snapshot`，随后发送 `session.status`、`message.delta`、`message.updated`、`run.error` 和 `run.done` 等事件，并定期发送 `ping` 保持连接。
+
+通过 Bash 的 `block_until` 参数可以把命令转为后台 Job：`0` 表示立即后台，命令超过等待窗口仍在运行时也会返回 `jobId`。后台 Job 通过 `bash_wait`、`bash_output`、`bash_stop` 管理，并通过 `job.updated`、`job.output`、`job.done` 事件通知客户端。Job 绑定创建它的 session；Chat Server 重启时会终止托管进程并将其标记为 `interrupted`。
 
 ### 配置与扩展
 

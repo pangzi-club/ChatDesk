@@ -119,7 +119,7 @@
 |---|---|---|
 | 上下文管理 | 已支持基于窗口阈值剪枝旧 reasoning 与工具结果 | 第一版不生成早期自然语言对话摘要 |
 | 并行工具调用 | 依赖模型单次返回多个 tool call（AI SDK 支持并行执行） | 无显式编排 |
-| 终端后台托管 | `bash` 可执行命令，默认 120s 超时后杀进程树 | 无 `block_until`：不能先等一阵、未完成则转后台并返回 job id 再轮询 |
+| 终端后台托管 | `bash` 支持 `block_until`；超时后由 JobRegistry 托管并返回 `jobId`，可用 `bash_wait` / `bash_output` / `bash_stop` 管理 | 第一版不支持交互式 stdin；Server 重启会终止并标记 Job 为 `interrupted` |
 | Checkpoint / 回滚 | Git diff/restore/commit 接口已实现（`app.ts`） | 无基于 run 生命周期的自动快照 |
 
 ## 四、apps/server 未实现（→ TODO）
@@ -140,10 +140,10 @@
    - 已有 web_search，缺 `web_fetch`（打开 URL 读正文）。对调研类任务很常用。
 
 4. **终端后台托管（block_until）**
-   - 对齐 Cursor Shell：调用时指定最多阻塞多久（`block_until`，`0` 则立刻后台）。时间内结束则直接返回输出；超时仍在跑则**不杀进程**，转为运行时托管并返回 job id，模型可继续其它步骤。
-   - 后台任务可按 job id 再等待、读增量输出、在出现就绪标记后继续，或取消。结束时通知当前 run。
-   - 典型场景：下载大文件、安装依赖、跑长时间测试、启动开发服务器。当前 `bash` 同步等待、120s 杀进程树，`nohup`/`&` 也不能作为正式后台机制。
-   - `create_task` 不能替代：它另开子会话并流式进度，但父 tool 仍等到子任务结束才返回。
+   - `bash` 的 `block_until` 缺省保持同步行为，`0` 立即后台；命令在等待窗口内结束时返回兼容的 Bash 结果，超时仍在运行时转为 Job 并返回 `jobId`。
+   - `bash_wait` 等待状态变化，`bash_output` 使用 cursor 读取有限环形缓冲中的增量输出，`bash_stop` 停止整个进程组。
+   - Job 绑定创建它的 session、run、workspace 和 cwd；停止父 run 不自动停止 Job，Server 重启会杀掉托管进程并持久化为 `interrupted`。
+   - `create_task` 不能替代：它另开子会话并流式进度，但父 tool 仍等到子任务结束才返回；Automation 也不在本阶段触发 Agent 或 Job。
 
 5. **终端交互增强**
    - 交互式命令（sudo 密码、选择器）目前无法处理。

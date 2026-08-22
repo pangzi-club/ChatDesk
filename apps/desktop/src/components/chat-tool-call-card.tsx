@@ -268,6 +268,29 @@ function extractToolOutputError(output: unknown): string | undefined {
   return typeof error === "string" && error.trim() ? error.trim() : undefined;
 }
 
+function extractJobResult(output: unknown) {
+  if (!output || typeof output !== "object") return null;
+  const value = output as {
+    jobId?: unknown;
+    status?: unknown;
+    exitCode?: unknown;
+    preview?: unknown;
+    out?: unknown;
+  };
+  if (typeof value.jobId !== "string" || typeof value.status !== "string") return null;
+  return {
+    jobId: value.jobId,
+    status: value.status,
+    exitCode: typeof value.exitCode === "number" ? value.exitCode : undefined,
+    preview:
+      typeof value.preview === "string"
+        ? value.preview
+        : typeof value.out === "string"
+          ? value.out
+          : "",
+  };
+}
+
 /** OpenAI web_search 入参恒为空；查询词在 output.action 里。 */
 function extractWebSearchSummary(output: unknown): {
   actionLabel?: string;
@@ -402,6 +425,7 @@ export function ChatToolCallCard({
   const [previewOpen, setPreviewOpen] = useState(false);
   const title = getChatToolTitle(toolName);
   const outputError = extractToolOutputError(output);
+  const job = toolName === "bash" ? extractJobResult(output) : null;
   const fileTarget = resolveWorkspaceToolFileTarget(toolName, input, output);
   const resolvedError = errorText || outputError;
   const failed = state === "output-error" || Boolean(resolvedError);
@@ -458,14 +482,24 @@ export function ChatToolCallCard({
     !failed && (preliminary || state === "input-streaming" || state === "input-available");
   const pending = running || (!failed && state === "approval-requested");
   const denied = state === "output-denied";
-  const status = statusLabel({
-    toolName,
-    state,
-    errorText: resolvedError,
-    approval,
-    preliminary,
-    hasImagePreview: Boolean(imagePreviewSrc),
-  });
+  const status = job
+    ? job.status === "running" || job.status === "queued"
+      ? "后台运行中"
+      : job.status === "stopped"
+        ? "后台任务已停止"
+        : job.status === "interrupted"
+          ? "后台任务已中断"
+          : job.status === "exited"
+            ? "后台任务已完成"
+            : "后台任务失败"
+    : statusLabel({
+        toolName,
+        state,
+        errorText: resolvedError,
+        approval,
+        preliminary,
+        hasImagePreview: Boolean(imagePreviewSrc),
+      });
   const showInput = (!webSearch && !isImageGeneration) || !isEmptyInput(input);
   const callProps = {
     toolName,
@@ -559,6 +593,9 @@ export function ChatToolCallCard({
           ) : null}
           {!running && !summaryQuery && !imageMeta?.fileName && !browserDetail && skillDetail ? (
             <span className="chat-tool-call-title-detail"> · {skillDetail}</span>
+          ) : null}
+          {!running && job ? (
+            <span className="chat-tool-call-title-detail"> · Job {job.jobId.slice(0, 8)}</span>
           ) : null}
           {!running && workspaceSummary ? (
             fileTarget ? (
@@ -674,6 +711,15 @@ export function ChatToolCallCard({
                       : "暂无图片输出",
                   },
                 )}
+              />
+            ) : job ? (
+              <CollapsiblePre
+                text={formatToolJson({
+                  jobId: job.jobId,
+                  status: job.status,
+                  ...(job.exitCode !== undefined ? { exitCode: job.exitCode } : {}),
+                  ...(job.preview ? { preview: job.preview } : {}),
+                })}
               />
             ) : fileTarget ? (
               <button

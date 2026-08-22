@@ -36,6 +36,7 @@ import { createBusinessTools } from "./business-tools.ts";
 import type { ChatConfigStore } from "./chat-config.ts";
 import { createClientTools } from "./client-tools.ts";
 import type { EventHub } from "./events.ts";
+import type { JobRegistry } from "./job-registry.ts";
 import { createConfiguredLanguageModel, supportsRequiredToolChoice } from "./model-adaptor.ts";
 import type { PlanStore } from "./plan-store.ts";
 import { createPlanWriteTool } from "./plan-tool.ts";
@@ -262,6 +263,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
+export function shouldPreflightWorkspaceTool(toolName: string, input: unknown) {
+  if (!["list_dir", "search_files", "read_file", "bash"].includes(toolName)) return false;
+  return !(toolName === "bash" && isRecord(input) && typeof input.block_until === "number");
+}
+
 function isMissingMessageId(id: string | undefined) {
   return !id?.trim() || id.startsWith("legacy-message-");
 }
@@ -409,6 +415,7 @@ export class RunRegistry {
     model: import("./protocol.ts").ServerModelConfig,
   ) => LanguageModel;
   private readonly modelStreamTimeout: ModelStreamTimeout;
+  private readonly jobs?: JobRegistry;
 
   constructor(
     store: SessionStore,
@@ -420,6 +427,7 @@ export class RunRegistry {
     resolveWorkspace: (id: string) => string | undefined = () => undefined,
     createLanguageModel?: (model: import("./protocol.ts").ServerModelConfig) => LanguageModel,
     modelStreamTimeout: ModelStreamTimeout = MODEL_STREAM_TIMEOUT,
+    jobs?: JobRegistry,
   ) {
     this.store = store;
     this.events = events;
@@ -430,6 +438,7 @@ export class RunRegistry {
     this.activityLogs = activityLogs;
     this.createLanguageModel = createLanguageModel;
     this.modelStreamTimeout = modelStreamTimeout;
+    this.jobs = jobs;
     this.journal = new RunJournal(store.root);
     this.reviewLog = new SandboxReviewLogStore(store.root);
   }
@@ -837,6 +846,9 @@ export class RunRegistry {
         preflightResults,
         onReadOnlyToolResult: (toolName, toolInput, output, toolCallId) =>
           duplicateResults.compact(toolName, toolInput, output, toolCallId),
+        jobs: this.jobs,
+        sessionId,
+        runId,
         onSandboxBlocked: createSandboxEscalationHandler({
           mode: sandboxMode,
           workspace: session.cwd,
@@ -1764,7 +1776,7 @@ function createToolApproval(options: {
     }
 
     const assessment = classifySandboxBoundary(toolCall, options.workspace, options.readablePaths);
-    const preflightable = ["list_dir", "search_files", "read_file", "bash"].includes(toolName);
+    const preflightable = shouldPreflightWorkspaceTool(toolName, toolCall.input);
     if (
       preflightable &&
       options.workspace &&
@@ -2019,6 +2031,9 @@ function createWorkspaceToolsForInput(
     developerToolPaths?: string[];
     preflightResults: WorkspaceToolPreflightMap;
     onReadOnlyToolResult: NonNullable<Parameters<typeof createWorkspaceTools>[7]>;
+    jobs?: JobRegistry;
+    sessionId?: string;
+    runId?: string;
   },
 ) {
   const cwd = input.cwd?.trim();
@@ -2033,6 +2048,9 @@ function createWorkspaceToolsForInput(
       input.preflightResults,
       input.developerToolPaths,
       input.onReadOnlyToolResult,
+      input.jobs,
+      input.sessionId,
+      input.runId,
     );
     const selected = selectPlanWorkspaceToolNames(input.toolNames ?? []);
     return Object.fromEntries(selected.map((name) => [name, tools[name]]));
@@ -2060,8 +2078,14 @@ function createWorkspaceToolsForInput(
     input.preflightResults,
     input.developerToolPaths,
     input.onReadOnlyToolResult,
+    input.jobs,
+    input.sessionId,
+    input.runId,
   );
   const selected = selectWorkspaceToolNames(names);
+  if (input.jobs && input.sessionId && (names.has("bash") || names.has("terminal"))) {
+    selected.push("bash_wait", "bash_output", "bash_stop");
+  }
   return Object.fromEntries(selected.map((name) => [name, tools[name]]));
 }
 

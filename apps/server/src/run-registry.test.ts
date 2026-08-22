@@ -14,11 +14,21 @@ import {
   normalizeCompletedMessages,
   resolveEffectiveWorkspace,
   runCheckpointFingerprint,
+  shouldPreflightWorkspaceTool,
 } from "./run-registry.ts";
 
 test("allows long agent runs without automatically retrying model failures", () => {
   assert.equal(MAX_AGENT_STEPS, 100);
   assert.equal(MODEL_CALL_MAX_RETRIES, 0);
+});
+
+test("does not synchronously preflight deferred Bash jobs", () => {
+  assert.equal(
+    shouldPreflightWorkspaceTool("bash", { command: "sleep 20", block_until: 0 }),
+    false,
+  );
+  assert.equal(shouldPreflightWorkspaceTool("bash", { command: "printf ok" }), true);
+  assert.equal(shouldPreflightWorkspaceTool("read_file", { path: "README.md" }), true);
 });
 
 test("avoids required tool choice for DeepSeek Responses models", () => {

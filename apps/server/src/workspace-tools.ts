@@ -6,6 +6,7 @@ import { z } from "zod";
 import { buildEditFailureMessage } from "./file-edit.ts";
 import { type ReadFileOptions, type ReadFileResult, readTextFileRange } from "./file-read.ts";
 import { type FileSearchResult, MAX_SEARCH_RESULTS, searchWorkspaceFiles } from "./file-search.ts";
+import type { JobRegistry } from "./job-registry.ts";
 import type { SandboxMode } from "./protocol.ts";
 import { classifySandboxBoundary } from "./sandbox-boundary-reviewer.ts";
 import {
@@ -374,6 +375,9 @@ export function createWorkspaceTools(
   preflightResults: WorkspaceToolPreflightMap = new Map(),
   developerToolPaths: string[] = [],
   onReadOnlyToolResult?: ReadOnlyToolResultHandler,
+  jobs?: JobRegistry,
+  sessionId?: string,
+  runId?: string,
 ): ToolSet {
   const pathScope =
     mode === "full"
@@ -609,8 +613,15 @@ export function createWorkspaceTools(
       inputSchema: z.object({
         command: z.string().min(1),
         cwd: z.string().optional().describe("可选的 Bash 工作目录；完全访问模式支持外部绝对路径"),
+        block_until: z
+          .number()
+          .int()
+          .min(0)
+          .max(120_000)
+          .optional()
+          .describe("最多同步等待毫秒；0 立即转为后台 Job"),
       }),
-      execute: async ({ command, cwd: requestedCwd }, { toolCallId }) => {
+      execute: async ({ command, cwd: requestedCwd, block_until }, { toolCallId }) => {
         const input = { command, cwd: requestedCwd };
         const approved = approvedToolCallIds.has(toolCallId);
         const approvedPreflight = toolCallId ? preflightResults.get(toolCallId) : undefined;
@@ -631,6 +642,38 @@ export function createWorkspaceTools(
           if (result.sandboxBlocked) throw sandboxBlockedErrorFromShell(command, result);
           return result;
         };
+        if (jobs && sessionId && block_until !== undefined) {
+          const commandCwd = resolveCommandCwd(
+            cwd,
+            requestedCwd,
+            mode,
+            approvedPermissions.allowOutside,
+          );
+          const job = await jobs.start({
+            sessionId,
+            ...(runId ? { runId } : {}),
+            command,
+            cwd: commandCwd,
+            mode,
+            allowOutside: approvedPermissions.allowOutside,
+            allowNetwork: approvedPermissions.allowNetwork,
+            readablePaths,
+            developerToolPaths,
+          });
+          const waited = await jobs.wait(job.jobId, sessionId, block_until);
+          if (["exited", "failed", "stopped", "timed_out", "interrupted"].includes(waited.status)) {
+            const output = jobs.output(job.jobId, sessionId, 0);
+            return {
+              code: waited.exitCode ?? (waited.status === "exited" ? 0 : 1),
+              out: output.output,
+              success: waited.status === "exited",
+              timedOut: waited.status === "timed_out",
+              truncated: output.truncated,
+              totalOutputBytes: output.outputBytes,
+            };
+          }
+          return { jobId: job.jobId, status: waited.status, command, cwd: commandCwd };
+        }
         const escalateSandboxBlock = (error: unknown) =>
           retryAfterSandboxReview(error, onSandboxBlocked, {
             toolName: "bash",
@@ -654,6 +697,31 @@ export function createWorkspaceTools(
         }
       },
     }),
+    ...(jobs && sessionId
+      ? {
+          bash_wait: tool({
+            description: "等待后台 Bash Job 状态变化或结束。",
+            inputSchema: z.object({
+              jobId: z.string().min(1),
+              timeoutMs: z.number().int().min(0).max(60_000).optional(),
+            }),
+            execute: ({ jobId, timeoutMs }) => jobs.wait(jobId, sessionId, timeoutMs),
+          }),
+          bash_output: tool({
+            description: "读取后台 Bash Job 的新增输出。",
+            inputSchema: z.object({
+              jobId: z.string().min(1),
+              cursor: z.number().int().min(0).optional(),
+            }),
+            execute: ({ jobId, cursor }) => jobs.output(jobId, sessionId, cursor),
+          }),
+          bash_stop: tool({
+            description: "停止后台 Bash Job 及其子进程。",
+            inputSchema: z.object({ jobId: z.string().min(1) }),
+            execute: ({ jobId }) => jobs.stop(jobId, sessionId),
+          }),
+        }
+      : {}),
   };
   return tools;
 }

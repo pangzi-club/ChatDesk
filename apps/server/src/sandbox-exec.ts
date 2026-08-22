@@ -195,6 +195,49 @@ export async function runSandboxedShell(
   };
 }
 
+export function spawnSandboxedShell(
+  command: string,
+  options: {
+    cwd: string;
+    mode: SandboxMode;
+    allowOutside?: boolean;
+    readablePaths?: string[];
+    developerToolPaths?: string[];
+    allowNetwork?: boolean;
+  },
+) {
+  const cwd = resolveDirectory(options.cwd);
+  const shell = resolveExecutionShell();
+  const shellArgs = buildShellArgs(shell, command);
+  const effectiveMode = options.allowOutside ? "full" : options.mode;
+  const args =
+    effectiveMode === "full"
+      ? shellArgs
+      : [
+          "-p",
+          buildSeatbeltProfile(
+            cwd,
+            options.readablePaths ?? [],
+            [],
+            [],
+            options.developerToolPaths ?? [],
+            options.allowNetwork ?? false,
+          ),
+          shell,
+          ...shellArgs,
+        ];
+  if (effectiveMode !== "full" && process.platform !== "darwin") {
+    throw new SandboxBlockedError("受限沙箱需要 macOS Seatbelt；当前平台不支持");
+  }
+  const executable = effectiveMode === "full" ? shell : "/usr/bin/sandbox-exec";
+  return spawn(executable, args, {
+    cwd,
+    env: sandboxEnvironment(cwd, options.developerToolPaths),
+    stdio: ["ignore", "pipe", "pipe"],
+    detached: process.platform !== "win32",
+  });
+}
+
 function resolveExecutionShell() {
   if (process.platform === "darwin" && existsSync("/bin/zsh")) return "/bin/zsh";
   return process.env.SHELL || "/bin/sh";
@@ -557,7 +600,7 @@ function truncateUtf8(value: string, maxBytes: number) {
   return value.slice(0, end);
 }
 
-function killProcessTree(child: ReturnType<typeof spawn>) {
+export function killProcessTree(child: ReturnType<typeof spawn>) {
   if (child.pid && process.platform === "win32") {
     spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
       stdio: "ignore",

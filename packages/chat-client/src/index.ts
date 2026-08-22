@@ -1,5 +1,7 @@
 import type {
   ChatIndexItem,
+  ChatJobOutputPage,
+  ChatJobSummary,
   ChatServerAiUsageLog,
   ChatServerConfigData,
   ChatServerProviderModel,
@@ -42,6 +44,9 @@ export type ChatEventHandlers = {
   onRunDone?: (event: ServerEvent & { type: "run.done" }) => void;
   onRunError?: (event: ServerEvent & { type: "run.error" }) => void;
   onPlanUpdated?: (event: ServerEvent & { type: "plan.updated" }) => void;
+  onJobUpdated?: (event: ServerEvent & { type: "job.updated" }) => void;
+  onJobOutput?: (event: ServerEvent & { type: "job.output" }) => void;
+  onJobDone?: (event: ServerEvent & { type: "job.done" }) => void;
 };
 
 export class ChatServerError extends Error {
@@ -146,6 +151,40 @@ export class ChatServerClient {
 
   health() {
     return this.json<HealthResponse>("/health", undefined, "Chat Server 健康检查失败");
+  }
+
+  listJobs(sessionId: string) {
+    return this.json<ChatJobSummary[]>(`/v1/jobs?sessionId=${encodePath(sessionId)}`);
+  }
+
+  getJob(jobId: string, sessionId: string) {
+    return this.json<ChatJobSummary>(
+      `/v1/jobs/${encodePath(jobId)}?sessionId=${encodePath(sessionId)}`,
+    );
+  }
+
+  getJobOutput(jobId: string, sessionId: string, cursor = 0) {
+    return this.json<ChatJobOutputPage>(
+      `/v1/jobs/${encodePath(jobId)}/output?sessionId=${encodePath(sessionId)}&cursor=${cursor}`,
+    );
+  }
+
+  waitJob(jobId: string, sessionId: string, timeoutMs = 0) {
+    return this.json<ChatJobSummary>(
+      `/v1/jobs/${encodePath(jobId)}/wait?sessionId=${encodePath(sessionId)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ timeoutMs }),
+      },
+    );
+  }
+
+  stopJob(jobId: string, sessionId: string) {
+    return this.json<ChatJobSummary>(
+      `/v1/jobs/${encodePath(jobId)}/stop?sessionId=${encodePath(sessionId)}`,
+      { method: "POST" },
+    );
   }
 
   listSessions(options?: { query?: string; limit?: number }) {
@@ -474,6 +513,15 @@ export class ChatServerClient {
         }
         if (event.type === "plan.updated") {
           handlers.onPlanUpdated?.(event as ServerEvent & { type: "plan.updated" });
+        }
+        if (event.type === "job.updated") {
+          handlers.onJobUpdated?.(event as ServerEvent & { type: "job.updated" });
+        }
+        if (event.type === "job.output") {
+          handlers.onJobOutput?.(event as ServerEvent & { type: "job.output" });
+        }
+        if (event.type === "job.done") {
+          handlers.onJobDone?.(event as ServerEvent & { type: "job.done" });
         }
       } catch {
         // Ignore malformed reconnect/event payloads.

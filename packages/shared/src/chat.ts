@@ -676,7 +676,10 @@ export type ServerEvent = {
     | "run.progress"
     | "run.error"
     | "run.done"
-    | "plan.updated";
+    | "plan.updated"
+    | "job.updated"
+    | "job.output"
+    | "job.done";
   sessionId: string;
   runId?: string;
   status?: SessionStatus;
@@ -692,6 +695,8 @@ export type ServerEvent = {
   planFileName?: string;
   planContent?: string;
   planUpdatedAt?: string;
+  job?: ChatJobSummary;
+  jobOutput?: ChatJobOutputPage;
   timestamp: string;
 };
 
@@ -771,6 +776,44 @@ export type ChatToolPackId =
   | "image_generation"
   | "browser"
   | "conversation_history";
+
+export const JOB_STATUSES = [
+  "queued",
+  "running",
+  "exited",
+  "failed",
+  "stopped",
+  "timed_out",
+  "interrupted",
+] as const;
+export type JobStatus = (typeof JOB_STATUSES)[number];
+
+export type ChatJobSummary = {
+  jobId: string;
+  sessionId: string;
+  runId?: string;
+  status: JobStatus;
+  command: string;
+  cwd: string;
+  createdAt: string;
+  startedAt?: string;
+  endedAt?: string;
+  durationMs?: number;
+  exitCode?: number;
+  signal?: string;
+  outputBytes: number;
+  outputTruncated?: boolean;
+  preview?: string;
+};
+
+export type ChatJobOutputPage = {
+  jobId: string;
+  status: JobStatus;
+  output: string;
+  nextCursor: number;
+  truncated: boolean;
+  outputBytes: number;
+};
 
 export type ChatToolsSettings = Record<ChatToolPackId, boolean>;
 

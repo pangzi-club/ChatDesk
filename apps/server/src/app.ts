@@ -23,6 +23,7 @@ import { EventHub } from "./events.ts";
 import { normalizeGeneratedCommitMessage } from "./git-commit-message.ts";
 import { compressChatImage, MAX_ATTACHMENT_BYTES, replaceImageFileName } from "./image-compress.ts";
 import { ImageGenerationStore } from "./image-generation-store.ts";
+import { JobRegistry } from "./job-registry.ts";
 import { McpRuntime } from "./mcp-runtime.ts";
 import { MemoryStore } from "./memory-store.ts";
 import { createConfiguredLanguageModel } from "./model-adaptor.ts";
@@ -325,6 +326,8 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   const store = new SessionStore(config.dataDir);
   await store.init();
   const events = new EventHub();
+  const jobs = new JobRegistry(config.dataDir, events);
+  await jobs.initialize();
   const chatConfig = new ChatConfigStore(config.dataDir);
   await chatConfig.init();
   const memory = new MemoryStore(config.dataDir);
@@ -354,6 +357,9 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     aiUsageLogs,
     activityLogs,
     (id) => workspaces.get(id)?.path,
+    undefined,
+    undefined,
+    jobs,
   );
   const automations = new AutomationStore(config.dataDir);
   await automations.init();
@@ -754,6 +760,48 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   app.delete("/v1/activity-logs", async (c) => {
     await activityLogs.clear();
     return c.body(null, 204);
+  });
+
+  app.get("/v1/jobs", async (c) => {
+    const sessionId = c.req.query("sessionId");
+    if (!sessionId) return jsonError("缺少 sessionId", 400);
+    return c.json(await jobs.list(sessionId));
+  });
+  app.get("/v1/jobs/:id", async (c) => {
+    try {
+      const sessionId = c.req.query("sessionId") || c.req.header("X-ChatDesk-Session-Id") || "";
+      return c.json(await jobs.get(c.req.param("id"), sessionId));
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error), 404);
+    }
+  });
+  app.get("/v1/jobs/:id/output", async (c) => {
+    try {
+      const sessionId = c.req.query("sessionId") || c.req.header("X-ChatDesk-Session-Id") || "";
+      const cursor = Number(c.req.query("cursor") || 0);
+      return c.json(
+        jobs.output(c.req.param("id"), sessionId, Number.isFinite(cursor) ? cursor : 0),
+      );
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error), 404);
+    }
+  });
+  app.post("/v1/jobs/:id/wait", async (c) => {
+    try {
+      const sessionId = c.req.query("sessionId") || c.req.header("X-ChatDesk-Session-Id") || "";
+      const body = (await c.req.json().catch(() => ({}))) as { timeoutMs?: number };
+      return c.json(await jobs.wait(c.req.param("id"), sessionId, Number(body.timeoutMs) || 0));
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error), 404);
+    }
+  });
+  app.post("/v1/jobs/:id/stop", async (c) => {
+    try {
+      const sessionId = c.req.query("sessionId") || c.req.header("X-ChatDesk-Session-Id") || "";
+      return c.json(await jobs.stop(c.req.param("id"), sessionId));
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error), 404);
+    }
   });
   app.get("/v1/image-generation", (c) => c.json(imageGeneration.list()));
   app.post("/v1/image-generation", async (c) => {
@@ -1363,6 +1411,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     shutdown: async () => {
       automationScheduler.stop();
       await runs.shutdown();
+      await jobs.shutdown();
       await mcp.close();
       closeClientTools();
     },

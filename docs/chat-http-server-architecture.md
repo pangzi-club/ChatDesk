@@ -146,6 +146,7 @@ Server 负责「何时调工具、如何把结果写回模型」；工具的真�
 
 - `apps/server/src/app.ts`：Hono 应用，路由注册，token 认证中间件，SSE 事件流。
 - `apps/server/src/run-registry.ts`：Run 真相源——多路生成、abort、status 状态机、toolApproval、上下文压缩、崩溃恢复。
+- `apps/server/src/job-registry.ts` / `job-store.ts`：Bash 后台 Job 的进程组托管、有限输出缓冲、session 归属和重启中断恢复。
 - `apps/server/src/store.ts`：Session Store，per-session 持久化。
 - `apps/server/src/sandbox-exec.ts`：Seatbelt 沙箱执行，deny-by-default profile。
 - `apps/desktop/src/lib/chat-server.ts`：前端 HTTP/SSE 客户端，封装 fetch 与 EventSource。

@@ -3,6 +3,8 @@ import type {
   ChatContextCompaction,
   ChatContextUsage,
   ChatIndexItem,
+  ChatJobOutputPage,
+  ChatJobSummary,
   ChatPlanMode,
   ChatPlanSummary,
   ChatRunProgress,
@@ -91,6 +93,7 @@ export type {
   DeveloperEnvironmentStatus,
 };
 export type ChatPlan = ChatPlanSummary & { content: string };
+export type ChatJob = ChatJobSummary;
 
 function normalizePort(value: unknown) {
   const port = typeof value === "number" ? value : Number(value);
@@ -809,6 +812,35 @@ export async function stopChatServerRun(sessionId: string, port = CHAT_SERVER_DE
   return createClient(port).stopRun(sessionId);
 }
 
+export async function loadChatServerJobs(sessionId: string, port = CHAT_SERVER_DEFAULT_PORT) {
+  return createClient(port).listJobs(sessionId);
+}
+
+export async function loadChatServerJob(
+  jobId: string,
+  sessionId: string,
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  return createClient(port).getJob(jobId, sessionId);
+}
+
+export async function loadChatServerJobOutput(
+  jobId: string,
+  sessionId: string,
+  cursor = 0,
+  port = CHAT_SERVER_DEFAULT_PORT,
+): Promise<ChatJobOutputPage> {
+  return createClient(port).getJobOutput(jobId, sessionId, cursor);
+}
+
+export async function stopChatServerJob(
+  jobId: string,
+  sessionId: string,
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  return createClient(port).stopJob(jobId, sessionId);
+}
+
 export async function loadChatServerSystemPromptPreview(
   sessionId: string,
   input: Pick<RunStartInput, "system" | "memory" | "cwd" | "workspaceId" | "toolNames">,
@@ -867,6 +899,9 @@ export function subscribeChatServerEvents(
       planContent?: string;
       planUpdatedAt?: string;
     }) => void;
+    onJobUpdated?: (event: { sessionId: string; job?: ChatJobSummary }) => void;
+    onJobOutput?: (event: { sessionId: string; jobOutput?: ChatJobOutputPage }) => void;
+    onJobDone?: (event: { sessionId: string; job?: ChatJobSummary }) => void;
   },
 ) {
   let closed = false;
@@ -952,6 +987,17 @@ export function subscribeChatServerEvents(
             planUpdatedAt: event.planUpdatedAt,
           });
         }
+      },
+      onJobUpdated: (event) => {
+        if (event.sessionId)
+          handlers.onJobUpdated?.({ sessionId: event.sessionId, job: event.job });
+      },
+      onJobOutput: (event) => {
+        if (event.sessionId)
+          handlers.onJobOutput?.({ sessionId: event.sessionId, jobOutput: event.jobOutput });
+      },
+      onJobDone: (event) => {
+        if (event.sessionId) handlers.onJobDone?.({ sessionId: event.sessionId, job: event.job });
       },
     });
   });
