@@ -2221,7 +2221,12 @@ function ChatPage() {
       event.keyCode !== 229 &&
       !isComposingRef.current
     ) {
-      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      if (
+        (event.key === "ArrowDown" || event.key === "ArrowUp") &&
+        !event.altKey &&
+        !event.metaKey &&
+        !event.ctrlKey
+      ) {
         event.preventDefault();
         const count = commandMatches.length;
         setCommandIndex((current) =>
@@ -2246,7 +2251,12 @@ function ChatPage() {
       event.keyCode !== 229 &&
       !isComposingRef.current
     ) {
-      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      if (
+        (event.key === "ArrowDown" || event.key === "ArrowUp") &&
+        !event.altKey &&
+        !event.metaKey &&
+        !event.ctrlKey
+      ) {
         event.preventDefault();
         setMentionIndex((current) => {
           const count = mentionSuggestions.length;

@@ -1,7 +1,11 @@
 import { isDesktop } from "@/lib/desktop-bridge";
 import { settingsStore } from "@/lib/settings-store";
 
-export type ShortcutAction = "chatSidebar" | "chatSidebarMaximize";
+export type ShortcutAction =
+  | "chatSidebar"
+  | "chatSidebarMaximize"
+  | "previousConversation"
+  | "nextConversation";
 
 export type ShortcutBinding = {
   alt: boolean;
@@ -24,6 +28,22 @@ export const DEFAULT_SHORTCUTS: ShortcutSettings = {
     meta: false,
     shift: false,
   },
+  previousConversation: {
+    alt: true,
+    code: "ArrowUp",
+    ctrl: false,
+    key: "arrowup",
+    meta: true,
+    shift: false,
+  },
+  nextConversation: {
+    alt: true,
+    code: "ArrowDown",
+    ctrl: false,
+    key: "arrowdown",
+    meta: true,
+    shift: false,
+  },
 };
 
 const SHORTCUTS_STORE_KEY = "shortcuts";
@@ -43,6 +63,11 @@ function isBinding(value: unknown): value is ShortcutBinding {
   );
 }
 
+function normalizeBinding(value: unknown, fallback: ShortcutBinding): ShortcutBinding {
+  if (!isBinding(value)) return fallback;
+  return { ...value, code: value.code ?? keyToCode(value.key) };
+}
+
 function normalizeShortcuts(value: unknown): ShortcutSettings {
   if (!value || typeof value !== "object") return DEFAULT_SHORTCUTS;
   const record = value as Record<string, unknown>;
@@ -55,14 +80,16 @@ function normalizeShortcuts(value: unknown): ShortcutSettings {
     storedMaximize.key === "m" &&
     storedMaximize.meta &&
     !storedMaximize.code;
-  const storedSidebar = isBinding(record.chatSidebar)
-    ? record.chatSidebar
-    : DEFAULT_SHORTCUTS.chatSidebar;
   return {
-    chatSidebar: { ...storedSidebar, code: storedSidebar.code ?? keyToCode(storedSidebar.key) },
+    chatSidebar: normalizeBinding(record.chatSidebar, DEFAULT_SHORTCUTS.chatSidebar),
     chatSidebarMaximize: isLegacyMacosDefault
       ? DEFAULT_SHORTCUTS.chatSidebarMaximize
-      : { ...storedMaximize, code: storedMaximize.code ?? keyToCode(storedMaximize.key) },
+      : normalizeBinding(record.chatSidebarMaximize, DEFAULT_SHORTCUTS.chatSidebarMaximize),
+    previousConversation: normalizeBinding(
+      record.previousConversation,
+      DEFAULT_SHORTCUTS.previousConversation,
+    ),
+    nextConversation: normalizeBinding(record.nextConversation, DEFAULT_SHORTCUTS.nextConversation),
   };
 }
 
@@ -123,6 +150,15 @@ export function matchesShortcut(event: KeyboardEvent, binding: ShortcutBinding) 
   );
 }
 
+function formatShortcutKey(binding: ShortcutBinding) {
+  const code = binding.code ?? "";
+  const key = binding.key.toLowerCase();
+  if (code === "ArrowUp" || key === "arrowup") return "↑";
+  if (code === "ArrowDown" || key === "arrowdown") return "↓";
+  if (code.startsWith("Key")) return code.slice(3).toUpperCase();
+  return binding.key.toUpperCase();
+}
+
 export function formatShortcut(binding: ShortcutBinding) {
   const modifiers = [
     binding.ctrl ? "⌃" : "",
@@ -130,8 +166,7 @@ export function formatShortcut(binding: ShortcutBinding) {
     binding.shift ? "⇧" : "",
     binding.meta ? "⌘" : "",
   ].join("");
-  const key = binding.code?.startsWith("Key") ? binding.code.slice(3) : binding.key;
-  return `${modifiers}${key.toUpperCase()}`;
+  return `${modifiers}${formatShortcutKey(binding)}`;
 }
 
 export function shortcutFromKeyboardEvent(event: KeyboardEvent): ShortcutBinding | null {

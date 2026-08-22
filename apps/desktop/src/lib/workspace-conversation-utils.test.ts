@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { ChatIndexItem } from "./chat-store";
 import {
+  adjacentConversationId,
   clusterConversations,
   flattenConversationClusters,
   getWorkspaceSessionKey,
   groupConversationClustersByLocalDate,
   groupConversationsByLocalDate,
+  listNavigableConversationIds,
   resolveWorkspaceConversationLabel,
   sortConversationClustersByUpdatedAt,
   sortConversationsByCreatedAt,
@@ -259,5 +261,40 @@ describe("workspace conversation utilities", () => {
       ["parent", false],
       ["task", true],
     ]);
+  });
+
+  it("lists navigable conversation ids in sidebar list order, including nested tasks", () => {
+    const now = new Date(2026, 7, 21, 15, 0, 0);
+    const parent = {
+      ...session("parent", { updatedAt: "2026-08-21T12:00:00.000Z" }),
+      createdAt: "2026-08-21T09:00:00.000Z",
+    };
+    const child = {
+      ...session("task", { updatedAt: "2026-08-20T12:00:00.000Z" }),
+      createdAt: "2026-08-20T09:00:00.000Z",
+      kind: "task" as const,
+      parentSessionId: "parent",
+    };
+    const older = {
+      ...session("older", { updatedAt: "2026-08-20T12:00:00.000Z" }),
+      createdAt: "2026-08-20T08:00:00.000Z",
+    };
+
+    expect(listNavigableConversationIds([older, child, parent], now)).toEqual([
+      "parent",
+      "task",
+      "older",
+    ]);
+  });
+
+  it("resolves adjacent conversations, wrapping and falling back to the first item", () => {
+    const ids = ["a", "b", "c"];
+    expect(adjacentConversationId(ids, "b", "previous")).toBe("a");
+    expect(adjacentConversationId(ids, "b", "next")).toBe("c");
+    expect(adjacentConversationId(ids, "a", "previous")).toBe("c");
+    expect(adjacentConversationId(ids, "c", "next")).toBe("a");
+    expect(adjacentConversationId(ids, null, "previous")).toBe("a");
+    expect(adjacentConversationId(ids, "missing", "next")).toBe("a");
+    expect(adjacentConversationId([], "a", "next")).toBeNull();
   });
 });

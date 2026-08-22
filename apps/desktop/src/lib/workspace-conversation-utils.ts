@@ -192,6 +192,27 @@ export function groupConversationClustersByLocalDate<
   });
 }
 
+export function listNavigableConversationIds<
+  T extends Pick<ChatIndexItem, "id" | "parentSessionId" | "kind" | "createdAt" | "updatedAt">,
+>(sessions: T[], now = new Date()) {
+  return groupConversationClustersByLocalDate(
+    sortConversationClustersByCreatedAt(clusterConversations(sessions)),
+    now,
+  ).flatMap((group) => group.sessions.map((item) => item.session.id));
+}
+
+export function adjacentConversationId(
+  ids: string[],
+  currentId: string | null,
+  direction: "previous" | "next",
+) {
+  if (ids.length === 0) return null;
+  const index = currentId ? ids.indexOf(currentId) : -1;
+  if (index === -1) return ids[0] ?? null;
+  const offset = direction === "previous" ? -1 : 1;
+  return ids[(index + offset + ids.length) % ids.length] ?? null;
+}
+
 export function getWorkspaceSessionKey(
   session: Pick<ChatIndexItem, "workspaceId" | "cwd">,
   projects: WorkspaceProject[],

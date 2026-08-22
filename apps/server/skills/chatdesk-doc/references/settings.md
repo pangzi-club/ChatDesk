@@ -6,7 +6,7 @@
 |---|---|---|
 | 常规 | `/settings/general` | 通知等通用行为 |
 | 主题 | `/settings/theme` | 明暗、配色、对话字体 |
-| 快捷键 | `/settings/shortcuts` | Chat 侧栏等键盘组合键 |
+| 快捷键 | `/settings/shortcuts` | Chat 侧栏、上一条/下一条对话等键盘组合键 |
 | API Keys | `/settings/keys` | 本机密钥；不回显，输入新值即覆盖 |
 | 模型 | `/settings/models` | OpenAI 兼容模型，以及自动审批用的 Reviewer |
 | MCP | `/settings/mcp` | 从 Registry 添加 MCP，并在 Chat 里选用 |

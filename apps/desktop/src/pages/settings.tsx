@@ -931,6 +931,16 @@ function ShortcutsSettingsPage() {
       label: "Chat 侧边栏最大按钮",
       description: "在分栏与最大化窗口之间切换。",
     },
+    {
+      action: "previousConversation",
+      label: "上一条对话",
+      description: "切换到侧栏中更靠上的对话。",
+    },
+    {
+      action: "nextConversation",
+      label: "下一条对话",
+      description: "切换到侧栏中更靠下的对话。",
+    },
   ];
 
   return (

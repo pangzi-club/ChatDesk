@@ -170,10 +170,12 @@ import {
 import { appendSystemLog } from "@/lib/system-log";
 import { terminalSessions } from "@/lib/terminal";
 import {
+  adjacentConversationId,
   clusterConversations,
   flattenConversationClusters,
   getWorkspaceSessionKey,
   groupConversationClustersByLocalDate,
+  listNavigableConversationIds,
   resolveWorkspaceConversationLabel,
   type SidebarConversationView,
   sortConversationClustersByCreatedAt,
@@ -493,6 +495,10 @@ function AppShell() {
     [location.pathname, location.search],
   );
   const chatSessionId = chatRoute.kind === "session" ? chatRoute.sessionId : null;
+  const chatIndexQuery = useQuery({
+    queryKey: ["chat-index"],
+    queryFn: loadChatIndex,
+  });
   const chatSessionQuery = useQuery({
     queryKey: ["chat-window-session", chatSessionId],
     queryFn: () => loadChatSession(chatSessionId ?? ""),
@@ -700,6 +706,39 @@ function AppShell() {
     window.addEventListener("keydown", handleGlobalShortcut);
     return () => window.removeEventListener("keydown", handleGlobalShortcut);
   }, [chatWindowKey, isChatPage, shortcutSettings]);
+
+  useEffect(() => {
+    function handleConversationShortcut(event: globalThis.KeyboardEvent) {
+      if (!isChatPage || isCommandMenuOpen || isChatSearchOpen) return;
+      const conversationDirection = matchesShortcut(event, shortcutSettings.previousConversation)
+        ? "previous"
+        : matchesShortcut(event, shortcutSettings.nextConversation)
+          ? "next"
+          : null;
+      if (!conversationDirection) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const nextSessionId = adjacentConversationId(
+        listNavigableConversationIds(chatIndexQuery.data ?? []),
+        chatSessionId,
+        conversationDirection,
+      );
+      if (nextSessionId && nextSessionId !== chatSessionId) {
+        navigate(chatSessionPath(nextSessionId));
+      }
+    }
+
+    window.addEventListener("keydown", handleConversationShortcut, true);
+    return () => window.removeEventListener("keydown", handleConversationShortcut, true);
+  }, [
+    chatIndexQuery.data,
+    chatSessionId,
+    isChatPage,
+    isChatSearchOpen,
+    isCommandMenuOpen,
+    navigate,
+    shortcutSettings,
+  ]);
 
   function persistMainSidebarState(state: MainSidebarState) {
     void saveMainSidebarState(state).catch((error) =>
