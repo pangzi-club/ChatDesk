@@ -1966,13 +1966,26 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
           </DropdownMenu>
         </div>
       ) : (
-        <div className="flex h-8 items-center rounded-md px-2">
+        <div className="group flex h-8 items-center rounded-md px-2">
           <h2
-            className="font-medium text-[13px] text-muted-foreground/55"
+            className="min-w-0 flex-1 font-medium text-[13px] text-muted-foreground/55"
             id="sidebar-conversations-heading"
           >
             List
           </h2>
+          <button
+            aria-label="新建对话"
+            className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100"
+            onClick={() =>
+              navigate(chatNewPath(), {
+                state: chatNewNavigationState(),
+              })
+            }
+            title="新建对话"
+            type="button"
+          >
+            <Plus className="size-3.5" />
+          </button>
         </div>
       )}
       {view === "workspace" && addWorkspaceMutation.error ? (
