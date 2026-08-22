@@ -39,7 +39,7 @@ To publish a version, update workspace package versions, push the commit, then
 create and push a tag:
 
 ```sh
-pnpm version:set -- 0.4.0
+pnpm version:set 0.4.0
 git tag v0.4.0
 git push origin v0.4.0
 ```
