@@ -21,6 +21,7 @@
     "dev:web": "pnpm --filter chatdesk-desktop dev",
     "dev:server": "pnpm server:dev",
     "migrate": "node scripts/migrate.mjs",
+    "version:set": "node scripts/set-workspace-version.mjs",
     "server:dev": "node --watch --experimental-strip-types apps/server/src/server.ts",
     "test": "vitest run && node --test \"scripts/*.test.mjs\"",
     "server:test": "vitest run apps/server/src",

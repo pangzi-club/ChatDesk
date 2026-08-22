@@ -35,18 +35,19 @@ creates or updates a GitHub Release with those files. The workflow does not
 sign or notarize packages; configure the repository's Apple and Tauri signing
 secrets before distributing a release build.
 
-To publish a version, update the app versions, push the commit, then create and
-push a tag:
+To publish a version, update workspace package versions, push the commit, then
+create and push a tag:
 
 ```sh
+pnpm version:set -- 0.4.0
 git tag v0.4.0
 git push origin v0.4.0
 ```
 
+`pnpm version:set` rewrites every workspace `package.json` except `apps/tauri`.
 The tag starts the two architecture builds. The release job runs only after
-both builds finish successfully. Keep the tag version aligned with every
-workspace `package.json`, `apps/tauri/src-tauri/tauri.conf.json`, and
-`apps/tauri/src-tauri/Cargo.toml`.
+both builds finish successfully. Keep the tag version aligned with the updated
+workspace packages.
 
 `pnpm desktop:sidecars` requires Node.js 22.20.0. It copies the current Node executable to `apps/desktop/assets/binaries/node-runtime-<target-triple>`, bundles the TypeScript Chat Server and sandbox worker into CommonJS, and copies the browser worker as an ordinary ES module. These scripts live under `apps/desktop/assets/resources/node-runtime/workers` and are all executed by the same Node binary. Builtin skills from `apps/server/skills` are copied to `workers/skills` next to `chat-server.cjs`.
 
