@@ -40,8 +40,8 @@ pnpm desktop:sidecars
 常用命令：
 
 ```sh
-pnpm check       # Biome 格式和静态检查
-pnpm shared:typecheck # 检查 @chatdesk/shared 类型
+pnpm check       # Biome 静态检查 + 各 package TypeScript 类型检查
+pnpm typecheck   # 仅运行各 workspace package 的 tsc
 pnpm shared:test # 运行共享包测试
 pnpm build       # 完整代码构建：shared + Web 前端 + Chat Server
 pnpm desktop:build # 构建 Electron 桌面安装包

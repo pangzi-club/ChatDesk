@@ -125,7 +125,8 @@ function ChatTaskItem({ task }: { task: TaskItemView }) {
   const [open, setOpen] = useState(false);
   const toolLines = task.tools.map(formatToolGlance);
   const collapsedGlance =
-    task.headings.at(-1) || (toolLines.length > 0 ? (toolLines.at(-1) ?? "") : "");
+    task.headings[task.headings.length - 1] ||
+    (toolLines.length > 0 ? (toolLines[toolLines.length - 1] ?? "") : "");
   const showInlinePreview = Boolean(
     collapsedGlance && !open && !sameText(collapsedGlance, task.title),
   );

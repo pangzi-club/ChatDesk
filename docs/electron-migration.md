@@ -111,7 +111,6 @@ Renderer 不直接调用 Electron、Tauri 或 Node API。所有宿主能力通�
 pnpm format
 pnpm check
 pnpm test
-pnpm shared:typecheck
 pnpm build
 ```
 

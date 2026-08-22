@@ -26,11 +26,10 @@ Durable project-specific notes live in [`MEMORY.md`](MEMORY.md). Read it when lo
 - Before creating or updating a commit or pull request, run the complete CI command sequence. Do not rely only on a targeted test or a package-local build.
 - Match the CI toolchain: Node.js 22, pnpm 11.19.0, and `pnpm install --frozen-lockfile`.
 - Run these commands from the repository root, in order, and require every command to pass:
-  1. `pnpm exec biome format .` (CI read-only formatting check; run `pnpm format` first when changes are needed.)
-  2. `pnpm check`
-  3. `pnpm test`
-  4. `pnpm shared:typecheck`
-  5. `pnpm build`
+ 1. `pnpm exec biome format .` (CI read-only formatting check; run `pnpm format` first when changes are needed.)
+ 2. `pnpm check` (Biome static checks, then workspace TypeScript typecheck)
+ 3. `pnpm test`
+ 4. `pnpm build`
 - Treat any failure in this sequence as a blocker for reporting the change as CI-ready. Record environmental or pre-existing failures explicitly instead of presenting partial verification as complete.
 
 ## Development Server

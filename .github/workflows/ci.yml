@@ -31,7 +31,5 @@ jobs:
         run: pnpm check
       - name: Run tests
         run: pnpm test
-      - name: Check shared package types
-        run: pnpm shared:typecheck
       - name: Build web application
         run: pnpm build
