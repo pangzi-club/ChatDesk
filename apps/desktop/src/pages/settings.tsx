@@ -971,7 +971,7 @@ function ShortcutsSettingsPage() {
                 <div className="flex items-center gap-2">
                   <button
                     aria-label={`设置${item.label}快捷键`}
-                    className={`min-w-24 rounded-md border px-3 py-1.5 text-center font-mono text-xs transition-colors ${isEditing ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background text-foreground hover:bg-accent"}`}
+                    className={`min-w-24 rounded-md border px-3 py-1.5 text-center font-medium text-[13px] tracking-[0.02em] transition-colors ${isEditing ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background text-foreground hover:bg-accent"}`}
                     disabled={isLoading}
                     onClick={() => setEditing(item.action)}
                     type="button"
