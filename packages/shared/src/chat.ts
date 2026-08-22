@@ -1,4 +1,4 @@
-import type { UIMessage } from "ai";
+import { getToolName, isToolUIPart, type UIMessage } from "ai";
 
 export const CHAT_SCHEMA_VERSION = 2 as const;
 export const DEFAULT_WORKSPACE_ID = "default";
@@ -394,15 +394,32 @@ export type CreateTaskPreviewMessage = {
   text: string;
 };
 
+export type CreateTaskToolGlance = {
+  name: string;
+  detail?: string;
+  pending?: boolean;
+};
+
+export type CreateTaskProgress = {
+  headings: string[];
+  tools: CreateTaskToolGlance[];
+};
+
 export type CreateTaskOutput = {
   sessionId: string;
   title: string;
   status: CreateTaskStatus;
   preview: string;
+  headings?: string[];
+  tools?: CreateTaskToolGlance[];
   outcome?: ChatRunOutcome;
   error?: string;
   messages?: CreateTaskPreviewMessage[];
 };
+
+const TASK_PROGRESS_HEADING_LIMIT = 6;
+const TASK_PROGRESS_TOOL_LIMIT = 8;
+const TASK_PROGRESS_TEXT_MAX = 72;
 
 const CHAT_RUN_OUTCOMES = ["completed", "awaiting-user", "stopped", "error"] as const;
 
@@ -430,6 +447,10 @@ export function parseCreateTaskOutput(value: unknown): CreateTaskOutput | null {
   };
   if (isChatRunOutcome(record.outcome)) parsed.outcome = record.outcome;
   if (typeof record.error === "string" && record.error.trim()) parsed.error = record.error.trim();
+  const headings = parseCreateTaskHeadings(record.headings);
+  if (headings.length > 0) parsed.headings = headings;
+  const tools = parseCreateTaskTools(record.tools);
+  if (tools.length > 0) parsed.tools = tools;
   if (Array.isArray(record.messages)) {
     const messages: CreateTaskPreviewMessage[] = [];
     for (const entry of record.messages) {
@@ -446,6 +467,166 @@ export function parseCreateTaskOutput(value: unknown): CreateTaskOutput | null {
     if (messages.length > 0) parsed.messages = messages;
   }
   return parsed;
+}
+
+function compactProgressText(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function truncateProgressText(value: string, maxLength = TASK_PROGRESS_TEXT_MAX) {
+  const compact = compactProgressText(value);
+  if (!compact || compact.length <= maxLength) return compact;
+  return `${compact.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;
+}
+
+function lastUniqueByKey<T>(items: T[], keyOf: (item: T) => string, limit: number) {
+  const seen = new Set<string>();
+  const selected: T[] = [];
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (!item) continue;
+    const key = keyOf(item);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    selected.push(item);
+    if (selected.length >= limit) break;
+  }
+  return selected.reverse();
+}
+
+function lastPathSegment(value: string) {
+  const normalized = value.replace(/[\\/]+$/, "");
+  const segments = normalized.split(/[\\/]/);
+  return segments[segments.length - 1] || normalized;
+}
+
+function recordValue(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function stringField(value: unknown, key: string) {
+  const record = recordValue(value);
+  const property = record?.[key];
+  return typeof property === "string" ? property.trim() : "";
+}
+
+function parseCreateTaskHeadings(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  const headings: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") continue;
+    const heading = truncateProgressText(entry);
+    if (heading) headings.push(heading);
+    if (headings.length >= TASK_PROGRESS_HEADING_LIMIT) break;
+  }
+  return headings;
+}
+
+function parseCreateTaskTools(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  const tools: CreateTaskToolGlance[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const record = entry as Record<string, unknown>;
+    const name = boundedString(record.name, 80);
+    if (!name) continue;
+    const detail = typeof record.detail === "string" ? truncateProgressText(record.detail) : "";
+    const tool: CreateTaskToolGlance = { name };
+    if (detail) tool.detail = detail;
+    if (record.pending === true) tool.pending = true;
+    tools.push(tool);
+    if (tools.length >= TASK_PROGRESS_TOOL_LIMIT) break;
+  }
+  return tools;
+}
+
+export function extractMarkdownHeadings(text: string) {
+  const headings: string[] = [];
+  let inFence = false;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const trimmedStart = rawLine.trimStart();
+    if (trimmedStart.startsWith("```") || trimmedStart.startsWith("~~~")) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    const match = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(rawLine.trim());
+    if (!match?.[2]) continue;
+    const heading = truncateProgressText(match[2]);
+    if (heading) headings.push(heading);
+  }
+  return headings;
+}
+
+function toolGlanceDetail(name: string, input: unknown, output: unknown) {
+  if (name === "bash") return stringField(input, "command");
+  if (name === "search_files") {
+    return stringField(input, "query") || stringField(input, "pattern");
+  }
+  if (name === "web_search") {
+    return stringField(input, "query") || stringField(input, "search");
+  }
+  if (name === "apply_patch") {
+    const changedFiles = recordValue(output)?.changedFiles;
+    if (Array.isArray(changedFiles) && changedFiles.length > 0) {
+      return `${changedFiles.length} 个文件`;
+    }
+    return "";
+  }
+  if (name === TODO_TOOL_NAME) {
+    const todos = recordValue(input)?.todos;
+    return Array.isArray(todos) && todos.length > 0 ? `${todos.length} 项` : "";
+  }
+  const path = stringField(output, "path") || stringField(input, "path");
+  if (path) return lastPathSegment(path);
+  return (
+    stringField(input, "url") ||
+    stringField(input, "query") ||
+    stringField(input, "pattern") ||
+    stringField(input, "command") ||
+    stringField(input, "title")
+  );
+}
+
+function toolGlanceFromPart(part: UIMessage["parts"][number]): CreateTaskToolGlance | null {
+  if (!isToolUIPart(part)) return null;
+  const name = getToolName(part).trim();
+  if (!name || name === CREATE_TASK_TOOL_NAME) return null;
+  const input = "input" in part ? part.input : undefined;
+  const output = "output" in part ? part.output : undefined;
+  const preliminary = "preliminary" in part ? Boolean(part.preliminary) : false;
+  const pending =
+    preliminary || part.state === "input-streaming" || part.state === "input-available";
+  const detail = truncateProgressText(toolGlanceDetail(name, input, output));
+  return {
+    name,
+    ...(detail ? { detail } : {}),
+    ...(pending ? { pending: true } : {}),
+  };
+}
+
+export function extractCreateTaskProgress(messages: UIMessage[]): CreateTaskProgress {
+  const headings: string[] = [];
+  const tools: CreateTaskToolGlance[] = [];
+  for (const message of messages) {
+    if (message.role !== "assistant") continue;
+    for (const part of message.parts) {
+      if (part.type === "text" && typeof part.text === "string") {
+        headings.push(...extractMarkdownHeadings(part.text));
+      }
+      const tool = toolGlanceFromPart(part);
+      if (tool) tools.push(tool);
+    }
+  }
+  return {
+    headings: lastUniqueByKey(headings, (heading) => heading, TASK_PROGRESS_HEADING_LIMIT),
+    tools: lastUniqueByKey(
+      tools,
+      (tool) => `${tool.name}\0${tool.detail ?? ""}`,
+      TASK_PROGRESS_TOOL_LIMIT,
+    ),
+  };
 }
 
 export const TODO_STATUSES = ["pending", "in_progress", "completed", "blocked"] as const;

@@ -3093,8 +3093,7 @@ button.chat-task-item-summary:focus-visible .chat-task-item-chevron,
   padding: 0 0 8px 22px;
 }
 .chat-task-item-prompt,
-.chat-task-item-error,
-.chat-task-item-preview {
+.chat-task-item-error {
   margin: 0 0 6px;
   font-size: 12px;
   line-height: 1.5;
@@ -3114,16 +3113,27 @@ button.chat-task-item-summary:focus-visible .chat-task-item-chevron,
 .chat-task-item-error {
   color: var(--destructive);
 }
-.chat-task-item-preview {
-  max-height: 12em;
-  overflow: auto;
-  color: var(--foreground);
+.chat-task-item-outline {
+  margin: 0 0 6px;
 }
-.chat-task-item-preview pre {
+.chat-task-item-outline ul {
   margin: 0;
-  font: inherit;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  padding: 0;
+  list-style: none;
+}
+.chat-task-item-outline-item {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.chat-task-item-outline.is-headings .chat-task-item-outline-item {
+  color: var(--foreground);
+  font-weight: 500;
+}
+.chat-task-item-outline.is-tools .chat-task-item-outline-item {
+  color: var(--muted-foreground);
 }
 .chat-task-status {
   display: flex;

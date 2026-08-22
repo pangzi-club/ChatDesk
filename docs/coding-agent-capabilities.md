@@ -40,7 +40,7 @@
 ### ✅ 核心循环
 - **Agentic loop**：`run-registry.ts` 基于 Vercel AI SDK `streamText` + 工具调用 + `stopWhen(stepCountIs(100))`，支持多步工具调用直至完成；第 60 步提示收敛，同一目标连续失败两次要求重新读取并换方法，连续 3 个失败步骤或累计 8 次工具失败以 `tool-errors` 收尾。
 - **任务规划**：`todo-tool.ts` 提供 `todo_write` 工具（全量替换语义，免审批），支持 `pending` / `in_progress` / `completed` / `blocked`；必要验证无法执行时必须标记 `blocked`。前端从消息流派生最新进度，存在 blocked 或 pending 项的正常结束 run 显示为“部分完成”。
-- **任务委派**：`task-tool.ts` 提供 `create_task`。Apply 模式的普通会话可在同一轮并行派生多个 `kind: "task"` 后台会话；子会话能力与父对话相同，但不能交互、不能嵌套 create_task。父 run 停止时级联停止子 task。
+- **任务委派**：`task-tool.ts` 提供 `create_task`。Apply 模式的普通会话可在同一轮并行派生多个 `kind: "task"` 后台会话；子会话能力与父对话相同，但不能交互、不能嵌套 create_task。父 run 停止时级联停止子 task。父对话任务列表展示 markdown 小标题和工具调用概览；完整正文仍在只读 task 会话中。
 - **中断/停止**：`AbortController`，`/runs/stop` 接口。
 - **流式输出**：UIMessage stream 双 tee（客户端流 + 服务端观察者），SSE 推送 `message.delta`。
 - **崩溃恢复**：`run-journal.ts` 在启动时恢复中断的 run 并标记 error。

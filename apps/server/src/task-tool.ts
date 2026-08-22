@@ -7,6 +7,7 @@ import {
   type CreateTaskPreviewMessage,
   type CreateTaskStatus,
   deriveTitle,
+  extractCreateTaskProgress,
   type RunStartInput,
   type SessionStatus,
   textFromMessage,
@@ -114,11 +115,16 @@ async function snapshotCreateTask(
   if (options.error && !aborted && !active) status = "error";
   const outcome = session ? latestRunSummary(session)?.outcome : undefined;
   const messages = session ? previewMessages(session) : [];
+  const progress = session
+    ? extractCreateTaskProgress(session.messages)
+    : { headings: [], tools: [] };
   return {
     sessionId,
     title: session?.title || title,
     status,
     preview: session ? previewFromSession(session) : "",
+    ...(progress.headings.length > 0 ? { headings: progress.headings } : {}),
+    ...(progress.tools.length > 0 ? { tools: progress.tools } : {}),
     ...(outcome ? { outcome } : {}),
     ...(options.error ? { error: options.error } : {}),
     ...(messages.length > 0 ? { messages } : {}),

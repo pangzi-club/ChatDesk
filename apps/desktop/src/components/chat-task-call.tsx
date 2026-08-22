@@ -1,13 +1,15 @@
 import {
   CREATE_TASK_TOOL_NAME,
   type CreateTaskStatus,
+  type CreateTaskToolGlance,
   parseCreateTaskOutput,
 } from "@chatdesk/shared";
 import { getToolName } from "ai";
 import { Check, ChevronDown, CircleAlert, LoaderCircle, Square } from "lucide-react";
 import { useState } from "react";
 import type { ChatToolPart } from "@/lib/chat-message-blocks";
-import { compactToolText, headlineToolText, previewToolText } from "./chat-tool-call-utils";
+import { CHAT_TOOL_DISPLAY_NAMES } from "@/lib/chat-tool-defs";
+import { compactToolText } from "./chat-tool-call-utils";
 
 export type ChatTaskListProps = {
   parts: ChatToolPart[];
@@ -17,7 +19,8 @@ type TaskItemView = {
   id: string;
   title: string;
   prompt: string;
-  preview: string;
+  headings: string[];
+  tools: CreateTaskToolGlance[];
   status: CreateTaskStatus | "pending";
   error?: string;
   running: boolean;
@@ -40,6 +43,23 @@ function sameText(left: string, right: string) {
   return compactToolText(left) === compactToolText(right);
 }
 
+function toolDisplayName(name: string) {
+  return CHAT_TOOL_DISPLAY_NAMES[name] ?? name;
+}
+
+function formatToolGlance(tool: CreateTaskToolGlance) {
+  const name = toolDisplayName(tool.name);
+  return tool.detail ? `${name} · ${tool.detail}` : name;
+}
+
+function headlineFromPrompt(prompt: string) {
+  const firstLine = prompt.split(/\r?\n/, 1)[0] ?? "";
+  const compact = compactToolText(firstLine);
+  if (!compact) return "";
+  if (compact.length <= 72) return compact;
+  return `${compact.slice(0, 71).trimEnd()}…`;
+}
+
 function taskFromPart(part: ChatToolPart): TaskItemView {
   const input = "input" in part ? part.input : undefined;
   const prompt = getStringField(input, "prompt");
@@ -54,9 +74,10 @@ function taskFromPart(part: ChatToolPart): TaskItemView {
     : (output?.status ?? (part.state === "output-error" || errorText ? "error" : "pending"));
   return {
     id: part.toolCallId,
-    title: output?.title || namedTitle || headlineToolText(prompt) || "后台任务",
+    title: output?.title || namedTitle || headlineFromPrompt(prompt) || "后台任务",
     prompt,
-    preview: output?.preview || "",
+    headings: output?.headings ?? [],
+    tools: output?.tools ?? [],
     status,
     ...(output?.error || errorText ? { error: output?.error || errorText } : {}),
     running,
@@ -76,16 +97,42 @@ function TaskStatusIcon({ task }: { task: TaskItemView }) {
   return <CircleAlert aria-hidden="true" className="size-3.5" />;
 }
 
+function TaskOutlineList({
+  items,
+  label,
+  kind,
+}: {
+  items: string[];
+  label: string;
+  kind: "headings" | "tools";
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div className={`chat-task-item-outline is-${kind}`}>
+      <span className="chat-task-item-meta">{label}</span>
+      <ul>
+        {items.map((item) => (
+          <li className="chat-task-item-outline-item" key={item} title={item}>
+            {item}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function ChatTaskItem({ task }: { task: TaskItemView }) {
   const [open, setOpen] = useState(false);
-  const collapsedPreview = task.preview ? headlineToolText(task.preview, 96) : "";
+  const toolLines = task.tools.map(formatToolGlance);
+  const collapsedGlance =
+    task.headings.at(-1) || (toolLines.length > 0 ? (toolLines.at(-1) ?? "") : "");
   const showInlinePreview = Boolean(
-    collapsedPreview && !open && !sameText(collapsedPreview, task.title),
+    collapsedGlance && !open && !sameText(collapsedGlance, task.title),
   );
   const promptAddsDetail = Boolean(task.prompt && !sameText(task.prompt, task.title));
-  const previewAddsDetail = Boolean(task.preview && !sameText(task.preview, task.title));
-  const expandable = Boolean(promptAddsDetail || task.error || previewAddsDetail);
-  const expandedPreview = task.preview ? previewToolText(task.preview, 800, 16).text : "";
+  const expandable = Boolean(
+    promptAddsDetail || task.error || task.headings.length > 0 || toolLines.length > 0,
+  );
   const failed = task.status === "error";
   const status = statusLabel(task.status);
   const summaryBody = (
@@ -98,7 +145,7 @@ function ChatTaskItem({ task }: { task: TaskItemView }) {
           {task.title}
         </span>
         {showInlinePreview ? (
-          <span className="chat-task-item-inline-preview">{collapsedPreview}</span>
+          <span className="chat-task-item-inline-preview">{collapsedGlance}</span>
         ) : null}
       </span>
       {status ? <span className="chat-task-item-status">{status}</span> : null}
@@ -132,17 +179,13 @@ function ChatTaskItem({ task }: { task: TaskItemView }) {
               {task.prompt}
             </p>
           ) : null}
+          <TaskOutlineList items={task.headings} kind="headings" label="标题" />
+          <TaskOutlineList items={toolLines} kind="tools" label="工具" />
           {task.error ? (
             <p className="chat-task-item-error">
               <span className="chat-task-item-meta">错误</span>
               {task.error}
             </p>
-          ) : null}
-          {previewAddsDetail && expandedPreview ? (
-            <div className="chat-task-item-preview">
-              <span className="chat-task-item-meta">进展</span>
-              <pre>{expandedPreview}</pre>
-            </div>
           ) : null}
         </div>
       ) : null}

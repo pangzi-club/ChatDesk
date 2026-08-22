@@ -1,5 +1,6 @@
 import type { ChatSession, CreateTaskOutput, RunStartInput, SessionStatus } from "@chatdesk/shared";
 import { CREATE_TASK_TOOL_NAME } from "@chatdesk/shared";
+import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
 import type { EventHub } from "./events.ts";
 import { type CreateTaskRunner, createTaskTool } from "./task-tool.ts";
@@ -36,7 +37,7 @@ function createEventHub(): EventHub {
 function createMockRunner(store: ReturnType<typeof createMemoryStore>): CreateTaskRunner & {
   active: Set<string>;
   spawned: Map<string, Set<string>>;
-  finish(sessionId: string, preview: string): Promise<void>;
+  finish(sessionId: string, preview: string, parts?: UIMessage["parts"]): Promise<void>;
 } {
   const active = new Set<string>();
   const waiters = new Map<string, () => void>();
@@ -72,7 +73,7 @@ function createMockRunner(store: ReturnType<typeof createMemoryStore>): CreateTa
       children.add(childSessionId);
       spawned.set(parentSessionId, children);
     },
-    async finish(sessionId: string, preview: string) {
+    async finish(sessionId: string, preview: string, parts?: UIMessage["parts"]) {
       const session = await store.get(sessionId);
       if (session) {
         await store.save({
@@ -82,7 +83,7 @@ function createMockRunner(store: ReturnType<typeof createMemoryStore>): CreateTa
             {
               id: "assistant-1",
               role: "assistant",
-              parts: [{ type: "text", text: preview }],
+              parts: parts ?? [{ type: "text", text: preview }],
               metadata: {
                 runSummary: {
                   runId: "run-1",
@@ -204,5 +205,37 @@ describe("create_task tool", () => {
     const [firstSnapshots, secondSnapshots] = await Promise.all([first, second]);
     expect(firstSnapshots.at(-1)?.status).toBe("completed");
     expect(secondSnapshots.at(-1)?.status).toBe("completed");
+  });
+
+  it("reports headings and a tool glance instead of only the markdown body", async () => {
+    const store = createMemoryStore();
+    const runner = createMockRunner(store);
+    const tool = createTaskTool({
+      store: store as never,
+      events: createEventHub(),
+      runner,
+      parentSessionId: "parent-1",
+      parentInput: {} as RunStartInput,
+    });
+
+    const pending = collectExecute(tool.execute, { prompt: "调研接口", title: "接口调研" });
+    const childId = await waitForChild(store);
+    await runner.finish(childId, "markdown body", [
+      {
+        type: "tool-read_file",
+        toolCallId: "read-1",
+        state: "output-available",
+        input: { path: "src/app.ts" },
+        output: { content: "ok" },
+      },
+      {
+        type: "text",
+        text: "## 结论\n子任务写了一大段 markdown，不应整段出现在父对话。\n## 建议\n只保留标题和工具。",
+      },
+    ]);
+    const last = (await pending).at(-1);
+    expect(last?.preview).toContain("一大段 markdown");
+    expect(last?.headings).toEqual(["结论", "建议"]);
+    expect(last?.tools).toEqual([{ name: "read_file", detail: "app.ts" }]);
   });
 });

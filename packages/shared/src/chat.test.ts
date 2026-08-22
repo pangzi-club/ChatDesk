@@ -3,6 +3,8 @@ import { describe, it } from "vitest";
 import {
   DEFAULT_MODEL_CONTEXT_WINDOW,
   deriveTitle,
+  extractCreateTaskProgress,
+  extractMarkdownHeadings,
   isSessionStatus,
   parseCreateTaskOutput,
   parsePlanUserInputRequest,
@@ -173,6 +175,8 @@ describe("shared chat contracts", () => {
         title: "调研目录结构",
         status: "running",
         preview: "正在列出文件…",
+        headings: ["目录结构"],
+        tools: [{ name: "read_file", detail: "README.md", pending: true }],
         messages: [{ role: "assistant", text: "正在列出文件…" }],
       }),
       {
@@ -180,6 +184,8 @@ describe("shared chat contracts", () => {
         title: "调研目录结构",
         status: "running",
         preview: "正在列出文件…",
+        headings: ["目录结构"],
+        tools: [{ name: "read_file", detail: "README.md", pending: true }],
         messages: [{ role: "assistant", text: "正在列出文件…" }],
       },
     );
@@ -196,5 +202,51 @@ describe("shared chat contracts", () => {
       }),
       null,
     );
+  });
+
+  it("extracts markdown headings and a unique tool glance from task messages", () => {
+    assert.deepEqual(
+      extractMarkdownHeadings(
+        ["## 结论", "很长的一段说明", "### 建议", "```", "## 代码里的标题", "```"].join("\n"),
+      ),
+      ["结论", "建议"],
+    );
+    const progress = extractCreateTaskProgress([
+      {
+        id: "assistant-1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-read_file",
+            toolCallId: "read-1",
+            state: "output-available",
+            input: { path: "src/app.ts" },
+            output: { content: "ok" },
+          },
+          {
+            type: "tool-read_file",
+            toolCallId: "read-2",
+            state: "output-available",
+            input: { path: "src/app.ts" },
+            output: { content: "ok again" },
+          },
+          {
+            type: "tool-bash",
+            toolCallId: "bash-1",
+            state: "input-available",
+            input: { command: "pnpm test" },
+          },
+          {
+            type: "text",
+            text: "## 结论\n子任务写了一大段 markdown。\n## 建议\n保持概览即可。",
+          },
+        ],
+      },
+    ]);
+    assert.deepEqual(progress.headings, ["结论", "建议"]);
+    assert.deepEqual(progress.tools, [
+      { name: "read_file", detail: "app.ts" },
+      { name: "bash", detail: "pnpm test", pending: true },
+    ]);
   });
 });
