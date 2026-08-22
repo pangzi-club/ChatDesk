@@ -17,16 +17,38 @@ export type ConversationDateGroup<T = unknown> = {
   sessions: T[];
 };
 
+export type ConversationCluster<T = ChatIndexItem> = {
+  root: T;
+  children: T[];
+};
+
+export type NestedConversationItem<T = ChatIndexItem> = {
+  session: T;
+  nested: boolean;
+};
+
+function conversationTime(value: string | undefined) {
+  return typeof value === "string" ? value : "";
+}
+
+function compareConversationsByCreatedAt<
+  T extends Pick<ChatIndexItem, "createdAt" | "updatedAt" | "id">,
+>(left: T, right: T) {
+  const createdDifference = conversationTime(right.createdAt).localeCompare(
+    conversationTime(left.createdAt),
+  );
+  if (createdDifference !== 0) return createdDifference;
+  const updatedDifference = conversationTime(right.updatedAt).localeCompare(
+    conversationTime(left.updatedAt),
+  );
+  if (updatedDifference !== 0) return updatedDifference;
+  return left.id.localeCompare(right.id);
+}
+
 export function sortConversationsByCreatedAt<
   T extends Pick<ChatIndexItem, "createdAt" | "updatedAt" | "id">,
 >(sessions: T[]) {
-  return [...sessions].sort((left, right) => {
-    const createdDifference = right.createdAt.localeCompare(left.createdAt);
-    if (createdDifference !== 0) return createdDifference;
-    const updatedDifference = right.updatedAt.localeCompare(left.updatedAt);
-    if (updatedDifference !== 0) return updatedDifference;
-    return left.id.localeCompare(right.id);
-  });
+  return [...sessions].sort(compareConversationsByCreatedAt);
 }
 
 export function resolveWorkspaceConversationLabel(
@@ -64,6 +86,110 @@ export function groupConversationsByLocalDate<T extends Pick<ChatIndexItem, "cre
     });
   }
   return [...groups.values()];
+}
+
+function clusterUpdatedAt<T extends Pick<ChatIndexItem, "updatedAt">>(
+  cluster: ConversationCluster<T>,
+) {
+  let latest = conversationTime(cluster.root.updatedAt);
+  for (const child of cluster.children) {
+    if (child.updatedAt > latest) latest = child.updatedAt;
+  }
+  return latest;
+}
+
+export function clusterConversations<
+  T extends Pick<ChatIndexItem, "id" | "parentSessionId" | "kind" | "createdAt">,
+>(sessions: T[]): ConversationCluster<T>[] {
+  const byId = new Map(sessions.map((session) => [session.id, session]));
+  const childrenByParent = new Map<string, T[]>();
+
+  for (const session of sessions) {
+    if (session.kind !== "task") continue;
+    const parentId = session.parentSessionId?.trim();
+    if (!parentId || parentId === session.id) continue;
+    const parent = byId.get(parentId);
+    if (!parent || parent.parentSessionId === session.id) continue;
+    const siblings = childrenByParent.get(parentId) ?? [];
+    siblings.push(session);
+    childrenByParent.set(parentId, siblings);
+  }
+
+  for (const children of childrenByParent.values()) {
+    children.sort((left, right) => {
+      const created = conversationTime(left.createdAt).localeCompare(
+        conversationTime(right.createdAt),
+      );
+      if (created !== 0) return created;
+      return left.id.localeCompare(right.id);
+    });
+  }
+
+  const nestedIds = new Set<string>();
+  for (const children of childrenByParent.values()) {
+    for (const child of children) nestedIds.add(child.id);
+  }
+
+  const clusters: ConversationCluster<T>[] = [];
+  for (const session of sessions) {
+    if (nestedIds.has(session.id)) continue;
+    clusters.push({
+      root: session,
+      children: childrenByParent.get(session.id) ?? [],
+    });
+  }
+  return clusters;
+}
+
+export function flattenConversationClusters<T>(
+  clusters: ConversationCluster<T>[],
+): NestedConversationItem<T>[] {
+  const items: NestedConversationItem<T>[] = [];
+  for (const cluster of clusters) {
+    items.push({ session: cluster.root, nested: false });
+    for (const child of cluster.children) {
+      items.push({ session: child, nested: true });
+    }
+  }
+  return items;
+}
+
+export function sortConversationClustersByCreatedAt<
+  T extends Pick<ChatIndexItem, "createdAt" | "updatedAt" | "id">,
+>(clusters: ConversationCluster<T>[]) {
+  return [...clusters].sort((left, right) =>
+    compareConversationsByCreatedAt(left.root, right.root),
+  );
+}
+
+export function sortConversationClustersByUpdatedAt<
+  T extends Pick<ChatIndexItem, "updatedAt" | "id">,
+>(clusters: ConversationCluster<T>[]) {
+  return [...clusters].sort((left, right) => {
+    const updatedDifference = clusterUpdatedAt(right).localeCompare(clusterUpdatedAt(left));
+    if (updatedDifference !== 0) return updatedDifference;
+    return left.root.id.localeCompare(right.root.id);
+  });
+}
+
+export function groupConversationClustersByLocalDate<
+  T extends Pick<ChatIndexItem, "createdAt" | "id">,
+>(
+  clusters: ConversationCluster<T>[],
+  now = new Date(),
+): ConversationDateGroup<NestedConversationItem<T>>[] {
+  return groupConversationsByLocalDate(
+    clusters.map((cluster) => cluster.root),
+    now,
+  ).map((group) => {
+    const roots = new Set(group.sessions.map((session) => session.id));
+    return {
+      ...group,
+      sessions: flattenConversationClusters(
+        clusters.filter((cluster) => roots.has(cluster.root.id)),
+      ),
+    };
+  });
 }
 
 export function getWorkspaceSessionKey(

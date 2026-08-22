@@ -170,11 +170,14 @@ import {
 import { appendSystemLog } from "@/lib/system-log";
 import { terminalSessions } from "@/lib/terminal";
 import {
+  clusterConversations,
+  flattenConversationClusters,
   getWorkspaceSessionKey,
-  groupConversationsByLocalDate,
+  groupConversationClustersByLocalDate,
   resolveWorkspaceConversationLabel,
   type SidebarConversationView,
-  sortConversationsByCreatedAt,
+  sortConversationClustersByCreatedAt,
+  sortConversationClustersByUpdatedAt,
   sortWorkspaceConversationGroups,
   sortWorkspaceProjects,
   type WorkspaceSort,
@@ -1401,6 +1404,7 @@ type ConversationSidebarRowProps = {
   isRunning: boolean;
   isUnread: boolean;
   isRenaming: boolean;
+  nested?: boolean;
   suppressSidebarEntrance: boolean;
   sidebarMotionTransition: ReturnType<typeof getWorkbenchMotionTransition>;
   copiedConversation: { id: string; kind: "id" | "markdown" } | null;
@@ -1423,6 +1427,7 @@ function ConversationSidebarRow({
   isRunning,
   isUnread,
   isRenaming,
+  nested = false,
   suppressSidebarEntrance,
   sidebarMotionTransition,
   copiedConversation,
@@ -1433,9 +1438,12 @@ function ConversationSidebarRow({
   onCopyMarkdown,
   onRegenerateTitle,
 }: ConversationSidebarRowProps) {
+  const compact = !isList || nested;
+  const indentClass = isList || isRecent ? "pl-2" : "pl-8";
+
   return (
     <motion.div
-      animate={{ height: isList ? "3rem" : "2rem", opacity: 1 }}
+      animate={{ height: compact ? "2rem" : "3rem", opacity: 1 }}
       className="overflow-hidden"
       exit={{ height: 0, opacity: 0 }}
       initial={suppressSidebarEntrance ? false : { height: 0, opacity: 0 }}
@@ -1452,27 +1460,36 @@ function ConversationSidebarRow({
           <ContextMenuTrigger asChild>
             <div
               className={`group flex w-full items-center rounded-md transition-colors ${
-                isList ? "h-12" : "h-8"
+                compact ? "h-8" : "h-12"
               } ${
                 isActive
                   ? "bg-accent text-accent-foreground font-medium"
-                  : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                  : nested
+                    ? "text-muted-foreground hover:bg-accent/40"
+                    : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
               }`}
             >
               <button
                 aria-current={isActive ? "page" : undefined}
-                className={`flex min-w-0 flex-1 items-center rounded-md py-0 pr-1 text-left font-medium text-[13px] ${isList ? "pl-2" : isRecent ? "pl-2" : "pl-8"} ${isActive ? "text-accent-foreground" : "text-foreground"}`}
+                className={`flex min-w-0 flex-1 items-center rounded-md py-0 pr-1 text-left text-[13px] ${indentClass} ${
+                  isActive
+                    ? "font-medium text-accent-foreground"
+                    : nested
+                      ? "font-normal text-muted-foreground"
+                      : "font-medium text-foreground"
+                }`}
                 onClick={() => onOpen(session.id)}
                 type="button"
               >
                 <span className="min-w-0 flex-1">
                   <span className="flex min-w-0 items-center gap-1.5">
+                    {nested ? <span aria-hidden="true" className="chat-session-nest-line" /> : null}
                     <span className="min-w-0 truncate">{session.title}</span>
-                    {session.kind === "task" ? (
+                    {session.kind === "task" && !nested ? (
                       <span className="chat-session-kind">任务</span>
                     ) : null}
                   </span>
-                  {isList ? (
+                  {isList && !nested ? (
                     <span className="mt-0.5 flex items-center gap-1 truncate text-[11px] font-normal text-muted-foreground">
                       <FolderGit2 aria-hidden="true" className="size-3 shrink-0" />
                       <span className="truncate" title={workspaceLabel}>
@@ -1579,11 +1596,12 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
       ),
     [chatIndexQuery.data, workspaceProjectsQuery.data, workspaceSort],
   );
-  const listSessions = useMemo(
-    () => sortConversationsByCreatedAt(chatIndexQuery.data ?? []),
-    [chatIndexQuery.data],
-  );
-  const listDateGroups = useMemo(() => groupConversationsByLocalDate(listSessions), [listSessions]);
+  const listDateGroups = useMemo(() => {
+    const clusters = sortConversationClustersByCreatedAt(
+      clusterConversations(chatIndexQuery.data ?? []),
+    );
+    return groupConversationClustersByLocalDate(clusters);
+  }, [chatIndexQuery.data]);
   const isPending = chatIndexQuery.isPending || workspaceProjectsQuery.isPending;
   const isError = chatIndexQuery.isError || workspaceProjectsQuery.isError;
   // 首屏列表渲染与桌面状态恢复完成前，跳过 Sidebar 菜单的入场动画，保留展开/收起动画。
@@ -1944,7 +1962,7 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
                 </h3>
                 <div className="space-y-0.5">
                   <AnimatePresence initial={false}>
-                    {dateGroup.sessions.map((session) => (
+                    {dateGroup.sessions.map(({ session, nested }) => (
                       <ConversationSidebarRow
                         copiedConversation={copiedConversation}
                         cwd={session.cwd}
@@ -1959,6 +1977,7 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
                         }
                         isUnread={unreadSessionIds.has(session.id)}
                         key={session.id}
+                        nested={nested}
                         onCopyId={(sessionId) => void copyConversationId(sessionId)}
                         onCopyMarkdown={(item) => void copyConversationMarkdown(item)}
                         onDelete={setSessionToDelete}
@@ -1990,9 +2009,13 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
             const isRecent = group.key === DEFAULT_WORKSPACE_ID;
             if (!isRecent && isWorkspaceSectionCollapsed) return null;
             const isCollapsed = isGroupCollapsed(group);
-            const visibleSessions =
-              isRecent || isExpanded ? group.sessions : group.sessions.slice(0, 5);
-            const hiddenCount = group.sessions.length - 5;
+            const clusters = sortConversationClustersByUpdatedAt(
+              clusterConversations(group.sessions),
+            );
+            const hiddenCount = isRecent ? 0 : Math.max(0, clusters.length - 5);
+            const visibleItems = flattenConversationClusters(
+              isRecent || isExpanded ? clusters : clusters.slice(0, 5),
+            );
 
             return (
               <div className={isRecent ? "pt-2" : undefined} key={group.key}>
@@ -2080,116 +2103,34 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
                           }
                         >
                           <AnimatePresence initial={false}>
-                            {visibleSessions.map((session) => {
-                              const isActive = activeSessionId === session.id;
-                              const sessionStatus = serverStatuses[session.id];
-                              const isRunning =
-                                sessionStatus === "submitted" || sessionStatus === "streaming";
-                              const isUnread = unreadSessionIds.has(session.id);
-                              const isRenaming = renamingSessionId === session.id;
-
-                              return (
-                                <motion.div
-                                  animate={{ height: "2rem", opacity: 1 }}
-                                  className="overflow-hidden"
-                                  exit={{ height: 0, opacity: 0 }}
-                                  initial={
-                                    suppressSidebarEntrance ? false : { height: 0, opacity: 0 }
-                                  }
-                                  key={session.id}
-                                  layout={!suppressSidebarEntrance}
-                                  transition={
-                                    suppressSidebarEntrance
-                                      ? REDUCED_MOTION_TRANSITION
-                                      : sidebarMotionTransition
-                                  }
-                                >
-                                  <ContextMenu>
-                                    <ChatConversationHoverCard
-                                      cwd={session.cwd ?? group.cwd}
-                                      session={session}
-                                      workspaceId={group.key}
-                                      workspaceLabel={group.label}
-                                    >
-                                      <ContextMenuTrigger asChild>
-                                        <div
-                                          className={`group flex h-8 w-full items-center rounded-md transition-colors ${
-                                            isActive
-                                              ? "bg-accent text-accent-foreground font-medium"
-                                              : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-                                          }`}
-                                        >
-                                          <button
-                                            aria-current={isActive ? "page" : undefined}
-                                            className={`flex min-w-0 flex-1 items-center rounded-md py-0 pr-1 text-left font-medium text-[13px] ${isRecent ? "pl-2" : "pl-8"} ${isActive ? "text-accent-foreground" : "text-foreground"}`}
-                                            onClick={() => openSession(session.id)}
-                                            type="button"
-                                          >
-                                            <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                                              <span className="min-w-0 truncate">
-                                                {session.title}
-                                              </span>
-                                              {session.kind === "task" ? (
-                                                <span className="chat-session-kind">任务</span>
-                                              ) : null}
-                                            </span>
-                                            {isRenaming || isRunning ? (
-                                              <LoaderCircle
-                                                aria-hidden="true"
-                                                className="ml-auto size-3.5 shrink-0 animate-spin text-primary"
-                                              />
-                                            ) : isUnread ? (
-                                              <span
-                                                className="ml-auto size-1.5 shrink-0 rounded-full bg-primary"
-                                                title="未读消息"
-                                              />
-                                            ) : null}
-                                          </button>
-                                          <button
-                                            aria-label={`删除${session.title}`}
-                                            className="mr-1 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
-                                            disabled={deleteSessionMutation.isPending}
-                                            onClick={() => setSessionToDelete(session)}
-                                            title="删除对话"
-                                            type="button"
-                                          >
-                                            <Trash2 className="size-3" />
-                                          </button>
-                                        </div>
-                                      </ContextMenuTrigger>
-                                    </ChatConversationHoverCard>
-                                    <ContextMenuContent
-                                      onCloseAutoFocus={(event) => event.preventDefault()}
-                                    >
-                                      <ChatConversationMenuItems
-                                        Item={ContextMenuItem}
-                                        canCopyAsMarkdown={session.messageCount > 0}
-                                        canRegenerateTitle={
-                                          !isRunning && !isRenaming && session.messageCount > 0
-                                        }
-                                        conversationIdCopied={
-                                          copiedConversation?.id === session.id &&
-                                          copiedConversation.kind === "id"
-                                        }
-                                        conversationMarkdownCopied={
-                                          copiedConversation?.id === session.id &&
-                                          copiedConversation.kind === "markdown"
-                                        }
-                                        onCopyAsMarkdown={() =>
-                                          void copyConversationMarkdown(session)
-                                        }
-                                        onCopyConversationId={() =>
-                                          void copyConversationId(session.id)
-                                        }
-                                        onRegenerateTitle={() =>
-                                          void regenerateConversationTitle(session)
-                                        }
-                                      />
-                                    </ContextMenuContent>
-                                  </ContextMenu>
-                                </motion.div>
-                              );
-                            })}
+                            {visibleItems.map(({ session, nested }) => (
+                              <ConversationSidebarRow
+                                copiedConversation={copiedConversation}
+                                cwd={session.cwd ?? group.cwd}
+                                deletePending={deleteSessionMutation.isPending}
+                                isActive={activeSessionId === session.id}
+                                isList={false}
+                                isRecent={isRecent}
+                                isRenaming={renamingSessionId === session.id}
+                                isRunning={
+                                  serverStatuses[session.id] === "submitted" ||
+                                  serverStatuses[session.id] === "streaming"
+                                }
+                                isUnread={unreadSessionIds.has(session.id)}
+                                key={session.id}
+                                nested={nested}
+                                onCopyId={(sessionId) => void copyConversationId(sessionId)}
+                                onCopyMarkdown={(item) => void copyConversationMarkdown(item)}
+                                onDelete={setSessionToDelete}
+                                onOpen={openSession}
+                                onRegenerateTitle={(item) => void regenerateConversationTitle(item)}
+                                session={session}
+                                sidebarMotionTransition={sidebarMotionTransition}
+                                suppressSidebarEntrance={suppressSidebarEntrance}
+                                workspaceId={group.key}
+                                workspaceLabel={group.label}
+                              />
+                            ))}
                           </AnimatePresence>
                           {hiddenCount > 0 && !isRecent ? (
                             <button

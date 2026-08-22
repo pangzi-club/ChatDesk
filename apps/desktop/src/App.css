@@ -3160,6 +3160,30 @@ button.chat-task-item-summary:focus-visible .chat-task-item-chevron,
   line-height: 16px;
   white-space: nowrap;
 }
+.chat-session-nest-line {
+  position: relative;
+  flex: none;
+  width: 12px;
+  height: 14px;
+}
+.chat-session-nest-line::before {
+  position: absolute;
+  top: 0;
+  bottom: 50%;
+  left: 4px;
+  width: 1px;
+  background: color-mix(in srgb, var(--muted-foreground) 38%, transparent);
+  content: "";
+}
+.chat-session-nest-line::after {
+  position: absolute;
+  top: 50%;
+  left: 4px;
+  width: 8px;
+  height: 1px;
+  background: color-mix(in srgb, var(--muted-foreground) 38%, transparent);
+  content: "";
+}
 .chat-brand-title-row .chat-session-kind {
   margin-left: 6px;
 }

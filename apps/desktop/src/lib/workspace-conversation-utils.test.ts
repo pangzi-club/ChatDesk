@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { ChatIndexItem } from "./chat-store";
 import {
+  clusterConversations,
+  flattenConversationClusters,
   getWorkspaceSessionKey,
+  groupConversationClustersByLocalDate,
   groupConversationsByLocalDate,
   resolveWorkspaceConversationLabel,
+  sortConversationClustersByUpdatedAt,
   sortConversationsByCreatedAt,
   sortWorkspaceConversationGroups,
   sortWorkspaceProjects,
@@ -173,6 +177,87 @@ describe("workspace conversation utilities", () => {
       "昨天",
       "星期二",
       "2025年8月18日",
+    ]);
+  });
+
+  it("nests task sessions under the parent that is still in the list", () => {
+    const parent = {
+      ...session("parent", {
+        workspaceId: "alpha",
+        cwd: "/work/alpha",
+        updatedAt: "2026-08-21T12:00:00.000Z",
+      }),
+      createdAt: "2026-08-21T10:00:00.000Z",
+    };
+    const olderChild = {
+      ...session("task-a", {
+        workspaceId: "alpha",
+        cwd: "/work/alpha",
+        updatedAt: "2026-08-21T11:00:00.000Z",
+      }),
+      createdAt: "2026-08-21T10:30:00.000Z",
+      kind: "task" as const,
+      parentSessionId: "parent",
+    };
+    const newerChild = {
+      ...session("task-b", {
+        workspaceId: "alpha",
+        cwd: "/work/alpha",
+        updatedAt: "2026-08-22T09:00:00.000Z",
+      }),
+      createdAt: "2026-08-21T10:45:00.000Z",
+      kind: "task" as const,
+      parentSessionId: "parent",
+    };
+    const orphan = {
+      ...session("orphan", {
+        workspaceId: "alpha",
+        cwd: "/work/alpha",
+        updatedAt: "2026-08-21T13:00:00.000Z",
+      }),
+      createdAt: "2026-08-21T13:00:00.000Z",
+      kind: "task" as const,
+      parentSessionId: "missing-parent",
+    };
+    const other = session("other", {
+      workspaceId: "alpha",
+      cwd: "/work/alpha",
+      updatedAt: "2026-08-20T12:00:00.000Z",
+    });
+
+    const items = flattenConversationClusters(
+      sortConversationClustersByUpdatedAt(
+        clusterConversations([newerChild, orphan, other, parent, olderChild]),
+      ),
+    );
+
+    expect(items.map((item) => [item.session.id, item.nested])).toEqual([
+      ["parent", false],
+      ["task-a", true],
+      ["task-b", true],
+      ["orphan", false],
+      ["other", false],
+    ]);
+  });
+
+  it("keeps nested tasks with the parent date group", () => {
+    const now = new Date(2026, 7, 21, 15, 0, 0);
+    const parent = {
+      ...session("parent", { updatedAt: "2026-08-21T12:00:00.000Z" }),
+      createdAt: "2026-08-21T09:00:00.000Z",
+    };
+    const child = {
+      ...session("task", { updatedAt: "2026-08-20T12:00:00.000Z" }),
+      createdAt: "2026-08-20T09:00:00.000Z",
+      kind: "task" as const,
+      parentSessionId: "parent",
+    };
+    const groups = groupConversationClustersByLocalDate(clusterConversations([parent, child]), now);
+
+    expect(groups.map((group) => group.label)).toEqual(["今天"]);
+    expect(groups[0]?.sessions.map((item) => [item.session.id, item.nested])).toEqual([
+      ["parent", false],
+      ["task", true],
     ]);
   });
 });
