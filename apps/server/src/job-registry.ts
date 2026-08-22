@@ -122,19 +122,32 @@ export class JobRegistry {
     return this.summary(record);
   }
 
-  async wait(jobId: string, sessionId: string, timeoutMs = 0) {
+  async wait(jobId: string, sessionId: string, timeoutMs = 0, abortSignal?: AbortSignal) {
     const record = this.jobs.get(jobId);
     if (!record) return this.get(jobId, sessionId);
     this.authorize(jobId, sessionId);
     if (!record.child || this.isTerminal(record.status)) return this.summary(record);
     if (timeoutMs <= 0) return this.summary(record);
-    await Promise.race([
+    const waiters: Promise<unknown>[] = [
       record.completion,
       new Promise<void>((resolve) => {
         const timer = setTimeout(resolve, Math.min(timeoutMs, 60_000));
         timer.unref?.();
       }),
-    ]);
+    ];
+    if (abortSignal) {
+      waiters.push(
+        new Promise<"aborted">((resolve) => {
+          if (abortSignal.aborted) {
+            resolve("aborted");
+            return;
+          }
+          abortSignal.addEventListener("abort", () => resolve("aborted"), { once: true });
+        }),
+      );
+    }
+    const result = await Promise.race(waiters);
+    if (result === "aborted") return this.stop(jobId, sessionId);
     await record.persistence;
     return this.summary(record);
   }
@@ -178,6 +191,13 @@ export class JobRegistry {
       await record.persistence;
     }
     return this.summary(record);
+  }
+
+  async stopRun(runId: string) {
+    const jobs = [...this.jobs.values()].filter(
+      (record) => record.runId === runId && !this.isTerminal(record.status),
+    );
+    await Promise.all(jobs.map((record) => this.stop(record.jobId, record.sessionId)));
   }
 
   async get(jobId: string, sessionId: string) {

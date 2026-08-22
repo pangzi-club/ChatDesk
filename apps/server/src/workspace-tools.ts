@@ -265,6 +265,7 @@ async function listDirectory(
   readablePaths: string[] = [],
   offset = 0,
   limit = DEFAULT_LIST_LIMIT,
+  abortSignal?: AbortSignal,
 ): Promise<DirectoryResult> {
   const root = rootPath(cwd);
   const target = resolveReadableTarget(
@@ -277,7 +278,7 @@ async function listDirectory(
   if (mode !== "full" && !allowOutside) {
     const result = await runSandboxedFile(
       { operation: "list_dir", workspace: root, path: target, offset, limit, readablePaths },
-      { mode },
+      { mode, abortSignal },
     );
     if (result.sandboxBlocked) throw new SandboxBlockedError(result.error);
     if (!result.result) throw new Error(result.error);
@@ -322,13 +323,14 @@ async function readTextFile(
   allowOutside = false,
   readablePaths: string[] = [],
   options: ReadFileOptions = {},
+  abortSignal?: AbortSignal,
 ): Promise<ReadFileResult> {
   const root = rootPath(cwd);
   const target = resolveReadableTarget(root, relativePath, mode, allowOutside, readablePaths);
   if (mode !== "full" && !allowOutside) {
     const result = await runSandboxedFile(
       { operation: "read_file", workspace: root, path: target, readablePaths, ...options },
-      { mode },
+      { mode, abortSignal },
     );
     if (result.sandboxBlocked) throw new SandboxBlockedError(result.error);
     if (!result.result) throw new Error(result.error);
@@ -344,6 +346,7 @@ async function searchFiles(
   allowOutside = false,
   readablePaths: string[] = [],
   developerToolPaths: string[] = [],
+  abortSignal?: AbortSignal,
 ): Promise<FileSearchResult> {
   const root = rootPath(cwd);
   const start = resolveReadableTarget(root, options.path || ".", mode, allowOutside, readablePaths);
@@ -357,7 +360,7 @@ async function searchFiles(
         readablePaths,
         developerToolPaths,
       },
-      { mode },
+      { mode, abortSignal },
     );
     if (result.sandboxBlocked) throw new SandboxBlockedError(result.error);
     if (!result.result) throw new Error(result.error);
@@ -393,7 +396,7 @@ export function createWorkspaceTools(
         offset: z.number().int().min(0).optional(),
         limit: z.number().int().min(1).max(MAX_LIST_LIMIT).optional(),
       }),
-      execute: async ({ path: relativePath, offset, limit }, { toolCallId }) => {
+      execute: async ({ path: relativePath, offset, limit }, { toolCallId, abortSignal }) => {
         const input = { path: relativePath, offset, limit };
         const preflight = consumePreflight(preflightResults, toolCallId, approvedToolCallIds);
         if (preflight) {
@@ -409,6 +412,7 @@ export function createWorkspaceTools(
             readablePaths,
             offset,
             limit,
+            abortSignal,
           );
           return onReadOnlyToolResult?.("list_dir", input, output, toolCallId) ?? output;
         } catch (error) {
@@ -416,7 +420,17 @@ export function createWorkspaceTools(
             toolName: "list_dir",
             toolCallId,
             input,
-            retry: () => listDirectory(cwd, relativePath, mode, true, readablePaths, offset, limit),
+            retry: () =>
+              listDirectory(
+                cwd,
+                relativePath,
+                mode,
+                true,
+                readablePaths,
+                offset,
+                limit,
+                abortSignal,
+              ),
           });
           return onReadOnlyToolResult?.("list_dir", input, output, toolCallId) ?? output;
         }
@@ -429,7 +443,7 @@ export function createWorkspaceTools(
         startLine: z.number().int().positive().optional(),
         endLine: z.number().int().positive().optional(),
       }),
-      execute: async ({ path: relativePath, startLine, endLine }, { toolCallId }) => {
+      execute: async ({ path: relativePath, startLine, endLine }, { toolCallId, abortSignal }) => {
         const input = { path: relativePath, startLine, endLine };
         const preflight = consumePreflight(preflightResults, toolCallId, approvedToolCallIds);
         if (preflight) {
@@ -444,6 +458,7 @@ export function createWorkspaceTools(
             approvedToolCallIds.has(toolCallId),
             readablePaths,
             { startLine, endLine },
+            abortSignal,
           );
           return onReadOnlyToolResult?.("read_file", input, output, toolCallId) ?? output;
         } catch (error) {
@@ -452,7 +467,15 @@ export function createWorkspaceTools(
             toolCallId,
             input,
             retry: () =>
-              readTextFile(cwd, relativePath, mode, true, readablePaths, { startLine, endLine }),
+              readTextFile(
+                cwd,
+                relativePath,
+                mode,
+                true,
+                readablePaths,
+                { startLine, endLine },
+                abortSignal,
+              ),
           });
           return onReadOnlyToolResult?.("read_file", input, output, toolCallId) ?? output;
         }
@@ -466,7 +489,7 @@ export function createWorkspaceTools(
         query: z.string().optional().describe("要查找的不区分大小写文本关键词"),
         maxResults: z.number().int().min(1).max(MAX_SEARCH_RESULTS).optional(),
       }),
-      execute: async (options, { toolCallId }) => {
+      execute: async (options, { toolCallId, abortSignal }) => {
         const preflight = consumePreflight(preflightResults, toolCallId, approvedToolCallIds);
         if (preflight) {
           const output = await (resolvePreflight(preflight) as Promise<FileSearchResult>);
@@ -480,6 +503,7 @@ export function createWorkspaceTools(
             approvedToolCallIds.has(toolCallId),
             readablePaths,
             developerToolPaths,
+            abortSignal,
           );
           return onReadOnlyToolResult?.("search_files", options, output, toolCallId) ?? output;
         } catch (error) {
@@ -487,7 +511,8 @@ export function createWorkspaceTools(
             toolName: "search_files",
             toolCallId,
             input: options,
-            retry: () => searchFiles(cwd, options, mode, true, readablePaths, developerToolPaths),
+            retry: () =>
+              searchFiles(cwd, options, mode, true, readablePaths, developerToolPaths, abortSignal),
           });
           return onReadOnlyToolResult?.("search_files", options, output, toolCallId) ?? output;
         }
@@ -496,7 +521,7 @@ export function createWorkspaceTools(
     write_file: tool({
       description: `创建或覆盖文本文件。${pathScope}`,
       inputSchema: z.object({ path: z.string().min(1), content: z.string() }),
-      execute: async ({ path: relativePath, content }, { toolCallId }) => {
+      execute: async ({ path: relativePath, content }, { toolCallId, abortSignal }) => {
         const input = { path: relativePath, content };
         const write = async (allowOutside: boolean) => {
           const root = rootPath(cwd);
@@ -515,6 +540,7 @@ export function createWorkspaceTools(
                 mode,
                 readablePaths: outsideWorkspace ? [path.dirname(target)] : [],
                 writablePaths: outsideWorkspace ? [target] : [],
+                abortSignal,
               },
             );
             if (result.sandboxBlocked) throw new SandboxBlockedError(result.error);
@@ -543,7 +569,7 @@ export function createWorkspaceTools(
         oldText: z.string().min(1),
         newText: z.string(),
       }),
-      execute: async ({ path: relativePath, oldText, newText }, { toolCallId }) => {
+      execute: async ({ path: relativePath, oldText, newText }, { toolCallId, abortSignal }) => {
         const input = { path: relativePath, oldText, newText };
         const edit = async (allowOutside: boolean) => {
           const root = rootPath(cwd);
@@ -563,6 +589,7 @@ export function createWorkspaceTools(
                 mode,
                 readablePaths: outsideWorkspace ? [path.dirname(target)] : [],
                 writablePaths: outsideWorkspace ? [target] : [],
+                abortSignal,
               },
             );
             if (result.sandboxBlocked) throw new SandboxBlockedError(result.error);
@@ -597,11 +624,11 @@ export function createWorkspaceTools(
             message: "patch 不能超过 256 KiB",
           }),
       }),
-      execute: async ({ patch }) => {
+      execute: async ({ patch }, { abortSignal }) => {
         const root = rootPath(cwd);
         const result = await runSandboxedFile(
           { operation: "apply_patch", workspace: root, patch },
-          { mode },
+          { mode, abortSignal },
         );
         if (result.sandboxBlocked) throw new SandboxBlockedError(result.error);
         if (!result.result) throw new Error(result.error);
@@ -621,7 +648,7 @@ export function createWorkspaceTools(
           .optional()
           .describe("最多同步等待毫秒；0 立即转为后台 Job"),
       }),
-      execute: async ({ command, cwd: requestedCwd, block_until }, { toolCallId }) => {
+      execute: async ({ command, cwd: requestedCwd, block_until }, { toolCallId, abortSignal }) => {
         const input = { command, cwd: requestedCwd };
         const approved = approvedToolCallIds.has(toolCallId);
         const approvedPreflight = toolCallId ? preflightResults.get(toolCallId) : undefined;
@@ -638,6 +665,7 @@ export function createWorkspaceTools(
             allowNetwork: permissions.allowNetwork,
             readablePaths,
             developerToolPaths,
+            abortSignal,
           });
           if (result.sandboxBlocked) throw sandboxBlockedErrorFromShell(command, result);
           return result;
@@ -660,7 +688,7 @@ export function createWorkspaceTools(
             readablePaths,
             developerToolPaths,
           });
-          const waited = await jobs.wait(job.jobId, sessionId, block_until);
+          const waited = await jobs.wait(job.jobId, sessionId, block_until, abortSignal);
           if (["exited", "failed", "stopped", "timed_out", "interrupted"].includes(waited.status)) {
             const output = jobs.output(job.jobId, sessionId, 0);
             return {
@@ -705,7 +733,8 @@ export function createWorkspaceTools(
               jobId: z.string().min(1),
               timeoutMs: z.number().int().min(0).max(60_000).optional(),
             }),
-            execute: ({ jobId, timeoutMs }) => jobs.wait(jobId, sessionId, timeoutMs),
+            execute: ({ jobId, timeoutMs }, { abortSignal }) =>
+              jobs.wait(jobId, sessionId, timeoutMs, abortSignal),
           }),
           bash_output: tool({
             description: "读取后台 Bash Job 的新增输出。",

@@ -1311,6 +1311,7 @@ export class RunRegistry {
     if (!run) return false;
     const children = [...run.spawnedTaskSessionIds];
     run.controller.abort();
+    await this.jobs?.stopRun(run.id);
     await run.completed;
     await Promise.all(children.map((childId) => this.stop(childId)));
     return true;

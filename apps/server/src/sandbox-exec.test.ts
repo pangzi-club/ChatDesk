@@ -392,6 +392,21 @@ describe("sandbox execution errors", () => {
     expect((last.result as { entries: unknown[] }).entries).toHaveLength(197);
   });
 
+  it("terminates a running shell when its abort signal fires", async () => {
+    const controller = new AbortController();
+    const startedAt = Date.now();
+    const resultPromise = runSandboxedShell("sleep 30", {
+      cwd: process.cwd(),
+      mode: "full",
+      abortSignal: controller.signal,
+    });
+    setTimeout(() => controller.abort(), 30);
+    const result = await resultPromise;
+
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
+    expect(result.success).toBe(false);
+  });
+
   it("runs structured writes in the helper process", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-sandbox-write-"));
     const target = path.join(root, "note.txt");

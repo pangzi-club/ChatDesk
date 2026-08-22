@@ -138,6 +138,7 @@ export async function runSandboxedShell(
     readablePaths?: string[];
     developerToolPaths?: string[];
     allowNetwork?: boolean;
+    abortSignal?: AbortSignal;
   },
 ) {
   const cwd = resolveDirectory(options.cwd);
@@ -172,6 +173,7 @@ export async function runSandboxedShell(
     env: sandboxEnvironment(cwd, options.developerToolPaths),
     timeout,
     maxOutputBytes: MAX_OUTPUT_BYTES,
+    abortSignal: options.abortSignal,
   });
   const allowNetwork = options.allowNetwork ?? false;
   const sandboxDenialKind =
@@ -361,6 +363,7 @@ export async function runSandboxedFile(
     timeoutMs?: number;
     readablePaths?: string[];
     writablePaths?: string[];
+    abortSignal?: AbortSignal;
   },
 ) {
   const workspace = resolveDirectory(request.workspace);
@@ -409,6 +412,9 @@ export async function runSandboxedFile(
     let stdout = "";
     let stderr = "";
     const timer = setTimeout(() => killProcessTree(child), timeout);
+    const abort = () => killProcessTree(child);
+    if (options.abortSignal?.aborted) abort();
+    options.abortSignal?.addEventListener("abort", abort, { once: true });
     child.stdout.on("data", (chunk: Buffer) => {
       stdout = `${stdout}${chunk.toString()}`.slice(0, MAX_HELPER_OUTPUT_BYTES);
     });
@@ -418,6 +424,7 @@ export async function runSandboxedFile(
     child.once("error", reject);
     child.once("close", (code) => {
       clearTimeout(timer);
+      options.abortSignal?.removeEventListener("abort", abort);
       resolve(
         resolveSandboxFileProcessOutput(stdout, stderr, code ?? -1, effectiveMode !== "full"),
       );
@@ -510,7 +517,13 @@ function sandboxEnvironment(cwd: string, developerToolPaths: string[] = []) {
 async function runBoundedProcess(
   executable: string,
   args: string[],
-  options: { cwd: string; env: NodeJS.ProcessEnv; timeout: number; maxOutputBytes: number },
+  options: {
+    cwd: string;
+    env: NodeJS.ProcessEnv;
+    timeout: number;
+    maxOutputBytes: number;
+    abortSignal?: AbortSignal;
+  },
 ) {
   return new Promise<{
     code: number;
@@ -536,6 +549,9 @@ async function runBoundedProcess(
       timedOut = true;
       killProcessTree(child);
     }, options.timeout);
+    const abort = () => killProcessTree(child);
+    if (options.abortSignal?.aborted) abort();
+    options.abortSignal?.addEventListener("abort", abort, { once: true });
     const append = (chunk: Buffer) => {
       totalOutputBytes += chunk.byteLength;
       let remaining = chunk;
@@ -554,10 +570,12 @@ async function runBoundedProcess(
     child.stderr.on("data", append);
     child.once("error", (error) => {
       clearTimeout(timer);
+      options.abortSignal?.removeEventListener("abort", abort);
       reject(error);
     });
     child.once("close", (code) => {
       clearTimeout(timer);
+      options.abortSignal?.removeEventListener("abort", abort);
       const marker = Buffer.from(
         `\n[命令输出已截断：共 ${totalOutputBytes} 字节，仅保留开头和结尾]\n`,
       );

@@ -51,6 +51,47 @@ describe("JobRegistry", () => {
     expect(meta.status).toBe("stopped");
   });
 
+  it("stops a waited job when the tool abort signal fires", async () => {
+    const { registry } = await createRegistry();
+    const job = await registry.start({
+      sessionId: "session-a",
+      command: "sleep 30",
+      cwd: process.cwd(),
+      mode: "full",
+    });
+    const controller = new AbortController();
+    const startedAt = Date.now();
+    setTimeout(() => controller.abort(), 30);
+
+    const stopped = await registry.wait(job.jobId, "session-a", 120_000, controller.signal);
+
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
+    expect(stopped.status).toBe("stopped");
+  });
+
+  it("stops all active jobs belonging to a run", async () => {
+    const { registry } = await createRegistry();
+    const first = await registry.start({
+      sessionId: "session-a",
+      runId: "run-a",
+      command: "sleep 30",
+      cwd: process.cwd(),
+      mode: "full",
+    });
+    const second = await registry.start({
+      sessionId: "session-a",
+      runId: "run-a",
+      command: "sleep 30",
+      cwd: process.cwd(),
+      mode: "full",
+    });
+
+    await registry.stopRun("run-a");
+
+    expect((await registry.get(first.jobId, "session-a")).status).toBe("stopped");
+    expect((await registry.get(second.jobId, "session-a")).status).toBe("stopped");
+  });
+
   it("marks persisted running jobs as interrupted on restart", async () => {
     const { root, registry } = await createRegistry();
     const job = await registry.start({
