@@ -1,4 +1,5 @@
-import { isToolUIPart, type UIMessage } from "ai";
+import { CREATE_TASK_TOOL_NAME } from "@chatdesk/shared";
+import { getToolName, isToolUIPart, type UIMessage } from "ai";
 
 export type ChatToolPart = Extract<UIMessage["parts"][number], { toolCallId: string }>;
 export type ChatSourcePart = Extract<
@@ -11,6 +12,7 @@ export type ChatMessageBlock =
   | { kind: "text"; key: string; text: string }
   | { kind: "reasoning"; key: string; text: string }
   | { kind: "tools"; key: string; parts: ChatToolPart[] }
+  | { kind: "tasks"; key: string; parts: ChatToolPart[] }
   | { kind: "sources"; key: string; parts: ChatSourcePart[] }
   | { kind: "files"; key: string; parts: ChatFilePart[] };
 
@@ -29,9 +31,10 @@ export function getChatMessageBlocks(message: UIMessage): ChatMessageBlock[] {
 
   for (const part of message.parts) {
     if (isToolUIPart(part)) {
+      const kind = getToolName(part) === CREATE_TASK_TOOL_NAME ? "tasks" : "tools";
       const previous = blocks[blocks.length - 1];
-      if (previous?.kind === "tools") previous.parts.push(part);
-      else blocks.push({ kind: "tools", key: `tools-${blocks.length}`, parts: [part] });
+      if (previous?.kind === kind) previous.parts.push(part);
+      else blocks.push({ kind, key: `${kind}-${blocks.length}`, parts: [part] });
     } else if (part.type === "text") {
       appendTextBlock(blocks, "text", part.text);
     } else if (part.type === "reasoning") {

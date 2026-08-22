@@ -10,6 +10,7 @@ export type {
   ChatRunStopReason,
   ChatRunSummary,
   ChatSession,
+  ChatSessionKind,
   ChatTokenUsage,
   HealthResponse,
   RunStartInput,
@@ -23,6 +24,7 @@ export type {
 } from "@chatdesk/shared";
 export {
   CHAT_SCHEMA_VERSION,
+  CREATE_TASK_TOOL_NAME,
   DEFAULT_WORKSPACE_ID,
   DEFAULT_WORKSPACE_NAME,
   deriveTitle,

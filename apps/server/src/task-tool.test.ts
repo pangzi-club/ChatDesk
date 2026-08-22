@@ -1,0 +1,208 @@
+import type { ChatSession, CreateTaskOutput, RunStartInput, SessionStatus } from "@chatdesk/shared";
+import { CREATE_TASK_TOOL_NAME } from "@chatdesk/shared";
+import { describe, expect, it } from "vitest";
+import type { EventHub } from "./events.ts";
+import { type CreateTaskRunner, createTaskTool } from "./task-tool.ts";
+
+type StoredSession = ChatSession;
+
+function createMemoryStore() {
+  const sessions = new Map<string, StoredSession>();
+  return {
+    sessions,
+    async get(id: string) {
+      return sessions.get(id) ?? null;
+    },
+    async save(session: ChatSession) {
+      sessions.set(session.id, session);
+    },
+  };
+}
+
+function createEventHub(): EventHub {
+  return {
+    subscribe() {
+      return {
+        next: (timeoutMs = 0) =>
+          new Promise((resolve) => {
+            setTimeout(() => resolve(null), Math.min(timeoutMs || 10, 20));
+          }),
+        close() {},
+      };
+    },
+  } as EventHub;
+}
+
+function createMockRunner(store: ReturnType<typeof createMemoryStore>): CreateTaskRunner & {
+  active: Set<string>;
+  spawned: Map<string, Set<string>>;
+  finish(sessionId: string, preview: string): Promise<void>;
+} {
+  const active = new Set<string>();
+  const waiters = new Map<string, () => void>();
+  const spawned = new Map<string, Set<string>>();
+  return {
+    active,
+    spawned,
+    async startDetached(sessionId: string) {
+      active.add(sessionId);
+      return sessionId;
+    },
+    isActive(sessionId: string) {
+      return active.has(sessionId);
+    },
+    statusOf(sessionId: string): SessionStatus {
+      return active.has(sessionId) ? "streaming" : "ready";
+    },
+    waitForRun(sessionId: string) {
+      if (!active.has(sessionId)) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        waiters.set(sessionId, resolve);
+      });
+    },
+    async stop(sessionId: string) {
+      if (!active.has(sessionId)) return false;
+      active.delete(sessionId);
+      waiters.get(sessionId)?.();
+      waiters.delete(sessionId);
+      return true;
+    },
+    trackSpawnedTask(parentSessionId: string, childSessionId: string) {
+      const children = spawned.get(parentSessionId) ?? new Set<string>();
+      children.add(childSessionId);
+      spawned.set(parentSessionId, children);
+    },
+    async finish(sessionId: string, preview: string) {
+      const session = await store.get(sessionId);
+      if (session) {
+        await store.save({
+          ...session,
+          messages: [
+            ...session.messages,
+            {
+              id: "assistant-1",
+              role: "assistant",
+              parts: [{ type: "text", text: preview }],
+              metadata: {
+                runSummary: {
+                  runId: "run-1",
+                  outcome: "completed",
+                  stepCount: 1,
+                  modelCallCount: 1,
+                  toolCallCount: 0,
+                  duplicateToolCallCount: 0,
+                  compactionCount: 0,
+                  planWritten: false,
+                },
+              },
+            },
+          ],
+        });
+      }
+      active.delete(sessionId);
+      waiters.get(sessionId)?.();
+      waiters.delete(sessionId);
+    },
+  };
+}
+
+async function waitForChild(store: ReturnType<typeof createMemoryStore>) {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const childId = [...store.sessions.keys()][0];
+    if (childId) return childId;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("task session was not created");
+}
+
+async function collectExecute(execute: unknown, input: { prompt: string; title?: string }) {
+  if (typeof execute !== "function") throw new Error("create_task 缺少 execute");
+  const result = execute(input, {
+    toolCallId: "call-1",
+    messages: [],
+    abortSignal: new AbortController().signal,
+  });
+  const snapshots: CreateTaskOutput[] = [];
+  if (result && typeof result === "object" && Symbol.asyncIterator in result) {
+    for await (const snapshot of result as AsyncIterable<CreateTaskOutput>) {
+      snapshots.push(snapshot);
+    }
+    return snapshots;
+  }
+  snapshots.push(await result);
+  return snapshots;
+}
+
+describe("create_task tool", () => {
+  it("creates a non-interactive session and reports completion", async () => {
+    const store = createMemoryStore();
+    const runner = createMockRunner(store);
+    const tool = createTaskTool({
+      store: store as never,
+      events: createEventHub(),
+      runner,
+      parentSessionId: "parent-1",
+      parentInput: { toolNames: [CREATE_TASK_TOOL_NAME, "read_file"] } as RunStartInput,
+    });
+
+    const pending = collectExecute(tool.execute, {
+      prompt: "列出 src 目录结构",
+      title: "调研目录",
+    });
+    const childId = await waitForChild(store);
+    await runner.finish(childId, "src 下有 3 个文件");
+    const snapshots = await pending;
+    const last = snapshots[snapshots.length - 1];
+    expect(last?.status).toBe("completed");
+    expect(last?.title).toBe("调研目录");
+    expect(last?.preview).toContain("3 个文件");
+    const session = store.sessions.get(childId);
+    expect(session?.kind).toBe("task");
+    expect(session?.parentSessionId).toBe("parent-1");
+  });
+
+  it("streams an in-progress snapshot before completion", async () => {
+    const store = createMemoryStore();
+    const runner = createMockRunner(store);
+    const tool = createTaskTool({
+      store: store as never,
+      events: createEventHub(),
+      runner,
+      parentSessionId: "parent-1",
+      parentInput: {} as RunStartInput,
+    });
+
+    const pending = collectExecute(tool.execute, { prompt: "并行调研 A" });
+    const childId = await waitForChild(store);
+    expect(runner.isActive(childId)).toBe(true);
+    await runner.finish(childId, "A 完成");
+    const snapshots = await pending;
+    expect(snapshots.some((snapshot) => snapshot.status === "running")).toBe(true);
+    expect(snapshots.at(-1)?.status).toBe("completed");
+  });
+
+  it("can keep two tasks active at the same time", async () => {
+    const store = createMemoryStore();
+    const runner = createMockRunner(store);
+    const context = {
+      store: store as never,
+      events: createEventHub(),
+      runner,
+      parentSessionId: "parent-1",
+      parentInput: {} as RunStartInput,
+    };
+    const first = collectExecute(createTaskTool(context).execute, { prompt: "任务一" });
+    const second = collectExecute(createTaskTool(context).execute, { prompt: "任务二" });
+    await waitForChild(store);
+    for (let attempt = 0; attempt < 50 && runner.active.size < 2; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(runner.active.size).toBe(2);
+    const [firstId, secondId] = [...store.sessions.keys()];
+    await runner.finish(firstId, "一完成");
+    await runner.finish(secondId, "二完成");
+    const [firstSnapshots, secondSnapshots] = await Promise.all([first, second]);
+    expect(firstSnapshots.at(-1)?.status).toBe("completed");
+    expect(secondSnapshots.at(-1)?.status).toBe("completed");
+  });
+});

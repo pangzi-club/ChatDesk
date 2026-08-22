@@ -84,4 +84,52 @@ describe("getChatMessageBlocks", () => {
     expect(blocks.map((block) => block.kind)).toEqual(["tools", "text"]);
     expect(blocks[1]).toMatchObject({ kind: "text", text: "The plan is ready." });
   });
+
+  it("splits create_task parts into a tasks block instead of merging with tools", () => {
+    const message = {
+      id: "assistant-tasks",
+      role: "assistant",
+      parts: [
+        {
+          type: "tool-read_file",
+          toolCallId: "read-1",
+          state: "output-available",
+          input: { path: "README.md" },
+          output: { content: "ok" },
+        },
+        {
+          type: "tool-create_task",
+          toolCallId: "task-1",
+          state: "output-available",
+          input: { prompt: "调研 A", title: "任务 A" },
+          output: {
+            sessionId: "session-a",
+            title: "任务 A",
+            status: "completed",
+            preview: "完成 A",
+          },
+        },
+        {
+          type: "tool-create_task",
+          toolCallId: "task-2",
+          state: "input-available",
+          input: { prompt: "调研 B", title: "任务 B" },
+        },
+        {
+          type: "tool-bash",
+          toolCallId: "bash-1",
+          state: "output-available",
+          input: { command: "ls" },
+          output: { stdout: "a" },
+        },
+      ],
+    } as UIMessage;
+
+    const blocks = getChatMessageBlocks(message);
+    expect(blocks.map((block) => block.kind)).toEqual(["tools", "tasks", "tools"]);
+    expect(blocks[1]).toMatchObject({
+      kind: "tasks",
+      parts: [{ toolCallId: "task-1" }, { toolCallId: "task-2" }],
+    });
+  });
 });

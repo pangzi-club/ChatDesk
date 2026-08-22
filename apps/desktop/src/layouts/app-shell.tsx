@@ -1466,7 +1466,12 @@ function ConversationSidebarRow({
                 type="button"
               >
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate">{session.title}</span>
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="min-w-0 truncate">{session.title}</span>
+                    {session.kind === "task" ? (
+                      <span className="chat-session-kind">任务</span>
+                    ) : null}
+                  </span>
                   {isList ? (
                     <span className="mt-0.5 flex items-center gap-1 truncate text-[11px] font-normal text-muted-foreground">
                       <FolderGit2 aria-hidden="true" className="size-3 shrink-0" />
@@ -2120,7 +2125,14 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
                                             onClick={() => openSession(session.id)}
                                             type="button"
                                           >
-                                            <span className="truncate">{session.title}</span>
+                                            <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                                              <span className="min-w-0 truncate">
+                                                {session.title}
+                                              </span>
+                                              {session.kind === "task" ? (
+                                                <span className="chat-session-kind">任务</span>
+                                              ) : null}
+                                            </span>
                                             {isRenaming || isRunning ? (
                                               <LoaderCircle
                                                 aria-hidden="true"

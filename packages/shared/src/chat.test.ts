@@ -4,6 +4,7 @@ import {
   DEFAULT_MODEL_CONTEXT_WINDOW,
   deriveTitle,
   isSessionStatus,
+  parseCreateTaskOutput,
   parsePlanUserInputRequest,
   parsePlanUserInputResponse,
   resolveContextCompactionThreshold,
@@ -160,6 +161,38 @@ describe("shared chat contracts", () => {
     assert.equal(
       parsePlanUserInputResponse({
         answers: [{ questionId: "one", answer: "缺少选项", custom: false }],
+      }),
+      null,
+    );
+  });
+
+  it("parses create_task tool output", () => {
+    assert.deepEqual(
+      parseCreateTaskOutput({
+        sessionId: "task-session-1",
+        title: "调研目录结构",
+        status: "running",
+        preview: "正在列出文件…",
+        messages: [{ role: "assistant", text: "正在列出文件…" }],
+      }),
+      {
+        sessionId: "task-session-1",
+        title: "调研目录结构",
+        status: "running",
+        preview: "正在列出文件…",
+        messages: [{ role: "assistant", text: "正在列出文件…" }],
+      },
+    );
+    assert.equal(
+      parseCreateTaskOutput({ title: "缺少 sessionId", status: "completed", preview: "" }),
+      null,
+    );
+    assert.equal(
+      parseCreateTaskOutput({
+        sessionId: "task-session-1",
+        title: "调研目录结构",
+        status: "unknown",
+        preview: "",
       }),
       null,
     );

@@ -40,6 +40,7 @@
 ### ✅ 核心循环
 - **Agentic loop**：`run-registry.ts` 基于 Vercel AI SDK `streamText` + 工具调用 + `stopWhen(stepCountIs(100))`，支持多步工具调用直至完成；第 60 步提示收敛，同一目标连续失败两次要求重新读取并换方法，连续 3 个失败步骤或累计 8 次工具失败以 `tool-errors` 收尾。
 - **任务规划**：`todo-tool.ts` 提供 `todo_write` 工具（全量替换语义，免审批），支持 `pending` / `in_progress` / `completed` / `blocked`；必要验证无法执行时必须标记 `blocked`。前端从消息流派生最新进度，存在 blocked 或 pending 项的正常结束 run 显示为“部分完成”。
+- **任务委派**：`task-tool.ts` 提供 `create_task`。Apply 模式的普通会话可在同一轮并行派生多个 `kind: "task"` 后台会话；子会话能力与父对话相同，但不能交互、不能嵌套 create_task。父 run 停止时级联停止子 task。
 - **中断/停止**：`AbortController`，`/runs/stop` 接口。
 - **流式输出**：UIMessage stream 双 tee（客户端流 + 服务端观察者），SSE 推送 `message.delta`。
 - **崩溃恢复**：`run-journal.ts` 在启动时恢复中断的 run 并标记 error。
@@ -69,6 +70,7 @@
 | 工具 | 用途与关键输入 | 前置条件 | 执行与权限 |
 |---|---|---|---|
 | `todo_write` | 全量更新任务步骤与状态 | Apply 模式、模型支持工具 | 服务端内存工具，不访问 workspace |
+| `create_task` | 派生不可交互的后台 task 会话并等待完成后返回摘要 | Apply 模式、当前会话不是 task、模型支持工具 | 新建 `kind: "task"` 会话并 `startDetached`；同一轮可并行多次；ask 沙箱在 task 中按 auto 处理 |
 | `read_skill` | 读取内置 skill 的 `SKILL.md` 或目录内相对文件 | 模型支持工具 | 只读应用内置 skill，不走沙箱审批 |
 | `plan_write` | 写入当前 session 的计划内容 | Plan 模式且存在 active plan | 服务端写入计划存储，不开放普通写文件工具 |
 | `list_dir` | 列出 `path` 下的文件和目录，支持 `offset` / `limit` | 已选择 workspace，并启用对应工具包 | 默认 200、最大 500；返回总数、截断与下一页 offset |
@@ -86,7 +88,7 @@
 | `web_search` | 查询近期公开信息 | 启用 Web Search，模型使用 Responses API | OpenAI Responses provider 内置工具 |
 | `image_generation` | 按 prompt、宽高比和分辨率生成图片 | 启用 Image Generation，并配置 KIE API Key | 服务端 KIE 请求，等待任务完成后返回 URL |
 
-固定工具的参数 schema 以 `client-tools.ts`、`workspace-tools.ts`、`business-tools.ts`、`todo-tool.ts`、`plan-tool.ts` 和 `skill-tool.ts` 为准；设置页工具包及可用性以 `apps/desktop/src/lib/chat-tools.ts` 为准。
+固定工具的参数 schema 以 `client-tools.ts`、`workspace-tools.ts`、`business-tools.ts`、`todo-tool.ts`、`task-tool.ts`、`plan-tool.ts` 和 `skill-tool.ts` 为准；设置页工具包及可用性以 `apps/desktop/src/lib/chat-tools.ts` 为准。
 
 ### ✅ 模型与配置
 - 多模型配置（`chat-config.ts`），任意 OpenAI 兼容 baseUrl。
@@ -128,36 +130,31 @@
    - 可执行用户配置的脚本或 HTTP webhook。
    - 与审批模式天然衔接（hook 可以返回 block/allow）。
 
-2. **Subagents（Task 工具）**
-   - 暴露 `task` 工具：把独立子任务（如「调查这个目录的结构」「并行写三个测试文件」）交给子代理执行，返回结构化结果。
-   - 需要：子 run 管理、结果回收、与主循环合并。
-   - 收益：长任务吞吐、上下文隔离（子任务不污染主上下文）。
-
-3. **Checkpoint / 回滚**
+2. **Checkpoint / 回滚**
    - 每次 run 前后基于 git 或目录快照保存状态。
    - 支持「回滚到某次变更前」。
    - 依赖：run 生命周期事件已存在（`run.done` / `run.error`），接入成本低。
 
-4. **Web Fetch 工具**
+3. **Web Fetch 工具**
    - 已有 web_search，缺 `web_fetch`（打开 URL 读正文）。对调研类任务很常用。
 
-6. **终端交互增强**
+4. **终端交互增强**
    - 交互式命令（sudo 密码、选择器）目前无法处理。
    - 至少：检测到交互时提示用户或直接失败并给替代方案。
 
-7. **语义代码搜索 / RAG**
+5. **语义代码搜索 / RAG**
     - 现在只有 grep 级搜索。可接入代码索引（如 ripgrep + embedding），对大仓库提升显著。
 
-8. **会话分享 / 导出**
+6. **会话分享 / 导出**
     - 归档已有 JSON，可加 Markdown/HTML 导出，或生成可分享链接。
 
 ## 五、结论
 
 apps/server 已经是一个**结构完整的编码 agent**：核心循环、文件/终端/浏览器工具、MCP、Skills、记忆、崩溃恢复、Seatbelt 沙箱、交互式审批、AI 用量统计都有，且分层清晰（客户端工具走 Tauri 侧、服务端工具走 Node 侧、业务工具独立）。
 
-离 Claude Code / Codex 的差距集中在**任务编排**方向：
+离 Claude Code / Codex 的差距集中在**生命周期与可靠性**方向：
 
-- 编排：subagents、checkpoint、计划模式 —— 决定能否高效处理复杂长任务；
+- 编排：checkpoint —— 决定长任务变更能否回滚；计划模式已实现，`create_task` 已支持并行子代理。
 - 生命周期：Hooks 系统 —— 决定能否接入自定义工作流。
 
 这些方向对应文档开头全景表里「任务编排」和「可靠性」两行，建议按 TODO 顺序优先做 1–4 项。

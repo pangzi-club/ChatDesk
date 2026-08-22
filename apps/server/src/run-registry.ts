@@ -3,6 +3,7 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { openai } from "@ai-sdk/openai";
 import {
+  CREATE_TASK_TOOL_NAME,
   DEFAULT_WORKSPACE_ID,
   MAX_AGENT_STEPS,
   PLAN_USER_INPUT_TOOL_NAME,
@@ -74,6 +75,7 @@ import { createReadSkillTool, loadBuiltinSkillsCatalog, SKILL_TOOL_NAME } from "
 import { withSseKeepAlive } from "./sse-keepalive.ts";
 import type { SessionStore } from "./store.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
+import { CREATE_TASK_TOOL_INSTRUCTIONS, createTaskTool } from "./task-tool.ts";
 import { createTodoTool, TODO_TOOL_INSTRUCTIONS } from "./todo-tool.ts";
 import {
   hasWorkspace,
@@ -96,6 +98,7 @@ type ActiveRun = {
   done?: Promise<void>;
   resolveCompleted: () => void;
   startedAt: string;
+  spawnedTaskSessionIds: Set<string>;
 };
 
 type TerminalRunState = {
@@ -520,6 +523,31 @@ export class RunRegistry {
     return this.drafts.get(sessionId);
   }
 
+  isActive(sessionId: string) {
+    return this.active.has(sessionId);
+  }
+
+  statusOf(sessionId: string): SessionStatus {
+    return this.statuses.get(sessionId) ?? "idle";
+  }
+
+  async waitForRun(sessionId: string) {
+    const run = this.active.get(sessionId);
+    if (run) await run.completed;
+  }
+
+  trackSpawnedTask(parentSessionId: string, childSessionId: string) {
+    this.active.get(parentSessionId)?.spawnedTaskSessionIds.add(childSessionId);
+  }
+
+  async startDetached(sessionId: string, input: RunStartInput) {
+    const response = await this.start(sessionId, input);
+    if (response.body) {
+      void response.body.pipeTo(new WritableStream({ write() {} })).catch(() => undefined);
+    }
+    return this.active.get(sessionId)?.id ?? "";
+  }
+
   private async persistDraft(sessionId: string, draft: UIMessage) {
     const current = await this.store.get(sessionId);
     if (!current) return;
@@ -565,7 +593,10 @@ export class RunRegistry {
     ) {
       throw new Error("计划模式缺少有效的 active plan");
     }
-    const sandboxMode = input.sandboxMode ?? chatConfig.sandboxMode ?? "ask";
+    const sandboxMode =
+      current.kind === "task" && (input.sandboxMode ?? chatConfig.sandboxMode ?? "ask") === "ask"
+        ? "auto"
+        : (input.sandboxMode ?? chatConfig.sandboxMode ?? "ask");
     const approvedEscalationToolCallIds = collectApprovedToolCallIds(input.messages ?? []);
     const preflightResults: WorkspaceToolPreflightMap = new Map();
     const reviewerModel = resolveApprovalReviewerModel(chatConfig);
@@ -599,6 +630,7 @@ export class RunRegistry {
         : activePlan
           ? `用户已确认执行以下计划：\n\n${activePlan.content}`
           : "";
+    const canCreateTask = planMode !== "plan" && current.kind !== "task";
     const prompt = await buildSystemPrompt({
       cwd: effectiveCwd,
       system: input.system,
@@ -606,6 +638,7 @@ export class RunRegistry {
       workspaceToolInstructions,
       planInstructions,
       todoToolInstructions: TODO_TOOL_INSTRUCTIONS,
+      taskToolInstructions: canCreateTask ? CREATE_TASK_TOOL_INSTRUCTIONS : "",
       skillToolInstructions: await loadBuiltinSkillsCatalog(),
     });
     const session: ChatSession = {
@@ -639,6 +672,7 @@ export class RunRegistry {
       completed,
       resolveCompleted,
       startedAt: now,
+      spawnedTaskSessionIds: new Set(),
     };
     this.active.set(sessionId, activeRun);
     this.drafts.set(sessionId, assistantMessage(runId, ""));
@@ -828,7 +862,28 @@ export class RunRegistry {
                   ),
                   [PLAN_USER_INPUT_TOOL_NAME]: createPlanUserInputTool(),
                 }
-              : { todo_write: createTodoTool() }),
+              : {
+                  todo_write: createTodoTool(),
+                  ...(canCreateTask
+                    ? {
+                        [CREATE_TASK_TOOL_NAME]: createTaskTool({
+                          store: this.store,
+                          events: this.events,
+                          runner: this,
+                          parentSessionId: sessionId,
+                          parentInput: {
+                            ...input,
+                            cwd: effectiveCwd,
+                            workspaceId,
+                            sandboxMode,
+                            mcpServerIds: input.mcpServerIds ?? current.mcpServerIds,
+                            skillIds: input.skillIds ?? current.skillIds,
+                            planMode: "apply",
+                          },
+                        }),
+                      }
+                    : {}),
+                }),
             ...(planMode === "plan"
               ? {}
               : (createClientTools(input.toolNames, {
@@ -1242,8 +1297,10 @@ export class RunRegistry {
   async stop(sessionId: string) {
     const run = this.active.get(sessionId);
     if (!run) return false;
+    const children = [...run.spawnedTaskSessionIds];
     run.controller.abort();
     await run.completed;
+    await Promise.all(children.map((childId) => this.stop(childId)));
     return true;
   }
 

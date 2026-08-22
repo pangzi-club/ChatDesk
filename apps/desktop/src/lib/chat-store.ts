@@ -99,6 +99,8 @@ function normalizeChatSession(value: unknown): ChatSession | null {
       ? value.skillIds.filter((item): item is string => typeof item === "string")
       : undefined,
     planMode: value.planMode === "plan" ? "plan" : "apply",
+    kind: value.kind === "task" ? "task" : "chat",
+    parentSessionId: typeof value.parentSessionId === "string" ? value.parentSessionId : undefined,
     activePlanId: typeof value.activePlanId === "string" ? value.activePlanId : undefined,
     plans: Array.isArray(value.plans)
       ? value.plans.filter((item): item is NonNullable<ChatSession["plans"]>[number] =>

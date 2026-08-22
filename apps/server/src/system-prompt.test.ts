@@ -69,4 +69,12 @@ describe("buildSystemPrompt", () => {
     );
     assert.match(prompt.text, /ChatDesk 内置 Skills[\s\S]*chatdesk-doc/);
   });
+
+  it("includes task delegation rules when provided", async () => {
+    const prompt = await buildSystemPrompt({
+      taskToolInstructions: "互不依赖的子任务在同一轮并行调用 create_task。",
+    });
+    assert.equal(prompt.sections.find((section) => section.id === "task-tool")?.included, true);
+    assert.match(prompt.text, /create_task/);
+  });
 });

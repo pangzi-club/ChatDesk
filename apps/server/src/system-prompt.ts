@@ -40,6 +40,7 @@ export async function buildSystemPrompt(input: {
   workspaceToolInstructions?: string;
   planInstructions?: string;
   todoToolInstructions?: string;
+  taskToolInstructions?: string;
   skillToolInstructions?: string;
 }): Promise<SystemPrompt> {
   const cwd = input.cwd?.trim() || undefined;
@@ -69,6 +70,16 @@ export async function buildSystemPrompt(input: {
             id: "plan-mode",
             label: "计划模式规则",
             content: input.planInstructions.trim(),
+            included: true,
+          },
+        ]
+      : []),
+    ...(input.taskToolInstructions?.trim()
+      ? [
+          {
+            id: "task-tool",
+            label: "任务委派规则",
+            content: input.taskToolInstructions.trim(),
             included: true,
           },
         ]

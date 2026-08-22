@@ -43,6 +43,7 @@ import { loadBuiltinSkillsCatalog } from "./skill-tool.ts";
 import { scanSkills } from "./skills-store.ts";
 import { SessionStore } from "./store.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
+import { CREATE_TASK_TOOL_INSTRUCTIONS } from "./task-tool.ts";
 import { TODO_TOOL_INSTRUCTIONS } from "./todo-tool.ts";
 import { workspaceSearchInstructions } from "./tool-selection.ts";
 import { resolveWorkspaceFsRoot, WorkspaceStore } from "./workspace-store.ts";
@@ -1276,6 +1277,10 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
 
   app.post("/v1/sessions/:id/runs", async (c) => {
     try {
+      const session = await store.get(c.req.param("id"));
+      if (session?.kind === "task") {
+        return jsonError("任务会话不可交互", 400);
+      }
       const body = parseJson(await c.req.json(), runInputSchema) as RunStartInput;
       await activityLogs.append({
         level: "info",
@@ -1313,6 +1318,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
           memory: body.memory,
           workspaceToolInstructions,
           todoToolInstructions: TODO_TOOL_INSTRUCTIONS,
+          taskToolInstructions: CREATE_TASK_TOOL_INSTRUCTIONS,
           skillToolInstructions: await loadBuiltinSkillsCatalog(),
         }),
       );

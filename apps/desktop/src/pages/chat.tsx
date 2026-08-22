@@ -6,6 +6,8 @@ import {
   type ChatPlanSummary,
   type ChatRunProgress,
   type ChatRunSummary,
+  type ChatSessionKind,
+  CREATE_TASK_TOOL_NAME,
   DEFAULT_WORKSPACE_ID,
   DEFAULT_WORKSPACE_NAME,
   MAX_AGENT_STEPS,
@@ -78,6 +80,7 @@ import { ChatMarkdown } from "@/components/chat-markdown";
 import { ChatPathSuggestionPopup } from "@/components/chat-path-suggestion-popup";
 import { ChatPlanQuestionnaire } from "@/components/chat-plan-questionnaire";
 import { ChatSkillsPicker } from "@/components/chat-skills-picker";
+import { ChatTaskList } from "@/components/chat-task-call";
 import { ChatTodoPanel } from "@/components/chat-todo-panel";
 import { type ChatToolCallCardProps, ChatToolCallGroup } from "@/components/chat-tool-call-card";
 import { ChatToolLogDialog } from "@/components/chat-tool-log-dialog";
@@ -405,6 +408,9 @@ function ChatPage() {
   const [sessionTitle, setSessionTitle] = useState("新对话");
   const sessionTitleRef = useRef(sessionTitle);
   sessionTitleRef.current = sessionTitle;
+  const [sessionKind, setSessionKind] = useState<ChatSessionKind>("chat");
+  const sessionKindRef = useRef(sessionKind);
+  sessionKindRef.current = sessionKind;
   const lastSyncedIndexTitleRef = useRef<{ sessionId: string; title: string } | null>(null);
   const [workspaceKey, setWorkspaceKey] = useState(() =>
     chatRoute.kind === "new" ? chatRoute.workspaceId : "",
@@ -744,6 +750,7 @@ function ChatPage() {
       pendingSessionRef.current = null;
       systemPromptRef.current = undefined;
       setSessionTitle("新对话");
+      setSessionKind("chat");
       setSandboxMode(sandboxModeRef.current);
       savedFingerprintRef.current = "";
       extractedFingerprintRef.current = "";
@@ -1236,6 +1243,7 @@ function ChatPage() {
     workspaceSelectionInitializedRef.current = true;
     suppressSaveRef.current = true;
     setSessionTitle(session.title);
+    setSessionKind(session.kind === "task" ? "task" : "chat");
     setTitleError("");
     setIsRenamingTitle(false);
     setWorkspaceKey(session.workspaceId ?? (session.cwd ? "" : DEFAULT_WORKSPACE_ID));
@@ -1543,6 +1551,7 @@ function ChatPage() {
   }, []);
 
   function handleDragEnter(event: React.DragEvent<HTMLDivElement>) {
+    if (sessionKindRef.current === "task") return;
     if (!event.dataTransfer.types.includes("Files")) return;
     event.preventDefault();
     dragCounterRef.current += 1;
@@ -1550,6 +1559,7 @@ function ChatPage() {
   }
 
   function handleDragOver(event: React.DragEvent<HTMLDivElement>) {
+    if (sessionKindRef.current === "task") return;
     if (!event.dataTransfer.types.includes("Files")) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
@@ -1566,6 +1576,7 @@ function ChatPage() {
   }
 
   function handleDrop(event: React.DragEvent<HTMLDivElement>) {
+    if (sessionKindRef.current === "task") return;
     if (!event.dataTransfer.types.includes("Files")) return;
     event.preventDefault();
     dragCounterRef.current = 0;
@@ -1576,6 +1587,7 @@ function ChatPage() {
   }
 
   async function enterPlanMode() {
+    if (sessionKindRef.current === "task") return false;
     if (isGenerating || planTransitionRef.current !== "idle") return false;
     const requestId = ++planCreationRequestRef.current;
     const targetSessionId = sessionId;
@@ -1664,6 +1676,7 @@ function ChatPage() {
     pending: PendingAttachment[],
     options: { clearComposer?: boolean } = {},
   ) {
+    if (sessionKindRef.current === "task") return;
     if (!text && pending.length === 0) return;
     const clearComposer = options.clearComposer ?? true;
     promoteDraftSession();
@@ -1942,6 +1955,7 @@ function ChatPage() {
   }, []);
 
   function submitMessage() {
+    if (sessionKindRef.current === "task") return;
     const text = input.trim();
     const pending = pendingAttachmentsRef.current;
     const hasUploading = pending.some((item) => item.status === "uploading");
@@ -2004,6 +2018,7 @@ function ChatPage() {
 
   const respondToApproval = useCallback(
     (id: string, approved: boolean) => {
+      if (sessionKindRef.current === "task") return;
       void addToolApprovalResponse({
         id,
         approved,
@@ -2306,6 +2321,7 @@ function ChatPage() {
             <p className="chat-kicker">Workspace assistant</p>
             <div className="chat-brand-title-row">
               <h1>{sessionTitle}</h1>
+              {sessionKind === "task" ? <span className="chat-session-kind">任务</span> : null}
               {isRenamingTitle ? (
                 <LoaderCircle
                   aria-hidden="true"
@@ -2458,6 +2474,7 @@ function ChatPage() {
                     <MessageBubble
                       key={message.id}
                       message={message}
+                      approvalsEnabled={sessionKind !== "task"}
                       onApprovalResponse={respondToApproval}
                       onPlanUserInputResponse={respondToPlanUserInput}
                       planInputEnabled={planMode === "plan" && planTransition === "idle"}
@@ -2679,286 +2696,308 @@ function ChatPage() {
             main
           </span>
         </div>
-        <div className="chat-composer">
-          <input
-            aria-hidden="true"
-            className="chat-file-input"
-            multiple
-            onChange={(event) => {
-              if (event.target.files && event.target.files.length > 0) {
-                void addFiles(event.target.files);
-              }
-              event.target.value = "";
-            }}
-            ref={fileInputRef}
-            tabIndex={-1}
-            type="file"
-          />
-          <ChatAttachmentChips
-            attachments={pendingAttachments}
-            onPreview={(attachment) => {
-              if (!attachment.previewUrl) return;
-              openImagePreview({
-                url: attachment.previewUrl,
-                filename: attachment.fileName,
-                mediaType: attachment.mediaType,
-              });
-            }}
-            onRemove={removePendingAttachment}
-          />
-          {commandPopupOpen && (
-            <ChatCommandPopup
-              activeIndex={Math.min(commandIndex, commandMatches.length - 1)}
-              commands={commandMatches}
-              onHover={setCommandIndex}
-              onSelect={applyChatCommand}
-            />
-          )}
-          {mentionPopupOpen && (
-            <ChatPathSuggestionPopup
-              activeIndex={Math.min(mentionIndex, Math.max(mentionSuggestions.length - 1, 0))}
-              isLoading={mentionQueryResult.isPending}
-              onHover={setMentionIndex}
-              onSelect={applyChatMention}
-              suggestions={mentionSuggestions}
-            />
-          )}
-          <textarea
-            aria-autocomplete="list"
-            aria-controls={mentionPopupOpen ? "chat-path-suggestion-popup" : "chat-command-popup"}
-            aria-expanded={commandPopupOpen || mentionPopupOpen}
-            aria-label="输入消息"
-            autoCapitalize="none"
-            autoCorrect="off"
-            disabled={planTransition !== "idle" || followUpPending || stopPending}
-            ref={inputRef}
-            role="combobox"
-            spellCheck={false}
-            value={input}
-            onChange={(event) => {
-              setInput(event.target.value);
-              setCommandCaret(event.target.selectionStart ?? event.target.value.length);
-              setMentionDismissed(false);
-            }}
-            onClick={(event) => setCommandCaret(event.currentTarget.selectionStart ?? 0)}
-            onKeyUp={(event) => setCommandCaret(event.currentTarget.selectionStart ?? 0)}
-            onBlur={() => setCommandDismissed(true)}
-            onCompositionStart={() => {
-              isComposingRef.current = true;
-            }}
-            onCompositionEnd={() => {
-              isComposingRef.current = false;
-            }}
-            onKeyDown={handleKeyDown}
-            onPaste={(event) => {
-              const files = Array.from(event.clipboardData.files);
-              if (files.length > 0) {
-                event.preventDefault();
-                void addFiles(files);
-              }
-            }}
-            placeholder="问问你的工作空间..."
-            rows={2}
-          />
-          <div className="chat-composer-footer">
-            <div className="chat-composer-tools">
+        {sessionKind === "task" ? (
+          <div className="chat-task-status" role="status">
+            <p>后台任务，仅可查看进度</p>
+            {isGenerating ? (
               <Button
-                aria-label="添加附件"
-                className="chat-tool-button !size-7"
-                disabled={planTransition !== "idle"}
-                onClick={() => fileInputRef.current?.click()}
-                size="icon"
-                title="添加附件"
+                disabled={stopPending}
+                onClick={stopCurrentRunFromButton}
+                size="sm"
                 type="button"
                 variant="ghost"
-              >
-                <Paperclip className="size-4" />
-              </Button>
-              {planTransition === "entering" ? (
-                <span aria-label="正在进入计划模式" className="chat-plan-mode-chip" role="status">
-                  <LoaderCircle aria-hidden="true" className="size-3 animate-spin" />
-                  <span>正在进入计划模式</span>
-                </span>
-              ) : planMode === "plan" ? (
-                <span aria-label="计划模式" className="chat-plan-mode-chip" role="status">
-                  {planTransition === "exiting" ? (
-                    <LoaderCircle aria-hidden="true" className="size-3 animate-spin" />
-                  ) : null}
-                  <span>{planTransition === "exiting" ? "正在退出计划模式" : "计划模式"}</span>
-                  {planTransition === "idle" ? (
-                    <button
-                      aria-label={isGenerating ? "请先停止生成再退出计划模式" : "退出计划模式"}
-                      className="chat-plan-mode-exit"
-                      disabled={isGenerating}
-                      onClick={() => void exitPlanMode()}
-                      title={isGenerating ? "请先停止生成" : "退出计划模式"}
-                      type="button"
-                    >
-                      <X className="size-3" />
-                    </button>
-                  ) : null}
-                </span>
-              ) : null}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    aria-label="Sandbox permissions"
-                    className="chat-sandbox-picker !h-7 !gap-1.5 !px-2 !text-[11px]"
-                    title="Sandbox permissions"
-                    type="button"
-                  >
-                    <ShieldCheck className="size-3.5" />
-                    <span className="chat-picker-value !text-[11px]">
-                      {CHAT_SANDBOX_MODE_LABELS[sandboxMode]}
-                    </span>
-                    <ChevronDown className="size-3.5" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="start"
-                  className="chat-select-menu !text-[11px]"
-                  side="top"
-                  sideOffset={8}
-                >
-                  <DropdownMenuRadioGroup
-                    value={sandboxMode}
-                    onValueChange={(value) => updateSandboxMode(normalizeChatSandboxMode(value))}
-                  >
-                    {Object.entries(CHAT_SANDBOX_MODE_LABELS).map(([value, label]) => (
-                      <DropdownMenuRadioItem
-                        className="!py-1 !text-[11px]"
-                        key={value}
-                        value={value}
-                      >
-                        <span className="flex min-w-0 flex-col gap-0.5">
-                          <span>{label}</span>
-                          <span
-                            className={`font-normal text-[10px] leading-4 ${
-                              value === "full" ? "text-destructive" : "text-muted-foreground"
-                            }`}
-                          >
-                            {CHAT_SANDBOX_MODE_DESCRIPTIONS[value as ChatSandboxMode]}
-                          </span>
-                        </span>
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    aria-label="选择模型"
-                    className="chat-model-picker !h-7 !gap-1.5 !px-2 !text-[11px]"
-                    disabled={isModelsLoading || models.length === 0}
-                    type="button"
-                  >
-                    <Settings2 className="size-3.5" />
-                    <span className="chat-picker-value !text-[11px]">
-                      {selectedModel ? formatModelLabel(selectedModel) : "未配置模型"}
-                    </span>
-                    <ChevronDown className="size-3.5" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="start"
-                  className="chat-select-menu !text-[11px]"
-                  side="top"
-                  sideOffset={8}
-                >
-                  <DropdownMenuRadioGroup
-                    value={selectedModel?.id ?? ""}
-                    onValueChange={setSelectedModelId}
-                  >
-                    {models.length === 0 ? (
-                      <DropdownMenuItem className="!py-1 !text-[11px]" disabled>
-                        未配置模型
-                      </DropdownMenuItem>
-                    ) : (
-                      sortedModels.map((model) => (
-                        <DropdownMenuRadioItem
-                          className="!py-1 !text-[11px]"
-                          key={model.id}
-                          value={model.id}
-                        >
-                          {formatModelLabel(model)}
-                        </DropdownMenuRadioItem>
-                      ))
-                    )}
-                  </DropdownMenuRadioGroup>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem asChild className="!py-1 !text-[11px]">
-                    <Link to="/settings/models">前往模型设置</Link>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <ChatToolsPicker
-                open={toolsOpen}
-                settings={chatTools}
-                workspaceAvailable={Boolean(selectedCwd.trim())}
-                onOpenChange={setToolsOpen}
-                onSettingsChange={updateChatTools}
-                mcpServers={mcpServers}
-                selectedMcpIds={selectedMcpIds}
-                onMcpSelectionChange={updateMcpSelection}
-              />
-              <ChatSkillsPicker
-                open={skillsOpen}
-                onOpenChange={setSkillsOpen}
-                onSelectionChange={updateSkillSelection}
-                selectedSkillIds={selectedSkillIds}
-                skills={allowedSkills}
-              />
-              {configuredModels?.length === 0 && (
-                <Link className="chat-settings-link" to="/settings/models">
-                  配置模型
-                </Link>
-              )}
-            </div>
-            <div className="chat-composer-actions">
-              <ChatContextPopover
-                inputContext={selectedModel?.inputContext}
-                inputTokens={currentContextUsage?.inputTokens}
-                isEstimated={currentContextUsage?.source === "estimate"}
-                isGenerating={isGenerating}
-                modelName={selectedModel?.name}
-              />
-              <Button
-                aria-label="语音输入"
-                className="chat-tool-button !size-7 hidden sm:inline-flex"
-                size="icon"
-                type="button"
-                variant="ghost"
-              >
-                <Mic className="size-4" />
-              </Button>
-              <Button
-                aria-label={stopPending ? "正在停止" : isGenerating ? "停止生成" : "发送消息"}
-                className="chat-send-button !size-9 !rounded-[10px]"
-                disabled={
-                  stopPending ||
-                  (((!input.trim() && !pendingAttachments.some((a) => a.status === "ready")) ||
-                    !selectedModel ||
-                    pendingAttachments.some((a) => a.status === "uploading") ||
-                    planTransition !== "idle") &&
-                    !isGenerating)
-                }
-                onClick={isGenerating ? stopCurrentRunFromButton : submitMessage}
-                size="icon"
-                title={stopPending ? "正在停止" : isGenerating ? "停止生成" : "发送消息"}
-                type="button"
               >
                 {stopPending ? (
-                  <LoaderCircle className="size-4 animate-spin" />
-                ) : isGenerating ? (
-                  <Square className="size-4 fill-current" />
+                  <LoaderCircle className="size-3.5 animate-spin" />
                 ) : (
-                  <ArrowUp className="size-4" />
+                  <Square className="size-3.5 fill-current" />
                 )}
+                停止
               </Button>
+            ) : null}
+          </div>
+        ) : (
+          <div className="chat-composer">
+            <input
+              aria-hidden="true"
+              className="chat-file-input"
+              multiple
+              onChange={(event) => {
+                if (event.target.files && event.target.files.length > 0) {
+                  void addFiles(event.target.files);
+                }
+                event.target.value = "";
+              }}
+              ref={fileInputRef}
+              tabIndex={-1}
+              type="file"
+            />
+            <ChatAttachmentChips
+              attachments={pendingAttachments}
+              onPreview={(attachment) => {
+                if (!attachment.previewUrl) return;
+                openImagePreview({
+                  url: attachment.previewUrl,
+                  filename: attachment.fileName,
+                  mediaType: attachment.mediaType,
+                });
+              }}
+              onRemove={removePendingAttachment}
+            />
+            {commandPopupOpen && (
+              <ChatCommandPopup
+                activeIndex={Math.min(commandIndex, commandMatches.length - 1)}
+                commands={commandMatches}
+                onHover={setCommandIndex}
+                onSelect={applyChatCommand}
+              />
+            )}
+            {mentionPopupOpen && (
+              <ChatPathSuggestionPopup
+                activeIndex={Math.min(mentionIndex, Math.max(mentionSuggestions.length - 1, 0))}
+                isLoading={mentionQueryResult.isPending}
+                onHover={setMentionIndex}
+                onSelect={applyChatMention}
+                suggestions={mentionSuggestions}
+              />
+            )}
+            <textarea
+              aria-autocomplete="list"
+              aria-controls={mentionPopupOpen ? "chat-path-suggestion-popup" : "chat-command-popup"}
+              aria-expanded={commandPopupOpen || mentionPopupOpen}
+              aria-label="输入消息"
+              autoCapitalize="none"
+              autoCorrect="off"
+              disabled={planTransition !== "idle" || followUpPending || stopPending}
+              ref={inputRef}
+              role="combobox"
+              spellCheck={false}
+              value={input}
+              onChange={(event) => {
+                setInput(event.target.value);
+                setCommandCaret(event.target.selectionStart ?? event.target.value.length);
+                setMentionDismissed(false);
+              }}
+              onClick={(event) => setCommandCaret(event.currentTarget.selectionStart ?? 0)}
+              onKeyUp={(event) => setCommandCaret(event.currentTarget.selectionStart ?? 0)}
+              onBlur={() => setCommandDismissed(true)}
+              onCompositionStart={() => {
+                isComposingRef.current = true;
+              }}
+              onCompositionEnd={() => {
+                isComposingRef.current = false;
+              }}
+              onKeyDown={handleKeyDown}
+              onPaste={(event) => {
+                const files = Array.from(event.clipboardData.files);
+                if (files.length > 0) {
+                  event.preventDefault();
+                  void addFiles(files);
+                }
+              }}
+              placeholder="问问你的工作空间..."
+              rows={2}
+            />
+            <div className="chat-composer-footer">
+              <div className="chat-composer-tools">
+                <Button
+                  aria-label="添加附件"
+                  className="chat-tool-button !size-7"
+                  disabled={planTransition !== "idle"}
+                  onClick={() => fileInputRef.current?.click()}
+                  size="icon"
+                  title="添加附件"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Paperclip className="size-4" />
+                </Button>
+                {planTransition === "entering" ? (
+                  <span aria-label="正在进入计划模式" className="chat-plan-mode-chip" role="status">
+                    <LoaderCircle aria-hidden="true" className="size-3 animate-spin" />
+                    <span>正在进入计划模式</span>
+                  </span>
+                ) : planMode === "plan" ? (
+                  <span aria-label="计划模式" className="chat-plan-mode-chip" role="status">
+                    {planTransition === "exiting" ? (
+                      <LoaderCircle aria-hidden="true" className="size-3 animate-spin" />
+                    ) : null}
+                    <span>{planTransition === "exiting" ? "正在退出计划模式" : "计划模式"}</span>
+                    {planTransition === "idle" ? (
+                      <button
+                        aria-label={isGenerating ? "请先停止生成再退出计划模式" : "退出计划模式"}
+                        className="chat-plan-mode-exit"
+                        disabled={isGenerating}
+                        onClick={() => void exitPlanMode()}
+                        title={isGenerating ? "请先停止生成" : "退出计划模式"}
+                        type="button"
+                      >
+                        <X className="size-3" />
+                      </button>
+                    ) : null}
+                  </span>
+                ) : null}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      aria-label="Sandbox permissions"
+                      className="chat-sandbox-picker !h-7 !gap-1.5 !px-2 !text-[11px]"
+                      title="Sandbox permissions"
+                      type="button"
+                    >
+                      <ShieldCheck className="size-3.5" />
+                      <span className="chat-picker-value !text-[11px]">
+                        {CHAT_SANDBOX_MODE_LABELS[sandboxMode]}
+                      </span>
+                      <ChevronDown className="size-3.5" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="start"
+                    className="chat-select-menu !text-[11px]"
+                    side="top"
+                    sideOffset={8}
+                  >
+                    <DropdownMenuRadioGroup
+                      value={sandboxMode}
+                      onValueChange={(value) => updateSandboxMode(normalizeChatSandboxMode(value))}
+                    >
+                      {Object.entries(CHAT_SANDBOX_MODE_LABELS).map(([value, label]) => (
+                        <DropdownMenuRadioItem
+                          className="!py-1 !text-[11px]"
+                          key={value}
+                          value={value}
+                        >
+                          <span className="flex min-w-0 flex-col gap-0.5">
+                            <span>{label}</span>
+                            <span
+                              className={`font-normal text-[10px] leading-4 ${
+                                value === "full" ? "text-destructive" : "text-muted-foreground"
+                              }`}
+                            >
+                              {CHAT_SANDBOX_MODE_DESCRIPTIONS[value as ChatSandboxMode]}
+                            </span>
+                          </span>
+                        </DropdownMenuRadioItem>
+                      ))}
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      aria-label="选择模型"
+                      className="chat-model-picker !h-7 !gap-1.5 !px-2 !text-[11px]"
+                      disabled={isModelsLoading || models.length === 0}
+                      type="button"
+                    >
+                      <Settings2 className="size-3.5" />
+                      <span className="chat-picker-value !text-[11px]">
+                        {selectedModel ? formatModelLabel(selectedModel) : "未配置模型"}
+                      </span>
+                      <ChevronDown className="size-3.5" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="start"
+                    className="chat-select-menu !text-[11px]"
+                    side="top"
+                    sideOffset={8}
+                  >
+                    <DropdownMenuRadioGroup
+                      value={selectedModel?.id ?? ""}
+                      onValueChange={setSelectedModelId}
+                    >
+                      {models.length === 0 ? (
+                        <DropdownMenuItem className="!py-1 !text-[11px]" disabled>
+                          未配置模型
+                        </DropdownMenuItem>
+                      ) : (
+                        sortedModels.map((model) => (
+                          <DropdownMenuRadioItem
+                            className="!py-1 !text-[11px]"
+                            key={model.id}
+                            value={model.id}
+                          >
+                            {formatModelLabel(model)}
+                          </DropdownMenuRadioItem>
+                        ))
+                      )}
+                    </DropdownMenuRadioGroup>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem asChild className="!py-1 !text-[11px]">
+                      <Link to="/settings/models">前往模型设置</Link>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <ChatToolsPicker
+                  open={toolsOpen}
+                  settings={chatTools}
+                  workspaceAvailable={Boolean(selectedCwd.trim())}
+                  onOpenChange={setToolsOpen}
+                  onSettingsChange={updateChatTools}
+                  mcpServers={mcpServers}
+                  selectedMcpIds={selectedMcpIds}
+                  onMcpSelectionChange={updateMcpSelection}
+                />
+                <ChatSkillsPicker
+                  open={skillsOpen}
+                  onOpenChange={setSkillsOpen}
+                  onSelectionChange={updateSkillSelection}
+                  selectedSkillIds={selectedSkillIds}
+                  skills={allowedSkills}
+                />
+                {configuredModels?.length === 0 && (
+                  <Link className="chat-settings-link" to="/settings/models">
+                    配置模型
+                  </Link>
+                )}
+              </div>
+              <div className="chat-composer-actions">
+                <ChatContextPopover
+                  inputContext={selectedModel?.inputContext}
+                  inputTokens={currentContextUsage?.inputTokens}
+                  isEstimated={currentContextUsage?.source === "estimate"}
+                  isGenerating={isGenerating}
+                  modelName={selectedModel?.name}
+                />
+                <Button
+                  aria-label="语音输入"
+                  className="chat-tool-button !size-7 hidden sm:inline-flex"
+                  size="icon"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Mic className="size-4" />
+                </Button>
+                <Button
+                  aria-label={stopPending ? "正在停止" : isGenerating ? "停止生成" : "发送消息"}
+                  className="chat-send-button !size-9 !rounded-[10px]"
+                  disabled={
+                    stopPending ||
+                    (((!input.trim() && !pendingAttachments.some((a) => a.status === "ready")) ||
+                      !selectedModel ||
+                      pendingAttachments.some((a) => a.status === "uploading") ||
+                      planTransition !== "idle") &&
+                      !isGenerating)
+                  }
+                  onClick={isGenerating ? stopCurrentRunFromButton : submitMessage}
+                  size="icon"
+                  title={stopPending ? "正在停止" : isGenerating ? "停止生成" : "发送消息"}
+                  type="button"
+                >
+                  {stopPending ? (
+                    <LoaderCircle className="size-4 animate-spin" />
+                  ) : isGenerating ? (
+                    <Square className="size-4 fill-current" />
+                  ) : (
+                    <ArrowUp className="size-4" />
+                  )}
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
       <GitCommitDialog
         branch={workspaceGitQuery.data?.summary?.branch}
@@ -3195,6 +3234,7 @@ const MessageBubble = memo(function MessageBubble({
   isStreaming,
   generationStatus,
   showTokenUsage,
+  approvalsEnabled = true,
   onApprovalResponse,
   onPlanUserInputResponse,
   planInputEnabled,
@@ -3206,6 +3246,7 @@ const MessageBubble = memo(function MessageBubble({
   isStreaming: boolean;
   generationStatus?: ChatGenerationStatusProps;
   showTokenUsage: boolean;
+  approvalsEnabled?: boolean;
   onApprovalResponse: (id: string, approved: boolean) => void;
   onPlanUserInputResponse: (toolCallId: string, output: PlanUserInputResponse) => Promise<void>;
   planInputEnabled: boolean;
@@ -3275,6 +3316,9 @@ const MessageBubble = memo(function MessageBubble({
         ) : null}
         <div className="chat-message-parts">
           {messageBlocks.map((block, blockIndex) => {
+            if (block.kind === "tasks") {
+              return <ChatTaskList key={block.key} parts={block.parts} />;
+            }
             if (block.kind === "tools") {
               const questionnaires = block.parts.flatMap((part) => {
                 if (getToolName(part) !== PLAN_USER_INPUT_TOOL_NAME || !("input" in part))
@@ -3298,6 +3342,7 @@ const MessageBubble = memo(function MessageBubble({
               const visibleParts = block.parts.filter(
                 (part) =>
                   getToolName(part) !== TODO_TOOL_NAME &&
+                  getToolName(part) !== CREATE_TASK_TOOL_NAME &&
                   !questionnaireCallIds.has(part.toolCallId),
               );
               const containsPlanAttachment = Boolean(
@@ -3415,7 +3460,7 @@ const MessageBubble = memo(function MessageBubble({
             );
           })}
         </div>
-        {pendingApprovalParts.length > 0 ? (
+        {approvalsEnabled && pendingApprovalParts.length > 0 ? (
           <fieldset className="chat-approval-strip">
             <legend className="sr-only">工具审批</legend>
             <div className="chat-approval-strip-copy">

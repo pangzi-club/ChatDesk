@@ -170,12 +170,17 @@ export type SystemPromptSnapshot = {
   cwd?: string;
 };
 
+export const CHAT_SESSION_KINDS = ["chat", "task"] as const;
+export type ChatSessionKind = (typeof CHAT_SESSION_KINDS)[number];
+
 export type ChatSession = {
   schemaVersion: typeof CHAT_SCHEMA_VERSION;
   id: string;
   title: string;
   createdAt: string;
   updatedAt: string;
+  kind?: ChatSessionKind;
+  parentSessionId?: string;
   modelId?: string;
   workspaceId?: string;
   cwd?: string;
@@ -192,7 +197,7 @@ export type ChatSession = {
 
 export type ChatIndexItem = Pick<
   ChatSession,
-  "id" | "title" | "createdAt" | "updatedAt" | "workspaceId" | "cwd"
+  "id" | "title" | "createdAt" | "updatedAt" | "workspaceId" | "cwd" | "kind" | "parentSessionId"
 > & {
   messageCount: number;
   attachmentCount: number;
@@ -380,6 +385,68 @@ export type RunStartInput = {
 };
 
 export const TODO_TOOL_NAME = "todo_write";
+export const CREATE_TASK_TOOL_NAME = "create_task";
+export const CREATE_TASK_STATUSES = ["running", "completed", "error", "stopped"] as const;
+export type CreateTaskStatus = (typeof CREATE_TASK_STATUSES)[number];
+
+export type CreateTaskPreviewMessage = {
+  role: "user" | "assistant";
+  text: string;
+};
+
+export type CreateTaskOutput = {
+  sessionId: string;
+  title: string;
+  status: CreateTaskStatus;
+  preview: string;
+  outcome?: ChatRunOutcome;
+  error?: string;
+  messages?: CreateTaskPreviewMessage[];
+};
+
+const CHAT_RUN_OUTCOMES = ["completed", "awaiting-user", "stopped", "error"] as const;
+
+function isCreateTaskStatus(value: unknown): value is CreateTaskStatus {
+  return typeof value === "string" && CREATE_TASK_STATUSES.includes(value as CreateTaskStatus);
+}
+
+function isChatRunOutcome(value: unknown): value is ChatRunOutcome {
+  return typeof value === "string" && CHAT_RUN_OUTCOMES.includes(value as ChatRunOutcome);
+}
+
+export function parseCreateTaskOutput(value: unknown): CreateTaskOutput | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const sessionId = boundedString(record.sessionId, 128);
+  const title = typeof record.title === "string" ? record.title.trim() : "";
+  const preview = typeof record.preview === "string" ? record.preview : "";
+  if (!sessionId || !title || !isCreateTaskStatus(record.status)) return null;
+
+  const parsed: CreateTaskOutput = {
+    sessionId,
+    title,
+    status: record.status,
+    preview,
+  };
+  if (isChatRunOutcome(record.outcome)) parsed.outcome = record.outcome;
+  if (typeof record.error === "string" && record.error.trim()) parsed.error = record.error.trim();
+  if (Array.isArray(record.messages)) {
+    const messages: CreateTaskPreviewMessage[] = [];
+    for (const entry of record.messages) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+      const message = entry as Record<string, unknown>;
+      if (
+        (message.role !== "user" && message.role !== "assistant") ||
+        typeof message.text !== "string"
+      ) {
+        continue;
+      }
+      messages.push({ role: message.role, text: message.text });
+    }
+    if (messages.length > 0) parsed.messages = messages;
+  }
+  return parsed;
+}
 
 export const TODO_STATUSES = ["pending", "in_progress", "completed", "blocked"] as const;
 
