@@ -11,6 +11,7 @@
       "apps/desktop/**",
       "!!apps/desktop/src/components/ui",
       "apps/server/**",
+      "apps/cli/**",
       "packages/**",
       "scripts/**",
       "*.css",

@@ -21,6 +21,25 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@26.1.2)(vite@7.3.6(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.32.0))
 
+  apps/cli:
+    dependencies:
+      '@chatdesk/agent-core':
+        specifier: workspace:*
+        version: link:../../packages/agent-core
+      '@chatdesk/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.1.2
+      ai:
+        specifier: ^7.0.51
+        version: 7.0.51(zod@4.4.3)
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+
   apps/desktop:
     dependencies:
       '@ai-sdk/mcp':

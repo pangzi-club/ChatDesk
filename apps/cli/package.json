@@ -1,0 +1,28 @@
+{
+  "name": "chatdesk-cli",
+  "private": true,
+  "version": "0.5.0",
+  "license": "MIT",
+  "packageManager": "pnpm@11.19.0",
+  "type": "module",
+  "bin": {
+    "chatdesk": "./src/chatdesk.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/chatdesk.mjs",
+    "test": "vitest run --root ../.. --project chatdesk-cli",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@chatdesk/agent-core": "workspace:*",
+    "@chatdesk/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "ai": "^7.0.51",
+    "typescript": "7.0.2"
+  }
+}

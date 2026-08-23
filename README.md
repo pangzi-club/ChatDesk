@@ -10,7 +10,7 @@ ChatDesk 是一个基于 Electron、React 和 TypeScript 的本地 AI 工作台�
 - 多会话、流式响应、用量统计和历史归档导入
 - 工作区文件、终端、Git 和浏览器工具
 - MCP 服务、Skills 管理和可配置的沙箱审批
-- Electron 桌面应用、Tauri 回退宿主和独立运行的本地 Chat Server
+- Electron 桌面应用、Tauri 回退宿主、独立运行的本地 Chat Server，以及进程内 CLI（`chatdesk -p`）
 
 ## 环境要求
 
@@ -50,6 +50,8 @@ pnpm desktop:sidecars # 仅构建桌面端 sidecar
 pnpm dev:web     # 仅启动 Vite 前端
 pnpm dev:server  # 仅启动 Chat Server
 pnpm server:test # Chat Server 测试
+pnpm chatdesk -- -p "今天天气怎么样"  # 进程内 CLI：默认 workspace 为当前目录
+pnpm add -g ./apps/cli               # 把 chatdesk 装到 pnpm 全局 bin（pnpm 11 已去掉 link --global）
 pnpm desktop:dev # 启动 Electron 桌面开发模式
 pnpm tauri:dev   # 启动 Tauri 回退开发模式
 ```

@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     projects: [
       "apps/server/vitest.config.ts",
+      "apps/cli/vitest.config.ts",
       "apps/desktop/vitest.config.ts",
       "packages/shared/vitest.config.ts",
       "packages/agent-core/vitest.config.ts",
