@@ -865,11 +865,7 @@ function ChatPage() {
         },
         onMessageUpdated: ({ sessionId: eventSessionId, message }) => {
           if (message) liveDraftsRef.current.set(eventSessionId, message);
-          if (
-            activeSessionRef.current === eventSessionId &&
-            attachedStreamSessionRef.current !== eventSessionId &&
-            message
-          ) {
+          if (activeSessionRef.current === eventSessionId && message) {
             setMessages((messages) => mergeLiveDraft(messages, message));
           }
         },

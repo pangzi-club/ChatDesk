@@ -226,6 +226,10 @@ export function runCheckpointFingerprint(message: UIMessage) {
   return checkpointParts.length > 0 ? JSON.stringify(checkpointParts) : "";
 }
 
+export function runToolPartsFingerprint(message: UIMessage) {
+  return JSON.stringify(message.parts.filter(isToolUIPart));
+}
+
 const INTERRUPTED_TOOL_STATES = new Set([
   "input-streaming",
   "input-available",
@@ -1333,6 +1337,7 @@ export class RunRegistry {
     let latestDraft = resumedAssistant ?? assistantMessage(runId, "");
     let assistantText = messageText(latestDraft);
     let checkpointFingerprint = runCheckpointFingerprint(latestDraft);
+    let toolPartsFingerprint = runToolPartsFingerprint(latestDraft);
     let latestMessageMetadata: unknown;
     this.setStatus(sessionId, "streaming", runId);
     try {
@@ -1358,10 +1363,17 @@ export class RunRegistry {
         }
         assistantText = nextAssistantText;
 
+        const nextToolPartsFingerprint = runToolPartsFingerprint(draft);
+        const toolPartsChanged = nextToolPartsFingerprint !== toolPartsFingerprint;
+        toolPartsFingerprint = nextToolPartsFingerprint;
         const nextCheckpointFingerprint = runCheckpointFingerprint(draft);
-        if (nextCheckpointFingerprint && nextCheckpointFingerprint !== checkpointFingerprint) {
+        const checkpointChanged =
+          nextCheckpointFingerprint && nextCheckpointFingerprint !== checkpointFingerprint;
+        if (checkpointChanged) {
           checkpointFingerprint = nextCheckpointFingerprint;
           await this.persistRunCheckpoint(sessionId, runId, startedAt, draft);
+        }
+        if (toolPartsChanged || checkpointChanged) {
           this.events.publish({
             type: "message.updated",
             sessionId,

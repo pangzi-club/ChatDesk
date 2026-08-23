@@ -14,6 +14,7 @@ import {
   normalizeCompletedMessages,
   resolveEffectiveWorkspace,
   runCheckpointFingerprint,
+  runToolPartsFingerprint,
   shouldPreflightWorkspaceTool,
 } from "./run-registry.ts";
 
@@ -136,6 +137,31 @@ test("checkpoints complete content and tool state transitions", () => {
   } as UIMessage;
   assert.notEqual(runCheckpointFingerprint(runningTool), "");
   assert.notEqual(runCheckpointFingerprint(completedTool), runCheckpointFingerprint(runningTool));
+});
+
+test("tracks tool parts independently from text checkpoints", () => {
+  const message: UIMessage = {
+    id: "run-1",
+    role: "assistant",
+    parts: [
+      { type: "text", text: "working", state: "streaming" },
+      {
+        type: "tool-read_file",
+        toolCallId: "tool-1",
+        state: "input-streaming",
+        input: { path: "README.md" },
+      },
+    ],
+  } as UIMessage;
+
+  assert.notEqual(runToolPartsFingerprint(message), JSON.stringify([]));
+  assert.notEqual(
+    runToolPartsFingerprint(message),
+    runToolPartsFingerprint({
+      ...message,
+      parts: [],
+    }),
+  );
 });
 
 test("replaces a run checkpoint without duplicating the assistant message", () => {
