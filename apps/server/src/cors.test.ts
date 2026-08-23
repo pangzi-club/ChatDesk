@@ -3,12 +3,10 @@ import { describe, it } from "vitest";
 import { chatServerCorsOrigin, isAllowedChatServerCorsOrigin } from "./cors.ts";
 
 describe("chat server CORS origins", () => {
-  it("allows the Vite, Tauri and Electron renderer origins", () => {
+  it("allows the Vite and Electron renderer origins", () => {
     assert.equal(isAllowedChatServerCorsOrigin("http://localhost:1420"), true);
     assert.equal(isAllowedChatServerCorsOrigin("http://127.0.0.1:1420"), true);
     assert.equal(isAllowedChatServerCorsOrigin("http://127.0.0.1:5173"), true);
-    assert.equal(isAllowedChatServerCorsOrigin("tauri://localhost"), true);
-    assert.equal(isAllowedChatServerCorsOrigin("https://tauri.localhost"), true);
     assert.equal(isAllowedChatServerCorsOrigin("chatdesk://localhost"), true);
     assert.equal(isAllowedChatServerCorsOrigin("null"), true);
   });

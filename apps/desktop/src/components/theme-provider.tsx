@@ -89,7 +89,7 @@ export function ThemeProvider({
     return isThemeColor(stored) ? stored : "ocean";
   });
 
-  // Sync with Tauri Store on mount (desktop app persistence)
+  // Sync with desktop user store on mount
   useEffect(() => {
     let isActive = true;
 
@@ -103,7 +103,7 @@ export function ThemeProvider({
         setTheme(savedTheme);
       })
       .catch(() => {
-        // Not running in Tauri, ignore
+        // Not running as desktop app, ignore
       });
 
     return () => {
@@ -121,7 +121,7 @@ export function ThemeProvider({
         setThemeColorState(savedColor);
       })
       .catch(() => {
-        // Not running in Tauri, ignore
+        // Not running as desktop app, ignore
       });
 
     return () => {
@@ -139,7 +139,7 @@ export function ThemeProvider({
       .delete(LEGACY_PRIMARY_COLOR_STORE_KEY)
       .then((existed) => (existed ? settingsStore.save() : undefined))
       .catch(() => {
-        // Not running in Tauri, ignore
+        // Not running as desktop app, ignore
       });
   }, []);
 
@@ -185,12 +185,12 @@ export function ThemeProvider({
         // Logging must never prevent a theme change.
       });
 
-      // Also persist to Tauri Store
+      // Also persist to desktop user store
       settingsStore
         .set(THEME_STORE_KEY, theme)
         .then(() => settingsStore.save())
         .catch(() => {
-          // Not running in Tauri, ignore
+          // Not running as desktop app, ignore
         });
     },
     setThemeColor: (nextColor: ThemeColor) => {
@@ -207,7 +207,7 @@ export function ThemeProvider({
         .set(THEME_COLOR_STORE_KEY, nextColor)
         .then(() => settingsStore.save())
         .catch(() => {
-          // Not running in Tauri, ignore
+          // Not running as desktop app, ignore
         });
     },
   };

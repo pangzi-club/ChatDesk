@@ -53,12 +53,10 @@ test("isWorkspaceVersion accepts semver-like values", () => {
   assert.equal(isWorkspaceVersion("0.5"), false);
 });
 
-test("shouldSkipManifest ignores Tauri package manifests", () => {
+test("shouldSkipManifest does not skip workspace package manifests", () => {
   assert.equal(shouldSkipManifest("package.json"), false);
   assert.equal(shouldSkipManifest("apps/desktop/package.json"), false);
-  assert.equal(shouldSkipManifest("apps/tauri/package.json"), true);
-  assert.equal(shouldSkipManifest(path.join("apps", "tauri", "package.json")), true);
-  assert.equal(shouldSkipManifest("apps/tauri/nested/package.json"), true);
+  assert.equal(shouldSkipManifest("apps/electron/package.json"), false);
 });
 
 test("applyPackageVersion only rewrites the version field", () => {
@@ -75,10 +73,9 @@ test("applyPackageVersion only rewrites the version field", () => {
   assert.equal(updated.source, packageJson("0.5.0"));
 });
 
-test("setWorkspaceVersions updates workspace packages and leaves Tauri alone", async () => {
+test("setWorkspaceVersions updates workspace packages", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-set-version-"));
   await mkdir(path.join(root, "apps", "desktop", "assets"), { recursive: true });
-  await mkdir(path.join(root, "apps", "tauri"), { recursive: true });
   await mkdir(path.join(root, "packages", "shared"), { recursive: true });
   await mkdir(path.join(root, "node_modules", "left-alone"), { recursive: true });
   await writeFile(path.join(root, "package.json"), packageJson("0.4.0"));
@@ -87,7 +84,6 @@ test("setWorkspaceVersions updates workspace packages and leaves Tauri alone", a
     path.join(root, "apps", "desktop", "assets", "package.json"),
     packageJson("9.9.9"),
   );
-  await writeFile(path.join(root, "apps", "tauri", "package.json"), packageJson("0.4.0"));
   await writeFile(path.join(root, "packages", "shared", "package.json"), packageJson("0.4.0"));
   await writeFile(
     path.join(root, "node_modules", "left-alone", "package.json"),
@@ -113,10 +109,6 @@ test("setWorkspaceVersions updates workspace packages and leaves Tauri alone", a
     packageJson("0.5.0"),
   );
   assert.equal(
-    await readFile(path.join(root, "apps", "tauri", "package.json"), "utf8"),
-    packageJson("0.4.0"),
-  );
-  assert.equal(
     await readFile(path.join(root, "apps", "desktop", "assets", "package.json"), "utf8"),
     packageJson("9.9.9"),
   );
@@ -129,7 +121,6 @@ test("setWorkspaceVersions updates workspace packages and leaves Tauri alone", a
 test("set-workspace-version CLI prints help and rejects invalid versions", async () => {
   const { stdout } = await execFileAsync(process.execPath, [script, "--help"]);
   assert.match(stdout, /pnpm version:set -- <version>/);
-  assert.match(stdout, /apps\/tauri/);
 
   await assert.rejects(execFileAsync(process.execPath, [script, "not-a-version"]), (error) => {
     assert.equal(error.code, 1);

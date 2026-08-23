@@ -2069,7 +2069,7 @@ function ChatServerSettingsPage() {
       <SettingsHeading
         eyebrow="连接"
         title="Chat Server"
-        description="配置本地 Hono Chat Server 的监听端口，或在 Tauri 应用中手动重启服务。"
+        description="配置本地 Hono Chat Server 的监听端口，或在桌面应用中手动重启服务。"
       />
       <div className="max-w-xl space-y-5 rounded-lg border border-border bg-card p-5">
         <div className="flex items-center justify-between gap-4">

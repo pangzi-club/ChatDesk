@@ -120,7 +120,7 @@ export async function loadChatDisplaySettings(): Promise<ChatDisplaySettings> {
         return normalizeChatDisplay(stored);
       }
     } catch (error) {
-      console.error("Failed to load chat display settings from Tauri Store", error);
+      console.error("Failed to load chat display settings from desktop store", error);
     }
   }
 
@@ -145,7 +145,7 @@ export async function saveChatDisplaySettings(settings: ChatDisplaySettings) {
       window.dispatchEvent(new CustomEvent("chat-display-settings-change", { detail: settings }));
       return;
     } catch (error) {
-      console.error("Failed to save chat display settings to Tauri Store", error);
+      console.error("Failed to save chat display settings to desktop store", error);
     }
   }
 

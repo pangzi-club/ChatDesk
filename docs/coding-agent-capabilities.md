@@ -50,7 +50,7 @@
 - **文件工具**：`workspace-tools.ts` 提供 list_dir / read_file / write_file / edit_file / apply_patch / search_files。`list_dir` 默认返回 200 项、最多 500 项并支持 offset 分页；`read_file` 单次最多返回 64 KiB；`apply_patch` 最大 256 KiB，先检查全部 hunk 再原子应用。
 - **文件搜索**：`file-search.ts` 优先调用 ripgrep，支持 glob、大小写不敏感的固定文本搜索、命中行摘要和 `.gitignore`；没有 `rg` 时回退到 Git 文件清单与内置遍历。只启用终端而未启用 `search_files` 时，模型可直接通过 Bash 使用 `rg`。
 - **终端**：`bash` 工具，120s 超时，macOS 使用支持 `pipefail` 的 shell；输出采用 128 KiB 固定头尾缓冲，超限只标记截断而不终止命令。命令始终同步等待，超时杀进程树；没有 job id，也没有 `block_until` / 后台托管。
-- **浏览器**：`client-tools.ts` + `browser-runtime.ts`，隔离的 headless Chromium session，open / screenshot / click / eval / close 全套。`browser_screenshot` 把截图写入当前聊天 session 的 `attachments/`（与用户上传、生成图同一目录），落盘前走统一 Sharp 压缩，输出可能是 WebP。开发态用 `import.meta.url` / 仓库相对路径回退到源码 `browser-worker.mjs`；打包态由 Tauri 注入普通 JS worker 路径，Chat Server 使用共享 Node 的 `process.execPath` 启动，缺失则启动失败。
+- **浏览器**：`client-tools.ts` + `browser-runtime.ts`，隔离的 headless Chromium session，open / screenshot / click / eval / close 全套。`browser_screenshot` 把截图写入当前聊天 session 的 `attachments/`（与用户上传、生成图同一目录），落盘前走统一 Sharp 压缩，输出可能是 WebP。开发态用 `import.meta.url` / 仓库相对路径回退到 `packages/agent-core/workers/browser-worker.mjs`；打包态由 Electron 注入普通 JS worker 路径，Chat Server 使用共享 Node 的 `process.execPath` 启动，缺失则启动失败。
 
 ### ✅ 上下文与记忆
 - **会话历史**：`store.ts` 持久化，CRUD 齐全。

@@ -39,8 +39,7 @@ Durable project-specific notes live in [`MEMORY.md`](MEMORY.md). Read it when lo
 
 ## Desktop Runtime
 
-- New features must target Electron only. Do not add or extend Tauri implementations unless a task explicitly requests Tauri support or maintenance.
-- Treat the existing Tauri layer as legacy compatibility code; do not use it as the target runtime for new product behavior.
+- New features must target Electron only.
 
 ## List Data and Loading States
 
@@ -75,9 +74,9 @@ Put new code in the narrowest directory that matches its runtime and responsibil
 - `apps/desktop/src/components/ui/`: shared shadcn/Radix-style primitives only (`Button`, `Dialog`, `AlertDialog`, form controls, and similar). Keep product-specific behavior out of this directory; extend a primitive here only when the primitive itself needs a reusable capability.
 - `apps/desktop/src/layouts/`: shared application chrome and nested route layouts, such as the app shell, navigation, titlebar, and outlet composition. Do not put a one-page screen here.
 - `apps/desktop/src/router/`: route declarations, redirects, route-level layout wiring, and URL parameter mapping only. Keep data fetching and page UI in the page or library that owns it.
-- `apps/desktop/src/lib/`: browser-side domain logic, API clients, persistence adapters, query helpers, parsers, and integrations. Keep this directory free of JSX; wrappers for Chat Server requests and Tauri `invoke` calls belong here so pages and components do not call platform APIs directly.
+- `apps/desktop/src/lib/`: browser-side domain logic, API clients, persistence adapters, query helpers, parsers, and integrations. Keep this directory free of JSX; wrappers for Chat Server requests and desktop bridge calls belong here so pages and components do not call platform APIs directly.
 - `apps/desktop/src/lib/importers/`: browser-side parsers for imported archive formats. Add a new source-specific importer here and keep the shared archive orchestration in `apps/desktop/src/lib/chat-archive.ts`.
-- `packages/shared/`: runtime-neutral TypeScript contracts, constants, and algorithms imported by the browser, `apps/server`, `apps/cli`, and `packages/agent-core`. Keep it private to the workspace until a package publishing boundary is intentionally introduced. Do not import React, DOM, Node.js, Tauri, or filesystem APIs from this directory.
+- `packages/shared/`: runtime-neutral TypeScript contracts, constants, and algorithms imported by the browser, `apps/server`, `apps/cli`, and `packages/agent-core`. Keep it private to the workspace until a package publishing boundary is intentionally introduced. Do not import React, DOM, Node.js, Electron, or filesystem APIs from this directory.
 - `apps/desktop/src/assets/`: assets imported by Vite from TypeScript/CSS. Put files that must be served at a stable public URL in `apps/desktop/public/` instead.
 - `apps/desktop/src/App.tsx` and `apps/desktop/src/main.tsx`: application bootstrap, providers, and startup initialization only. `apps/desktop/src/App.css` is for global application styles; keep component/page styles close to their owning UI when the existing styling approach permits it.
 
@@ -85,7 +84,7 @@ For browser code, use this decision order: JSX that defines a URL screen belongs
 
 ### Chat Server Client (`packages/chat-server-client`)
 
-- `packages/chat-server-client/src/index.ts`: runtime-neutral Chat Server HTTP and SSE client (`ChatServerClient`). Inject `fetch` and `EventSource`; do not import React, DOM, Node.js, Electron, or Tauri.
+- `packages/chat-server-client/src/index.ts`: runtime-neutral Chat Server HTTP and SSE client (`ChatServerClient`). Inject `fetch` and `EventSource`; do not import React, DOM, Node.js, or Electron.
 - `packages/chat-server-client/src/*.test.ts`: tests colocated with the client they exercise.
 
 Desktop UI must not import this package from pages or components. Wrap it in `apps/desktop/src/lib/chat-server.ts` so port, token, and host `fetch` stay in the desktop adapter.
@@ -97,8 +96,9 @@ Desktop UI must not import this package from pages or components. Wrap it in `ap
 - `packages/agent-core/src/*.ts`: Node-only harness modules (tools, sandbox, model adaptor, persistence, platform). Keep HTTP, CORS, and SSE out of this package.
 - `packages/agent-core/src/*.test.ts`: Tests colocated with the harness module they exercise.
 - `packages/agent-core/skills/`: builtin skill files shipped with the harness.
+- `packages/agent-core/workers/`: sidecar worker scripts shipped with the harness, including `browser-worker.mjs`.
 
-`@chatdesk/agent-core` may import `@chatdesk/shared`, Node.js, and AI SDK APIs. It must not import Hono, React, desktop pages, or Tauri code. Desktop UI must not import this package; it reaches the harness through Chat Server HTTP.
+`@chatdesk/agent-core` may import `@chatdesk/shared`, Node.js, and AI SDK APIs. It must not import Hono, React, desktop pages, or Electron code. Desktop UI must not import this package; it reaches the harness through Chat Server HTTP.
 
 ### CLI (`apps/cli`)
 
@@ -107,7 +107,7 @@ Desktop UI must not import this package from pages or components. Wrap it in `ap
 - `apps/cli/src/parse-args.ts`: argv parsing for print mode (`-p` / `--prompt`, `--model`, `--cwd`).
 - `apps/cli/src/run-prompt.ts`: in-process `createAgentCore` composition — resolve data dir, register cwd as a workspace, start a detached run, print the final assistant text.
 
-The CLI may import `@chatdesk/agent-core` and `@chatdesk/shared`. It must not import Hono, React, desktop pages, `apps/server`, or Tauri code. Default workspace is `process.cwd()` unless `--cwd` is passed; do not bind CLI sessions to the Default workspace task directory. Register the `chatdesk` bin globally with `pnpm add -g ./apps/cli` from the repository root (`pnpm link --global` was removed in pnpm 11).
+The CLI may import `@chatdesk/agent-core` and `@chatdesk/shared`. It must not import Hono, React, desktop pages, `apps/server`, or Electron host code. Default workspace is `process.cwd()` unless `--cwd` is passed; do not bind CLI sessions to the Default workspace task directory. Register the `chatdesk` bin globally with `pnpm add -g ./apps/cli` from the repository root (`pnpm link --global` was removed in pnpm 11).
 
 ### Local Node Service (`apps/server`)
 
@@ -116,28 +116,26 @@ The CLI may import `@chatdesk/agent-core` and `@chatdesk/shared`. It must not im
 - `apps/server/src/*.ts`: HTTP connection and product API modules (`cors`, `sse-keepalive`, archive/automation stores).
 - `apps/server/src/*.test.ts`: Tests for HTTP handlers and server-only product APIs.
 
-The Node service may import `@chatdesk/agent-core` and `@chatdesk/shared`, but must not import React components, browser pages, `src/lib/` browser adapters, or Tauri code. Browser callers should reach this service through `@chatdesk/chat-server-client` and the desktop adapter in `apps/desktop/src/lib/chat-server.ts`.
+The Node service may import `@chatdesk/agent-core` and `@chatdesk/shared`, but must not import React components, browser pages, `src/lib/` browser adapters, or Electron host code. Browser callers should reach this service through `@chatdesk/chat-server-client` and the desktop adapter in `apps/desktop/src/lib/chat-server.ts`.
 
-### Tauri Desktop Layer (`apps/tauri/src-tauri`)
+### Electron Desktop Layer (`apps/electron`)
 
-- `apps/tauri/src-tauri/src/main.rs` and `apps/tauri/src-tauri/src/lib.rs`: Tauri startup, plugin setup, command registration, and application-wide wiring.
-- `apps/tauri/src-tauri/src/commands/`: thin Tauri command handlers. Validate/deserialize command inputs, call a service, and return serializable results; keep filesystem, process, Git, and other business logic out of command handlers.
-- `apps/tauri/src-tauri/src/services/`: native capabilities and side effects, including filesystem/workspace access, processes, Git, automation, sandboxing, and chat-server lifecycle management.
-- `apps/tauri/src-tauri/src/models/`: Rust data structures shared by commands and services, especially `serde` request/response models. Keep transport models separate from service implementation details.
-- `apps/tauri/src-tauri/capabilities/`: Tauri permission and capability declarations. Update these when adding or changing native commands or plugins.
-- `apps/tauri/src-tauri/sidecar/`: source for JavaScript sidecar workers. Generated sidecars and build output are not hand-edited.
+- `apps/electron/src/main.ts`: Electron startup, window, tray, IPC registration, and Chat Server supervisor wiring.
+- `apps/electron/src/preload.cts`: `contextBridge` injection of `DesktopBridge`. Keep this file self-contained; sandboxed preloads cannot import sibling modules.
+- `apps/electron/src/ipc-contract.ts`: IPC command names, event prefixes, and input validation.
+- `packages/desktop-host`: Chat Server process supervisor used by Electron main.
 
-Frontend code should call native functionality through a small adapter in `apps/desktop/src/lib/` (using Tauri APIs there), not by placing `invoke` calls throughout pages or components. Native code must not depend on browser UI code.
+Frontend code should call native functionality through `apps/desktop/src/lib/desktop-bridge.ts`, not by placing Electron APIs throughout pages or components. Native code must not depend on browser UI code.
 
 ### Tooling, Documentation, and Generated Files
 
 - `scripts/`: repository build, development orchestration, packaging, and other developer tooling. Keep these scripts independent from page rendering. Local data migrations go through `pnpm migrate <command>` (`scripts/migrate.mjs`) and are documented in [`docs/data-migration.md`](docs/data-migration.md); do not add new top-level `migrate:*` or `chat:sessions:*` package scripts.
 - `docs/`: architecture notes, operational guidance, and decisions. Update the relevant document when a change alters a documented boundary or workflow.
-- Root configuration files (`package.json`, `pnpm-workspace.yaml`, `biome.json`, and similar): workspace-wide tooling/configuration only. Desktop-specific TypeScript/Vite/Tauri configuration belongs under `apps/desktop/`.
-- `.data/`, `.cache/`, `dist/`, `apps/tauri/src-tauri/target/`, and generated sidecar/binary output: local or generated artifacts. Do not add application source code or secrets to these paths, and do not edit generated output by hand.
+- Root configuration files (`package.json`, `pnpm-workspace.yaml`, `biome.json`, and similar): workspace-wide tooling/configuration only. Desktop-specific TypeScript/Vite configuration belongs under `apps/desktop/`; Electron host configuration belongs under `apps/electron/`.
+- `.data/`, `.cache/`, `dist/`, `apps/electron/dist-electron/`, and generated sidecar/binary output: local or generated artifacts. Do not add application source code or secrets to these paths, and do not edit generated output by hand.
 
 ### Dependencies and Tests
 
-- Keep the dependency direction explicit: pages/layouts/components may use `apps/desktop/src/lib/`, `packages/shared/`, and `apps/desktop/src/components/ui/`; `apps/desktop/src/lib/` may use `packages/shared/` and `@chatdesk/chat-server-client`; `packages/shared/` stays platform-neutral; `packages/chat-server-client` may use `packages/shared/` and `fetch` / `EventSource`; `packages/agent-core` may use `packages/shared/` and Node APIs; `apps/server` and `apps/cli` may use `@chatdesk/agent-core` and `packages/shared/`; `apps/tauri/src-tauri` remains a separate native boundary.
+- Keep the dependency direction explicit: pages/layouts/components may use `apps/desktop/src/lib/`, `packages/shared/`, and `apps/desktop/src/components/ui/`; `apps/desktop/src/lib/` may use `packages/shared/` and `@chatdesk/chat-server-client`; `packages/shared/` stays platform-neutral; `packages/chat-server-client` may use `packages/shared/` and `fetch` / `EventSource`; `packages/agent-core` may use `packages/shared/` and Node APIs; `apps/server` and `apps/cli` may use `@chatdesk/agent-core` and `packages/shared/`; `apps/electron` and `packages/desktop-host` remain a separate native host boundary.
 - Put a test beside the implementation it exercises (`*.test.ts` or `*.test.tsx`) and use the test runner for that runtime. Do not introduce a second test framework or a frontend test setup in an unrelated directory without documenting the choice.
 - When a change crosses a boundary, update the adapter and its contract at that boundary instead of reaching through it. For example, add a Chat Server endpoint in `apps/server`, the HTTP/SSE method on `ChatServerClient` in `packages/chat-server-client`, the desktop wrapper in `apps/desktop/src/lib/chat-server.ts`, and the consuming query/mutation in the owning page or component.

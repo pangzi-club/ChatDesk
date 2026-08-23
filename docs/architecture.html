@@ -134,11 +134,11 @@
         <h1>本地 AI 工作台 · <span class="grad">三进程 + 一个真相源</span></h1>
         <p class="lede">
           ChatDesk 把会话、流式事件、模型适配、工具执行、文件与终端都装进同一个本机进程群。
-          UI 只负责渲染与发指令；Node HTTP Server 是 Session / Run 的唯一真相源；Tauri
+          UI 只负责渲染与发指令；Node HTTP Server 是 Session / Run 的唯一真相源；Electron
           负责拉起 sidecar、注入 token、提供原生能力与沙箱。
         </p>
         <div class="badges">
-          <span class="badge tauri"><span class="dot"></span>Tauri 2</span>
+          <span class="badge tauri"><span class="dot"></span>Electron</span>
           <span class="badge react"><span class="dot"></span>React 19 + Vite 7</span>
           <span class="badge node"><span class="dot"></span>Node 22 (--watch + strip-types)</span>
           <span class="badge hono"><span class="dot"></span>Hono 4</span>
@@ -150,8 +150,8 @@
       <section>
         <h2><span class="num">01</span> 顶层视图</h2>
         <p class="sub">
-          单窗口桌面应用由 Tauri 壳、WebView 中的 React UI、以及一个被 Tauri 拉起的 Node Chat Server 组成。
-          三者通过本机 HTTP / SSE 通信，端口由 Tauri 启动时随机分配并通过 token 鉴权。
+          单窗口桌面应用由 Electron 壳、WebView 中的 React UI、以及一个被 Electron 拉起的 Node Chat Server 组成。
+          三者通过本机 HTTP / SSE 通信，端口由 Electron 启动时随机分配并通过 token 鉴权。
         </p>
         <div class="diagram">
           <div class="label">System Topology</div>
@@ -177,26 +177,26 @@
             <!-- Desktop cluster -->
             <g>
               <rect x="20" y="20" width="320" height="500" rx="14" fill="#11141b" stroke="#262c3a" />
-              <text x="40" y="48" class="svg-mono" font-size="13" fill="#e0af68" font-weight="700">🖥️  Tauri Shell (Rust)</text>
+              <text x="40" y="48" class="svg-mono" font-size="13" fill="#e0af68" font-weight="700">🖥️  Electron Shell</text>
 
               <rect x="40" y="70" width="280" height="60" rx="8" fill="#1c2230" stroke="#2f364a" />
               <text x="60" y="94" class="svg-text" font-size="13" fill="#e6e9f2" font-weight="600">WebView Window</text>
               <text x="60" y="114" class="svg-mono" font-size="11" fill="#9aa3b6">titlebar + tray</text>
 
               <rect x="40" y="150" width="280" height="60" rx="8" fill="#1c2230" stroke="#2f364a" />
-              <text x="60" y="174" class="svg-text" font-size="13" fill="#e6e9f2" font-weight="600">Tauri Commands</text>
-              <text x="60" y="194" class="svg-mono" font-size="11" fill="#9aa3b6">invoke handlers</text>
+              <text x="60" y="174" class="svg-text" font-size="13" fill="#e6e9f2" font-weight="600">IPC Commands</text>
+              <text x="60" y="194" class="svg-mono" font-size="11" fill="#9aa3b6">preload bridge</text>
 
               <rect x="40" y="230" width="280" height="60" rx="8" fill="#1c2230" stroke="#2f364a" />
               <text x="60" y="254" class="svg-text" font-size="13" fill="#e6e9f2" font-weight="600">Sidecar Manager</text>
-              <text x="60" y="274" class="svg-mono" font-size="11" fill="#9aa3b6">ChatServerManager</text>
+              <text x="60" y="274" class="svg-mono" font-size="11" fill="#9aa3b6">ChatServerSupervisor</text>
 
               <rect x="40" y="310" width="280" height="60" rx="8" fill="#1c2230" stroke="#2f364a" />
               <text x="60" y="334" class="svg-text" font-size="13" fill="#e6e9f2" font-weight="600">Seatbelt Sandbox</text>
-              <text x="60" y="354" class="svg-mono" font-size="11" fill="#9aa3b6">services/seatbelt.rs</text>
+              <text x="60" y="354" class="svg-mono" font-size="11" fill="#9aa3b6">sandbox-exec</text>
 
               <rect x="40" y="390" width="280" height="60" rx="8" fill="#1c2230" stroke="#2f364a" />
-              <text x="60" y="414" class="svg-text" font-size="13" fill="#e6e9f2" font-weight="600">portable-pty</text>
+              <text x="60" y="414" class="svg-text" font-size="13" fill="#e6e9f2" font-weight="600">node-pty</text>
               <text x="60" y="434" class="svg-mono" font-size="11" fill="#9aa3b6">terminal</text>
             </g>
 
@@ -255,7 +255,7 @@
 
             <!-- Arrows: Desktop → Browser -->
             <line x1="320" y1="100" x2="380" y2="100" stroke="#7aa2f7" stroke-width="2" marker-end="url(#arr)" />
-            <text x="350" y="92" class="svg-mono" font-size="10" fill="#7aa2f7" text-anchor="middle">invoke()</text>
+            <text x="350" y="92" class="svg-mono" font-size="10" fill="#7aa2f7" text-anchor="middle">bridge</text>
 
             <!-- Sidecar spawn → Node (dashed) -->
             <path d="M 180 290 Q 460 540 880 70" stroke="#e0af68" stroke-width="2" fill="none" stroke-dasharray="6 4" marker-end="url(#arrOrange)" />
@@ -275,9 +275,9 @@
       <section>
         <h2><span class="num">02</span> Monorepo 布局</h2>
         <p class="sub">
-          pnpm workspace 三个包：浏览器壳、Node 服务、共享合约。三条依赖方向：UI → Chat Server 通过
-          <code>@chatdesk/chat-server-client</code> 边界；两侧共用 <code>@chatdesk/shared</code>；Tauri
-          是独立原生层，不被其他包直接 import。
+          pnpm workspace：浏览器 renderer、Electron 宿主、Node 服务、共享合约。UI → Chat Server 通过
+          <code>@chatdesk/chat-server-client</code> 边界；两侧共用 <code>@chatdesk/shared</code>；Electron
+          是独立原生层，不被 renderer 直接 import。
         </p>
         <div class="diagram">
           <svg viewBox="0 0 1080 480" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Monorepo Layout">
@@ -301,7 +301,7 @@
             <rect x="40" y="180" width="320" height="80" rx="10" fill="#161a23" stroke="#262c3a" />
             <text x="200" y="208" class="svg-text" font-size="13" fill="#e6e9f2" font-weight="600" text-anchor="middle">apps/desktop</text>
             <text x="200" y="228" class="svg-mono" font-size="11" fill="#7dcfff" text-anchor="middle">chatdesk-desktop</text>
-            <text x="200" y="246" class="svg-mono" font-size="11" fill="#9aa3b6" text-anchor="middle">React + Vite + Tauri shell</text>
+            <text x="200" y="246" class="svg-mono" font-size="11" fill="#9aa3b6" text-anchor="middle">React + Vite renderer</text>
 
             <rect x="380" y="180" width="320" height="80" rx="10" fill="#161a23" stroke="#262c3a" />
             <text x="540" y="208" class="svg-text" font-size="13" fill="#e6e9f2" font-weight="600" text-anchor="middle">apps/server</text>
@@ -309,9 +309,9 @@
             <text x="540" y="246" class="svg-mono" font-size="11" fill="#9aa3b6" text-anchor="middle">Hono + Node 22</text>
 
             <rect x="720" y="180" width="320" height="80" rx="10" fill="#161a23" stroke="#262c3a" />
-            <text x="880" y="208" class="svg-text" font-size="13" fill="#e6e9f2" font-weight="600" text-anchor="middle">apps/tauri/src-tauri</text>
-            <text x="880" y="228" class="svg-mono" font-size="11" fill="#e0af68" text-anchor="middle">chatdesk · Rust crate</text>
-            <text x="880" y="246" class="svg-mono" font-size="11" fill="#9aa3b6" text-anchor="middle">Tauri commands + services</text>
+            <text x="880" y="208" class="svg-text" font-size="13" fill="#e6e9f2" font-weight="600" text-anchor="middle">apps/electron</text>
+            <text x="880" y="228" class="svg-mono" font-size="11" fill="#e0af68" text-anchor="middle">chatdesk-electron</text>
+            <text x="880" y="246" class="svg-mono" font-size="11" fill="#9aa3b6" text-anchor="middle">main / preload / IPC</text>
 
             <rect x="180" y="310" width="280" height="80" rx="10" fill="#161a23" stroke="#262c3a" />
             <text x="320" y="338" class="svg-text" font-size="13" fill="#e6e9f2" font-weight="600" text-anchor="middle">packages/shared</text>
@@ -652,13 +652,13 @@
       </section>
 
       <section>
-        <h2><span class="num">06</span> Tauri 原生层</h2>
+        <h2><span class="num">06</span> Electron 原生层</h2>
         <p class="sub">
-          Rust 侧只做薄命令 + 服务：拉起 sidecar、注入 token、提供 sandbox / 终端 / 文件 / git 原生能力。
-          业务逻辑留在 Node；前端通过 <code>@/lib/*</code> 中的小适配器调用 <code>invoke</code>。
+          Electron main 只做薄 IPC + 服务：拉起 Chat Server、注入 token、提供终端 / 文件 / HTTP 代理。
+          业务逻辑留在 Node；前端通过 <code>DesktopBridge</code> 调用宿主能力。
         </p>
         <div class="diagram">
-          <svg viewBox="0 0 1080 460" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Tauri Native Layer">
+          <svg viewBox="0 0 1080 460" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Electron Native Layer">
             <defs>
               <marker id="m6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
                 <path d="M 0 0 L 10 5 L 0 10 z" fill="#7aa2f7" />
@@ -677,30 +677,30 @@
 
             <rect x="40" y="150" width="260" height="50" rx="6" fill="#1c2230" stroke="#2f364a" />
             <text x="170" y="173" text-anchor="middle" class="svg-text" font-size="12" fill="#e6e9f2" font-weight="600">settings-store.ts</text>
-            <text x="170" y="189" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">tauri-plugin-store</text>
+            <text x="170" y="189" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">userData JSON</text>
 
             <rect x="40" y="220" width="260" height="50" rx="6" fill="#1c2230" stroke="#2f364a" />
             <text x="170" y="243" text-anchor="middle" class="svg-text" font-size="12" fill="#e6e9f2" font-weight="600">terminal.ts</text>
-            <text x="170" y="259" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">portable-pty 桥</text>
+            <text x="170" y="259" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">node-pty 桥</text>
 
             <rect x="360" y="30" width="340" height="380" rx="10" fill="#11141b" stroke="#262c3a" />
-            <text x="380" y="58" class="svg-text" font-size="13" fill="#e0af68" font-weight="700">Tauri 2</text>
+            <text x="380" y="58" class="svg-text" font-size="13" fill="#e0af68" font-weight="700">Electron</text>
 
             <rect x="380" y="80" width="300" height="50" rx="6" fill="#1c2230" stroke="#2f364a" />
-            <text x="530" y="103" text-anchor="middle" class="svg-text" font-size="12" fill="#e6e9f2" font-weight="600">lib.rs</text>
-            <text x="530" y="119" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">插件装载 · 托盘</text>
+            <text x="530" y="103" text-anchor="middle" class="svg-text" font-size="12" fill="#e6e9f2" font-weight="600">main.ts</text>
+            <text x="530" y="119" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">窗口 · 托盘 · IPC</text>
 
             <rect x="380" y="150" width="300" height="100" rx="6" fill="#1c2230" stroke="#2f364a" />
-            <text x="530" y="173" text-anchor="middle" class="svg-text" font-size="12" fill="#e6e9f2" font-weight="600">commands/</text>
-            <text x="530" y="193" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">sandbox · terminal · vite ·</text>
-            <text x="530" y="209" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">chat_server · automation ·</text>
-            <text x="530" y="225" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">workspaces · image · system_log</text>
+            <text x="530" y="173" text-anchor="middle" class="svg-text" font-size="12" fill="#e6e9f2" font-weight="600">preload / IPC</text>
+            <text x="530" y="193" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">DesktopBridge · http-bridge ·</text>
+            <text x="530" y="209" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">terminal-manager ·</text>
+            <text x="530" y="225" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">renderer-protocol</text>
 
             <rect x="380" y="270" width="300" height="100" rx="6" fill="#1c2230" stroke="#2f364a" />
-            <text x="530" y="293" text-anchor="middle" class="svg-text" font-size="12" fill="#e6e9f2" font-weight="600">services/</text>
-            <text x="530" y="313" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">chat_server · terminal · seatbelt ·</text>
-            <text x="530" y="329" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">automation · git · process ·</text>
-            <text x="530" y="345" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">workspace_fs · user_data</text>
+            <text x="530" y="293" text-anchor="middle" class="svg-text" font-size="12" fill="#e6e9f2" font-weight="600">desktop-host</text>
+            <text x="530" y="313" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">ChatServerSupervisor ·</text>
+            <text x="530" y="329" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">loopback · token · restart ·</text>
+            <text x="530" y="345" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">graceful stop</text>
 
             <rect x="740" y="30" width="320" height="160" rx="10" fill="#11141b" stroke="#262c3a" />
             <text x="760" y="58" class="svg-text" font-size="13" fill="#9ece6a" font-weight="700">外部进程</text>
@@ -714,9 +714,9 @@
             <text x="900" y="189" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">browser tool</text>
 
             <line x1="300" y1="105" x2="380" y2="200" stroke="#7aa2f7" stroke-width="1.5" marker-end="url(#m6)" />
-            <text x="340" y="146" text-anchor="middle" class="svg-mono" font-size="10" fill="#7aa2f7">invoke()</text>
+            <text x="340" y="146" text-anchor="middle" class="svg-mono" font-size="10" fill="#7aa2f7">bridge</text>
             <line x1="300" y1="245" x2="380" y2="320" stroke="#7aa2f7" stroke-width="1.5" marker-end="url(#m6)" />
-            <text x="340" y="288" text-anchor="middle" class="svg-mono" font-size="10" fill="#7aa2f7">invoke()</text>
+            <text x="340" y="288" text-anchor="middle" class="svg-mono" font-size="10" fill="#7aa2f7">IPC</text>
 
             <line x1="680" y1="105" x2="760" y2="105" stroke="#9ece6a" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#m6d)" />
             <text x="720" y="98" text-anchor="middle" class="svg-mono" font-size="10" fill="#9ece6a">spawn</text>
@@ -724,19 +724,15 @@
             <text x="720" y="240" text-anchor="middle" class="svg-mono" font-size="10" fill="#9ece6a">invoke</text>
           </svg>
         </div>
-        <div class="code"><span class="c">// apps/tauri/src-tauri/src/lib.rs (节选)</span>
-<span class="k">.invoke_handler</span>(tauri::<span class="k">generate_handler!</span>[
-    commands::sandbox::get_sandbox_info,
-    commands::sandbox::run_shell_command,
-    commands::sandbox::workspace_list_dir,
-    commands::terminal::terminal_spawn,
-    commands::terminal::terminal_write,
-    commands::chat_server::chat_server_info,
-    commands::chat_server::chat_server_restart,
-    services::user_data::read_user_store,
-    services::user_data::write_user_store,
-    commands::automation::sync_automation_tasks,
-])</div>
+        <div class="code"><span class="c">// apps/electron/src/preload.cts (节选)</span>
+const bridge: DesktopBridge = {
+  <span class="k">runtime</span>: <span class="s">"electron"</span>,
+  call: (command, args) => ipcRenderer.invoke(IPC_CHANNEL, { command, args }),
+  subscribe: (event, listener) => { <span class="c">/* chatdesk:event:* */</span> },
+  readUserStore: (fileName) => ipcRenderer.invoke(IPC_CHANNEL, { command: <span class="s">"read_user_store"</span>, args: { fileName } }),
+  selectWorkspaceDirectory: () => ipcRenderer.invoke(IPC_CHANNEL, { command: <span class="s">"select_workspace_directory"</span> }),
+  terminalSpawn: (args, onEvent) => { <span class="c">/* node-pty */</span> },
+}</div>
       </section>
 
       <section>
@@ -771,7 +767,7 @@
             <text x="440" y="216" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">审批记录</text>
 
             <rect x="620" y="60" width="200" height="60" rx="8" fill="#1c2230" stroke="#2f364a" />
-            <text x="720" y="88" text-anchor="middle" class="svg-text" font-size="13" fill="#e6e9f2" font-weight="600">Tauri seatbelt.rs</text>
+            <text x="720" y="88" text-anchor="middle" class="svg-text" font-size="13" fill="#e6e9f2" font-weight="600">sandbox-exec.ts</text>
             <text x="720" y="106" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">实际进程隔离</text>
 
             <rect x="860" y="60" width="180" height="60" rx="8" fill="#11141b" stroke="#9ece6a" />
@@ -801,7 +797,7 @@
         <h2><span class="num">08</span> 共享合约层</h2>
         <p class="sub">
           <code>@chatdesk/shared</code> 只放运行时无关的 TypeScript 类型、Zod schema、常量与算法，
-          不引用 React / DOM / Node / Tauri / fs。两端 <code>tsc --noEmit</code> 共享同一份类型。
+          不引用 React / DOM / Node / Electron / fs。两端 <code>tsc --noEmit</code> 共享同一份类型。
         </p>
         <div class="code">
 <span class="c">// packages/shared/src/index.ts</span>
@@ -865,7 +861,7 @@
 
             <rect x="680" y="260" width="380" height="60" rx="8" fill="#161a23" stroke="#262c3a" />
             <text x="870" y="288" text-anchor="middle" class="svg-text" font-size="12" fill="#e6e9f2" font-weight="600">pnpm desktop:build</text>
-            <text x="870" y="306" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">sidecars + tauri build → 安装包</text>
+            <text x="870" y="306" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">sidecars + electron-builder → 安装包</text>
 
             <rect x="40" y="370" width="1020" height="50" rx="8" fill="#11141b" stroke="#2f364a" />
             <text x="550" y="395" text-anchor="middle" class="svg-text" font-size="13" fill="#7dcfff" font-weight="600">产物</text>
@@ -915,7 +911,7 @@
       <section>
         <h2><span class="num">11</span> 一句话总结</h2>
         <p class="sub">
-          Session / Run 的真相源在本机 Node HTTP Server；UI 只消费 HTTP 与 SSE；Tauri 负责进程与
+          Session / Run 的真相源在本机 Node HTTP Server；UI 只消费 HTTP 与 SSE；Electron 负责进程与
           敏感能力；三层通过 pnpm workspace 与 <code>@chatdesk/shared</code> 的合约共享类型，
           用 <code>@chatdesk/chat-server-client</code> 收紧边界。
         </p>
@@ -938,9 +934,9 @@
             <text x="390" y="148" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">model-adaptor · stores</text>
 
             <rect x="580" y="80" width="220" height="80" rx="10" fill="#1c2230" stroke="#2f364a" />
-            <text x="690" y="110" text-anchor="middle" class="svg-text" font-size="13" fill="#e0af68" font-weight="600">Tauri Shell</text>
+            <text x="690" y="110" text-anchor="middle" class="svg-text" font-size="13" fill="#e0af68" font-weight="600">Electron Shell</text>
             <text x="690" y="130" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">sidecar · sandbox · pty</text>
-            <text x="690" y="148" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">fs · git · invoke()</text>
+            <text x="690" y="148" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">fs · git · DesktopBridge</text>
 
             <rect x="860" y="80" width="200" height="80" rx="10" fill="#1c2230" stroke="#2f364a" />
             <text x="960" y="110" text-anchor="middle" class="svg-text" font-size="13" fill="#bb9af7" font-weight="600">Model Provider</text>
@@ -954,7 +950,7 @@
             <text x="540" y="92" text-anchor="middle" class="svg-mono" font-size="10" fill="#e0af68">spawn + token</text>
 
             <line x1="500" y1="140" x2="580" y2="140" stroke="#7aa2f7" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#ms)" />
-            <text x="540" y="160" text-anchor="middle" class="svg-mono" font-size="10" fill="#e0af68">invoke()</text>
+            <text x="540" y="160" text-anchor="middle" class="svg-mono" font-size="10" fill="#e0af68">IPC</text>
 
             <line x1="800" y1="120" x2="860" y2="120" stroke="#7aa2f7" stroke-width="1.5" marker-end="url(#ms)" />
             <text x="830" y="112" text-anchor="middle" class="svg-mono" font-size="10" fill="#7aa2f7">streamText</text>

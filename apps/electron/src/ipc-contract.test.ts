@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { validateAssetPath, validateExternalUrl, validateUserStoreFile } from "./ipc-contract.js";
 
 describe("Electron IPC validation", () => {
-  it("allows only the user stores shared with Tauri", () => {
+  it("allows only the desktop user stores", () => {
     expect(validateUserStoreFile("settings.json")).toBe("settings.json");
     expect(() => validateUserStoreFile("../secrets.json")).toThrow();
   });

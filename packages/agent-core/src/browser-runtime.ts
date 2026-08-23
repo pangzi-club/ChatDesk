@@ -13,11 +13,11 @@ type BrowserResponse = {
   message?: string;
 };
 
-const SOURCE_WORKER_FROM_SRC = "../../../apps/tauri/src-tauri/src/sidecar/browser-worker.mjs";
+const SOURCE_WORKER_FROM_SRC = "../workers/browser-worker.mjs";
 const SOURCE_BROWSERS_FROM_SRC = "../../../apps/desktop/assets/resources/playwright-browsers";
-const SOURCE_WORKER_FROM_REPO = "apps/tauri/src-tauri/src/sidecar/browser-worker.mjs";
+const SOURCE_WORKER_FROM_REPO = "packages/agent-core/workers/browser-worker.mjs";
 const SOURCE_BROWSERS_FROM_REPO = "apps/desktop/assets/resources/playwright-browsers";
-const SOURCE_WORKER_FROM_PACKAGE = "../../apps/tauri/src-tauri/src/sidecar/browser-worker.mjs";
+const SOURCE_WORKER_FROM_PACKAGE = "workers/browser-worker.mjs";
 const SOURCE_BROWSERS_FROM_PACKAGE = "../../apps/desktop/assets/resources/playwright-browsers";
 
 function chatServerSourceDir(): string | undefined {
@@ -25,7 +25,7 @@ function chatServerSourceDir(): string | undefined {
   // import.meta.url is the real module path under packages/agent-core/src.
   // The packaged sidecar is esbuild --format=cjs: import.meta becomes {} and
   // .url is undefined. Do not call fileURLToPath at module top-level — that
-  // throws on load and blocks Tauri's CHAT_SERVER_* env resolution.
+  // throws on load and blocks the host-injected CHAT_SERVER_* env resolution.
   try {
     const url = import.meta.url;
     if (typeof url === "string" && url.length > 0) {
@@ -56,7 +56,7 @@ export function resolveBrowserWorkerScript(
   env: NodeJS.ProcessEnv = process.env,
   exists: (file: string) => boolean = existsSync,
 ) {
-  // Packaged apps: Tauri injects CHAT_SERVER_BROWSER_WORKER. That is the only
+  // Packaged apps: Electron injects CHAT_SERVER_BROWSER_WORKER. That is the only
   // reliable locator in the CJS sidecar because import.meta.url is empty.
   const configured = env.CHAT_SERVER_BROWSER_WORKER || env.M_DASHBOARD_BROWSER_WORKER;
   if (configured) return configured;

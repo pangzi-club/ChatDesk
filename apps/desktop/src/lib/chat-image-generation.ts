@@ -140,7 +140,7 @@ function mergeAttachments(
   return [...byId.values()];
 }
 
-/** 将 image_generation 结果落盘（Tauri）或转为 data URL（Web），并改写 message parts。 */
+/** 将 image_generation 结果落盘（桌面）或转为 data URL（Web），并改写 message parts。 */
 export async function materializeGeneratedImages(
   sessionId: string,
   messages: UIMessage[],

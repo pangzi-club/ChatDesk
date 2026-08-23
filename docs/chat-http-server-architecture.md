@@ -31,14 +31,14 @@
 
 选定 HTTP Server，不等于放弃「由桌面 App 拉起进程」。推荐形态是：
 
-> Tauri（或其它壳）负责启动 / 保活 / 退出清理；对外交互使用本机 HTTP（及 SSE/WebSocket 事件流）。
+> Electron 负责启动 / 保活 / 退出清理；对外交互使用本机 HTTP（及 SSE/WebSocket 事件流）。
 
 ### 2.3 职责划分
 
 ```text
 UI（Chat 页 / 侧栏）
   → HTTP / SSE（或 WS）：发指令、订阅读状态与消息流
-Tauri（或其它宿主）
+Electron（桌面宿主）
   → 拉起 Node 进程、注入配置与 token、退出时优雅关闭
   →（可选）代理敏感工具执行、会话落盘路径
 Node HTTP Server
@@ -67,7 +67,7 @@ Node HTTP Server
 
 - 提供可独立启动的 Node 入口（不启桌面壳也能跑，便于调试）；
 - 读取宿主注入的配置：监听地址、端口、token、数据目录、模型相关密钥等；
-- 浏览器工具依赖 `CHAT_SERVER_BROWSER_WORKER`：开发态 ESM 用 `import.meta.url` 回退到源码 `browser-worker.mjs`，打包态由 Tauri 注入共享 Node runtime 内的普通 JS worker 路径；缺失时打包启动直接失败；
+- 浏览器工具依赖 `CHAT_SERVER_BROWSER_WORKER`：开发态 ESM 用 `import.meta.url` 回退到源码 `packages/agent-core/workers/browser-worker.mjs`，打包态由 Electron 注入共享 Node runtime 内的普通 JS worker 路径；缺失时打包启动直接失败；
 - 健康检查（如 `GET /health`）；
 - 优雅关闭：停止接受新 run，尽量结束或持久化进行中状态后退出。
 
@@ -119,7 +119,7 @@ Server 负责「何时调工具、如何把结果写回模型」；工具的真�
 
 | 阶段 | 行为 |
 |------|------|
-| 第一期 | Server 发出 `tool.request`，由 Tauri/宿主执行现有 `invoke`（workspace、bash、MCP 等），再回传 `tool.result` |
+| 第一期 | Server 发出 `tool.request`，由宿主执行现有能力（workspace、bash、MCP 等），再回传 `tool.result` |
 | 后续 | 视需要将部分只读或低风险工具内置进 server，仍保留 ACL |
 
 不建议第一期把 FS/MCP/权限模型整份搬进 Node，以免与现有 Rust 能力重复且扩大攻击面。
@@ -155,7 +155,7 @@ Server 负责「何时调工具、如何把结果写回模型」；工具的真�
 - `apps/desktop/src/lib/chat-server.ts`：桌面端适配层，注入端口、token 与宿主 fetch。
 - `apps/desktop/src/pages/chat.tsx`：Chat 页面，消费 HTTP 客户端，切页不中断生成。
 - `apps/desktop/src/lib/chat-routes.ts`：桌面 Chat URL 身份（`/chat/new` 草稿与 `/chat/:sessionId` 会话）。
-- `apps/tauri/src-tauri/src/services/chat_server.rs`：Tauri 侧进程拉起、token 注入、优雅退出。
+- `packages/desktop-host/src/chat-server-supervisor.ts`：Electron 侧进程拉起、token 注入、优雅退出。
 
 ### 4.1 桌面 Chat URL
 

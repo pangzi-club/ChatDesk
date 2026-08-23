@@ -15,8 +15,7 @@ export function printHelp() {
   pnpm version:set -- <version>
   pnpm version:set -- <version> --dry-run
 
-把 workspace 内所有 package.json 的 version 改成同一值。忽略 apps/tauri，也不改
-Tauri 的 tauri.conf.json / Cargo.toml。
+把 workspace 内所有 package.json 的 version 改成同一值。
 
 示例：
   pnpm version:set -- 0.5.0
@@ -45,9 +44,8 @@ export function parseArgs(argv) {
   return options;
 }
 
-export function shouldSkipManifest(relativePath) {
-  const normalized = relativePath.split(path.sep).join("/");
-  return normalized === "apps/tauri/package.json" || normalized.startsWith("apps/tauri/");
+export function shouldSkipManifest(_relativePath) {
+  return false;
 }
 
 export function applyPackageVersion(source, version) {
@@ -160,7 +158,7 @@ async function main(argv = process.argv.slice(2)) {
 
   const changed = results.filter((result) => result.changed).length;
   console.log(
-    `\n${options.dryRun ? "预览完成（未写入文件）" : "已更新"}：${changed}/${results.length} 个 package.json（已忽略 apps/tauri）`,
+    `\n${options.dryRun ? "预览完成（未写入文件）" : "已更新"}：${changed}/${results.length} 个 package.json`,
   );
   return 0;
 }

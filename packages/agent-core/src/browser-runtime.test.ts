@@ -9,7 +9,7 @@ import {
 
 const sourceWorker = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
-  "../../../apps/tauri/src-tauri/src/sidecar/browser-worker.mjs",
+  "../workers/browser-worker.mjs",
 );
 
 describe("browser worker resolution", () => {
@@ -36,12 +36,9 @@ describe("browser worker resolution", () => {
   it("falls back to a repo-relative path from cwd when the ESM file path is absent", () => {
     const fromRepoRoot = path.resolve(
       process.cwd(),
-      "apps/tauri/src-tauri/src/sidecar/browser-worker.mjs",
+      "packages/agent-core/workers/browser-worker.mjs",
     );
-    const fromPackageDir = path.resolve(
-      process.cwd(),
-      "../../apps/tauri/src-tauri/src/sidecar/browser-worker.mjs",
-    );
+    const fromPackageDir = path.resolve(process.cwd(), "workers/browser-worker.mjs");
     const result = resolveBrowserWorkerScript(
       {},
       (file) => file === fromRepoRoot || file === fromPackageDir,

@@ -103,7 +103,7 @@ export async function loadShortcutSettings(): Promise<ShortcutSettings> {
       const stored = await settingsStore.get<unknown>(SHORTCUTS_STORE_KEY);
       if (stored) return normalizeShortcuts(stored);
     } catch (error) {
-      console.error("Failed to load shortcut settings from Tauri Store", error);
+      console.error("Failed to load shortcut settings from desktop store", error);
     }
   }
 
@@ -124,7 +124,7 @@ export async function saveShortcutSettings(settings: ShortcutSettings) {
       await settingsStore.save();
       window.localStorage.removeItem(SHORTCUTS_STORAGE_KEY);
     } catch (error) {
-      console.error("Failed to save shortcut settings to Tauri Store", error);
+      console.error("Failed to save shortcut settings to desktop store", error);
       window.localStorage.setItem(SHORTCUTS_STORAGE_KEY, JSON.stringify(settings));
     }
   } else {

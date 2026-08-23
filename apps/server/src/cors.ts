@@ -1,10 +1,4 @@
-const STATIC_ORIGINS = new Set([
-  "null",
-  "tauri://localhost",
-  "http://tauri.localhost",
-  "https://tauri.localhost",
-  "chatdesk://localhost",
-]);
+const STATIC_ORIGINS = new Set(["null", "chatdesk://localhost"]);
 
 export function isAllowedChatServerCorsOrigin(origin: string) {
   if (!origin) return false;

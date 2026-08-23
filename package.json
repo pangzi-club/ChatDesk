@@ -16,7 +16,6 @@
   "scripts": {
     "dev": "node scripts/dev-electron.mjs",
     "dev:all": "node scripts/dev-electron.mjs",
-    "tauri:dev": "node scripts/dev-all.mjs",
     "desktop:dev": "node scripts/dev-electron.mjs",
     "dev:web": "pnpm --filter chatdesk-desktop dev",
     "dev:server": "pnpm server:dev",
@@ -48,9 +47,7 @@
     "build:server": "tsc -p tsconfig.server.json",
     "desktop:sidecars": "node scripts/build-sidecars.mjs",
     "desktop:sidecars:verify": "node scripts/verify-browser-worker.mjs",
-    "tauri:package:verify": "pnpm --filter chatdesk-tauri desktop:package:verify",
     "desktop:build": "pnpm electron:package",
-    "tauri:build": "pnpm --filter chatdesk-tauri desktop:build",
     "check": "biome check . && pnpm typecheck",
     "check:write": "biome check --write .",
     "format": "biome check --write .",

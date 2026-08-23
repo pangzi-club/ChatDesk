@@ -37,7 +37,7 @@ export async function loadGeneralSettings(): Promise<GeneralSettings> {
       const stored = await settingsStore.get<unknown>(GENERAL_SETTINGS_STORE_KEY);
       if (stored) return normalizeGeneralSettings(stored);
     } catch (error) {
-      console.error("Failed to load general settings from Tauri Store", error);
+      console.error("Failed to load general settings from desktop store", error);
     }
   }
 
@@ -60,7 +60,7 @@ export async function saveGeneralSettings(settings: GeneralSettings) {
       window.dispatchEvent(new CustomEvent("general-settings-change", { detail: normalized }));
       return;
     } catch (error) {
-      console.error("Failed to save general settings to Tauri Store", error);
+      console.error("Failed to save general settings to desktop store", error);
     }
   }
   window.localStorage.setItem(GENERAL_SETTINGS_STORAGE_KEY, JSON.stringify(normalized));

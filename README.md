@@ -1,6 +1,6 @@
 # ChatDesk
 
-ChatDesk 是一个基于 Electron、React 和 TypeScript 的本地 AI 工作台。它把多模型聊天、会话历史、工作区工具、Skills、MCP、自动化、图片生成和沙箱审批集中在一个桌面应用中；Tauri 仍保留为回退宿主。
+ChatDesk 是一个基于 Electron、React 和 TypeScript 的本地 AI 工作台。它把多模型聊天、会话历史、工作区工具、Skills、MCP、自动化、图片生成和沙箱审批集中在一个桌面应用中。
 
 项目默认在本机运行：Electron 负责桌面窗口和原生能力，Vite 提供 renderer，Node.js Chat Server 负责会话和模型运行。API key 和会话数据保存在本机，不会由本项目代为托管。
 
@@ -10,15 +10,13 @@ ChatDesk 是一个基于 Electron、React 和 TypeScript 的本地 AI 工作台�
 - 多会话、流式响应、用量统计和历史归档导入
 - 工作区文件、终端、Git 和浏览器工具
 - MCP 服务、Skills 管理和可配置的沙箱审批
-- Electron 桌面应用、Tauri 回退宿主、独立运行的本地 Chat Server，以及进程内 CLI（`chatdesk -p`）
+- Electron 桌面应用、独立运行的本地 Chat Server，以及进程内 CLI（`chatdesk -p`）
 
 ## 环境要求
 
 - Node.js 22 或更高版本
 - pnpm 11.19.0（项目通过 `packageManager` 固定）
-- 仅开发前端：无需 Rust
 - Electron 开发和打包：需要 Node.js 22、pnpm 11.19.0，以及当前平台的 Electron native module 构建工具
-- Tauri 回退构建：额外需要 Rust、Tauri CLI 依赖和对应平台的构建工具，详见 [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)
 
 ## 快速开始
 
@@ -45,7 +43,6 @@ pnpm typecheck   # 仅运行各 workspace package 的 tsc
 pnpm shared:test # 运行共享包测试
 pnpm build       # 完整代码构建：shared + Web 前端 + Chat Server
 pnpm desktop:build # 构建 Electron 桌面安装包
-pnpm tauri:build   # 构建 Tauri 回退安装包
 pnpm desktop:sidecars # 仅构建桌面端 sidecar
 pnpm dev:web     # 仅启动 Vite 前端
 pnpm dev:server  # 仅启动 Chat Server
@@ -53,7 +50,6 @@ pnpm server:test # Chat Server 测试
 pnpm chatdesk -- -p "今天天气怎么样"  # 进程内 CLI：默认 workspace 为当前目录
 pnpm add -g ./apps/cli               # 把 chatdesk 装到 pnpm 全局 bin（pnpm 11 已去掉 link --global）
 pnpm desktop:dev # 启动 Electron 桌面开发模式
-pnpm tauri:dev   # 启动 Tauri 回退开发模式
 ```
 
 不要把 `.env.local`、`.data/`、`~/.chatdesk/` 或包含 API key 的导出文件提交到版本库。
@@ -90,14 +86,13 @@ apps/server/src/     Hono Chat Server（连接、鉴权、产品 API）
 packages/agent-core/ Agent harness：会话、Run、工具、沙箱（`@chatdesk/agent-core`）
 packages/shared/     浏览器与服务端共用的运行时无关代码（`@chatdesk/shared`）
 apps/electron/        Electron main/preload 和宿主服务
-apps/tauri/src-tauri/ Tauri 回退命令、原生服务和 sidecar 管理
 docs/                架构、沙箱、数据迁移和桌面打包说明
 scripts/             开发编排与本地数据迁移入口（`pnpm migrate`）
 ```
 
 ## 开源协作
 
-欢迎提交 issue 和 pull request。提交前请运行 `pnpm format`、`pnpm check`、`pnpm build` 和 `pnpm server:test`。涉及 Chat Server、Tauri 边界或数据格式的改动，也请同步更新对应的 `docs/` 或 `apps/server/README.md`。
+欢迎提交 issue 和 pull request。提交前请运行 `pnpm format`、`pnpm check`、`pnpm build` 和 `pnpm server:test`。涉及 Chat Server、Electron 边界或数据格式的改动，也请同步更新对应的 `docs/` 或 `apps/server/README.md`。
 
 ## 许可证
 

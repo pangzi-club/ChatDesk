@@ -1048,7 +1048,10 @@ function AppShell() {
                   }
                 >
                   <div className="flex h-8 shrink-0 items-center select-none">
-                    <div className="h-full w-[72px] shrink-0" data-tauri-drag-region />
+                    <div
+                      className="h-full w-[72px] shrink-0"
+                      style={{ WebkitAppRegion: "drag" } as CSSProperties}
+                    />
                     <MainSidebarToggleButton collapsed={false} onToggle={toggleMainSidebar} />
                     <TitlebarDragRegion className="pointer-events-auto" />
                   </div>
@@ -1208,7 +1211,10 @@ function AppShell() {
               >
                 {mainSidebarState.collapsed ? (
                   <div className="pointer-events-auto flex h-8 shrink-0 items-center self-start">
-                    <div className="h-full w-[72px] shrink-0" data-tauri-drag-region />
+                    <div
+                      className="h-full w-[72px] shrink-0"
+                      style={{ WebkitAppRegion: "drag" } as CSSProperties}
+                    />
                     <MainSidebarToggleButton collapsed onToggle={toggleMainSidebar} />
                   </div>
                 ) : null}
@@ -1385,7 +1391,7 @@ function MainSidebarToggleButton({
       aria-label={label}
       aria-pressed={collapsed}
       className={`relative z-20 size-7 shrink-0 translate-y-0.5 text-muted-foreground pointer-events-auto ${collapsed ? "" : "max-md:hidden"}`}
-      data-tauri-drag-region="false"
+      style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
       onClick={onToggle}
       size="icon"
       title={label}
@@ -3188,7 +3194,7 @@ function ChatWorkspaceWindow({
     >
       <div
         className="chat-workspace-window-tabs"
-        data-tauri-drag-region={split ? "deep" : undefined}
+        style={split ? ({ WebkitAppRegion: "drag" } as CSSProperties) : undefined}
         onPointerDown={split ? undefined : (event) => beginInteraction(event, "move")}
         role="toolbar"
         aria-label="Chat 独立窗口"
@@ -3200,7 +3206,7 @@ function ChatWorkspaceWindow({
                 {/* biome-ignore lint/a11y/noStaticElementInteractions: native tab drag-and-drop target; tab controls remain keyboard accessible */}
                 <div
                   className={`chat-workspace-window-tab ${tab.id === state.activeTabId ? "is-active" : ""} ${draggedTabId === tab.id ? "is-dragging" : ""} ${tabDropTarget?.id === tab.id ? `is-drop-${tabDropTarget.edge}` : ""}`}
-                  data-tauri-drag-region="false"
+                  style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
                   draggable
                   onDragEnd={finishTabDrag}
                   onDragOver={(event) => updateTabDropTarget(event, tab.id)}

@@ -1,4 +1,4 @@
-export type DesktopRuntime = "tauri" | "electron";
+export type DesktopRuntime = "electron";
 
 export type DesktopUserStoreFile = "settings.json" | "bookmarks.json";
 

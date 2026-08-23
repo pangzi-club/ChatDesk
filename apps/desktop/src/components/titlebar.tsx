@@ -6,7 +6,6 @@ function TitlebarDragRegion({ className = "" }: { className?: string }) {
     // biome-ignore lint/a11y/useSemanticElements: 1
     <div
       className={`h-full min-w-0 flex-1 ${className}`}
-      data-tauri-drag-region
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       role="button"
       tabIndex={0}

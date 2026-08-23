@@ -1,13 +1,14 @@
 # Electron 迁移计划
 
+**状态**：Tauri 回退宿主已删除。桌面运行时只保留 Electron；browser worker 源文件位于 `packages/agent-core/workers/browser-worker.mjs`。
+
 ## 目标
 
 将 ChatDesk 从 Tauri 逐步迁移到 Electron，同时保持以下边界不变：
 
 - React/Vite renderer 继续位于 `apps/desktop`；
 - `@chatdesk/agent-core` 继续作为 Session/Run 真相源，`apps/server` 继续作为 HTTP 入口；
-- HTTP/SSE、会话格式和 `~/.chatdesk` 数据目录保持向后兼容；
-- Tauri 在 Electron 达到稳定发布标准前继续作为可回滚宿主。
+- HTTP/SSE、会话格式和 `~/.chatdesk` 数据目录保持向后兼容。
 
 迁移不是把 Rust 代码逐文件翻译成 Node，而是让 Electron 成为第二个宿主，实现与 Tauri 相同的桌面能力契约。
 
@@ -23,7 +24,7 @@ packages/shared                跨运行时的 IPC 类型和协议
 shared Node runtime            Chat Server、sandbox、browser worker
 ```
 
-Renderer 不直接调用 Electron、Tauri 或 Node API。所有宿主能力通过 bridge 进入；Tauri 和 Electron 分别提供自己的适配器。
+Renderer 不直接调用 Electron 或 Node API。所有宿主能力通过 bridge 进入。
 
 ## 分阶段执行
 
@@ -101,7 +102,8 @@ Renderer 不直接调用 Electron、Tauri 或 Node API。所有宿主能力通�
 - [x] Chat Server 在共享数据目录上增加实例锁，Tauri/Electron 不能同时启动同一份 Chat Server 数据。
 - [x] 旧数据迁移记录新增文件与设置备份，支持异常中断后通过 manifest 安全回滚。
 - [x] 在当前 macOS 主机生成并检查 Electron DMG/ZIP，产物包含 renderer、Node runtime、Chat Server、Playwright 和 `node-pty` native 模块。
-- [x] 将根目录 `pnpm dev`、`pnpm desktop:dev` 和 `pnpm desktop:build` 切换到 Electron，并保留 `tauri:dev` / `tauri:build` 回退命令。
+- [x] 将根目录 `pnpm dev`、`pnpm desktop:dev` 和 `pnpm desktop:build` 切换到 Electron。
+- [x] 删除 Tauri 回退宿主（`apps/tauri`）并将 browser worker 迁到 `packages/agent-core/workers`。
 - [ ] 完成 Windows/Linux 安装包、签名和安装后 smoke test。
 
 ## 验收命令

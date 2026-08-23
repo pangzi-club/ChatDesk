@@ -2,7 +2,7 @@
   "name": "@chatdesk/desktop-host",
   "private": true,
   "version": "0.5.0",
-  "description": "Desktop host services shared by Tauri and Electron",
+  "description": "Desktop host services for the Electron Chat Server supervisor",
   "license": "MIT",
   "packageManager": "pnpm@11.19.0",
   "type": "module",

@@ -18,7 +18,7 @@ await verifyRuntimeDependencies();
 await verifyBrowserWorker();
 
 async function resolveLayout(args) {
-  if (args[0] !== "--app" && args[0] !== "--electron-app") {
+  if (args[0] !== "--electron-app") {
     const targetTriple = process.env.DESKTOP_TARGET_TRIPLE || platformTargetTriple();
     const extension = process.platform === "win32" ? ".exe" : "";
     const resourcesDir = path.join(root, "apps/desktop/assets/resources");
@@ -38,28 +38,18 @@ async function resolveLayout(args) {
   if (process.platform !== "darwin") {
     throw new Error("Packaged application verification currently supports macOS .app bundles");
   }
-  if (args[0] === "--electron-app") {
-    const appPath = path.resolve(args[1] || defaultElectronAppPath());
-    const resourcesRoot = path.join(appPath, "Contents/Resources");
-    const runtimeRoot = path.join(resourcesRoot, "node-runtime");
-    return {
-      nodeRuntime: path.join(
-        resourcesRoot,
-        "binaries",
-        `node-runtime-${process.env.DESKTOP_TARGET_TRIPLE || platformTargetTriple()}`,
-      ),
-      runtimeRoot,
-      worker: path.join(runtimeRoot, "workers/browser-worker.mjs"),
-      browsers: path.join(resourcesRoot, "playwright-browsers"),
-    };
-  }
-  const appPath = path.resolve(args[1] || defaultMacAppPath());
-  const runtimeRoot = path.join(appPath, "Contents/Resources/resources/node-runtime");
+  const appPath = path.resolve(args[1] || defaultElectronAppPath());
+  const resourcesRoot = path.join(appPath, "Contents/Resources");
+  const runtimeRoot = path.join(resourcesRoot, "node-runtime");
   return {
-    nodeRuntime: path.join(appPath, "Contents/MacOS/node-runtime"),
+    nodeRuntime: path.join(
+      resourcesRoot,
+      "binaries",
+      `node-runtime-${process.env.DESKTOP_TARGET_TRIPLE || platformTargetTriple()}`,
+    ),
     runtimeRoot,
     worker: path.join(runtimeRoot, "workers/browser-worker.mjs"),
-    browsers: path.join(appPath, "Contents/Resources/resources/playwright-browsers"),
+    browsers: path.join(resourcesRoot, "playwright-browsers"),
   };
 }
 
@@ -70,14 +60,6 @@ function defaultElectronAppPath() {
     path.join(root, "apps/electron/dist-electron/mac-x64/ChatDesk.app"),
   ];
   return candidates.find((candidate) => existsSync(candidate)) || candidates[0];
-}
-
-function defaultMacAppPath() {
-  const targetTriple = process.env.DESKTOP_TARGET_TRIPLE;
-  const targetRoot = targetTriple
-    ? path.join(root, "apps/tauri/src-tauri/target", targetTriple)
-    : path.join(root, "apps/tauri/src-tauri/target");
-  return path.join(targetRoot, "release/bundle/macos/ChatDesk.app");
 }
 
 async function verifyNodeRuntime() {
