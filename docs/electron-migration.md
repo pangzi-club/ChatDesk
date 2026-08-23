@@ -5,7 +5,7 @@
 将 ChatDesk 从 Tauri 逐步迁移到 Electron，同时保持以下边界不变：
 
 - React/Vite renderer 继续位于 `apps/desktop`；
-- `apps/server` 的 Node HTTP Server 继续作为 Session/Run 真相源；
+- `@chatdesk/agent-core` 继续作为 Session/Run 真相源，`apps/server` 继续作为 HTTP 入口；
 - HTTP/SSE、会话格式和 `~/.chatdesk` 数据目录保持向后兼容；
 - Tauri 在 Electron 达到稳定发布标准前继续作为可回滚宿主。
 
@@ -17,7 +17,8 @@
 apps/desktop/src              React/Vite renderer
   -> desktop bridge            typed host capability boundary
 apps/electron                  Electron main/preload/services（第二阶段引入）
-apps/server                    Chat Server、会话、运行、工具编排
+apps/server                    Chat Server HTTP、鉴权、产品 API
+packages/agent-core            Agent harness：会话、运行、工具编排
 packages/shared                跨运行时的 IPC 类型和协议
 shared Node runtime            Chat Server、sandbox、browser worker
 ```

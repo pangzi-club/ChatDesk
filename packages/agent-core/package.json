@@ -1,0 +1,29 @@
+{
+  "name": "@chatdesk/agent-core",
+  "private": true,
+  "version": "0.5.0",
+  "description": "Node agent harness shared by Chat Server and future TUI",
+  "license": "MIT",
+  "packageManager": "pnpm@11.19.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/mcp": "^2.0.24",
+    "@ai-sdk/openai": "^4.0.31",
+    "@chatdesk/shared": "workspace:*",
+    "ai": "^7.0.51",
+    "sharp": "^0.35.3",
+    "undici": "^7.29.0",
+    "zod": "^4.4.3"
+  },
+  "scripts": {
+    "test": "vitest run --root ../.. --project @chatdesk/agent-core",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "typescript": "7.0.2"
+  }
+}

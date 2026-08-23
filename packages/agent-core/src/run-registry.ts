@@ -73,7 +73,6 @@ import {
 import { runSandboxedShell } from "./sandbox-exec.ts";
 import { SandboxReviewLogStore } from "./sandbox-review-log.ts";
 import { createReadSkillTool, loadBuiltinSkillsCatalog, SKILL_TOOL_NAME } from "./skill-tool.ts";
-import { withSseKeepAlive } from "./sse-keepalive.ts";
 import type { SessionStore } from "./store.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
 import { CREATE_TASK_TOOL_INSTRUCTIONS, createTaskTool } from "./task-tool.ts";
@@ -1260,7 +1259,7 @@ export class RunRegistry {
           reason: diagnosticError(reason),
         }),
       );
-      return withSseKeepAlive(createUIMessageStreamResponse({ stream: observedClientStream }));
+      return createUIMessageStreamResponse({ stream: observedClientStream });
     } catch (error) {
       try {
         const runSummary = withRunDuration(

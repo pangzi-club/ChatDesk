@@ -50,7 +50,7 @@ type ChatAttachment = {
 
 ## 3. Store 方法
 
-`apps/server/src/store.ts` 的 `SessionStore`：
+`packages/agent-core/src/store.ts` 的 `SessionStore`：
 
 - `saveAttachment(sessionId, attachmentId, fileName, bytes)`：写入 `attachments/` 目录（先写 `.tmp` 再 `rename`，避免半截文件），返回落盘路径。
 - `readAttachment(sessionId, attachmentId)`：按 `attachmentId-` 前缀在目录里找到文件并读出。
@@ -97,7 +97,7 @@ type ChatAttachment = {
 ## 8. 限制、压缩与清理
 
 - 用户文件输入侧的限制（单文件 20MB、单次最多 9 个）在前端 `lib/chat-attachments.ts` 约定；超限时 composer 显示错误文案。`POST /attachments` 对解码后的 body 同样拒绝超过 20MB 的附件。
-- 图片在落盘前由 Chat Server 的 Sharp 统一压缩（`apps/server/src/image-compress.ts`），覆盖用户上传、浏览器截图和经上传接口物化的生成图：
+- 图片在落盘前由 Chat Server 的 Sharp 统一压缩（`packages/agent-core/src/image-compress.ts`），覆盖用户上传、浏览器截图和经上传接口物化的生成图：
   - 按 EXIF 旋转；最长边先压到 1280，仍超过 256KB 再降到 1024 / 768。
   - 默认输出 WebP quality 60；超 256KB 再降到 40、28。目标体积 256KB，避免 base64 后撑爆模型上下文。
   - 已够小则跳过：两边都 ≤ 1280、体积 ≤ 256KB，且已是 jpeg/webp/png。
@@ -108,11 +108,11 @@ type ChatAttachment = {
 
 - `packages/shared/src/chat.ts`：`ChatAttachment`、`ChatSession.attachments` 类型。
 - `apps/server/src/app.ts`：`POST/GET/DELETE /v1/sessions/:id/attachments` 路由。
-- `apps/server/src/image-compress.ts`：Sharp 图片压缩。
-- `apps/server/src/store.ts`：`saveAttachment / readAttachment / deleteAttachment / attachmentPath`。
+- `packages/agent-core/src/image-compress.ts`：Sharp 图片压缩。
+- `packages/agent-core/src/store.ts`：`saveAttachment / readAttachment / deleteAttachment / attachmentPath`。
 - `packages/chat-client/src/index.ts`：`ChatServerClient.uploadAttachment`。
 - `apps/desktop/src/lib/chat-server.ts`：`uploadChatServerAttachment` 封装。
 - `apps/desktop/src/lib/chat-image-generation.ts`：现有「落盘 + 回填 + 改写 parts」范式（`mergeAttachments` / `materializeGeneratedImages`）。
 - `apps/desktop/src/lib/chat-browser-screenshots.ts`：浏览器截图「已落盘 + 回填 session.attachments」。
 - `apps/desktop/src/lib/chat-markdown-images.ts`：Markdown 本地文件图片 src 转 `assetUrl`。
-- `apps/server/src/browser-screenshot.ts`：截图附件路径与 tool output 字段。
+- `packages/agent-core/src/browser-screenshot.ts`：截图附件路径与 tool output 字段。

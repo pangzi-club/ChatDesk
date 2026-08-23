@@ -77,20 +77,30 @@ Put new code in the narrowest directory that matches its runtime and responsibil
 - `apps/desktop/src/router/`: route declarations, redirects, route-level layout wiring, and URL parameter mapping only. Keep data fetching and page UI in the page or library that owns it.
 - `apps/desktop/src/lib/`: browser-side domain logic, API clients, persistence adapters, query helpers, parsers, and integrations. Keep this directory free of JSX; wrappers for Chat Server requests and Tauri `invoke` calls belong here so pages and components do not call platform APIs directly.
 - `apps/desktop/src/lib/importers/`: browser-side parsers for imported archive formats. Add a new source-specific importer here and keep the shared archive orchestration in `apps/desktop/src/lib/chat-archive.ts`.
-- `packages/shared/`: runtime-neutral TypeScript contracts, constants, and algorithms imported by both the browser and `apps/server`. Keep it private to the workspace until a package publishing boundary is intentionally introduced. Do not import React, DOM, Node.js, Tauri, or filesystem APIs from this directory.
+- `packages/shared/`: runtime-neutral TypeScript contracts, constants, and algorithms imported by the browser, `apps/server`, and `packages/agent-core`. Keep it private to the workspace until a package publishing boundary is intentionally introduced. Do not import React, DOM, Node.js, Tauri, or filesystem APIs from this directory.
 - `apps/desktop/src/assets/`: assets imported by Vite from TypeScript/CSS. Put files that must be served at a stable public URL in `apps/desktop/public/` instead.
 - `apps/desktop/src/App.tsx` and `apps/desktop/src/main.tsx`: application bootstrap, providers, and startup initialization only. `apps/desktop/src/App.css` is for global application styles; keep component/page styles close to their owning UI when the existing styling approach permits it.
 
 For browser code, use this decision order: JSX that defines a URL screen belongs in `apps/desktop/src/pages/`; reusable JSX belongs in `apps/desktop/src/components/`; browser-only non-visual behavior belongs in `apps/desktop/src/lib/`; code needed by both browser and server belongs in `packages/shared/`.
 
+### Agent Harness (`packages/agent-core`)
+
+- `packages/agent-core/src/engine.ts`: `createAgentCore` composition root. Initializes session/run stores, `RunRegistry`, jobs, MCP, and related runtimes. Future TUI should import this package in-process instead of talking HTTP.
+- `packages/agent-core/src/run-registry.ts`: Run 真相源——多路生成、abort、status 状态机、toolApproval、上下文压缩、崩溃恢复。
+- `packages/agent-core/src/*.ts`: Node-only harness modules (tools, sandbox, model adaptor, persistence, platform). Keep HTTP, CORS, and SSE out of this package.
+- `packages/agent-core/src/*.test.ts`: Tests colocated with the harness module they exercise.
+- `packages/agent-core/skills/`: builtin skill files shipped with the harness.
+
+`@chatdesk/agent-core` may import `@chatdesk/shared`, Node.js, and AI SDK APIs. It must not import Hono, React, desktop pages, or Tauri code. Desktop UI must not import this package; it reaches the harness through Chat Server HTTP.
+
 ### Local Node Service (`apps/server`)
 
-- `apps/server/src/server.ts`: Node process entrypoint, environment setup, and HTTP server startup.
-- `apps/server/src/app.ts`: Hono app assembly, middleware, authentication, and route registration. Keep substantial route/domain logic in dedicated modules.
-- `apps/server/src/*.ts`: server-side domain modules, stores, runtimes, providers, protocol helpers, and tools. Use a focused module for each responsibility (for example, persistence in `*-store.ts` and execution coordination in `run-registry.ts`).
-- `apps/server/src/*.test.ts`: Node tests colocated with the service source. Keep tests in `apps/server` when they exercise HTTP handlers, server persistence, providers, sandboxing, or other Node-only behavior.
+- `apps/server/src/server.ts`: Node process entrypoint, environment setup, data-directory lock, and HTTP server startup.
+- `apps/server/src/app.ts`: Hono app assembly, middleware, authentication, and route registration. Compose `@chatdesk/agent-core` here; keep HTTP-only product features (archive import, automations) in this package.
+- `apps/server/src/*.ts`: HTTP connection and product API modules (`cors`, `sse-keepalive`, archive/automation stores).
+- `apps/server/src/*.test.ts`: Tests for HTTP handlers and server-only product APIs.
 
-The Node service may import runtime-neutral code from `packages/shared/`, but must not import React components, browser pages, `src/lib/` browser adapters, or Tauri code. Browser callers should reach this service through the client boundary in `src/lib/chat-server.ts`.
+The Node service may import `@chatdesk/agent-core` and `@chatdesk/shared`, but must not import React components, browser pages, `src/lib/` browser adapters, or Tauri code. Browser callers should reach this service through the client boundary in `src/lib/chat-server.ts`.
 
 ### Tauri Desktop Layer (`apps/tauri/src-tauri`)
 
@@ -112,6 +122,6 @@ Frontend code should call native functionality through a small adapter in `apps/
 
 ### Dependencies and Tests
 
-- Keep the dependency direction explicit: pages/layouts/components may use `apps/desktop/src/lib/`, `packages/shared/`, and `apps/desktop/src/components/ui/`; `apps/desktop/src/lib/` may use `packages/shared/`; `packages/shared/` stays platform-neutral; `apps/server` may use only `packages/shared/` across runtimes; `apps/tauri/src-tauri` remains a separate native boundary.
+- Keep the dependency direction explicit: pages/layouts/components may use `apps/desktop/src/lib/`, `packages/shared/`, and `apps/desktop/src/components/ui/`; `apps/desktop/src/lib/` may use `packages/shared/`; `packages/shared/` stays platform-neutral; `packages/agent-core` may use `packages/shared/` and Node APIs; `apps/server` may use `@chatdesk/agent-core` and `packages/shared/`; `apps/tauri/src-tauri` remains a separate native boundary.
 - Put a test beside the implementation it exercises (`*.test.ts` or `*.test.tsx`) and use the test runner for that runtime. Do not introduce a second test framework or a frontend test setup in an unrelated directory without documenting the choice.
 - When a change crosses a boundary, update the adapter and its contract at that boundary instead of reaching through it. For example, add a Chat Server endpoint in `apps/server`, its browser request wrapper in `apps/desktop/src/lib/chat-server.ts`, and the consuming query/mutation in the owning page or component.

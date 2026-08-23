@@ -9,7 +9,7 @@ import {
 
 const sourceWorker = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
-  "../../tauri/src-tauri/src/sidecar/browser-worker.mjs",
+  "../../../apps/tauri/src-tauri/src/sidecar/browser-worker.mjs",
 );
 
 describe("browser worker resolution", () => {
@@ -38,15 +38,15 @@ describe("browser worker resolution", () => {
       process.cwd(),
       "apps/tauri/src-tauri/src/sidecar/browser-worker.mjs",
     );
-    const fromServerDir = path.resolve(
+    const fromPackageDir = path.resolve(
       process.cwd(),
-      "../tauri/src-tauri/src/sidecar/browser-worker.mjs",
+      "../../apps/tauri/src-tauri/src/sidecar/browser-worker.mjs",
     );
     const result = resolveBrowserWorkerScript(
       {},
-      (file) => file === fromRepoRoot || file === fromServerDir,
+      (file) => file === fromRepoRoot || file === fromPackageDir,
     );
-    expect([fromRepoRoot, fromServerDir]).toContain(result);
+    expect([fromRepoRoot, fromPackageDir]).toContain(result);
   });
 
   it("returns undefined when no worker is configured or present", () => {
@@ -56,7 +56,7 @@ describe("browser worker resolution", () => {
   it("uses packaged Playwright browsers only when Chromium is present", () => {
     const browsers = path.resolve(
       path.dirname(fileURLToPath(import.meta.url)),
-      "../../desktop/assets/resources/playwright-browsers",
+      "../../../apps/desktop/assets/resources/playwright-browsers",
     );
     expect(
       resolvePlaywrightBrowsersPath(

@@ -13,16 +13,16 @@ type BrowserResponse = {
   message?: string;
 };
 
-const SOURCE_WORKER_FROM_SRC = "../../tauri/src-tauri/src/sidecar/browser-worker.mjs";
-const SOURCE_BROWSERS_FROM_SRC = "../../desktop/assets/resources/playwright-browsers";
+const SOURCE_WORKER_FROM_SRC = "../../../apps/tauri/src-tauri/src/sidecar/browser-worker.mjs";
+const SOURCE_BROWSERS_FROM_SRC = "../../../apps/desktop/assets/resources/playwright-browsers";
 const SOURCE_WORKER_FROM_REPO = "apps/tauri/src-tauri/src/sidecar/browser-worker.mjs";
 const SOURCE_BROWSERS_FROM_REPO = "apps/desktop/assets/resources/playwright-browsers";
-const SOURCE_WORKER_FROM_SERVER = "../tauri/src-tauri/src/sidecar/browser-worker.mjs";
-const SOURCE_BROWSERS_FROM_SERVER = "../desktop/assets/resources/playwright-browsers";
+const SOURCE_WORKER_FROM_PACKAGE = "../../apps/tauri/src-tauri/src/sidecar/browser-worker.mjs";
+const SOURCE_BROWSERS_FROM_PACKAGE = "../../apps/desktop/assets/resources/playwright-browsers";
 
 function chatServerSourceDir(): string | undefined {
   // Development (`pnpm server:dev`, vitest) runs this file as ESM, so
-  // import.meta.url is the real module path under apps/server/src.
+  // import.meta.url is the real module path under packages/agent-core/src.
   // The packaged sidecar is esbuild --format=cjs: import.meta becomes {} and
   // .url is undefined. Do not call fileURLToPath at module top-level — that
   // throws on load and blocks Tauri's CHAT_SERVER_* env resolution.
@@ -40,15 +40,15 @@ function chatServerSourceDir(): string | undefined {
 function sourceLayoutPaths(kind: "worker" | "browsers"): string[] {
   const fromSrc = kind === "worker" ? SOURCE_WORKER_FROM_SRC : SOURCE_BROWSERS_FROM_SRC;
   const fromRepo = kind === "worker" ? SOURCE_WORKER_FROM_REPO : SOURCE_BROWSERS_FROM_REPO;
-  const fromServer = kind === "worker" ? SOURCE_WORKER_FROM_SERVER : SOURCE_BROWSERS_FROM_SERVER;
+  const fromPackage = kind === "worker" ? SOURCE_WORKER_FROM_PACKAGE : SOURCE_BROWSERS_FROM_PACKAGE;
   const paths: string[] = [];
   const sourceDir = chatServerSourceDir();
-  // ESM source: this file lives in apps/server/src.
+  // ESM source: this file lives in packages/agent-core/src.
   if (sourceDir) paths.push(path.resolve(sourceDir, fromSrc));
   // `pnpm server:dev` / tests from the workspace root.
   paths.push(path.resolve(process.cwd(), fromRepo));
-  // Tests or a manual run whose cwd is apps/server.
-  paths.push(path.resolve(process.cwd(), fromServer));
+  // Tests or a manual run whose cwd is packages/agent-core.
+  paths.push(path.resolve(process.cwd(), fromPackage));
   return [...new Set(paths)];
 }
 

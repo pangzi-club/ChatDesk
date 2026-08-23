@@ -1,5 +1,6 @@
 import { createRequire } from "node:module";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 export const MAX_CHAT_IMAGE_EDGE = 1280;
@@ -35,7 +36,17 @@ function asSharpCtor(mod: unknown): SharpCtor {
 
 function sharpRequireRoots() {
   const packaged = process.env.CHAT_SERVER_SHARP_PATH?.trim();
-  return [...(packaged ? [packaged] : []), path.join(process.cwd(), "apps/server"), process.cwd()];
+  const roots = [...(packaged ? [packaged] : [])];
+  try {
+    const url = import.meta.url;
+    if (typeof url === "string" && url.length > 0) {
+      roots.push(path.join(path.dirname(fileURLToPath(url)), ".."));
+    }
+  } catch {
+    // Empty import.meta in the CJS sidecar bundle.
+  }
+  roots.push(path.join(process.cwd(), "packages/agent-core"), process.cwd());
+  return roots;
 }
 
 export async function loadSharp(): Promise<SharpCtor> {

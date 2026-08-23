@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { DEVELOPMENT_TOOL_NAMES } from "@chatdesk/shared";
 
 import { isDeveloperToolDirectory } from "./developer-environment.ts";
@@ -438,11 +439,21 @@ function resolveSandboxFileEntry() {
   if (currentEntry && /(?:^|[\\/])sandbox-file-entry\.(?:ts|js)$/.test(currentEntry)) {
     return currentEntry;
   }
+  let sourceDir: string | undefined;
+  try {
+    const url = import.meta.url;
+    if (typeof url === "string" && url.length > 0) {
+      sourceDir = path.dirname(fileURLToPath(url));
+    }
+  } catch {
+    // Empty import.meta in the CJS sidecar bundle.
+  }
   const candidates = [
-    path.resolve(process.cwd(), "apps/server/src/sandbox-file-entry.ts"),
+    sourceDir ? path.join(sourceDir, "sandbox-file-entry.ts") : undefined,
+    path.resolve(process.cwd(), "packages/agent-core/src/sandbox-file-entry.ts"),
     path.resolve(process.cwd(), "src/sandbox-file-entry.ts"),
   ];
-  return candidates.find((candidate) => existsSync(candidate));
+  return candidates.find((candidate) => candidate && existsSync(candidate));
 }
 
 function resolveDirectory(value: string) {

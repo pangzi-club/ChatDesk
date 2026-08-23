@@ -132,7 +132,7 @@ ChatDesk 实际使用的 profile 采用 `(deny default)` 策略——默认拒�
 - **网络访问**默认关闭，防止沙箱中的进程向外传输数据。
 - 进程 fork、exec、信号、IPC 等系统调用需要显式 allow。
 
-将路径写入 profile 前，需要转义反斜杠和双引号，并使用规范化后的绝对路径，避免通过符号链接绕过目录边界。完整实现见 `apps/server/src/sandbox-exec.ts` 的 `buildSeatbeltProfile` 函数。
+将路径写入 profile 前，需要转义反斜杠和双引号，并使用规范化后的绝对路径，避免通过符号链接绕过目录边界。完整实现见 `packages/agent-core/src/sandbox-exec.ts` 的 `buildSeatbeltProfile` 函数。
 
 ### 3.2 调用方式
 

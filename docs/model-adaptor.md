@@ -2,11 +2,11 @@
 
 ChatDesk 通过 `@ai-sdk/openai` 接入 OpenAI 兼容的 Chat Completions 和 Responses
 API。供应商在协议细节上并不一致：有的参数会被静默忽略，有的默认值会把多轮历史
-发成对端无法解析的引用。`apps/server/src/model-adaptor.ts` 把这些差异收口到创建
+发成对端无法解析的引用。`packages/agent-core/src/model-adaptor.ts` 把这些差异收口到创建
 语言模型的路径上，避免每个 `streamText` / `generateText` 调用点各自打补丁。
 
-现有请求体改写仍放在供应商自己的 fetch 包装里：Kimi 见 `apps/server/src/kimi.ts`，
-MiniMax 见 `apps/server/src/minimax.ts`。适配器负责 **SDK 调用参数**（例如
+现有请求体改写仍放在供应商自己的 fetch 包装里：Kimi 见 `packages/agent-core/src/kimi.ts`，
+MiniMax 见 `packages/agent-core/src/minimax.ts`。适配器负责 **SDK 调用参数**（例如
 `providerOptions`），fetch 包装负责 **HTTP JSON 字段**。
 
 ## 接入点

@@ -61,7 +61,7 @@ export function resolveBuiltinSkillsRoot(options: BuiltinSkillsResolveOptions = 
     env.CHATDESK_BUILTIN_SKILLS_DIR,
     argv1 ? path.join(path.dirname(argv1), "skills") : undefined,
     sourceDir ? path.resolve(sourceDir, "../skills") : undefined,
-    path.resolve(cwd, "apps/server/skills"),
+    path.resolve(cwd, "packages/agent-core/skills"),
     path.resolve(cwd, "skills"),
   ]);
   return candidates.find((candidate) => exists(candidate));

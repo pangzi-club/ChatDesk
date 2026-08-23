@@ -57,7 +57,7 @@ await writeFile(
 );
 await cp(browserWorkerSource, browserWorkerPath);
 
-const builtinSkillsSource = path.join(root, "apps/server/skills");
+const builtinSkillsSource = path.join(root, "packages/agent-core/skills");
 if (existsSync(builtinSkillsSource)) {
   await cp(builtinSkillsSource, path.join(runtimeWorkersDir, "skills"), { recursive: true });
 }
@@ -84,7 +84,7 @@ if (/\brequire\(["']sharp["']\)/.test(serverBundle) || /\bfrom ["']sharp["']/.te
 }
 
 await runTool("esbuild", [
-  "apps/server/src/sandbox-file-entry.ts",
+  "packages/agent-core/src/sandbox-file-entry.ts",
   "--bundle",
   "--platform=node",
   "--format=cjs",
@@ -94,7 +94,10 @@ await runTool("esbuild", [
 
 const copiedPackages = new Map();
 await copyRuntimeDependency("playwright", createRequire(path.join(desktopRoot, "package.json")));
-await copyRuntimeDependency("sharp", createRequire(path.join(root, "apps/server/package.json")));
+await copyRuntimeDependency(
+  "sharp",
+  createRequire(path.join(root, "packages/agent-core/package.json")),
+);
 await verifyRuntimeDependencies();
 
 console.log(`Built shared Node runtime for ${targetTriple} (${process.version})`);

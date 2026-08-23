@@ -1,6 +1,6 @@
 # Chat Server
 
-`apps/server` 是 ChatDesk 的本地 Node.js 聊天服务。它使用 Hono 提供 HTTP API，负责会话持久化、多会话运行、流式事件、模型配置、记忆、Skills、MCP 和归档导入。桌面端由 Tauri 启动并管理该服务；开发时也可以单独运行它进行接口调试。
+`apps/server` 是 ChatDesk 的本地 Node.js 聊天服务。它使用 Hono 提供 HTTP API，负责连接、鉴权和产品级状态（归档导入、自动化）。会话、Run、工具和沙箱等 agent harness 在 `@chatdesk/agent-core`。桌面端由宿主启动并管理该服务；开发时也可以单独运行它进行接口调试。
 
 ## 环境要求
 
@@ -33,7 +33,7 @@ pnpm --filter chatdesk-chat-server test
 pnpm --filter chatdesk-chat-server typecheck
 ```
 
-`pnpm --filter chatdesk-chat-server dev` 会以 Node.js watch 模式执行 `src/server.ts`，修改 `apps/server/src` 下的服务端代码后会自动重启；`pnpm --filter chatdesk-chat-server start` 用于不启用 watch 的运行方式。开发模式下服务默认监听 `http://127.0.0.1:14317`。从仓库根目录启动完整开发环境请使用 `pnpm dev`。
+`pnpm --filter chatdesk-chat-server dev` 会以 Node.js watch 模式执行 `src/server.ts`，修改 `apps/server/src` 或 `packages/agent-core/src` 下的代码后会自动重启；`pnpm --filter chatdesk-chat-server start` 用于不启用 watch 的运行方式。开发模式下服务默认监听 `http://127.0.0.1:14317`。从仓库根目录启动完整开发环境请使用 `pnpm dev`。
 
 ## 配置
 
@@ -48,8 +48,8 @@ pnpm --filter chatdesk-chat-server typecheck
 | `CHAT_SERVER_PRODUCTION` | 未设置 | 设为 `1` 后启用致命错误处理和关闭时的运行清理 |
 | `CHAT_SERVER_BROWSER_WORKER` | 开发时回退到 `apps/tauri/src-tauri/src/sidecar/browser-worker.mjs`（ESM 用 `import.meta.url`，也可从仓库根/`apps/server` 的 cwd 解析） | 浏览器 worker 可执行文件或脚本路径。打包 sidecar 是 CJS，`import.meta` 为空，由桌面宿主注入；未配置时浏览器工具会直接报错 |
 | `CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH` | 未设置 | Playwright 浏览器资源目录。开发时若 `apps/desktop/assets/resources/playwright-browsers` 中已有 Chromium 则自动使用，否则走 Playwright 默认缓存 |
-| `CHAT_SERVER_SHARP_PATH` | 未设置 | 打包后 Sharp native 运行时目录（含 `package.json` 与 `node_modules/sharp`）。开发态直接使用 `apps/server` 的 `sharp` 依赖 |
-| `CHATDESK_BUILTIN_SKILLS_DIR` | 未设置 | 内置 skill 根目录。未设置时依次尝试 worker 旁 `skills/`、源码 `apps/server/skills` |
+| `CHAT_SERVER_SHARP_PATH` | 未设置 | 打包后 Sharp native 运行时目录（含 `package.json` 与 `node_modules/sharp`）。开发态直接使用 `packages/agent-core` 的 `sharp` 依赖 |
+| `CHATDESK_BUILTIN_SKILLS_DIR` | 未设置 | 内置 skill 根目录。未设置时依次尝试 worker 旁 `skills/`、源码 `packages/agent-core/skills` |
 
 示例：
 
@@ -142,12 +142,20 @@ macOS 默认数据目录为 `~/.chatdesk/chat-server`，其他平台默认使用
 apps/server/
 ├── src/server.ts          # HTTP 服务入口
 ├── src/app.ts             # Hono 路由和服务组装
+├── src/sse-keepalive.ts   # UIMessage 流 SSE keepalive
+├── src/archive-store.ts   # 归档导入
+├── src/automation-store.ts
+└── src/*.test.ts          # HTTP 与产品 API 测试
+
+packages/agent-core/
+├── src/engine.ts          # createAgentCore 组合根
 ├── src/run-registry.ts    # 并发运行和流式事件
 ├── src/model-adaptor.ts   # 供应商 Responses / Chat Completions 差异
 ├── src/store.ts           # 会话与附件持久化
 ├── src/image-compress.ts  # 聊天图片 Sharp 压缩
-├── src/*-store.ts         # 配置、记忆、归档和 Skills 存储
-└── src/*.test.ts          # Node.js 测试
+├── src/*-store.ts         # 配置、记忆和 Skills 存储
+├── skills/                # 内置 skills
+└── src/*.test.ts          # harness Node 测试
 ```
 
 模型供应商差异（非 OpenAI 的 Responses 关闭 `store`）见 [`docs/model-adaptor.md`](../../docs/model-adaptor.md)。

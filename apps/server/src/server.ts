@@ -1,5 +1,4 @@
-import { installAiSdkWarningFilter } from "./ai-sdk-warnings.ts";
-import { acquireDataDirectoryLock } from "./data-directory-lock.ts";
+import { acquireDataDirectoryLock, installAiSdkWarningFilter } from "@chatdesk/agent-core";
 
 installAiSdkWarningFilter();
 
@@ -55,7 +54,7 @@ async function main() {
       import("@hono/node-server"),
       import("./app.ts"),
       import("./config.ts"),
-      import("./browser-runtime.ts"),
+      import("@chatdesk/agent-core"),
     ]);
   const config = await loadServerConfig();
   const browserWorker = resolveBrowserWorkerScript();

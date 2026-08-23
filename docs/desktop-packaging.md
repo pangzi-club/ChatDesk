@@ -49,7 +49,7 @@ The tag starts the two architecture builds. The release job runs only after
 both builds finish successfully. Keep the tag version aligned with the updated
 workspace packages.
 
-`pnpm desktop:sidecars` requires Node.js 22.20.0. It copies the current Node executable to `apps/desktop/assets/binaries/node-runtime-<target-triple>`, bundles the TypeScript Chat Server and sandbox worker into CommonJS, and copies the browser worker as an ordinary ES module. These scripts live under `apps/desktop/assets/resources/node-runtime/workers` and are all executed by the same Node binary. Builtin skills from `apps/server/skills` are copied to `workers/skills` next to `chat-server.cjs`.
+`pnpm desktop:sidecars` requires Node.js 22.20.0. It copies the current Node executable to `apps/desktop/assets/binaries/node-runtime-<target-triple>`, bundles the TypeScript Chat Server and sandbox worker into CommonJS, and copies the browser worker as an ordinary ES module. These scripts live under `apps/desktop/assets/resources/node-runtime/workers` and are all executed by the same Node binary. Builtin skills from `packages/agent-core/skills` are copied to `workers/skills` next to `chat-server.cjs`.
 
 Playwright is not bundled into JavaScript or embedded in an executable. The build recursively copies the installed production package trees for Playwright and Sharp into `resources/node-runtime/node_modules`, including the native Sharp packages available for the current platform. This preserves Playwright's package metadata, browser registry, dynamic loads, and filesystem layout. Chromium Headless Shell remains under `resources/playwright-browsers` because browser executables must exist on the real filesystem.
 

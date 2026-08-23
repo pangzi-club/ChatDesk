@@ -3,51 +3,50 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import {
+  buildSessionTitlePrompt,
+  buildSystemPrompt,
+  type ChatSession,
+  CREATE_TASK_TOOL_INSTRUCTIONS,
+  compressChatImage,
+  createAgentCore,
+  createConfiguredLanguageModel,
+  DEFAULT_WORKSPACE_ID,
+  type EventHub,
+  hasUserMessageText,
+  importDeveloperEnvironment,
+  inspectDeveloperEnvironment,
+  listProviderModels,
+  loadBuiltinSkillsCatalog,
+  MAX_ATTACHMENT_BYTES,
+  nodePlatform,
+  normalizeAiUsage,
+  normalizeGeneratedCommitMessage,
+  normalizeGeneratedSessionTitle,
+  type RunRegistry,
+  type RunStartInput,
+  replaceImageFileName,
+  resolveEffectiveWorkspace,
+  resolveSessionTitleModel,
+  resolveWorkspaceFsRoot,
+  SESSION_TITLE_SYSTEM,
+  type SessionStore,
+  scanSkills,
+  sessionTitleMaxOutputTokens,
+  TODO_TOOL_INSTRUCTIONS,
+  testModelConnection,
+  type WorkspaceStore,
+  workspaceSearchInstructions,
+} from "@chatdesk/agent-core";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
-import { ActivityLogStore } from "./activity-log-store.ts";
-import { AiUsageLogStore, normalizeAiUsage } from "./ai-usage-log.ts";
 import { ArchiveStore } from "./archive-store.ts";
 import { AutomationScheduler, AutomationStore } from "./automation-store.ts";
-import { ChatConfigStore } from "./chat-config.ts";
-import { closeClientTools } from "./client-tools.ts";
 import type { ServerConfig } from "./config.ts";
 import { chatServerCorsOrigin } from "./cors.ts";
-import {
-  importDeveloperEnvironment,
-  inspectDeveloperEnvironment,
-} from "./developer-environment.ts";
-import { EventHub } from "./events.ts";
-import { normalizeGeneratedCommitMessage } from "./git-commit-message.ts";
-import { compressChatImage, MAX_ATTACHMENT_BYTES, replaceImageFileName } from "./image-compress.ts";
-import { ImageGenerationStore } from "./image-generation-store.ts";
-import { JobRegistry } from "./job-registry.ts";
-import { McpRuntime } from "./mcp-runtime.ts";
-import { MemoryStore } from "./memory-store.ts";
-import { createConfiguredLanguageModel } from "./model-adaptor.ts";
-import { listProviderModels, testModelConnection } from "./model-test.ts";
-import { PlanStore } from "./plan-store.ts";
-import { nodePlatform } from "./platform/index.ts";
-import { type ChatSession, DEFAULT_WORKSPACE_ID, type RunStartInput } from "./protocol.ts";
-import { RunRegistry, resolveEffectiveWorkspace } from "./run-registry.ts";
-import {
-  buildSessionTitlePrompt,
-  hasUserMessageText,
-  normalizeGeneratedSessionTitle,
-  resolveSessionTitleModel,
-  SESSION_TITLE_SYSTEM,
-  sessionTitleMaxOutputTokens,
-} from "./session-title.ts";
-import { loadBuiltinSkillsCatalog } from "./skill-tool.ts";
-import { scanSkills } from "./skills-store.ts";
-import { SessionStore } from "./store.ts";
-import { buildSystemPrompt } from "./system-prompt.ts";
-import { CREATE_TASK_TOOL_INSTRUCTIONS } from "./task-tool.ts";
-import { TODO_TOOL_INSTRUCTIONS } from "./todo-tool.ts";
-import { workspaceSearchInstructions } from "./tool-selection.ts";
-import { resolveWorkspaceFsRoot, WorkspaceStore } from "./workspace-store.ts";
+import { withSseKeepAlive } from "./sse-keepalive.ts";
 
 const runInputSchema = z.object({
   messages: z.array(z.unknown()).optional(),
@@ -323,44 +322,28 @@ export type ChatServer = {
 };
 
 export async function createChatServer(config: ServerConfig): Promise<ChatServer> {
-  const store = new SessionStore(config.dataDir);
-  await store.init();
-  const events = new EventHub();
-  const jobs = new JobRegistry(config.dataDir, events);
-  await jobs.initialize();
-  const chatConfig = new ChatConfigStore(config.dataDir);
-  await chatConfig.init();
-  const memory = new MemoryStore(config.dataDir);
-  await memory.init();
-  const plans = new PlanStore(config.dataDir);
+  const core = await createAgentCore({ dataDir: config.dataDir, acquireLock: false });
+  const {
+    store,
+    events,
+    runs,
+    jobs,
+    chatConfig,
+    memory,
+    plans,
+    workspaces,
+    mcp,
+    activityLogs,
+    aiUsageLogs,
+    imageGeneration,
+  } = core;
   const archive = new ArchiveStore(config.dataDir);
   await archive.init();
-  const activityLogs = new ActivityLogStore(config.dataDir);
-  await activityLogs.init();
-  const aiUsageLogs = new AiUsageLogStore(config.dataDir);
-  await aiUsageLogs.init();
   await activityLogs.append({
     level: "info",
     source: "Chat Server",
     message: "Chat Server 已启动",
   });
-  const imageGeneration = new ImageGenerationStore(config.dataDir);
-  await imageGeneration.init();
-  const workspaces = new WorkspaceStore(config.dataDir);
-  await workspaces.init();
-  await workspaces.ensureDefault();
-  const runs = new RunRegistry(
-    store,
-    events,
-    chatConfig,
-    plans,
-    aiUsageLogs,
-    activityLogs,
-    (id) => workspaces.get(id)?.path,
-    undefined,
-    undefined,
-    jobs,
-  );
   const automations = new AutomationStore(config.dataDir);
   await automations.init();
   const automationScheduler = new AutomationScheduler(automations, (task, message) =>
@@ -373,8 +356,6 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
       .then(() => undefined),
   );
   automationScheduler.start();
-  const mcp = new McpRuntime();
-  await runs.initialize();
   const app = new Hono();
 
   app.use("*", async (c, next) => {
@@ -1335,7 +1316,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
         source: "模型调用",
         message: `开始运行会话 ${c.req.param("id")}`,
       });
-      return await runs.start(c.req.param("id"), body);
+      return withSseKeepAlive(await runs.start(c.req.param("id"), body));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return jsonError(message, message.includes("已有正在运行") ? 409 : 400);
@@ -1410,10 +1391,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     config,
     shutdown: async () => {
       automationScheduler.stop();
-      await runs.shutdown();
-      await jobs.shutdown();
-      await mcp.close();
-      closeClientTools();
+      await core.shutdown();
     },
   };
 }

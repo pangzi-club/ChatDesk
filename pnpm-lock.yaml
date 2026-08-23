@@ -169,12 +169,9 @@ importers:
 
   apps/server:
     dependencies:
-      '@ai-sdk/mcp':
-        specifier: ^2.0.24
-        version: 2.0.24(zod@4.4.3)
-      '@ai-sdk/openai':
-        specifier: ^4.0.31
-        version: 4.0.31(zod@4.4.3)
+      '@chatdesk/agent-core':
+        specifier: workspace:*
+        version: link:../../packages/agent-core
       '@chatdesk/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -187,12 +184,6 @@ importers:
       hono:
         specifier: ^4.10.8
         version: 4.13.1
-      sharp:
-        specifier: ^0.35.3
-        version: 0.35.3(@types/node@26.1.2)
-      undici:
-        specifier: ^7.29.0
-        version: 7.29.0
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -222,6 +213,37 @@ importers:
       '@tauri-apps/cli':
         specifier: ^2
         version: 2.11.4
+
+  packages/agent-core:
+    dependencies:
+      '@ai-sdk/mcp':
+        specifier: ^2.0.24
+        version: 2.0.24(zod@4.4.3)
+      '@ai-sdk/openai':
+        specifier: ^4.0.31
+        version: 4.0.31(zod@4.4.3)
+      '@chatdesk/shared':
+        specifier: workspace:*
+        version: link:../shared
+      ai:
+        specifier: ^7.0.51
+        version: 7.0.51(zod@4.4.3)
+      sharp:
+        specifier: ^0.35.3
+        version: 0.35.3(@types/node@26.1.2)
+      undici:
+        specifier: ^7.29.0
+        version: 7.29.0
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.1.2
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
 
   packages/chat-client:
     dependencies:

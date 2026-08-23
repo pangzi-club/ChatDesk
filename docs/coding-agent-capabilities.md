@@ -1,8 +1,8 @@
-# 通用编码 Agent 能力清单（apps/server 对照）
+# 通用编码 Agent 能力清单（agent-core 对照）
 
-> 目标：回答「apps/server 现在做的事情是不是就是 Claude Code / Codex 做的事」，以及还差什么。
+> 目标：回答「agent harness 现在做的事情是不是就是 Claude Code / Codex 做的事」，以及还差什么。
 > 参照系：Claude Code、Codex CLI、Cursor 这类通用编码 agent。
-> 基于 `apps/server/src/` 当前实现逐一对照（2026-08-18）。
+> 基于 `packages/agent-core/src/` 当前实现逐一对照。
 
 ## 一、通用编码 Agent 的能力全景
 
@@ -33,9 +33,9 @@
 | | 用量统计 | token 计数、成本 |
 | | 会话归档 | 导入/导出历史 |
 
-## 二、apps/server 已实现
+## 二、agent-core 已实现
 
-对照上面的全景，apps/server 已经覆盖的部分：
+对照上面的全景，agent-core 已经覆盖的部分：
 
 ### ✅ 核心循环
 - **Agentic loop**：`run-registry.ts` 基于 Vercel AI SDK `streamText` + 工具调用 + `stopWhen(stepCountIs(100))`，支持多步工具调用直至完成；第 60 步提示收敛，同一目标连续失败两次要求重新读取并换方法，连续 3 个失败步骤或累计 8 次工具失败以 `tool-errors` 收尾。
@@ -60,7 +60,7 @@
 
 ### ✅ 工具生态
 - **MCP**：`mcp-runtime.ts` 支持 stdio 子进程 + remote HTTP 两种 transport，start / listTools / callTool / stop / test 全套，手写 JSON-RPC 2.0。
-- **Skills**：`skills-store.ts` 扫描本机 `~/.agents/skills` 的 `SKILL.md`，另扫描随应用打包的内置 skill（`apps/server/skills`，打包后在 worker 旁的 `skills/`）。当前内置：`chatdesk-doc`、`skill-creator`、`skill-installer`。本机 skill 默认全部启用，用户可在设置中全局关闭；Chat 内可按会话临时取消。启用后全文注入。内置 skill 只把 name/description 放进 system prompt，正文通过 `read_skill` 按需读取。
+- **Skills**：`skills-store.ts` 扫描本机 `~/.agents/skills` 的 `SKILL.md`，另扫描随应用打包的内置 skill（`packages/agent-core/skills`，打包后在 worker 旁的 `skills/`）。当前内置：`chatdesk-doc`、`skill-creator`、`skill-installer`。本机 skill 默认全部启用，用户可在设置中全局关闭；Chat 内可按会话临时取消。启用后全文注入。内置 skill 只把 name/description 放进 system prompt，正文通过 `read_skill` 按需读取。
 - **内置工具**：web_search（responses 协议内置）、图片生成。
 
 ### 内置工具目录
@@ -113,7 +113,7 @@
 ### ✅ 会话归档
 - `archive-store.ts`：扫描并导入 `~/.codex`、`~/.claude` 的历史 jsonl 会话，含 index 与详情。
 
-## 三、apps/server 部分实现
+## 三、agent-core 部分实现
 
 | 能力 | 现状 | 差距 |
 |---|---|---|
@@ -122,7 +122,7 @@
 | 终端后台托管 | `bash` 支持 `block_until`；超时后由 JobRegistry 托管并返回 `jobId`，可用 `bash_wait` / `bash_output` / `bash_stop` 管理 | 第一版不支持交互式 stdin；Server 重启会终止并标记 Job 为 `interrupted` |
 | Checkpoint / 回滚 | Git diff/restore/commit 接口已实现（`app.ts`） | 无基于 run 生命周期的自动快照 |
 
-## 四、apps/server 未实现（→ TODO）
+## 四、agent-core 未实现（→ TODO）
 
 按优先级从高到低：
 
@@ -157,7 +157,7 @@
 
 ## 五、结论
 
-apps/server 已经是一个**结构完整的编码 agent**：核心循环、文件/终端/浏览器工具、MCP、Skills、记忆、崩溃恢复、Seatbelt 沙箱、交互式审批、AI 用量统计都有，且分层清晰（客户端工具走 Tauri 侧、服务端工具走 Node 侧、业务工具独立）。
+agent-core 已经是一个**结构完整的编码 agent**：核心循环、文件/终端/浏览器工具、MCP、Skills、记忆、崩溃恢复、Seatbelt 沙箱、交互式审批、AI 用量统计都有，且分层清晰（客户端工具走宿主侧、harness 工具走 Node 侧、业务工具独立）。
 
 离 Claude Code / Codex 的差距集中在**生命周期与可靠性**方向：
 

@@ -3,7 +3,7 @@
 > **⚠️ 本文档为早期原型草稿，不再反映当前实现。**
 >
 > 以下示例使用 `(allow default)` profile 和登录 shell（`-lc`），与生产环境不一致。
-> 当前实现位于 `apps/server/src/sandbox-exec.ts`，使用 `(deny default)` profile、
+> 当前实现位于 `packages/agent-core/src/sandbox-exec.ts`，使用 `(deny default)` profile、
 > 非登录 shell（`-c`）、最小化环境变量和独立的缓存目录。如需了解实际沙箱策略，
 > 请参阅 `docs/aisdk-seatbelt-sandbox.md` 和 `docs/agent-sandbox-permission-controls.md`。
 >

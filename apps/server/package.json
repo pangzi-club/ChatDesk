@@ -11,18 +11,15 @@
   "scripts": {
     "dev": "node --watch --experimental-strip-types src/server.ts",
     "start": "node --experimental-strip-types src/server.ts",
-    "test": "vitest run --root ../.. apps/server/src",
+    "test": "vitest run --root ../.. --project chatdesk-chat-server",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ai-sdk/mcp": "^2.0.24",
-    "@ai-sdk/openai": "^4.0.31",
+    "@chatdesk/agent-core": "workspace:*",
     "@chatdesk/shared": "workspace:*",
     "@hono/node-server": "^1.19.11",
     "ai": "^7.0.51",
     "hono": "^4.10.8",
-    "sharp": "^0.35.3",
-    "undici": "^7.29.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

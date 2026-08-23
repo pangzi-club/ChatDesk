@@ -39,7 +39,7 @@ describe("resolveBuiltinSkillsRoot", () => {
       argv1: "/app/workers/chat-server.cjs",
       cwd: "/repo",
       exists: (file) => file === "/tmp/custom-skills",
-      sourceDir: "/repo/apps/server/src",
+      sourceDir: "/repo/packages/agent-core/src",
     });
     assert.equal(root, path.resolve("/tmp/custom-skills"));
   });
@@ -89,7 +89,7 @@ describe("scanBuiltinSkills", () => {
   it("finds the shipped builtin skills from the source tree", async () => {
     const skills = await scanBuiltinSkills({
       env: {},
-      argv1: path.join(process.cwd(), "apps/server/src/server.ts"),
+      argv1: path.join(process.cwd(), "packages/agent-core/src/index.ts"),
       cwd: process.cwd(),
     });
     const ids = skills.map((skill) => skill.id).sort();

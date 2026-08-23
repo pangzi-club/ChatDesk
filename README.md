@@ -84,7 +84,8 @@ API key 在应用设置中配置并保存在本机。使用 `CHAT_SERVER_HOST=0.
 
 ```text
 apps/desktop/src/    React 页面、组件和浏览器端适配器（桌面端 workspace package）
-apps/server/src/     Hono Chat Server、存储、运行时和 Node 测试（workspace package）
+apps/server/src/     Hono Chat Server（连接、鉴权、产品 API）
+packages/agent-core/ Agent harness：会话、Run、工具、沙箱（`@chatdesk/agent-core`）
 packages/shared/     浏览器与服务端共用的运行时无关代码（`@chatdesk/shared`）
 apps/electron/        Electron main/preload 和宿主服务
 apps/tauri/src-tauri/ Tauri 回退命令、原生服务和 sidecar 管理

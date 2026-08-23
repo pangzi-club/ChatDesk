@@ -2,12 +2,11 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { RunJournal, SessionStore } from "@chatdesk/agent-core";
+import type { ChatRunSummary, ChatSession } from "@chatdesk/shared";
 import { afterEach, describe, it, vi } from "vitest";
 import { createChatServer } from "./app.ts";
 import type { ServerConfig } from "./config.ts";
-import type { ChatRunSummary, ChatSession } from "./protocol.ts";
-import { RunJournal } from "./run-journal.ts";
-import { SessionStore } from "./store.ts";
 
 const { generateTextMock } = vi.hoisted(() => ({
   generateTextMock: vi.fn(),
