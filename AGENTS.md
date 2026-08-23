@@ -83,6 +83,13 @@ Put new code in the narrowest directory that matches its runtime and responsibil
 
 For browser code, use this decision order: JSX that defines a URL screen belongs in `apps/desktop/src/pages/`; reusable JSX belongs in `apps/desktop/src/components/`; browser-only non-visual behavior belongs in `apps/desktop/src/lib/`; code needed by both browser and server belongs in `packages/shared/`.
 
+### Chat Server Client (`packages/chat-server-client`)
+
+- `packages/chat-server-client/src/index.ts`: runtime-neutral Chat Server HTTP and SSE client (`ChatServerClient`). Inject `fetch` and `EventSource`; do not import React, DOM, Node.js, Electron, or Tauri.
+- `packages/chat-server-client/src/*.test.ts`: tests colocated with the client they exercise.
+
+Desktop UI must not import this package from pages or components. Wrap it in `apps/desktop/src/lib/chat-server.ts` so port, token, and host `fetch` stay in the desktop adapter.
+
 ### Agent Harness (`packages/agent-core`)
 
 - `packages/agent-core/src/engine.ts`: `createAgentCore` composition root. Initializes session/run stores, `RunRegistry`, jobs, MCP, and related runtimes. CLI and future TUI should import this package in-process instead of talking HTTP.
@@ -109,7 +116,7 @@ The CLI may import `@chatdesk/agent-core` and `@chatdesk/shared`. It must not im
 - `apps/server/src/*.ts`: HTTP connection and product API modules (`cors`, `sse-keepalive`, archive/automation stores).
 - `apps/server/src/*.test.ts`: Tests for HTTP handlers and server-only product APIs.
 
-The Node service may import `@chatdesk/agent-core` and `@chatdesk/shared`, but must not import React components, browser pages, `src/lib/` browser adapters, or Tauri code. Browser callers should reach this service through the client boundary in `src/lib/chat-server.ts`.
+The Node service may import `@chatdesk/agent-core` and `@chatdesk/shared`, but must not import React components, browser pages, `src/lib/` browser adapters, or Tauri code. Browser callers should reach this service through `@chatdesk/chat-server-client` and the desktop adapter in `apps/desktop/src/lib/chat-server.ts`.
 
 ### Tauri Desktop Layer (`apps/tauri/src-tauri`)
 
@@ -131,6 +138,6 @@ Frontend code should call native functionality through a small adapter in `apps/
 
 ### Dependencies and Tests
 
-- Keep the dependency direction explicit: pages/layouts/components may use `apps/desktop/src/lib/`, `packages/shared/`, and `apps/desktop/src/components/ui/`; `apps/desktop/src/lib/` may use `packages/shared/`; `packages/shared/` stays platform-neutral; `packages/agent-core` may use `packages/shared/` and Node APIs; `apps/server` and `apps/cli` may use `@chatdesk/agent-core` and `packages/shared/`; `apps/tauri/src-tauri` remains a separate native boundary.
+- Keep the dependency direction explicit: pages/layouts/components may use `apps/desktop/src/lib/`, `packages/shared/`, and `apps/desktop/src/components/ui/`; `apps/desktop/src/lib/` may use `packages/shared/` and `@chatdesk/chat-server-client`; `packages/shared/` stays platform-neutral; `packages/chat-server-client` may use `packages/shared/` and `fetch` / `EventSource`; `packages/agent-core` may use `packages/shared/` and Node APIs; `apps/server` and `apps/cli` may use `@chatdesk/agent-core` and `packages/shared/`; `apps/tauri/src-tauri` remains a separate native boundary.
 - Put a test beside the implementation it exercises (`*.test.ts` or `*.test.tsx`) and use the test runner for that runtime. Do not introduce a second test framework or a frontend test setup in an unrelated directory without documenting the choice.
-- When a change crosses a boundary, update the adapter and its contract at that boundary instead of reaching through it. For example, add a Chat Server endpoint in `apps/server`, its browser request wrapper in `apps/desktop/src/lib/chat-server.ts`, and the consuming query/mutation in the owning page or component.
+- When a change crosses a boundary, update the adapter and its contract at that boundary instead of reaching through it. For example, add a Chat Server endpoint in `apps/server`, the HTTP/SSE method on `ChatServerClient` in `packages/chat-server-client`, the desktop wrapper in `apps/desktop/src/lib/chat-server.ts`, and the consuming query/mutation in the owning page or component.

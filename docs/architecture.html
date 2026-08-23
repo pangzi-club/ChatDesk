@@ -222,7 +222,7 @@
               <text x="420" y="372" class="svg-mono" font-size="11" fill="#9aa3b6">mcp-client · terminal</text>
               <text x="420" y="388" class="svg-mono" font-size="11" fill="#9aa3b6">browser · settings-store</text>
 
-              <text x="420" y="430" class="svg-mono" font-size="10" fill="#bb9af7">@chatdesk/chat-client</text>
+              <text x="420" y="430" class="svg-mono" font-size="10" fill="#bb9af7">@chatdesk/chat-server-client</text>
               <text x="420" y="446" class="svg-mono" font-size="10" fill="#9aa3b6">fetch + EventSource</text>
             </g>
 
@@ -276,7 +276,7 @@
         <h2><span class="num">02</span> Monorepo 布局</h2>
         <p class="sub">
           pnpm workspace 三个包：浏览器壳、Node 服务、共享合约。三条依赖方向：UI → Chat Server 通过
-          <code>@chatdesk/chat-client</code> 边界；两侧共用 <code>@chatdesk/shared</code>；Tauri
+          <code>@chatdesk/chat-server-client</code> 边界；两侧共用 <code>@chatdesk/shared</code>；Tauri
           是独立原生层，不被其他包直接 import。
         </p>
         <div class="diagram">
@@ -319,8 +319,8 @@
             <text x="320" y="376" class="svg-mono" font-size="11" fill="#9aa3b6" text-anchor="middle">运行时无关合约</text>
 
             <rect x="620" y="310" width="280" height="80" rx="10" fill="#161a23" stroke="#262c3a" />
-            <text x="760" y="338" class="svg-text" font-size="13" fill="#e6e9f2" font-weight="600" text-anchor="middle">packages/chat-client</text>
-            <text x="760" y="358" class="svg-mono" font-size="11" fill="#bb9af7" text-anchor="middle">@chatdesk/chat-client</text>
+            <text x="760" y="338" class="svg-text" font-size="13" fill="#e6e9f2" font-weight="600" text-anchor="middle">packages/chat-server-client</text>
+            <text x="760" y="358" class="svg-mono" font-size="11" fill="#bb9af7" text-anchor="middle">@chatdesk/chat-server-client</text>
             <text x="760" y="376" class="svg-mono" font-size="11" fill="#9aa3b6" text-anchor="middle">HTTP + SSE 客户端</text>
 
             <line x1="200" y1="260" x2="280" y2="310" stroke="#7aa2f7" stroke-width="1.5" marker-end="url(#m2)" />
@@ -596,7 +596,7 @@
             <text x="700" y="314" text-anchor="middle" class="svg-mono" font-size="11" fill="#9aa3b6">workspace-path · settings-store · importers/</text>
 
             <rect x="360" y="360" width="680" height="60" rx="8" fill="#11141b" stroke="#2f364a" />
-            <text x="700" y="385" text-anchor="middle" class="svg-text" font-size="13" fill="#bb9af7" font-weight="600">packages/{chat-client, shared}</text>
+            <text x="700" y="385" text-anchor="middle" class="svg-text" font-size="13" fill="#bb9af7" font-weight="600">packages/{chat-server-client, shared}</text>
             <text x="700" y="404" text-anchor="middle" class="svg-mono" font-size="11" fill="#9aa3b6">HTTP + SSE 客户端 · 运行时无关类型</text>
 
             <line x1="150" y1="80" x2="410" y2="30" stroke="#7dcfff" stroke-width="1.5" marker-end="url(#m5)" />
@@ -808,7 +808,7 @@
 <span class="k">export</span> * <span class="k">from</span> <span class="s">"./chat.ts"</span>;      <span class="c">// ChatSession · ChatIndexItem · RunStartInput · 状态机常量</span>
 <span class="k">export</span> * <span class="k">from</span> <span class="s">"./image-generation.ts"</span>; <span class="c">// 模板与生成记录结构</span>
 
-<span class="c">// packages/chat-client/src/index.ts</span>
+<span class="c">// packages/chat-server-client/src/index.ts</span>
 <span class="k">export</span> { ChatServerClient, ChatServerError } <span class="k">from</span> <span class="s">"./client.ts"</span>;
 <span class="c">// fetch + EventSource 封装，跨 WebView / Node 都能用</span>
         </div>
@@ -853,7 +853,7 @@
 
             <rect x="800" y="140" width="240" height="60" rx="8" fill="#161a23" stroke="#262c3a" />
             <text x="920" y="168" text-anchor="middle" class="svg-text" font-size="12" fill="#e6e9f2" font-weight="600">build</text>
-            <text x="920" y="186" text-anchor="middle" class="svg-mono" font-size="10" fill="#9aa3b6">shared + chat-client + web + server</text>
+            <text x="920" y="186" text-anchor="middle" class="svg-mono" font-size="9" fill="#9aa3b6">shared + chat-server-client + web + server</text>
 
             <rect x="40" y="260" width="320" height="60" rx="8" fill="#161a23" stroke="#262c3a" />
             <text x="200" y="288" text-anchor="middle" class="svg-text" font-size="12" fill="#e6e9f2" font-weight="600">pnpm test</text>
@@ -917,7 +917,7 @@
         <p class="sub">
           Session / Run 的真相源在本机 Node HTTP Server；UI 只消费 HTTP 与 SSE；Tauri 负责进程与
           敏感能力；三层通过 pnpm workspace 与 <code>@chatdesk/shared</code> 的合约共享类型，
-          用 <code>@chatdesk/chat-client</code> 收紧边界。
+          用 <code>@chatdesk/chat-server-client</code> 收紧边界。
         </p>
         <div class="diagram">
           <svg viewBox="0 0 1080 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Summary">
@@ -960,7 +960,7 @@
             <text x="830" y="112" text-anchor="middle" class="svg-mono" font-size="10" fill="#7aa2f7">streamText</text>
 
             <rect x="20" y="20" width="1020" height="40" rx="8" fill="#11141b" stroke="#2f364a" />
-            <text x="530" y="45" text-anchor="middle" class="svg-mono" font-size="11" fill="#bb9af7">@chatdesk/shared · types / schemas · @chatdesk/chat-client · HTTP+SSE client</text>
+            <text x="530" y="45" text-anchor="middle" class="svg-mono" font-size="11" fill="#bb9af7">@chatdesk/shared · types / schemas · @chatdesk/chat-server-client · HTTP+SSE client</text>
           </svg>
         </div>
       </section>

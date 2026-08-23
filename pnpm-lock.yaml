@@ -51,9 +51,9 @@ importers:
       '@ai-sdk/react':
         specifier: ^4.0.54
         version: 4.0.54(react@19.2.8)(zod@4.4.3)
-      '@chatdesk/chat-client':
+      '@chatdesk/chat-server-client':
         specifier: workspace:*
-        version: link:../../packages/chat-client
+        version: link:../../packages/chat-server-client
       '@chatdesk/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -264,7 +264,7 @@ importers:
         specifier: 7.0.2
         version: 7.0.2
 
-  packages/chat-client:
+  packages/chat-server-client:
     dependencies:
       '@chatdesk/shared':
         specifier: workspace:*

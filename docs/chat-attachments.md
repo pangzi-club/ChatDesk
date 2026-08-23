@@ -73,7 +73,7 @@ type ChatAttachment = {
 ```text
 用户文件 / 生成图片
   → uploadChatServerAttachment(sessionId, attachmentId, fileName, bytes)   # apps/desktop/src/lib/chat-server.ts
-  → ChatServerClient.uploadAttachment                                       # packages/chat-client（base64 POST）
+  → ChatServerClient.uploadAttachment                                       # packages/chat-server-client（base64 POST）
   → POST /v1/sessions/:id/attachments                                       # Sharp 压缩后落盘，返回 { path, size, mediaType?, ... }
   → GET /attachments/:id                                                    # 取压缩后的字节，构造发给模型的 file part
   → 构造 ChatAttachment，merge 进 session.attachments
@@ -110,7 +110,7 @@ type ChatAttachment = {
 - `apps/server/src/app.ts`：`POST/GET/DELETE /v1/sessions/:id/attachments` 路由。
 - `packages/agent-core/src/image-compress.ts`：Sharp 图片压缩。
 - `packages/agent-core/src/store.ts`：`saveAttachment / readAttachment / deleteAttachment / attachmentPath`。
-- `packages/chat-client/src/index.ts`：`ChatServerClient.uploadAttachment`。
+- `packages/chat-server-client/src/index.ts`：`ChatServerClient.uploadAttachment`。
 - `apps/desktop/src/lib/chat-server.ts`：`uploadChatServerAttachment` 封装。
 - `apps/desktop/src/lib/chat-image-generation.ts`：现有「落盘 + 回填 + 改写 parts」范式（`mergeAttachments` / `materializeGeneratedImages`）。
 - `apps/desktop/src/lib/chat-browser-screenshots.ts`：浏览器截图「已落盘 + 回填 session.attachments」。

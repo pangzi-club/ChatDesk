@@ -1,5 +1,5 @@
 {
-  "name": "@chatdesk/chat-client",
+  "name": "@chatdesk/chat-server-client",
   "private": true,
   "version": "0.5.0",
   "description": "Runtime-neutral Chat Server HTTP and SSE client",
@@ -17,7 +17,7 @@
     "typescript": "7.0.2"
   },
   "scripts": {
-    "test": "vitest run --root ../.. packages/chat-client/src",
+    "test": "vitest run --root ../.. packages/chat-server-client/src",
     "typecheck": "tsc --noEmit"
   }
 }

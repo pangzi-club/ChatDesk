@@ -1,4 +1,4 @@
-import { ChatServerClient, ChatServerError } from "@chatdesk/chat-client";
+import { ChatServerClient, ChatServerError } from "@chatdesk/chat-server-client";
 import type {
   ChatContextCompaction,
   ChatContextUsage,
