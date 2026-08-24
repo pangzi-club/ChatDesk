@@ -4132,7 +4132,7 @@ button.chat-task-item-summary:focus-visible .chat-task-item-chevron,
 .chat-plan-questionnaire-answer > span {
   color: var(--chat-muted);
 }
-.chat-plan-questionnaire-answer > strong {
+.chat-plan-questionnaire-answers .chat-plan-questionnaire-answer > strong {
   min-width: 0;
   overflow-wrap: anywhere;
   color: var(--chat-ink);
