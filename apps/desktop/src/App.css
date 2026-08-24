@@ -3495,10 +3495,13 @@ button.chat-task-item-summary:focus-visible .chat-task-item-chevron,
     0 14px 40px rgb(0 0 0 / 25%),
     0 0 0 3px rgb(158 225 198 / 8%);
 }
-.chat-composer textarea {
+.chat-composer textarea,
+.chat-composer .ProseMirror {
   display: block;
   width: 100%;
   min-height: 76px;
+  max-height: 240px;
+  overflow-y: auto;
   resize: none;
   border: 0;
   outline: 0;
@@ -3508,9 +3511,53 @@ button.chat-task-item-summary:focus-visible .chat-task-item-chevron,
   font: inherit;
   font-size: var(--chat-composer-text-size);
   line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
-.chat-composer textarea::placeholder {
+.chat-composer-input {
+  display: block;
+  width: 100%;
+}
+.chat-composer textarea::placeholder,
+.chat-composer .ProseMirror p.is-editor-empty:first-child::before {
   color: #9ca9a4;
+}
+.chat-composer .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+.chat-composer .ProseMirror p {
+  margin: 0;
+}
+.chat-composer .ProseMirror ul,
+.chat-composer .ProseMirror ol {
+  margin: 0;
+  padding-left: 1.5em;
+}
+.chat-composer .ProseMirror ul {
+  list-style: disc outside;
+}
+.chat-composer .ProseMirror ol {
+  list-style: decimal outside;
+}
+.chat-composer .ProseMirror li {
+  display: list-item;
+}
+.chat-composer .ProseMirror li + li,
+.chat-composer .ProseMirror p + p {
+  margin-top: 0;
+}
+.chat-composer .ProseMirror strong {
+  font-weight: 650;
+}
+.chat-composer .ProseMirror code {
+  font-family: var(--chat-code-font);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--chat-line) 55%, transparent);
+  padding: 1px 4px;
+  font-size: 0.9em;
 }
 .chat-queued-message {
   display: flex;
@@ -4824,7 +4871,8 @@ button.chat-task-item-summary:focus-visible .chat-task-item-chevron,
     0 0 0 3px color-mix(in srgb, var(--ring) 18%, transparent);
 }
 
-.chat-composer textarea {
+.chat-composer textarea,
+.chat-composer .ProseMirror {
   min-height: 72px;
   padding: 14px 16px 8px;
 }

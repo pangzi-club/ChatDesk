@@ -69,6 +69,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { ChatAttachmentChips } from "@/components/chat-attachment-chips";
 import { ChatCommandPopup } from "@/components/chat-command-popup";
+import { ChatComposerInput, type ChatComposerInputHandle } from "@/components/chat-composer-input";
 import { ChatContextDialog } from "@/components/chat-context-dialog";
 import { ChatContextPopover } from "@/components/chat-context-popover";
 import {
@@ -396,9 +397,10 @@ function ChatPage() {
   const [attachmentError, setAttachmentError] = useState("");
   const [titleError, setTitleError] = useState("");
   const [isRenamingTitle, setIsRenamingTitle] = useState(false);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<ChatComposerInputHandle>(null);
   const selectedSnippetRef = useRef("");
   const selectionToolbarTimerRef = useRef<number | null>(null);
+  const [composerPlain, setComposerPlain] = useState("");
   const [commandCaret, setCommandCaret] = useState(0);
   const [commandIndex, setCommandIndex] = useState(0);
   const [commandDismissed, setCommandDismissed] = useState(false);
@@ -453,7 +455,6 @@ function ChatPage() {
   const extractedFingerprintRef = useRef("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const shouldFollowScrollRef = useRef(true);
-  const isComposingRef = useRef(false);
   const [conversationCopiedKind, setConversationCopiedKind] = useState<"id" | "markdown" | null>(
     null,
   );
@@ -2111,8 +2112,8 @@ function ChatPage() {
   }
 
   const commandTrigger = useMemo(
-    () => findActiveCommandTrigger(input, commandCaret),
-    [input, commandCaret],
+    () => findActiveCommandTrigger(composerPlain, commandCaret),
+    [composerPlain, commandCaret],
   );
   const commandQuery = commandTrigger?.query ?? "";
   const commandMatches = useMemo(
@@ -2125,8 +2126,8 @@ function ChatPage() {
     ? commandMatches[Math.min(commandIndex, commandMatches.length - 1)]
     : undefined;
   const mentionTrigger = useMemo(
-    () => findActiveMentionTrigger(input, commandCaret),
-    [input, commandCaret],
+    () => findActiveMentionTrigger(composerPlain, commandCaret),
+    [composerPlain, commandCaret],
   );
   const mentionQuery = mentionTrigger?.query ?? "";
   const [debouncedMentionQuery, setDebouncedMentionQuery] = useState("");
@@ -2174,49 +2175,35 @@ function ChatPage() {
   }, [mentionQuery]);
 
   function applyChatMention(suggestion: NonNullable<typeof activeMention>) {
-    const result = applyMentionSelection(input, commandCaret, suggestion.path, suggestion.kind);
+    const result = applyMentionSelection(
+      composerPlain,
+      commandCaret,
+      suggestion.path,
+      suggestion.kind,
+    );
     if (!result) return;
-    setInput(result.text);
-    setCommandCaret(result.caret);
+    const trigger = findActiveMentionTrigger(composerPlain, commandCaret);
+    if (!trigger) return;
     setMentionDismissed(!result.keepOpen);
-    requestAnimationFrame(() => {
-      const textarea = inputRef.current;
-      if (!textarea) return;
-      textarea.focus();
-      textarea.setSelectionRange(result.caret, result.caret);
-    });
+    const suffix = suggestion.kind === "dir" ? "/" : " ";
+    inputRef.current?.replaceRange(trigger.start, commandCaret, `@${suggestion.path}${suffix}`);
   }
 
   function applyChatCommand(command: ChatCommand) {
-    const trigger = findActiveCommandTrigger(input, commandCaret);
+    const trigger = findActiveCommandTrigger(composerPlain, commandCaret);
     if (!trigger) return;
     if (command.name === "/plan") {
-      const remaining = `${input.slice(0, trigger.start)}${input.slice(commandCaret)}`;
-      setInput(remaining);
-      setCommandCaret(Math.min(trigger.start, remaining.length));
+      inputRef.current?.replaceRange(trigger.start, commandCaret, "");
       setCommandDismissed(true);
       void enterPlanMode();
       return;
     }
-    const caret = trigger.start + command.name.length + 1;
-    setInput(`${input.slice(0, trigger.start)}${command.name} ${input.slice(commandCaret)}`);
-    setCommandCaret(caret);
     setCommandDismissed(true);
-    requestAnimationFrame(() => {
-      const textarea = inputRef.current;
-      if (!textarea) return;
-      textarea.focus();
-      textarea.setSelectionRange(caret, caret);
-    });
+    inputRef.current?.replaceRange(trigger.start, commandCaret, `${command.name} `);
   }
 
-  function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (
-      commandPopupOpen &&
-      !event.nativeEvent.isComposing &&
-      event.keyCode !== 229 &&
-      !isComposingRef.current
-    ) {
+  function handleComposerKeyDown(event: KeyboardEvent) {
+    if (commandPopupOpen && !event.isComposing && event.keyCode !== 229) {
       if (
         (event.key === "ArrowDown" || event.key === "ArrowUp") &&
         !event.altKey &&
@@ -2228,25 +2215,20 @@ function ChatPage() {
         setCommandIndex((current) =>
           event.key === "ArrowDown" ? (current + 1) % count : (current - 1 + count) % count,
         );
-        return;
+        return true;
       }
       if ((event.key === "Enter" || event.key === "Tab") && activeCommand) {
         event.preventDefault();
         applyChatCommand(activeCommand);
-        return;
+        return true;
       }
       if (event.key === "Escape") {
         event.preventDefault();
         setCommandDismissed(true);
-        return;
+        return true;
       }
     }
-    if (
-      mentionPopupOpen &&
-      !event.nativeEvent.isComposing &&
-      event.keyCode !== 229 &&
-      !isComposingRef.current
-    ) {
+    if (mentionPopupOpen && !event.isComposing && event.keyCode !== 229) {
       if (
         (event.key === "ArrowDown" || event.key === "ArrowUp") &&
         !event.altKey &&
@@ -2259,38 +2241,34 @@ function ChatPage() {
           if (!count) return 0;
           return event.key === "ArrowDown" ? (current + 1) % count : (current - 1 + count) % count;
         });
-        return;
+        return true;
       }
       if ((event.key === "Enter" || event.key === "Tab") && activeMention) {
         event.preventDefault();
         applyChatMention(activeMention);
-        return;
+        return true;
       }
       if (event.key === "Escape") {
         event.preventDefault();
         setMentionDismissed(true);
-        return;
+        return true;
       }
     }
-    if (
-      event.key === "Enter" &&
-      !event.shiftKey &&
-      !event.nativeEvent.isComposing &&
-      event.keyCode !== 229 &&
-      !isComposingRef.current
-    ) {
+    if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
       event.preventDefault();
       const action = resolveComposerEnterAction({ isGenerating, metaKey: event.metaKey });
       if (action === "follow-up") {
         void sendFollowUpMessage();
-        return;
+        return true;
       }
       if (action === "queue") {
         queuePreparedMessage(input.trim(), pendingAttachmentsRef.current);
-        return;
+        return true;
       }
       submitMessage();
+      return true;
     }
+    return false;
   }
 
   const showHydrateSkeleton =
@@ -2789,42 +2767,24 @@ function ChatPage() {
                 suggestions={mentionSuggestions}
               />
             )}
-            <textarea
-              aria-autocomplete="list"
-              aria-controls={mentionPopupOpen ? "chat-path-suggestion-popup" : "chat-command-popup"}
-              aria-expanded={commandPopupOpen || mentionPopupOpen}
-              aria-label="输入消息"
-              autoCapitalize="none"
-              autoCorrect="off"
+            <ChatComposerInput
+              ariaControls={mentionPopupOpen ? "chat-path-suggestion-popup" : "chat-command-popup"}
+              ariaExpanded={commandPopupOpen || mentionPopupOpen}
               disabled={planTransition !== "idle" || followUpPending || stopPending}
-              ref={inputRef}
-              role="combobox"
-              spellCheck={false}
-              value={input}
-              onChange={(event) => {
-                setInput(event.target.value);
-                setCommandCaret(event.target.selectionStart ?? event.target.value.length);
-                setMentionDismissed(false);
-              }}
-              onClick={(event) => setCommandCaret(event.currentTarget.selectionStart ?? 0)}
-              onKeyUp={(event) => setCommandCaret(event.currentTarget.selectionStart ?? 0)}
               onBlur={() => setCommandDismissed(true)}
-              onCompositionStart={() => {
-                isComposingRef.current = true;
+              onChange={(next) => {
+                setInput(next.markdown);
+                setComposerPlain(next.plain);
+                setCommandCaret(next.caret);
+                if (next.fromEdit) setMentionDismissed(false);
               }}
-              onCompositionEnd={() => {
-                isComposingRef.current = false;
-              }}
-              onKeyDown={handleKeyDown}
-              onPaste={(event) => {
-                const files = Array.from(event.clipboardData.files);
-                if (files.length > 0) {
-                  event.preventDefault();
-                  void addFiles(files);
-                }
+              onKeyDown={handleComposerKeyDown}
+              onPasteFiles={(files) => {
+                void addFiles(files);
               }}
               placeholder="问问你的工作空间..."
-              rows={2}
+              ref={inputRef}
+              value={input}
             />
             <div className="chat-composer-footer">
               <div className="chat-composer-tools">
