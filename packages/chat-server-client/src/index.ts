@@ -235,6 +235,18 @@ export class ChatServerClient {
     );
   }
 
+  forkSession(sessionId: string, options: { messageId: string }) {
+    return this.json<ChatSession>(
+      `/v1/sessions/${encodePath(sessionId)}/fork`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(options),
+      },
+      "Chat Server 会话分支创建失败",
+    );
+  }
+
   regenerateSessionTitle(sessionId: string) {
     return this.json<{ title: string }>(
       `/v1/sessions/${encodePath(sessionId)}/title`,

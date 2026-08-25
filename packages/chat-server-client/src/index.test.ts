@@ -50,6 +50,27 @@ describe("ChatServerClient", () => {
     );
   });
 
+  it("creates a fork request from a message", async () => {
+    let requestUrl = "";
+    let requestInit: RequestInit | undefined;
+    const forked = { id: "forked-session", title: "Fork-原会话" };
+    const client = new ChatServerClient({
+      baseUrl: "http://localhost",
+      fetchImpl: async (input, init) => {
+        requestUrl = String(input);
+        requestInit = init;
+        return new Response(JSON.stringify(forked), { status: 201 });
+      },
+    });
+
+    assert.deepEqual(
+      await client.forkSession("source/session", { messageId: "assistant-1" }),
+      forked,
+    );
+    assert.equal(requestUrl, "http://localhost/v1/sessions/source%2Fsession/fork");
+    assert.deepEqual(JSON.parse(String(requestInit?.body)), { messageId: "assistant-1" });
+  });
+
   it("encodes attachment bytes using the server upload contract", async () => {
     let body = "";
     const client = new ChatServerClient({

@@ -175,6 +175,7 @@ import {
   chatServerUrl,
   createChatPlan,
   ensureChatServerSession,
+  forkChatServerSession,
   importDeveloperEnvironment,
   initializeChatServer,
   loadChatPlan,
@@ -396,6 +397,8 @@ function ChatPage() {
   const [planModeError, setPlanModeError] = useState("");
   const [attachmentError, setAttachmentError] = useState("");
   const [titleError, setTitleError] = useState("");
+  const [forkError, setForkError] = useState("");
+  const [forkingMessageId, setForkingMessageId] = useState<string | null>(null);
   const [isRenamingTitle, setIsRenamingTitle] = useState(false);
   const inputRef = useRef<ChatComposerInputHandle>(null);
   const selectedSnippetRef = useRef("");
@@ -734,6 +737,8 @@ function ChatPage() {
       setPlanTransition("idle");
       setPlanModeError("");
       setTitleError("");
+      setForkError("");
+      setForkingMessageId(null);
       setIsRenamingTitle(false);
       for (const item of pendingAttachmentsRef.current) {
         if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
@@ -2066,6 +2071,21 @@ function ChatPage() {
     }
   }
 
+  async function forkConversation(messageId: string) {
+    if (sessionKindRef.current === "task" || isGenerating || forkingMessageId) return;
+    setForkError("");
+    setForkingMessageId(messageId);
+    try {
+      const forked = await forkChatServerSession(sessionId, { messageId });
+      await queryClient.invalidateQueries({ queryKey: ["chat-index"] });
+      navigate(chatSessionPath(forked.id));
+    } catch (error) {
+      setForkError(error instanceof Error ? error.message : "创建对话分支失败，请重试。");
+    } finally {
+      setForkingMessageId(null);
+    }
+  }
+
   const canCopyConversationMarkdown = canFormatChatConversationMarkdown(messages);
 
   const canRegenerateConversationTitle =
@@ -2470,6 +2490,9 @@ function ChatPage() {
                         message={message}
                         approvalsEnabled={sessionKind !== "task"}
                         onApprovalResponse={respondToApproval}
+                        onFork={sessionKind === "chat" ? forkConversation : undefined}
+                        forkDisabled={isGenerating || Boolean(forkingMessageId)}
+                        forkInFlight={forkingMessageId === message.id}
                         onPlanUserInputResponse={respondToPlanUserInput}
                         planInputEnabled={planMode === "plan" && planTransition === "idle"}
                         planAttachment={
@@ -2639,11 +2662,12 @@ function ChatPage() {
             ) : null}
           </div>
         </div>
-        {error || planModeError || titleError || attachmentError ? (
+        {error || planModeError || titleError || attachmentError || forkError ? (
           <p className="chat-error" role="alert">
             {planModeError ||
               titleError ||
               attachmentError ||
+              forkError ||
               (recoverableTransportError
                 ? serverRunActive
                   ? "响应连接已中断，正在从后台任务恢复…"
@@ -3224,6 +3248,9 @@ const MessageBubble = memo(function MessageBubble({
   showTokenUsage,
   approvalsEnabled = true,
   onApprovalResponse,
+  onFork,
+  forkDisabled = false,
+  forkInFlight = false,
   onPlanUserInputResponse,
   planInputEnabled,
   planAttachment,
@@ -3236,6 +3263,9 @@ const MessageBubble = memo(function MessageBubble({
   showTokenUsage: boolean;
   approvalsEnabled?: boolean;
   onApprovalResponse: (id: string, approved: boolean) => void;
+  onFork?: (messageId: string) => void;
+  forkDisabled?: boolean;
+  forkInFlight?: boolean;
   onPlanUserInputResponse: (toolCallId: string, output: PlanUserInputResponse) => Promise<void>;
   planInputEnabled: boolean;
   planAttachment?: ChatPlanAttachment;
@@ -3500,6 +3530,23 @@ const MessageBubble = memo(function MessageBubble({
             >
               {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
             </Button>
+            {!isUser && onFork ? (
+              <Button
+                aria-label={forkInFlight ? "正在创建对话分支" : "从此回复 Fork 对话"}
+                disabled={forkDisabled}
+                onClick={() => onFork(message.id)}
+                size="icon"
+                title="从此回复 Fork 对话"
+                type="button"
+                variant="ghost"
+              >
+                {forkInFlight ? (
+                  <LoaderCircle className="size-3.5 animate-spin" />
+                ) : (
+                  <GitBranch className="size-3.5" />
+                )}
+              </Button>
+            ) : null}
             {!isUser && usageLabel ? (
               <span className="chat-message-usage">{usageLabel}</span>
             ) : null}

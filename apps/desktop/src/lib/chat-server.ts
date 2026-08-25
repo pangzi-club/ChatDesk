@@ -797,6 +797,14 @@ export async function saveChatServerSession(session: unknown, port = CHAT_SERVER
   await createClient(port).saveSession(session as ChatSession);
 }
 
+export async function forkChatServerSession(
+  sessionId: string,
+  options: { messageId: string },
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  return createClient(port).forkSession(sessionId, options);
+}
+
 export async function regenerateChatSessionTitle(
   sessionId: string,
   port = CHAT_SERVER_DEFAULT_PORT,

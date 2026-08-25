@@ -138,6 +138,94 @@ describe("chat server", () => {
     assert.equal(await server.store.get("session-test"), null);
   });
 
+  it("forks an assistant message with independent resources", async () => {
+    const server = await createTestServer();
+    const source = {
+      schemaVersion: 2 as const,
+      id: "fork-source",
+      title: "原会话",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      modelId: "model-1",
+      workspaceId: "workspace-1",
+      cwd: "/tmp/workspace",
+      sandboxMode: "ask" as const,
+      mcpServerIds: ["mcp-1"],
+      skillIds: ["skill-1"],
+      planMode: "plan" as const,
+      activePlanId: "old-plan",
+      messages: [
+        { id: "user-1", role: "user", parts: [{ type: "text", text: "开始" }] },
+        {
+          id: "assistant-1",
+          role: "assistant",
+          parts: [
+            { type: "text", text: "继续" },
+            { type: "tool-call", toolCallId: "call-1", toolName: "read_file", input: {} },
+          ],
+        },
+        { id: "user-2", role: "user", parts: [{ type: "text", text: "后续" }] },
+      ],
+      attachments: [
+        {
+          id: "attachment-1",
+          kind: "file" as const,
+          mediaType: "text/plain",
+          fileName: "note.txt",
+          size: 5,
+          path: "old-path",
+          source: "upload" as const,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      plans: [
+        {
+          id: "old-plan",
+          fileName: "plan-old.md",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    } as unknown as ChatSession;
+    await server.store.save(source);
+    await server.store.saveAttachment(
+      "fork-source",
+      "attachment-1",
+      "note.txt",
+      new TextEncoder().encode("hello"),
+    );
+    const plan = await server.plans.create("fork-source");
+    await server.plans.write("fork-source", plan.id, "# copied plan");
+    await server.store.save({ ...source, activePlanId: plan.id, plans: [plan] });
+
+    const response = await server.app.request("http://localhost/v1/sessions/fork-source/fork", {
+      method: "POST",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ messageId: "assistant-1" }),
+    });
+    assert.equal(response.status, 201);
+    const forked = (await response.json()) as ChatSession;
+    assert.notEqual(forked.id, source.id);
+    assert.equal(forked.title, "Fork-原会话");
+    assert.equal(forked.messages.length, 2);
+    assert.notEqual(forked.messages[0]?.id, source.messages[0]?.id);
+    assert.notEqual(forked.attachments[0]?.id, source.attachments[0]?.id);
+    assert.notEqual(forked.plans?.[0]?.id, plan.id);
+    assert.equal(forked.activePlanId, forked.plans?.[0]?.id);
+    assert.equal(
+      (
+        await server.store.readAttachment(forked.id, forked.attachments[0]?.id ?? "")
+      )?.bytes.toString(),
+      "hello",
+    );
+    assert.equal(
+      (await server.plans.read(forked.id, forked.plans?.[0]?.id ?? "")).content,
+      "# copied plan",
+    );
+    assert.equal(forked.modelId, source.modelId);
+    assert.equal(forked.workspaceId, source.workspaceId);
+  });
+
   it("filters and limits session list requests", async () => {
     const server = await createTestServer();
     for (const [id, title] of [

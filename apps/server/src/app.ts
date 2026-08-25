@@ -23,6 +23,7 @@ import {
   normalizeAiUsage,
   normalizeGeneratedCommitMessage,
   normalizeGeneratedSessionTitle,
+  type PlanStore,
   type RunRegistry,
   type RunStartInput,
   replaceImageFileName,
@@ -312,11 +313,132 @@ function emptySession(id = randomUUID()): ChatSession {
   };
 }
 
+function remapForkValue(
+  value: unknown,
+  maps: {
+    attachments: Map<string, string>;
+    plans: Map<string, string>;
+    tools: Map<string, string>;
+    approvals: Map<string, string>;
+  },
+  parentKey?: string,
+): unknown {
+  if (Array.isArray(value)) return value.map((item) => remapForkValue(item, maps, parentKey));
+  if (!value || typeof value !== "object") return value;
+  const output: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value)) {
+    const map =
+      key === "attachmentId"
+        ? maps.attachments
+        : key === "planId"
+          ? maps.plans
+          : key === "toolCallId"
+            ? maps.tools
+            : key === "id" && parentKey === "approval"
+              ? maps.approvals
+              : undefined;
+    if (map && typeof child === "string") {
+      if (!map.has(child)) map.set(child, randomUUID());
+      output[key] = map.get(child);
+    } else {
+      output[key] = remapForkValue(child, maps, key);
+    }
+  }
+  return output;
+}
+
+async function forkSession(
+  source: ChatSession,
+  messageId: string,
+  store: SessionStore,
+  plans: PlanStore,
+) {
+  const messageIndex = source.messages.findIndex((message) => message.id === messageId);
+  const selected = source.messages[messageIndex];
+  if (selected?.role !== "assistant") throw new Error("只能从 bot 回复创建对话分支");
+
+  const targetId = randomUUID();
+  const now = new Date().toISOString();
+  const maps = {
+    attachments: new Map<string, string>(),
+    plans: new Map<string, string>(),
+    tools: new Map<string, string>(),
+    approvals: new Map<string, string>(),
+  };
+  const attachments: ChatSession["attachments"] = [];
+  try {
+    for (const attachment of source.attachments) {
+      const nextId = randomUUID();
+      maps.attachments.set(attachment.id, nextId);
+      const stored = await store.readAttachment(source.id, attachment.id);
+      if (!stored) {
+        if (attachment.source !== "remote")
+          throw new Error(`附件不存在：${attachment.fileName ?? attachment.id}`);
+        attachments.push({ ...attachment, id: nextId });
+        continue;
+      }
+      const path = await store.saveAttachment(targetId, nextId, stored.name, stored.bytes);
+      attachments.push({
+        ...attachment,
+        id: nextId,
+        path,
+        fileName: attachment.fileName ?? stored.name,
+      });
+    }
+
+    await store.save({
+      ...source,
+      id: targetId,
+      title: `Fork-${source.title}`,
+      createdAt: now,
+      updatedAt: now,
+      messages: [],
+      attachments,
+      plans: [],
+      activePlanId: undefined,
+    });
+
+    const sourcePlans = await plans.list(source.id);
+    const clonedPlans: ChatSession["plans"] = [];
+    for (const summary of sourcePlans) {
+      const content = await plans.read(source.id, summary.id);
+      const cloned = await plans.create(targetId);
+      await plans.write(targetId, cloned.id, content.content);
+      maps.plans.set(summary.id, cloned.id);
+      clonedPlans.push(cloned);
+    }
+
+    const messages = source.messages.slice(0, messageIndex + 1).map((message) => {
+      const nextId = randomUUID();
+      const cloned = remapForkValue(message, maps) as ChatSession["messages"][number];
+      return { ...cloned, id: nextId };
+    });
+    const target: ChatSession = {
+      ...source,
+      schemaVersion: 2,
+      id: targetId,
+      title: `Fork-${source.title}`,
+      createdAt: now,
+      updatedAt: now,
+      messages,
+      attachments,
+      plans: clonedPlans,
+      activePlanId: source.activePlanId ? maps.plans.get(source.activePlanId) : undefined,
+    };
+    await store.save(target);
+    return target;
+  } catch (error) {
+    await store.delete(targetId).catch(() => undefined);
+    throw error;
+  }
+}
+
 export type ChatServer = {
   app: Hono;
   store: SessionStore;
   events: EventHub;
   runs: RunRegistry;
+  plans: PlanStore;
   config: ServerConfig;
   shutdown: () => Promise<void>;
 };
@@ -327,10 +449,10 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     store,
     events,
     runs,
+    plans,
     jobs,
     chatConfig,
     memory,
-    plans,
     workspaces,
     mcp,
     activityLogs,
@@ -1106,6 +1228,22 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     }
   });
 
+  app.post("/v1/sessions/:id/fork", async (c) => {
+    try {
+      const source = await store.get(c.req.param("id"));
+      if (!source) return jsonError("会话不存在", 404);
+      const body = parseJson(
+        await c.req.json().catch(() => ({})),
+        z.object({ messageId: z.string().min(1) }),
+      );
+      const target = await forkSession(source, body.messageId, store, plans);
+      events.publish({ type: "session.status", sessionId: target.id, status: "idle" });
+      return c.json(target, 201);
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error), 400);
+    }
+  });
+
   app.post("/v1/sessions/import", async (c) => {
     try {
       const payload = await c.req.json();
@@ -1388,6 +1526,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     store,
     events,
     runs,
+    plans,
     config,
     shutdown: async () => {
       automationScheduler.stop();
