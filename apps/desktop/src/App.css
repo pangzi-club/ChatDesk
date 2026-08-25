@@ -2458,12 +2458,23 @@
 .chat-selection-toolbar {
   position: fixed;
   z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 1px;
   transform: translateX(-50%);
   border: 1px solid var(--border);
+  border-radius: 8px;
   background: var(--card);
+  padding: 2px;
   box-shadow: 0 4px 14px rgb(0 0 0 / 12%);
   color: var(--foreground);
   white-space: nowrap;
+}
+
+.chat-selection-toolbar > button {
+  height: 28px;
+  padding-inline: 8px;
+  font-size: 12px;
 }
 .chat-content {
   width: min(850px, calc(100% - 48px));

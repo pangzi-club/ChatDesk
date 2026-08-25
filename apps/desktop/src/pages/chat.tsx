@@ -52,6 +52,7 @@ import {
   MessageSquarePlus,
   Mic,
   MoreHorizontal,
+  PanelRight,
   Paperclip,
   Play,
   RefreshCw,
@@ -244,6 +245,7 @@ import {
   updatePlanViewer,
 } from "@/lib/plan-viewer-events";
 import { openExternal } from "@/lib/platform";
+import { openSideChat } from "@/lib/side-chat-events";
 import {
   filterAllowedSkills,
   formatSkillsSystemHint,
@@ -1891,6 +1893,13 @@ function ChatPage() {
     requestAnimationFrame(() => inputRef.current?.focus());
   }
 
+  function addSelectionToSideChat() {
+    const snippet = selectedSnippetRef.current;
+    if (!snippet) return;
+    setSelectionToolbar(null);
+    openSideChat({ draft: snippet });
+  }
+
   async function copySelection() {
     const snippet = selectedSnippetRef.current;
     if (!snippet || !navigator.clipboard) return;
@@ -1939,7 +1948,7 @@ function ChatPage() {
         const currentSelection = window.getSelection();
         if (currentSelection?.toString().trim() !== selectedSnippetRef.current) return;
         setSelectionToolbar({
-          left: Math.min(Math.max(rect.left + rect.width / 2, 72), window.innerWidth - 72),
+          left: Math.min(Math.max(rect.left + rect.width / 2, 156), window.innerWidth - 156),
           top: Math.max(rect.top - 42, 8),
         });
       }, 1000);
@@ -2437,18 +2446,33 @@ function ChatPage() {
       </header>
 
       {selectionToolbar ? (
-        <Button
-          aria-label="添加选中文本到对话"
+        <div
           className="chat-selection-toolbar"
-          onClick={addSelectionToComposer}
-          onMouseDown={(event) => event.preventDefault()}
-          size="sm"
           style={{ left: selectionToolbar.left, top: selectionToolbar.top }}
-          type="button"
         >
-          <MessageSquarePlus className="size-3.5" />
-          添加到对话
-        </Button>
+          <Button
+            aria-label="添加选中文本到对话"
+            onClick={addSelectionToComposer}
+            onMouseDown={(event) => event.preventDefault()}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            <MessageSquarePlus className="size-3.5" />
+            添加到对话
+          </Button>
+          <Button
+            aria-label="添加选中文本到侧边聊天"
+            onClick={addSelectionToSideChat}
+            onMouseDown={(event) => event.preventDefault()}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            <PanelRight className="size-3.5" />
+            添加到侧边聊天
+          </Button>
+        </div>
       ) : null}
       <div className="chat-stage-shell">
         <ContextMenu>

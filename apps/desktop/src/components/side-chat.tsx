@@ -3,10 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 import type { UIMessage } from "ai";
 import { DefaultChatTransport } from "ai";
 import { ArrowUp, LoaderCircle, Square } from "lucide-react";
-import { useMemo, useState } from "react";
-import { ChatComposerInput } from "@/components/chat-composer-input";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChatComposerInput, type ChatComposerInputHandle } from "@/components/chat-composer-input";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { Button } from "@/components/ui/button";
+import { appendComposerSelection } from "@/lib/chat-composer-selection";
 import {
   chatServerFetch,
   chatServerHeaders,
@@ -27,11 +28,16 @@ function textOf(message: UIMessage) {
 export function SideChat({
   sessionId,
   contextMessages,
+  draft,
+  draftRevision,
 }: {
   sessionId: string;
   contextMessages: UIMessage[];
+  draft?: string;
+  draftRevision: number;
 }) {
   const [input, setInput] = useState("");
+  const inputRef = useRef<ChatComposerInputHandle>(null);
   const modelsQuery = useQuery({ queryKey: ["models"], queryFn: loadModels });
   const model = modelsQuery.data?.[0];
   const transport = useMemo(
@@ -63,6 +69,12 @@ export function SideChat({
   );
   const { error, messages, sendMessage, status, stop } = useChat({ id: sessionId, transport });
   const busy = status === "submitted" || status === "streaming";
+
+  useEffect(() => {
+    if (!draft || draftRevision < 1) return;
+    setInput((current) => appendComposerSelection(current, draft));
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, [draft, draftRevision]);
 
   async function submit() {
     const value = input.trim();
@@ -133,6 +145,7 @@ export function SideChat({
             }}
             onPasteFiles={() => undefined}
             placeholder="问问当前对话..."
+            ref={inputRef}
             value={input}
           />
           <div className="chat-composer-footer">

@@ -174,6 +174,7 @@ import {
   type ShortcutSettings,
   subscribeShortcutSettings,
 } from "@/lib/shortcuts";
+import { subscribeSideChatOpen } from "@/lib/side-chat-events";
 import { appendSystemLog } from "@/lib/system-log";
 import { terminalSessions } from "@/lib/terminal";
 import {
@@ -538,14 +539,23 @@ function AppShell() {
             )
           : (chatSessionQuery.data.cwd ?? "")
         : "";
-  async function openSideChat() {
+  async function openSideChat(draft?: string) {
     if (!isChatPage || sideChatOpening) return;
     const state = chatWindowStates[chatWindowKey] ?? createChatWindowState();
     const existing = state.tabs.find((tab) => tab.kind === "chat");
     if (existing) {
       setChatWindowStates((current) => ({
         ...current,
-        [chatWindowKey]: { ...state, open: true, activeTabId: existing.id },
+        [chatWindowKey]: {
+          ...state,
+          open: true,
+          activeTabId: existing.id,
+          tabs: state.tabs.map((tab) =>
+            tab.id === existing.id && draft
+              ? { ...tab, draft, draftRevision: (tab.draftRevision ?? 0) + 1 }
+              : tab,
+          ),
+        },
       }));
       return;
     }
@@ -565,6 +575,8 @@ function AppShell() {
         workspaceId: chatWorkspaceId,
         cwd: chatWorkspaceCwd,
         contextMessages: chatSessionQuery.data?.messages ?? [],
+        draft,
+        draftRevision: draft ? 1 : 0,
       };
       setChatWindowStates((current) => ({
         ...current,
@@ -576,6 +588,13 @@ function AppShell() {
       setSideChatOpening(false);
     }
   }
+  const openSideChatRef = useRef(openSideChat);
+  openSideChatRef.current = openSideChat;
+
+  useEffect(
+    () => subscribeSideChatOpen((request) => void openSideChatRef.current(request.draft)),
+    [],
+  );
   function closeSideChatWindow(key: string) {
     const state = chatWindowStates[key];
     for (const tab of state?.tabs ?? []) {
@@ -2463,6 +2482,8 @@ type ChatWindowTab = {
   activePlanId?: string;
   activePlanCanExecute?: boolean;
   contextMessages?: import("ai").UIMessage[];
+  draft?: string;
+  draftRevision?: number;
 };
 type ChatWindowState = {
   open: boolean;
@@ -3426,6 +3447,8 @@ function ChatWorkspaceWindow({
       {chatTab ? (
         <SideChat
           contextMessages={chatTab.contextMessages ?? []}
+          draft={chatTab.draft}
+          draftRevision={chatTab.draftRevision ?? 0}
           sessionId={chatTab.sessionId ?? ""}
         />
       ) : planTab ? (
