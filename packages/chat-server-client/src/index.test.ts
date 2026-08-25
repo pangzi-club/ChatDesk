@@ -71,6 +71,26 @@ describe("ChatServerClient", () => {
     assert.deepEqual(JSON.parse(String(requestInit?.body)), { messageId: "assistant-1" });
   });
 
+  it("updates a session title with the title endpoint", async () => {
+    let requestUrl = "";
+    let requestInit: RequestInit | undefined;
+    const client = new ChatServerClient({
+      baseUrl: "http://localhost",
+      fetchImpl: async (input, init) => {
+        requestUrl = String(input);
+        requestInit = init;
+        return new Response(JSON.stringify({ title: "新标题" }), { status: 200 });
+      },
+    });
+
+    assert.deepEqual(await client.updateSessionTitle("source/session", "新标题"), {
+      title: "新标题",
+    });
+    assert.equal(requestUrl, "http://localhost/v1/sessions/source%2Fsession/title");
+    assert.equal(requestInit?.method, "PUT");
+    assert.deepEqual(JSON.parse(String(requestInit?.body)), { title: "新标题" });
+  });
+
   it("encodes attachment bytes using the server upload contract", async () => {
     let body = "";
     const client = new ChatServerClient({

@@ -86,6 +86,7 @@ Authorization: Bearer local-dev-token
 - `POST /v1/sessions/import`：批量导入会话。
 - `GET/PATCH/DELETE /v1/sessions/:id`：读取、更新或删除会话。
 - `POST /v1/sessions/:id/title`：根据当前对话用模型重新生成会话标题。
+- `PUT /v1/sessions/:id/title`：手动更新会话标题。
 - `POST/GET/DELETE /v1/sessions/:id/attachments...`：上传、读取或删除附件。图片会在落盘前经 Sharp 压缩。
 - `POST /v1/sessions/:id/runs`：启动一次模型运行；同一会话已有运行时返回 `409`。
 - `POST /v1/sessions/:id/runs/stop`：停止当前运行。

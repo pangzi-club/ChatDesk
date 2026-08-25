@@ -418,6 +418,45 @@ describe("chat server", () => {
     );
   });
 
+  it("updates a session title manually without changing session recency", async () => {
+    const server = await createTestServer();
+    await server.store.save({
+      schemaVersion: 2,
+      id: "manual-title-session",
+      title: "旧标题",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      messages: [],
+      attachments: [],
+    });
+
+    const updated = await server.app.request(
+      "http://localhost/v1/sessions/manual-title-session/title",
+      {
+        method: "PUT",
+        headers: { ...auth(), "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "  手动标题  " }),
+      },
+    );
+    assert.equal(updated.status, 200);
+    assert.deepEqual(await updated.json(), { title: "手动标题" });
+    assert.equal(
+      (await server.store.get("manual-title-session"))?.updatedAt,
+      "2026-01-01T00:00:00.000Z",
+    );
+
+    const empty = await server.app.request(
+      "http://localhost/v1/sessions/manual-title-session/title",
+      {
+        method: "PUT",
+        headers: { ...auth(), "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "   " }),
+      },
+    );
+    assert.equal(empty.status, 400);
+    assert.equal((await server.store.get("manual-title-session"))?.title, "手动标题");
+  });
+
   it("previews the system prompt without starting a run", async () => {
     const server = await createTestServer();
     const workspace = await mkdtemp(path.join(os.tmpdir(), "chatdesk-preview-workspace-"));

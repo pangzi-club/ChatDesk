@@ -1321,6 +1321,21 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     }
   });
 
+  app.put("/v1/sessions/:id/title", async (c) => {
+    try {
+      const session = await store.get(c.req.param("id"));
+      if (!session) return jsonError("会话不存在", 404);
+      const { title } = parseJson(
+        await c.req.json().catch(() => ({})),
+        z.object({ title: z.string().trim().min(1).max(120) }),
+      );
+      await store.save({ ...session, title });
+      return c.json({ title });
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error), 400);
+    }
+  });
+
   app.patch("/v1/sessions/:id", async (c) => {
     try {
       const current = await store.get(c.req.param("id"));

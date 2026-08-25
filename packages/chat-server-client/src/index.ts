@@ -255,6 +255,18 @@ export class ChatServerClient {
     );
   }
 
+  updateSessionTitle(sessionId: string, title: string) {
+    return this.json<{ title: string }>(
+      `/v1/sessions/${encodePath(sessionId)}/title`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      },
+      "对话标题保存失败",
+    );
+  }
+
   async deleteSession(sessionId: string) {
     const response = await this.request(`/v1/sessions/${encodePath(sessionId)}`, {
       method: "DELETE",

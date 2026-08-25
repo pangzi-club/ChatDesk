@@ -76,6 +76,7 @@ import {
 } from "@/components/chat-conversation-menu-items";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { ChatTerminal } from "@/components/chat-terminal";
+import { ChatTitleDialog } from "@/components/chat-title-dialog";
 import { ExplorerFileIcon } from "@/components/explorer-file-icon";
 import { FileViewer } from "@/components/file-viewer";
 import { GitCommitDialog } from "@/components/git-commit-dialog";
@@ -141,6 +142,7 @@ import {
   restartChatServer,
   restoreServerWorkspaceGit,
   subscribeChatServerEvents,
+  updateChatSessionTitle,
 } from "@/lib/chat-server";
 import {
   type ChatIndexItem,
@@ -1572,7 +1574,7 @@ function ConversationSidebarRow({
           <ChatConversationMenuItems
             Item={ContextMenuItem}
             canCopyAsMarkdown={session.messageCount > 0}
-            canRegenerateTitle={!isRunning && !isRenaming && session.messageCount > 0}
+            canRegenerateTitle={!isRunning && !isRenaming}
             conversationIdCopied={
               copiedConversation?.id === session.id && copiedConversation.kind === "id"
             }
@@ -1611,6 +1613,7 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
     kind: "id" | "markdown";
   } | null>(null);
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+  const [titleDialogSession, setTitleDialogSession] = useState<ChatIndexItem | null>(null);
   const copiedResetTimerRef = useRef<number | null>(null);
   const [workspaceToDelete, setWorkspaceToDelete] = useState<WorkspaceProject | null>(null);
   const [workspaceSort, setWorkspaceSort] = useState<WorkspaceSort>(loadWorkspaceSort);
@@ -1871,18 +1874,20 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
     markCopiedConversation(session.id, "markdown");
   }
 
-  async function regenerateConversationTitle(session: ChatIndexItem) {
-    const sessionStatus = serverStatuses[session.id];
-    const isRunning = sessionStatus === "submitted" || sessionStatus === "streaming";
-    if (isRunning || renamingSessionId === session.id || session.messageCount === 0) return;
-    setRenamingSessionId(session.id);
+  async function saveConversationTitle(title: string) {
+    if (!titleDialogSession) return;
+    await updateChatSessionTitle(titleDialogSession.id, title);
+    await queryClient.invalidateQueries({ queryKey: ["chat-index"] });
+  }
+
+  async function generateConversationTitle() {
+    if (!titleDialogSession) return;
+    setRenamingSessionId(titleDialogSession.id);
     try {
-      await regenerateChatSessionTitle(session.id);
+      await regenerateChatSessionTitle(titleDialogSession.id);
       await queryClient.invalidateQueries({ queryKey: ["chat-index"] });
-    } catch (error) {
-      console.error("Failed to regenerate chat title", error);
     } finally {
-      setRenamingSessionId((current) => (current === session.id ? null : current));
+      setRenamingSessionId((current) => (current === titleDialogSession.id ? null : current));
     }
   }
 
@@ -2040,7 +2045,7 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
                         onCopyMarkdown={(item) => void copyConversationMarkdown(item)}
                         onDelete={setSessionToDelete}
                         onOpen={openSession}
-                        onRegenerateTitle={(item) => void regenerateConversationTitle(item)}
+                        onRegenerateTitle={setTitleDialogSession}
                         session={session}
                         sidebarMotionTransition={sidebarMotionTransition}
                         suppressSidebarEntrance={suppressSidebarEntrance}
@@ -2181,7 +2186,7 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
                                 onCopyMarkdown={(item) => void copyConversationMarkdown(item)}
                                 onDelete={setSessionToDelete}
                                 onOpen={openSession}
-                                onRegenerateTitle={(item) => void regenerateConversationTitle(item)}
+                                onRegenerateTitle={setTitleDialogSession}
                                 session={session}
                                 sidebarMotionTransition={sidebarMotionTransition}
                                 suppressSidebarEntrance={suppressSidebarEntrance}
@@ -2244,6 +2249,21 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <ChatTitleDialog
+        canGenerate={Boolean(
+          titleDialogSession &&
+            titleDialogSession.messageCount > 0 &&
+            serverStatuses[titleDialogSession.id] !== "submitted" &&
+            serverStatuses[titleDialogSession.id] !== "streaming",
+        )}
+        onGenerate={generateConversationTitle}
+        onOpenChange={(open) => {
+          if (!open) setTitleDialogSession(null);
+        }}
+        onSave={saveConversationTitle}
+        open={titleDialogSession !== null}
+        title={titleDialogSession?.title ?? ""}
+      />
       <AlertDialog
         open={workspaceToDelete !== null}
         onOpenChange={(open) => {

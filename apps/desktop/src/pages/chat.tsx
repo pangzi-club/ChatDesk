@@ -83,6 +83,7 @@ import { ChatPathSuggestionPopup } from "@/components/chat-path-suggestion-popup
 import { ChatPlanQuestionnaire } from "@/components/chat-plan-questionnaire";
 import { ChatSkillsPicker } from "@/components/chat-skills-picker";
 import { ChatTaskList } from "@/components/chat-task-call";
+import { ChatTitleDialog } from "@/components/chat-title-dialog";
 import { ChatTodoPanel } from "@/components/chat-todo-panel";
 import { type ChatToolCallCardProps, ChatToolCallGroup } from "@/components/chat-tool-call-card";
 import { ChatToolLogDialog } from "@/components/chat-tool-log-dialog";
@@ -191,6 +192,7 @@ import {
   stopChatServerRun,
   subscribeChatServerEvents,
   updateChatPlanMode,
+  updateChatSessionTitle,
 } from "@/lib/chat-server";
 import {
   type ChatDisplaySettings,
@@ -396,7 +398,7 @@ function ChatPage() {
   const [planTransition, setPlanTransition] = useState<PlanTransitionState>("idle");
   const [planModeError, setPlanModeError] = useState("");
   const [attachmentError, setAttachmentError] = useState("");
-  const [titleError, setTitleError] = useState("");
+  const [titleDialogOpen, setTitleDialogOpen] = useState(false);
   const [forkError, setForkError] = useState("");
   const [forkingMessageId, setForkingMessageId] = useState<string | null>(null);
   const [isRenamingTitle, setIsRenamingTitle] = useState(false);
@@ -736,7 +738,6 @@ function ChatPage() {
       setPlans([]);
       setPlanTransition("idle");
       setPlanModeError("");
-      setTitleError("");
       setForkError("");
       setForkingMessageId(null);
       setIsRenamingTitle(false);
@@ -1248,7 +1249,6 @@ function ChatPage() {
     suppressSaveRef.current = true;
     setSessionTitle(session.title);
     setSessionKind(session.kind === "task" ? "task" : "chat");
-    setTitleError("");
     setIsRenamingTitle(false);
     setWorkspaceKey(session.workspaceId ?? (session.cwd ? "" : DEFAULT_WORKSPACE_ID));
     setSessionCwd(
@@ -2088,17 +2088,21 @@ function ChatPage() {
 
   const canCopyConversationMarkdown = canFormatChatConversationMarkdown(messages);
 
+  const canEditConversationTitle = !isGenerating && !isRenamingTitle;
   const canRegenerateConversationTitle =
-    !isGenerating &&
-    !isRenamingTitle &&
+    canEditConversationTitle &&
     messages.some((message) => message.role === "user" && messageText(message).trim());
+
+  function openTitleDialog() {
+    if (!canEditConversationTitle) return;
+    setConversationMenuOpen(false);
+    setTitleDialogOpen(true);
+  }
 
   async function regenerateConversationTitle() {
     if (!canRegenerateConversationTitle) {
       return;
     }
-    setConversationMenuOpen(false);
-    setTitleError("");
     setIsRenamingTitle(true);
     try {
       const result = await regenerateChatSessionTitle(sessionId);
@@ -2107,10 +2111,17 @@ function ChatPage() {
       void queryClient.invalidateQueries({ queryKey: ["chat-index"] });
     } catch (renameError) {
       if (activeSessionRef.current !== sessionId) return;
-      setTitleError(renameError instanceof Error ? renameError.message : String(renameError));
+      throw renameError;
     } finally {
       if (activeSessionRef.current === sessionId) setIsRenamingTitle(false);
     }
+  }
+
+  async function saveConversationTitle(title: string) {
+    const result = await updateChatSessionTitle(sessionId, title);
+    if (activeSessionRef.current !== sessionId) return;
+    setSessionTitle(result.title);
+    void queryClient.invalidateQueries({ queryKey: ["chat-index"] });
   }
 
   function keepConversationMenuOpen() {
@@ -2372,12 +2383,12 @@ function ChatPage() {
                   <ChatConversationMenuItems
                     Item={DropdownMenuItem}
                     canCopyAsMarkdown={canCopyConversationMarkdown}
-                    canRegenerateTitle={canRegenerateConversationTitle}
+                    canRegenerateTitle={canEditConversationTitle}
                     conversationIdCopied={conversationCopiedKind === "id"}
                     conversationMarkdownCopied={conversationCopiedKind === "markdown"}
                     onCopyAsMarkdown={() => void copyConversationMarkdown()}
                     onCopyConversationId={() => void copyConversationId()}
-                    onRegenerateTitle={() => void regenerateConversationTitle()}
+                    onRegenerateTitle={openTitleDialog}
                   />
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -2662,10 +2673,9 @@ function ChatPage() {
             ) : null}
           </div>
         </div>
-        {error || planModeError || titleError || attachmentError || forkError ? (
+        {error || planModeError || attachmentError || forkError ? (
           <p className="chat-error" role="alert">
             {planModeError ||
-              titleError ||
               attachmentError ||
               forkError ||
               (recoverableTransportError
@@ -3035,6 +3045,14 @@ function ChatPage() {
         open={contextOpen}
       />
       <ChatToolLogDialog messages={messages} onOpenChange={setToolLogOpen} open={toolLogOpen} />
+      <ChatTitleDialog
+        canGenerate={canRegenerateConversationTitle}
+        onGenerate={regenerateConversationTitle}
+        onOpenChange={setTitleDialogOpen}
+        onSave={saveConversationTitle}
+        open={titleDialogOpen}
+        title={sessionTitle}
+      />
       <AlertDialog
         onOpenChange={(open) => {
           if (open) environmentImportMutation.reset();

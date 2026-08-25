@@ -1,4 +1,4 @@
-import { Check, Copy, FileText, Sparkles } from "lucide-react";
+import { Check, Copy, FileText, Pencil } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
 
 type ConversationMenuItemProps = {
@@ -47,8 +47,8 @@ export function ChatConversationMenuItems({
         {conversationMarkdownCopied ? "已复制为 Markdown" : "复制为 Markdown"}
       </Item>
       <Item disabled={!canRegenerateTitle} onSelect={onRegenerateTitle}>
-        <Sparkles className="size-4" />
-        重新生成标题
+        <Pencil className="size-4" />
+        编辑标题
       </Item>
     </>
   );

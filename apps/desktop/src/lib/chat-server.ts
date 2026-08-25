@@ -812,6 +812,14 @@ export async function regenerateChatSessionTitle(
   return createClient(port).regenerateSessionTitle(sessionId);
 }
 
+export async function updateChatSessionTitle(
+  sessionId: string,
+  title: string,
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  return createClient(port).updateSessionTitle(sessionId, title);
+}
+
 export async function deleteChatServerSession(sessionId: string, port = CHAT_SERVER_DEFAULT_PORT) {
   await createClient(port).deleteSession(sessionId);
 }
