@@ -26,6 +26,7 @@ import {
   LoaderCircle,
   Maximize2,
   MessageCircle,
+  MessageSquarePlus,
   Minimize2,
   MoreHorizontal,
   Package,
@@ -80,6 +81,7 @@ import { ChatTitleDialog } from "@/components/chat-title-dialog";
 import { ExplorerFileIcon } from "@/components/explorer-file-icon";
 import { FileViewer } from "@/components/file-viewer";
 import { GitCommitDialog } from "@/components/git-commit-dialog";
+import { SideChat } from "@/components/side-chat";
 import { TitlebarDragRegion } from "@/components/titlebar";
 import {
   AlertDialog,
@@ -130,6 +132,8 @@ import {
   type ChatServerSession,
   canMonitorChatServer,
   canRestartChatServer,
+  createChatServerSession,
+  deleteChatServerSession,
   getChatServerStatus,
   loadChatPlan,
   loadChatPlans,
@@ -141,6 +145,7 @@ import {
   regenerateChatSessionTitle,
   restartChatServer,
   restoreServerWorkspaceGit,
+  stopChatServerRun,
   subscribeChatServerEvents,
   updateChatSessionTitle,
 } from "@/lib/chat-server";
@@ -459,6 +464,7 @@ function AppShell() {
     loadSidebarConversationView,
   );
   const [chatWindowStates, setChatWindowStates] = useState<Record<string, ChatWindowState>>({});
+  const [sideChatOpening, setSideChatOpening] = useState(false);
   const [shortcutSettings, setShortcutSettings] = useState<ShortcutSettings>(DEFAULT_SHORTCUTS);
   const [mainSidebarState, setMainSidebarState] = useState(loadMainSidebarState);
   const mainSidebarRef = useRef<HTMLElement>(null);
@@ -486,6 +492,7 @@ function AppShell() {
   const isChatPage = isChatPath(location.pathname);
   const chatWindowKey = getChatWindowKey(location.pathname, location.search);
   const previousChatWindowKeyRef = useRef(chatWindowKey);
+  const previousSideChatKeyRef = useRef(chatWindowKey);
   const activeChatWindowState = chatWindowStates[chatWindowKey];
   const isChatPanelOpen = isChatPage && Boolean(activeChatWindowState?.open);
   const isChatPanelExpanded = isChatPage && Boolean(activeChatWindowState?.expanded);
@@ -531,6 +538,64 @@ function AppShell() {
             )
           : (chatSessionQuery.data.cwd ?? "")
         : "";
+  async function openSideChat() {
+    if (!isChatPage || sideChatOpening) return;
+    const state = chatWindowStates[chatWindowKey] ?? createChatWindowState();
+    const existing = state.tabs.find((tab) => tab.kind === "chat");
+    if (existing) {
+      setChatWindowStates((current) => ({
+        ...current,
+        [chatWindowKey]: { ...state, open: true, activeTabId: existing.id },
+      }));
+      return;
+    }
+    setSideChatOpening(true);
+    try {
+      const session = await createChatServerSession({
+        kind: "ephemeral",
+        title: "侧边聊天",
+        workspaceId: chatWorkspaceId,
+        cwd: chatWorkspaceCwd,
+      });
+      const tab: ChatWindowTab = {
+        id: createChatWindowTabId(),
+        title: "侧边聊天",
+        kind: "chat",
+        sessionId: session.id,
+        workspaceId: chatWorkspaceId,
+        cwd: chatWorkspaceCwd,
+        contextMessages: chatSessionQuery.data?.messages ?? [],
+      };
+      setChatWindowStates((current) => ({
+        ...current,
+        [chatWindowKey]: { ...state, open: true, tabs: [...state.tabs, tab], activeTabId: tab.id },
+      }));
+    } catch (error) {
+      console.error("Failed to create side chat", error);
+    } finally {
+      setSideChatOpening(false);
+    }
+  }
+  function closeSideChatWindow(key: string) {
+    const state = chatWindowStates[key];
+    for (const tab of state?.tabs ?? []) {
+      if (tab.kind !== "chat" || !tab.sessionId) continue;
+      void stopChatServerRun(tab.sessionId).catch(() => undefined);
+      void deleteChatServerSession(tab.sessionId).catch((error) =>
+        console.error("Failed to delete side chat", error),
+      );
+    }
+    setChatWindowStates((current) => ({
+      ...current,
+      [key]: {
+        ...(current[key] ?? createChatWindowState()),
+        open: false,
+        expanded: false,
+        tabs: (current[key]?.tabs ?? []).filter((tab) => tab.kind !== "chat"),
+        activeTabId: (current[key]?.tabs ?? []).find((tab) => tab.kind !== "chat")?.id ?? null,
+      },
+    }));
+  }
   const hideMainSidebar = location.pathname.startsWith("/settings");
   const lockOutletScroll = location.pathname.startsWith("/settings/history");
 
@@ -556,6 +621,13 @@ function AppShell() {
       next[chatWindowKey] = current[chatWindowKey] ?? draftState;
       return next;
     });
+  }, [chatWindowKey]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: changing the route key is the cleanup trigger; the handler intentionally uses the previous state snapshot.
+  useEffect(() => {
+    const previousKey = previousSideChatKeyRef.current;
+    previousSideChatKeyRef.current = chatWindowKey;
+    if (previousKey !== chatWindowKey) closeSideChatWindow(previousKey);
   }, [chatWindowKey]);
 
   useEffect(() => {
@@ -1182,16 +1254,9 @@ function AppShell() {
                       workspaceId={chatWorkspaceId}
                       cwd={chatWorkspaceCwd}
                       state={chatWindowStates[chatWindowKey] ?? createChatWindowState()}
-                      onToggle={() =>
-                        setChatWindowStates((current) => ({
-                          ...current,
-                          [chatWindowKey]: {
-                            ...(current[chatWindowKey] ?? createChatWindowState()),
-                            open: false,
-                            expanded: false,
-                          },
-                        }))
-                      }
+                      onOpenSideChat={() => void openSideChat()}
+                      sideChatOpening={sideChatOpening}
+                      onToggle={() => closeSideChatWindow(chatWindowKey)}
                       onToggleExpanded={() =>
                         setChatWindowStates((current) => {
                           const state = current[chatWindowKey] ?? createChatWindowState();
@@ -2372,7 +2437,16 @@ function describeError(error: unknown) {
 type ChatWindowTab = {
   id: string;
   title: string;
-  kind?: "blank" | "workspace" | "git-diff" | "source" | "terminal" | "browser" | "image" | "plan";
+  kind?:
+    | "blank"
+    | "workspace"
+    | "git-diff"
+    | "source"
+    | "terminal"
+    | "browser"
+    | "image"
+    | "plan"
+    | "chat";
   workspaceId?: string;
   cwd?: string;
   path?: string;
@@ -2388,6 +2462,7 @@ type ChatWindowTab = {
   canExecute?: boolean;
   activePlanId?: string;
   activePlanCanExecute?: boolean;
+  contextMessages?: import("ai").UIMessage[];
 };
 type ChatWindowState = {
   open: boolean;
@@ -2433,8 +2508,10 @@ function ChatWorkspaceWindow({
   maximizeShortcut,
   panelShortcut,
   onChange,
+  onOpenSideChat,
   onToggle,
   onToggleExpanded,
+  sideChatOpening,
   split = false,
   state,
   workspaceId,
@@ -2444,8 +2521,10 @@ function ChatWorkspaceWindow({
   maximizeShortcut: string;
   panelShortcut: string;
   onChange: (state: ChatWindowState) => void;
+  onOpenSideChat: () => void;
   onToggle: () => void;
   onToggleExpanded: () => void;
+  sideChatOpening: boolean;
   split?: boolean;
   state: ChatWindowState;
   workspaceId: string;
@@ -2470,6 +2549,7 @@ function ChatWorkspaceWindow({
   const browserNavigation = getBrowserNavigationState(browserTab ?? {});
   const imageTab = activeTab?.kind === "image" ? activeTab : null;
   const planTab = activeTab?.kind === "plan" ? activeTab : null;
+  const chatTab = activeTab?.kind === "chat" ? activeTab : null;
   const activeTabWorkspaceId = workspaceTab?.workspaceId;
   const explorerCwd = cwd.trim();
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
@@ -3119,6 +3199,12 @@ function ChatWorkspaceWindow({
         .close(tabId)
         .catch((error) => console.error("Failed to close terminal session", error));
     }
+    if (closingTab?.kind === "chat" && closingTab.sessionId) {
+      void stopChatServerRun(closingTab.sessionId).catch(() => undefined);
+      void deleteChatServerSession(closingTab.sessionId).catch((error) =>
+        console.error("Failed to delete side chat", error),
+      );
+    }
     const nextTabs = state.tabs.filter((tab) => tab.id !== tabId);
     const nextActive =
       state.activeTabId === tabId
@@ -3135,6 +3221,12 @@ function ChatWorkspaceWindow({
         void terminalSessions
           .close(tab.id)
           .catch((error) => console.error("Failed to close terminal session", error));
+      }
+      if (tab.kind === "chat" && tab.sessionId) {
+        void stopChatServerRun(tab.sessionId).catch(() => undefined);
+        void deleteChatServerSession(tab.sessionId).catch((error) =>
+          console.error("Failed to delete side chat", error),
+        );
       }
     }
     onChange({ ...state, tabs: [], activeTabId: null });
@@ -3244,6 +3336,7 @@ function ChatWorkspaceWindow({
                     {tab.kind === "browser" ? <Globe2 className="size-3.5" /> : null}
                     {tab.kind === "image" ? <Image className="size-3.5" /> : null}
                     {tab.kind === "plan" ? <ScrollText className="size-3.5" /> : null}
+                    {tab.kind === "chat" ? <MessageSquarePlus className="size-3.5" /> : null}
                     <span>{tab.title}</span>
                   </button>
                   <button
@@ -3296,6 +3389,14 @@ function ChatWorkspaceWindow({
               <Globe2 className="size-3.5" />
               Browser
             </DropdownMenuItem>
+            <DropdownMenuItem disabled={sideChatOpening} onSelect={onOpenSideChat}>
+              {sideChatOpening ? (
+                <LoaderCircle className="size-3.5 animate-spin" />
+              ) : (
+                <MessageSquarePlus className="size-3.5" />
+              )}
+              侧边聊天
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         <Button
@@ -3322,7 +3423,12 @@ function ChatWorkspaceWindow({
           <PanelLeft className="size-4 rotate-180" />
         </Button>
       </div>
-      {planTab ? (
+      {chatTab ? (
+        <SideChat
+          contextMessages={chatTab.contextMessages ?? []}
+          sessionId={chatTab.sessionId ?? ""}
+        />
+      ) : planTab ? (
         <div className="chat-explorer-shell">
           <header className="chat-explorer-toolbar">
             <span className="chat-explorer-title">{planTab.title}</span>
@@ -3656,6 +3762,21 @@ function ChatWorkspaceWindow({
               >
                 <Globe2 className="size-3.5" />
                 Browser
+              </Button>
+              <Button
+                disabled={sideChatOpening}
+                onClick={onOpenSideChat}
+                size="sm"
+                title="打开侧边聊天"
+                type="button"
+                variant="outline"
+              >
+                {sideChatOpening ? (
+                  <LoaderCircle className="size-3.5 animate-spin" />
+                ) : (
+                  <MessageSquarePlus className="size-3.5" />
+                )}
+                侧边聊天
               </Button>
             </div>
           </div>

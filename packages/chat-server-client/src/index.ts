@@ -199,7 +199,13 @@ export class ChatServerClient {
     );
   }
 
-  createSession(options?: { id?: string; title?: string; workspaceId?: string; cwd?: string }) {
+  createSession(options?: {
+    id?: string;
+    title?: string;
+    workspaceId?: string;
+    cwd?: string;
+    kind?: "chat" | "task" | "ephemeral";
+  }) {
     return this.json<ChatSession>(
       "/v1/sessions",
       {

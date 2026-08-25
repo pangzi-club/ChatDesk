@@ -170,7 +170,7 @@ export type SystemPromptSnapshot = {
   cwd?: string;
 };
 
-export const CHAT_SESSION_KINDS = ["chat", "task"] as const;
+export const CHAT_SESSION_KINDS = ["chat", "task", "ephemeral"] as const;
 export type ChatSessionKind = (typeof CHAT_SESSION_KINDS)[number];
 
 export type ChatSession = {
@@ -368,6 +368,7 @@ export type DeveloperEnvironmentStatus = {
 
 export type RunStartInput = {
   messages?: UIMessage[];
+  contextMessages?: UIMessage[];
   message?: UIMessage;
   model?: ServerModelConfig;
   modelId?: string;

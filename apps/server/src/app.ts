@@ -51,6 +51,7 @@ import { withSseKeepAlive } from "./sse-keepalive.ts";
 
 const runInputSchema = z.object({
   messages: z.array(z.unknown()).optional(),
+  contextMessages: z.array(z.unknown()).optional(),
   message: z.unknown().optional(),
   model: z
     .object({
@@ -1215,6 +1216,10 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
       );
       const next: ChatSession = {
         ...session,
+        kind:
+          body.kind === "ephemeral" || body.kind === "task" || body.kind === "chat"
+            ? body.kind
+            : undefined,
         title:
           typeof body.title === "string" && body.title.trim() ? body.title.trim() : session.title,
         workspaceId: bound.workspaceId,

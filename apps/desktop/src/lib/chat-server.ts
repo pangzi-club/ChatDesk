@@ -735,6 +735,19 @@ export async function ensureChatServerSession(
   await createClient(port).ensureSession(sessionId, options);
 }
 
+export async function createChatServerSession(
+  options?: {
+    id?: string;
+    title?: string;
+    workspaceId?: string;
+    cwd?: string;
+    kind?: "chat" | "task" | "ephemeral";
+  },
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  return createClient(port).createSession(options);
+}
+
 export async function createChatPlan(sessionId: string, port = CHAT_SERVER_DEFAULT_PORT) {
   const response = await chatServerRequest(
     `/v1/sessions/${encodeURIComponent(sessionId)}/plans`,

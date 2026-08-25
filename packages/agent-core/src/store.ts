@@ -155,6 +155,7 @@ export class SessionStore {
           (query ? b.relevance - a.relevance : 0) ||
           b.item.updatedAt.localeCompare(a.item.updatedAt),
       )
+      .filter(({ item }) => item.kind !== "ephemeral")
       .slice(0, limit)
       .map(({ item }) => item);
   }

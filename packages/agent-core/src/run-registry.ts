@@ -694,7 +694,10 @@ export class RunRegistry {
       const languageModel = this.createLanguageModel
         ? this.createLanguageModel(model)
         : createConfiguredLanguageModel(model);
-      const modelMessages = await convertToModelMessages(messages);
+      const modelMessages = await convertToModelMessages([
+        ...(input.contextMessages ?? []),
+        ...messages,
+      ]);
       const system = prompt.text;
       const metrics: RunMetrics = {
         stepCount: 0,
