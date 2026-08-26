@@ -6,6 +6,7 @@ import { test } from "vitest";
 import { supportsRequiredToolChoice } from "./model-adaptor.ts";
 import type { ChatSession } from "./protocol.ts";
 import {
+  interruptLatestAssistantMessage,
   interruptRunMessage,
   MAX_AGENT_STEPS,
   MODEL_CALL_MAX_RETRIES,
@@ -203,6 +204,44 @@ test("marks pending tools as failed when a persisted run is interrupted", () => 
   assert.equal(text.type === "text" ? text.state : undefined, "done");
   assert.equal("state" in tool ? tool.state : undefined, "output-error");
   assert.equal("errorText" in tool ? tool.errorText : undefined, "server restarted");
+});
+
+test("interrupts only the latest assistant message when a run fails", () => {
+  const messages = [
+    { id: "user-1", role: "user", parts: [{ type: "text", text: "first" }] },
+    {
+      id: "assistant-1",
+      role: "assistant",
+      parts: [{ type: "text", text: "completed" }],
+    },
+    { id: "user-2", role: "user", parts: [{ type: "text", text: "second" }] },
+    {
+      id: "assistant-2",
+      role: "assistant",
+      parts: [
+        {
+          type: "tool-web_search",
+          toolCallId: "search-1",
+          state: "input-available",
+          input: { query: "financial AI regulations" },
+        },
+      ],
+    },
+  ] as UIMessage[];
+
+  const interrupted = interruptLatestAssistantMessage(
+    messages,
+    "运行异常结束：incomplete-response",
+  );
+  const prior = interrupted[1].parts[0];
+  const tool = interrupted[3].parts[0];
+
+  assert.equal(prior.type === "text" ? prior.text : undefined, "completed");
+  assert.equal("state" in tool ? tool.state : undefined, "output-error");
+  assert.equal(
+    "errorText" in tool ? tool.errorText : undefined,
+    "运行异常结束：incomplete-response",
+  );
 });
 
 function session(values: Partial<ChatSession> = {}): ChatSession {

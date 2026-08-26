@@ -262,6 +262,19 @@ export function interruptRunMessage(message: UIMessage, reason = "运行已中�
   };
 }
 
+export function interruptLatestAssistantMessage(messages: UIMessage[], reason: string) {
+  let interrupted = false;
+  return messages.map((message, index) => {
+    if (interrupted || message.role !== "assistant") return message;
+    const hasLaterAssistant = messages
+      .slice(index + 1)
+      .some((candidate) => candidate.role === "assistant");
+    if (hasLaterAssistant) return message;
+    interrupted = true;
+    return interruptRunMessage(message, reason);
+  });
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
@@ -1397,18 +1410,6 @@ export class RunRegistry {
           ? mergeRunMessage(session.messages, latestDraft)
           : session.messages;
       const aborted = getRunAborted() && controllerAborted(this.active.get(sessionId));
-      if (aborted) {
-        let interrupted = false;
-        persistedMessages = persistedMessages.map((message, index) => {
-          if (interrupted || message.role !== "assistant") return message;
-          const hasLaterAssistant = persistedMessages
-            .slice(index + 1)
-            .some((candidate) => candidate.role === "assistant");
-          if (hasLaterAssistant) return message;
-          interrupted = true;
-          return interruptRunMessage(message, "用户已停止运行");
-        });
-      }
       const completion = evaluateRunCompletion({
         planMode,
         planWritten: metrics.planWritten,
@@ -1419,6 +1420,12 @@ export class RunRegistry {
         aborted,
         forcedStopReason: metrics.forcedStopReason,
       });
+      if (aborted || completion.outcome === "error") {
+        const interruptionReason = aborted
+          ? "用户已停止运行"
+          : `运行异常结束：${completion.stopReason ?? "incomplete-response"}`;
+        persistedMessages = interruptLatestAssistantMessage(persistedMessages, interruptionReason);
+      }
       if (completion.stopReason === "incomplete-response" && !aborted) {
         if (!terminal.observed) {
           metrics.failureMessage = "模型连接已结束，但未返回任何内容。请重试。";
