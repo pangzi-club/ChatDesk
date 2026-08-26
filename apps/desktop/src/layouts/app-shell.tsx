@@ -1,5 +1,6 @@
 import {
   DEFAULT_WORKSPACE_ID,
+  type SystemPromptSnapshot,
   type WorkspaceFileEntry,
   type WorkspaceGitFile,
 } from "@chatdesk/shared";
@@ -70,6 +71,7 @@ import {
   useNavigate,
 } from "react-router-dom";
 import { ChatBrowser } from "@/components/chat-browser";
+import { ChatContextDetail } from "@/components/chat-context-detail";
 import { ChatConversationHoverCard } from "@/components/chat-conversation-hover-card";
 import {
   ChatConversationMenuItems,
@@ -156,6 +158,11 @@ import {
   loadChatSession,
   searchChatIndex,
 } from "@/lib/chat-store";
+import {
+  type ContextDetailPromptInput,
+  subscribeContextDetailOpen,
+  subscribeContextDetailUpdated,
+} from "@/lib/context-detail-events";
 import { getDesktopBridge, isDesktop } from "@/lib/desktop-bridge";
 import { explorerFileIconKind } from "@/lib/explorer-file-icon";
 import { subscribeFileViewerOpen } from "@/lib/file-viewer-events";
@@ -968,6 +975,64 @@ function AppShell() {
           }
         }
         return next;
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    return subscribeContextDetailOpen((request) => {
+      const key = getChatWindowKey(location.pathname, location.search);
+      setChatWindowStates((current) => {
+        const state = current[key] ?? createChatWindowState();
+        const existing = state.tabs.find(
+          (tab) => tab.kind === "context-detail" && tab.sessionId === request.sessionId,
+        );
+        const tab: ChatWindowTab = existing ?? {
+          id: createChatWindowTabId(),
+          title: "上下文详情",
+          kind: "context-detail",
+          sessionId: request.sessionId,
+        };
+        const updated: ChatWindowTab = {
+          ...tab,
+          contextMessages: request.messages,
+          contextPromptInput: request.promptInput,
+          ...(request.systemPrompt ? { contextSystemPrompt: request.systemPrompt } : {}),
+        };
+        return {
+          ...current,
+          [key]: {
+            ...state,
+            open: true,
+            tabs: existing
+              ? state.tabs.map((item) => (item.id === existing.id ? updated : item))
+              : [...state.tabs, updated],
+            activeTabId: updated.id,
+          },
+        };
+      });
+    });
+  }, [location.pathname, location.search]);
+
+  useEffect(() => {
+    return subscribeContextDetailUpdated((request) => {
+      setChatWindowStates((current) => {
+        let changed = false;
+        const next = { ...current };
+        for (const [key, state] of Object.entries(current)) {
+          const tabs = state.tabs.map((tab) => {
+            if (tab.kind !== "context-detail" || tab.sessionId !== request.sessionId) return tab;
+            changed = true;
+            return {
+              ...tab,
+              ...(request.messages ? { contextMessages: request.messages } : {}),
+              ...(request.promptInput ? { contextPromptInput: request.promptInput } : {}),
+              ...(request.systemPrompt ? { contextSystemPrompt: request.systemPrompt } : {}),
+            };
+          });
+          if (tabs.some((tab, index) => tab !== state.tabs[index])) next[key] = { ...state, tabs };
+        }
+        return changed ? next : current;
       });
     });
   }, []);
@@ -2465,6 +2530,7 @@ type ChatWindowTab = {
     | "browser"
     | "image"
     | "plan"
+    | "context-detail"
     | "chat";
   workspaceId?: string;
   cwd?: string;
@@ -2482,6 +2548,8 @@ type ChatWindowTab = {
   activePlanId?: string;
   activePlanCanExecute?: boolean;
   contextMessages?: import("ai").UIMessage[];
+  contextPromptInput?: ContextDetailPromptInput;
+  contextSystemPrompt?: SystemPromptSnapshot;
   draft?: string;
   draftRevision?: number;
 };
@@ -2570,6 +2638,7 @@ function ChatWorkspaceWindow({
   const browserNavigation = getBrowserNavigationState(browserTab ?? {});
   const imageTab = activeTab?.kind === "image" ? activeTab : null;
   const planTab = activeTab?.kind === "plan" ? activeTab : null;
+  const contextDetailTab = activeTab?.kind === "context-detail" ? activeTab : null;
   const chatTab = activeTab?.kind === "chat" ? activeTab : null;
   const activeTabWorkspaceId = workspaceTab?.workspaceId;
   const explorerCwd = cwd.trim();
@@ -3357,6 +3426,7 @@ function ChatWorkspaceWindow({
                     {tab.kind === "browser" ? <Globe2 className="size-3.5" /> : null}
                     {tab.kind === "image" ? <Image className="size-3.5" /> : null}
                     {tab.kind === "plan" ? <ScrollText className="size-3.5" /> : null}
+                    {tab.kind === "context-detail" ? <ChartColumn className="size-3.5" /> : null}
                     {tab.kind === "chat" ? <MessageSquarePlus className="size-3.5" /> : null}
                     <span>{tab.title}</span>
                   </button>
@@ -3450,6 +3520,13 @@ function ChatWorkspaceWindow({
           draft={chatTab.draft}
           draftRevision={chatTab.draftRevision ?? 0}
           sessionId={chatTab.sessionId ?? ""}
+        />
+      ) : contextDetailTab?.contextPromptInput ? (
+        <ChatContextDetail
+          messages={contextDetailTab.contextMessages ?? []}
+          promptInput={contextDetailTab.contextPromptInput}
+          sessionId={contextDetailTab.sessionId ?? ""}
+          systemPrompt={contextDetailTab.contextSystemPrompt}
         />
       ) : planTab ? (
         <div className="chat-explorer-shell">

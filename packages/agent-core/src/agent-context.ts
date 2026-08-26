@@ -1,3 +1,4 @@
+import { estimateTokenCount } from "@chatdesk/shared";
 import { type ModelMessage, pruneMessages } from "ai";
 
 export const CHECKPOINT_OUTPUT_TOKENS = 4_000;
@@ -79,5 +80,5 @@ export function checkpointInstructions(options: {
 }
 
 export function estimateAgentContextTokens(messages: ModelMessage[], instructions: string) {
-  return Math.ceil((JSON.stringify(messages).length + instructions.length) / 4);
+  return estimateTokenCount(JSON.stringify(messages) + instructions);
 }

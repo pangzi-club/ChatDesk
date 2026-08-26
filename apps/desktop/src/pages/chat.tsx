@@ -34,6 +34,7 @@ import {
   ArrowUp,
   Brain,
   Bug,
+  ChartColumn,
   Check,
   ChevronDown,
   ChevronUp,
@@ -228,6 +229,7 @@ import {
   getMessageRunStateLabel,
   getMessageUsage,
 } from "@/lib/chat-usage";
+import { openContextDetail, updateContextDetail } from "@/lib/context-detail-events";
 import { getDesktopBridge } from "@/lib/desktop-bridge";
 import { detectMissingDevelopmentTools } from "@/lib/developer-environment";
 import { openFileViewer } from "@/lib/file-viewer-events";
@@ -628,6 +630,39 @@ function ChatPage() {
       console.error("Chat request failed", chatError);
     },
   });
+  const openContextDetailPanel = useCallback(async () => {
+    const promptInput = await getPromptInput();
+    openContextDetail({
+      sessionId,
+      messages,
+      promptInput,
+      ...(systemPromptRef.current ? { systemPrompt: systemPromptRef.current } : {}),
+    });
+  }, [getPromptInput, messages, sessionId]);
+
+  useEffect(() => {
+    updateContextDetail({
+      sessionId,
+      messages,
+      ...(systemPromptRef.current ? { systemPrompt: systemPromptRef.current } : {}),
+    });
+  }, [messages, sessionId]);
+
+  useEffect(() => {
+    void promptKey;
+    let active = true;
+    void getPromptInput().then((promptInput) => {
+      if (!active) return;
+      updateContextDetail({
+        sessionId,
+        promptInput,
+        ...(systemPromptRef.current ? { systemPrompt: systemPromptRef.current } : {}),
+      });
+    });
+    return () => {
+      active = false;
+    };
+  }, [getPromptInput, promptKey, sessionId]);
   const [serverSessionStatuses, setServerSessionStatuses] = useState<
     Record<string, ChatServerSession["status"]>
   >({});
@@ -2422,6 +2457,10 @@ function ChatPage() {
               <DropdownMenuItem onSelect={() => setContextOpen(true)}>
                 <FileText className="size-3.5" />
                 查看 System Prompt
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void openContextDetailPanel()}>
+                <ChartColumn className="size-3.5" />
+                上下文详情
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => setToolLogOpen(true)}>
                 <Wrench className="size-3.5" />
