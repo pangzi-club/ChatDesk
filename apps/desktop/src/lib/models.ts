@@ -45,6 +45,12 @@ export function sortModelsByName<T extends Pick<ModelConfig, "name">>(models: re
   );
 }
 
+export function getDefaultModel<T extends Pick<ModelConfig, "isDefault">>(
+  models: readonly T[],
+): T | undefined {
+  return models.find((model) => model.isDefault);
+}
+
 export async function loadModels(): Promise<ModelConfig[]> {
   try {
     const config = await loadChatServerConfig();

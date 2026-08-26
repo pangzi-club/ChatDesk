@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { formatModelContextSize, resolveModelInputContext, sortModelsByName } from "./models.ts";
+import {
+  formatModelContextSize,
+  getDefaultModel,
+  resolveModelInputContext,
+  sortModelsByName,
+} from "./models.ts";
 
 describe("model sorting", () => {
   it("sorts names naturally without mutating the saved order", () => {
@@ -11,6 +16,21 @@ describe("model sorting", () => {
       "model-10",
     ]);
     expect(models.map((model) => model.name)).toEqual(["model-10", "Alpha", "model-2"]);
+  });
+});
+
+describe("default model selection", () => {
+  it("returns the explicitly configured default instead of the first model", () => {
+    const models = [
+      { id: "first", isDefault: false },
+      { id: "default", isDefault: true },
+    ];
+
+    expect(getDefaultModel(models)?.id).toBe("default");
+  });
+
+  it("returns undefined when no default model is configured", () => {
+    expect(getDefaultModel([{ id: "only", isDefault: false }])).toBeUndefined();
   });
 });
 

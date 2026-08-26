@@ -127,6 +127,7 @@ import {
 import {
   formatModelContextSize,
   formatModelLabel,
+  getDefaultModel,
   loadModels,
   type ModelConfig,
   saveModels,
@@ -1009,6 +1010,7 @@ function MemorySettingsPage() {
     queryFn: loadChatMemory,
   });
   const store = memoryQuery.data ?? DEFAULT_CHAT_MEMORY;
+  const defaultModel = getDefaultModel(modelsQuery.data ?? []);
 
   function handleStoreChange(next: ChatMemoryStore) {
     queryClient.setQueryData(["chat-memory"], next);
@@ -1016,7 +1018,10 @@ function MemorySettingsPage() {
   }
 
   async function handleCompact() {
-    const next = await compactChatMemory(modelsQuery.data?.[0]);
+    if (!defaultModel) {
+      throw new Error("请先在“模型”设置中选择默认模型，再整理长期记忆。");
+    }
+    const next = await compactChatMemory(defaultModel);
     queryClient.setQueryData(["chat-memory"], next);
   }
 
