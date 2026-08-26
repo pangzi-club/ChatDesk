@@ -447,7 +447,7 @@
             <tr><td>Run</td><td><code>POST /v1/sessions/:id/runs</code> · <code>POST .../runs/stop</code></td><td>启动 / 停止；参数经 Zod 校验</td></tr>
             <tr><td>事件</td><td><code>GET /v1/events?sessionId=</code></td><td>SSE：先 snapshot，再 status / delta / done / ping</td></tr>
             <tr><td>聊天配置</td><td><code>GET|PATCH /v1/chat-config</code></td><td>模型、工具、沙箱、MCP、Skills、API key</td></tr>
-            <tr><td>长期记忆</td><td><code>/v1/memory*</code></td><td>两阶段提取/整合、条目 CRUD、来源、回填与按需召回</td></tr>
+            <tr><td>长期记忆</td><td><code>GET|PUT /v1/memory</code></td><td>MemoryStore</td></tr>
             <tr><td>Skills / MCP</td><td><code>/v1/skills</code> · <code>/v1/mcp*</code></td><td>扫描 / 选择 / 启停 / 工具调用</td></tr>
             <tr><td>归档导入</td><td><code>/v1/archive*</code></td><td>扫描 / 读取 / 上传 codex · claude-code · cursor · kimi</td></tr>
             <tr><td>Workspace</td><td><code>/v1/workspaces/:id/{git,files,file,search,shell}</code></td><td>含 fs 根白名单校验、shell 模式 ask / auto / full</td></tr>
@@ -891,9 +891,7 @@ const bridge: DesktopBridge = {
 │   ├── plan-&lt;rand&gt;.md      <span class="c">// plan mode 文件</span>
 │   └── attachments/        <span class="c">// Sharp 压缩后的图片</span>
 ├── settings.json
-├── memory.json             <span class="c">// v2 设置、摘要与最终记忆</span>
-├── memory-jobs.json        <span class="c">// 可恢复的提取/整合任务</span>
-├── memory-sources/         <span class="c">// 每会话 Phase 1 来源证据</span>
+├── memory.json
 ├── workspaces.json
 ├── server-config.json
 ├── archive/                <span class="c">// 用户归档（codex/claude/cursor/kimi）</span>

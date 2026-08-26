@@ -374,6 +374,7 @@ export type RunStartInput = {
   model?: ServerModelConfig;
   modelId?: string;
   system?: string;
+  memory?: string;
   cwd?: string;
   workspaceId?: string;
   sandboxMode?: SandboxMode;
@@ -771,123 +772,11 @@ export type ChatServerAiUsageLog = {
   model?: string;
   sessionId?: string;
   runId?: string;
-  jobId?: string;
   callId?: string;
   invocationIndex?: number;
   providerModelId?: string;
   responseId?: string;
   usage: ChatTokenUsage;
-};
-
-export const MEMORY_SCOPES = ["global", "workspace"] as const;
-export type MemoryScope = (typeof MEMORY_SCOPES)[number];
-export const MEMORY_STATUSES = ["active", "archived"] as const;
-export type MemoryStatus = (typeof MEMORY_STATUSES)[number];
-export const MEMORY_CATEGORIES = [
-  "profile",
-  "preference",
-  "constraint",
-  "project",
-  "decision",
-  "other",
-] as const;
-export type MemoryCategory = (typeof MEMORY_CATEGORIES)[number];
-
-export type MemorySettings = {
-  useMemories: boolean;
-  generateMemories: boolean;
-  skipExternalContext: boolean;
-  maxUnusedDays: number;
-  extractionModelId?: string;
-  consolidationModelId?: string;
-};
-
-export type MemoryEvidence = {
-  sessionId: string;
-  messageId?: string;
-  excerpt: string;
-  capturedAt: string;
-};
-
-export type MemoryItem = {
-  id: string;
-  content: string;
-  scope: MemoryScope;
-  workspaceId?: string;
-  category: MemoryCategory;
-  status: MemoryStatus;
-  pinned: boolean;
-  source: "manual" | "generated";
-  keywords: string[];
-  evidence: MemoryEvidence[];
-  createdAt: string;
-  updatedAt: string;
-  archivedAt?: string;
-  archiveReason?: string;
-  usageCount: number;
-  lastUsedAt?: string;
-};
-
-export type MemorySummary = {
-  scope: MemoryScope;
-  workspaceId?: string;
-  content: string;
-  keywords: string[];
-  updatedAt: string;
-};
-
-export type MemorySourceFact = {
-  content: string;
-  scope: MemoryScope;
-  workspaceId?: string;
-  category: MemoryCategory;
-  keywords: string[];
-  evidence: MemoryEvidence[];
-};
-
-export type MemorySource = {
-  sessionId: string;
-  sessionTitle: string;
-  workspaceId?: string;
-  sourceUpdatedAt: string;
-  generatedAt: string;
-  facts: MemorySourceFact[];
-  summary: string;
-};
-
-export const MEMORY_JOB_STATUSES = ["queued", "running", "succeeded", "failed"] as const;
-export type MemoryJobStatus = (typeof MEMORY_JOB_STATUSES)[number];
-export type MemoryJob = {
-  id: string;
-  kind: "extract" | "consolidate";
-  sessionId?: string;
-  workspaceId?: string;
-  status: MemoryJobStatus;
-  attempts: number;
-  createdAt: string;
-  updatedAt: string;
-  retryAt?: string;
-  error?: string;
-};
-
-export type MemoryPipelineState = {
-  lastExtractedAt?: string;
-  lastConsolidatedAt?: string;
-  queuedJobs: number;
-  runningJobs: number;
-  failedJobs: number;
-};
-
-export type MemoryOverview = {
-  schemaVersion: 2;
-  settings: MemorySettings;
-  summaries: MemorySummary[];
-  items: MemoryItem[];
-  pipeline: MemoryPipelineState;
-};
-
-export type MemoryBackfillPreview = {
-  candidateCount: number;
 };
 
 export type ChatToolPackId =

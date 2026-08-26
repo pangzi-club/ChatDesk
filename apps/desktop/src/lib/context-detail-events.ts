@@ -3,7 +3,7 @@ import type { UIMessage } from "ai";
 
 export type ContextDetailPromptInput = Pick<
   RunStartInput,
-  "system" | "cwd" | "workspaceId" | "toolNames"
+  "system" | "memory" | "cwd" | "workspaceId" | "toolNames"
 >;
 
 export type ContextDetailOpenRequest = {

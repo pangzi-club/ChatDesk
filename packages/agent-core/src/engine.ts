@@ -8,7 +8,6 @@ import { EventHub } from "./events.ts";
 import { ImageGenerationStore } from "./image-generation-store.ts";
 import { JobRegistry } from "./job-registry.ts";
 import { McpRuntime } from "./mcp-runtime.ts";
-import { MemoryCoordinator } from "./memory-coordinator.ts";
 import { MemoryStore } from "./memory-store.ts";
 import { PlanStore } from "./plan-store.ts";
 import type { ServerModelConfig } from "./protocol.ts";
@@ -31,7 +30,6 @@ export type AgentCore = {
   jobs: JobRegistry;
   chatConfig: ChatConfigStore;
   memory: MemoryStore;
-  memoryCoordinator: MemoryCoordinator;
   plans: PlanStore;
   workspaces: WorkspaceStore;
   mcp: McpRuntime;
@@ -66,14 +64,6 @@ export async function createAgentCore(options: AgentCoreOptions): Promise<AgentC
     await workspaces.init();
     await workspaces.ensureDefault();
     const mcp = new McpRuntime();
-    const memoryCoordinator = new MemoryCoordinator(
-      memory,
-      store,
-      chatConfig,
-      aiUsageLogs,
-      activityLogs,
-      options.createLanguageModel,
-    );
     const runs = new RunRegistry(
       store,
       events,
@@ -85,11 +75,8 @@ export async function createAgentCore(options: AgentCoreOptions): Promise<AgentC
       options.createLanguageModel,
       options.modelStreamTimeout,
       jobs,
-      memory,
-      memoryCoordinator,
     );
     await runs.initialize();
-    memoryCoordinator.initialize();
 
     return {
       dataDir: options.dataDir,
@@ -99,7 +86,6 @@ export async function createAgentCore(options: AgentCoreOptions): Promise<AgentC
       jobs,
       chatConfig,
       memory,
-      memoryCoordinator,
       plans,
       workspaces,
       mcp,
@@ -107,7 +93,6 @@ export async function createAgentCore(options: AgentCoreOptions): Promise<AgentC
       aiUsageLogs,
       imageGeneration,
       shutdown: async () => {
-        await memoryCoordinator.shutdown();
         await runs.shutdown();
         await jobs.shutdown();
         await mcp.close();

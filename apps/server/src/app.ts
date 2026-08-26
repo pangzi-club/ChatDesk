@@ -68,6 +68,7 @@ const runInputSchema = z.object({
     .optional(),
   modelId: z.string().optional(),
   system: z.string().optional(),
+  memory: z.string().optional(),
   cwd: z.string().optional(),
   workspaceId: z.string().optional(),
   sandboxMode: z.enum(["ask", "auto", "full"]).optional(),
@@ -102,27 +103,6 @@ const modelListSchema = z.object({
       message: "接口地址必须是合法的 http 或 https URL",
     }),
   apiKey: z.string().min(1),
-});
-
-const memorySettingsSchema = z.object({
-  useMemories: z.boolean().optional(),
-  generateMemories: z.boolean().optional(),
-  skipExternalContext: z.boolean().optional(),
-  maxUnusedDays: z.number().int().min(1).max(3650).optional(),
-  extractionModelId: z.string().optional(),
-  consolidationModelId: z.string().optional(),
-});
-
-const memoryItemSchema = z.object({
-  content: z.string().trim().min(1).max(2000),
-  scope: z.enum(["global", "workspace"]).optional(),
-  workspaceId: z.string().optional(),
-  category: z
-    .enum(["profile", "preference", "constraint", "project", "decision", "other"])
-    .optional(),
-  status: z.enum(["active", "archived"]).optional(),
-  pinned: z.boolean().optional(),
-  keywords: z.array(z.string()).max(20).optional(),
 });
 
 const execFileAsync = promisify(execFile);
@@ -474,7 +454,6 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     jobs,
     chatConfig,
     memory,
-    memoryCoordinator,
     workspaces,
     mcp,
     activityLogs,
@@ -1016,48 +995,13 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   });
 
   app.get("/v1/memory", (c) => c.json(memory.get()));
-  app.patch("/v1/memory/settings", async (c) => {
+  app.put("/v1/memory", async (c) => {
     try {
-      return c.json(
-        await memory.updateSettings(parseJson(await c.req.json(), memorySettingsSchema)),
-      );
+      return c.json(await memory.save(await c.req.json()));
     } catch (error) {
       return jsonError(error instanceof Error ? error.message : String(error));
     }
   });
-  app.post("/v1/memory/items", async (c) => {
-    try {
-      return c.json(await memory.createItem(parseJson(await c.req.json(), memoryItemSchema)), 201);
-    } catch (error) {
-      return jsonError(error instanceof Error ? error.message : String(error));
-    }
-  });
-  app.patch("/v1/memory/items/:id", async (c) => {
-    try {
-      return c.json(
-        await memory.updateItem(
-          c.req.param("id"),
-          parseJson(await c.req.json(), memoryItemSchema.partial()),
-        ),
-      );
-    } catch (error) {
-      return jsonError(error instanceof Error ? error.message : String(error), 400);
-    }
-  });
-  app.delete("/v1/memory/items/:id", async (c) => {
-    if (!(await memory.deleteItem(c.req.param("id")))) return jsonError("记忆不存在", 404);
-    return c.body(null, 204);
-  });
-  app.get("/v1/memory/sources", (c) =>
-    c.json({ sources: memory.listSources(), jobs: memory.listJobs() }),
-  );
-  app.post("/v1/memory/consolidate", async (c) =>
-    c.json(await memoryCoordinator.requestConsolidation(), 202),
-  );
-  app.get("/v1/memory/backfill", async (c) => c.json(await memoryCoordinator.previewBackfill()));
-  app.post("/v1/memory/backfill", async (c) =>
-    c.json(await memoryCoordinator.enqueueBackfill(), 202),
-  );
 
   app.get("/v1/skills", async (c) => c.json(await scanSkills()));
   app.get("/v1/skills/selection", (c) => c.json(chatConfig.get().selectedSkillIds));
@@ -1463,7 +1407,6 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     const id = c.req.param("id");
     await runs.stop(id);
     await store.delete(id);
-    await memory.removeSource(id);
     return c.body(null, 204);
   });
 
@@ -1559,7 +1502,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
         await buildSystemPrompt({
           cwd,
           system: body.system,
-          memory: memory.formatSummary(body.workspaceId ?? current.workspaceId),
+          memory: body.memory,
           workspaceToolInstructions,
           todoToolInstructions: TODO_TOOL_INSTRUCTIONS,
           taskToolInstructions: CREATE_TASK_TOOL_INSTRUCTIONS,

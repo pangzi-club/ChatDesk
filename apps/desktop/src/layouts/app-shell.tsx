@@ -296,7 +296,7 @@ const commandItems = [
     to: "/settings/memory",
     label: "长期记忆",
     icon: Brain,
-    keywords: ["设置", "memory", "记忆", "长期记忆", "用户偏好", "workspace", "来源", "回填"],
+    keywords: ["设置", "memory", "记忆", "长期记忆"],
   },
   {
     to: "/settings/chat-server",

@@ -160,17 +160,6 @@ export class SessionStore {
       .map(({ item }) => item);
   }
 
-  async all(): Promise<ChatSession[]> {
-    const entries = await readdir(this.sessionsRoot, { withFileTypes: true }).catch(() => []);
-    const sessions: ChatSession[] = [];
-    for (const entry of entries) {
-      if (!entry.isDirectory() || !validId(entry.name)) continue;
-      const session = await this.get(entry.name);
-      if (session) sessions.push(session);
-    }
-    return sessions.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  }
-
   async get(id: string): Promise<ChatSession | null> {
     if (!validId(id)) return null;
     return this.enqueue(id, () => this.getUnlocked(id));

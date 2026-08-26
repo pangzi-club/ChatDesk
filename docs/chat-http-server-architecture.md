@@ -110,13 +110,8 @@ Node HTTP Server
 - OpenAI 兼容 HTTP 流式调用；
 - `streamText` + tools 循环（含 Responses / chat 路径差异）；
 - 供应商差异由 [model-adaptor.md](model-adaptor.md) 收口（非 OpenAI Responses 关闭 `store`）；
-- system prompt 组装：全局/Workspace 记忆摘要、workspace hint、tools hint、本机 skills hint、内置 skills 目录（正文由 `read_skill` 按需加载）；
+- system prompt 组装：memory、workspace hint、tools hint、本机 skills hint、内置 skills 目录（正文由 `read_skill` 按需加载）；
 - 错误归一与可观测日志。
-
-长期记忆由 Agent Core 的 `MemoryCoordinator` 管理。成功完成的合格会话先生成带消息证据的
-Phase 1 来源文件，再由 Phase 2 按 global/workspace 范围增量整合。摘要常驻 system prompt，详细
-条目由内部 `search_memory` 工具按需召回；不支持工具的模型使用相同的本地词法召回。提取和整合
-调用分别以 `memory.extract`、`memory.consolidate` 写入统一 AI usage 日志。
 
 ### 3.6 工具编排边界
 
