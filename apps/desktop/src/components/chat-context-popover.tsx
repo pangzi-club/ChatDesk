@@ -4,8 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { calculateContextCacheHitRate } from "@/lib/chat-usage";
 
 type ChatContextPopoverProps = {
+  cacheReadTokens?: number;
   inputContext?: number;
   inputTokens?: number;
   isEstimated?: boolean;
@@ -71,6 +73,7 @@ function ContextUsageRing({ percent }: { percent?: number }) {
 }
 
 export function ChatContextPopover({
+  cacheReadTokens,
   inputContext,
   inputTokens,
   isEstimated = false,
@@ -85,6 +88,9 @@ export function ChatContextPopover({
     inputTokens === undefined
       ? undefined
       : Math.min(100, Math.max(0, (inputTokens / contextWindow) * 100));
+  const cacheHitRate = isEstimated
+    ? undefined
+    : calculateContextCacheHitRate(inputTokens, cacheReadTokens);
   const [open, setOpen] = useState(false);
   const title = `当前上下文：${formatContextCount(inputTokens)} / ${formatContextCount(contextWindow)} · ${usagePercent === undefined ? "暂无测量" : `${Math.round(usagePercent)}%`}`;
 
@@ -121,6 +127,10 @@ export function ChatContextPopover({
           <dd className="truncate text-right font-mono">
             {formatExactContextCount(inputTokens)}
             {inputTokens !== undefined && isEstimated ? "（估算）" : ""}
+          </dd>
+          <dt className="text-muted-foreground">缓存命中率</dt>
+          <dd className="truncate text-right font-mono">
+            {cacheHitRate === undefined ? "暂无数据" : `${Math.round(cacheHitRate)}%`}
           </dd>
           <dt className="text-muted-foreground">模型窗口</dt>
           <dd className="truncate text-right font-mono">

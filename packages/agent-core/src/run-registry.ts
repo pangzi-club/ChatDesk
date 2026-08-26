@@ -1198,9 +1198,13 @@ export class RunRegistry {
           metrics.duplicateToolCallCount = loopTracker.duplicateToolCallCount;
           if (loop.loopDetected && !metrics.forcedStopReason)
             metrics.forcedStopReason = "tool-loop";
-          if (usage.inputTokens !== undefined) {
+          const stepUsage = normalizeAiUsage(usage);
+          if (stepUsage?.inputTokens !== undefined) {
             contextUsage = {
-              inputTokens: usage.inputTokens,
+              inputTokens: stepUsage.inputTokens,
+              ...(stepUsage.cacheReadTokens === undefined
+                ? {}
+                : { cacheReadTokens: stepUsage.cacheReadTokens }),
               source: "provider",
               stepNumber,
             };

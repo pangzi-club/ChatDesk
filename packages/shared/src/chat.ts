@@ -281,6 +281,7 @@ export type ChatContextCompaction = {
 
 export type ChatContextUsage = {
   inputTokens: number;
+  cacheReadTokens?: number;
   source: "provider" | "estimate";
   stepNumber: number;
 };

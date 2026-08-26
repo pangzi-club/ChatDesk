@@ -3001,6 +3001,7 @@ function ChatPage() {
               </div>
               <div className="chat-composer-actions">
                 <ChatContextPopover
+                  cacheReadTokens={currentContextUsage?.cacheReadTokens}
                   inputContext={selectedModel?.inputContext}
                   inputTokens={currentContextUsage?.inputTokens}
                   isEstimated={currentContextUsage?.source === "estimate"}

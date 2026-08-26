@@ -46,6 +46,7 @@ function textResult(
   text: string,
   responseId: string,
   finish: "stop" | "length" | "error" = "stop",
+  inputTokens = 10,
 ): MockStreamResult {
   return streamResult([
     { type: "stream-start", warnings: [] },
@@ -53,7 +54,7 @@ function textResult(
     { type: "text-start", id: `${responseId}-text` },
     { type: "text-delta", id: `${responseId}-text`, delta: text },
     { type: "text-end", id: `${responseId}-text` },
-    { type: "finish", finishReason: { unified: finish, raw: finish }, usage: usage() },
+    { type: "finish", finishReason: { unified: finish, raw: finish }, usage: usage(inputTokens) },
   ]);
 }
 
@@ -210,6 +211,39 @@ async function finishRun(
 }
 
 describe("complete agent runs", () => {
+  it("publishes and persists cache usage from the latest model step", async () => {
+    const current = await fixture(
+      [
+        toolResult("read-source", "read_file", { path: "source.txt" }, 10),
+        textResult("Completed.", "response-completed", "stop", 20),
+      ],
+      { planMode: "apply" },
+    );
+
+    await finishRun(current);
+
+    const contextUsages = current.events.published
+      .filter((event) => event.type === "context.usage")
+      .map((event) => event.contextUsage);
+    assert.deepEqual(
+      contextUsages.map((contextUsage) => ({
+        inputTokens: contextUsage?.inputTokens,
+        cacheReadTokens: contextUsage?.cacheReadTokens,
+      })),
+      [
+        { inputTokens: 10, cacheReadTokens: 2 },
+        { inputTokens: 20, cacheReadTokens: 2 },
+      ],
+    );
+
+    const session = await current.store.get("session-1");
+    const metadata = session?.messages.at(-1)?.metadata as
+      | { contextUsage?: { inputTokens: number; cacheReadTokens?: number } }
+      | undefined;
+    assert.equal(metadata?.contextUsage?.inputTokens, 20);
+    assert.equal(metadata?.contextUsage?.cacheReadTokens, 2);
+  });
+
   it("waits for an aborted run to leave the active registry", async () => {
     const current = await fixture([
       streamResult(

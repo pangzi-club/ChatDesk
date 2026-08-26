@@ -1,6 +1,7 @@
 import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
 import {
+  calculateContextCacheHitRate,
   formatElapsedDuration,
   formatMessageRunDuration,
   getMessageContextUsage,
@@ -17,10 +18,20 @@ describe("message context usage", () => {
         parts: [],
         metadata: {
           usage: { inputTokens: 240_000 },
-          contextUsage: { inputTokens: 48_500, source: "provider", stepNumber: 3 },
+          contextUsage: {
+            inputTokens: 48_500,
+            cacheReadTokens: 32_000,
+            source: "provider",
+            stepNumber: 3,
+          },
         },
       }),
-    ).toEqual({ inputTokens: 48_500, source: "provider", stepNumber: 3 });
+    ).toEqual({
+      inputTokens: 48_500,
+      cacheReadTokens: 32_000,
+      source: "provider",
+      stepNumber: 3,
+    });
   });
 
   it("restores an estimate from persisted compaction metadata", () => {
@@ -39,6 +50,29 @@ describe("message context usage", () => {
         },
       }),
     ).toEqual({ inputTokens: 42_000, source: "estimate", stepNumber: 2 });
+  });
+});
+
+describe("context cache hit rate", () => {
+  it("calculates the cached share of total input tokens", () => {
+    expect(calculateContextCacheHitRate(40_000, 10_000)).toBe(25);
+  });
+
+  it("reports a measured zero hit rate", () => {
+    expect(calculateContextCacheHitRate(40_000, 0)).toBe(0);
+  });
+
+  it("returns no rate when cache usage is not reported", () => {
+    expect(calculateContextCacheHitRate(40_000, undefined)).toBeUndefined();
+  });
+
+  it("returns no rate when total input is not positive", () => {
+    expect(calculateContextCacheHitRate(0, 0)).toBeUndefined();
+  });
+
+  it("clamps inconsistent provider usage to the display range", () => {
+    expect(calculateContextCacheHitRate(10_000, 12_000)).toBe(100);
+    expect(calculateContextCacheHitRate(10_000, -1_000)).toBe(0);
   });
 });
 

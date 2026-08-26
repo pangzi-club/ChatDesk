@@ -181,6 +181,22 @@ export function getMessageContextUsage(message: UIMessage): ChatContextUsage | u
   };
 }
 
+export function calculateContextCacheHitRate(
+  inputTokens: number | undefined,
+  cacheReadTokens: number | undefined,
+) {
+  if (
+    inputTokens === undefined ||
+    !Number.isFinite(inputTokens) ||
+    inputTokens <= 0 ||
+    cacheReadTokens === undefined ||
+    !Number.isFinite(cacheReadTokens)
+  ) {
+    return undefined;
+  }
+  return Math.min(100, Math.max(0, (cacheReadTokens / inputTokens) * 100));
+}
+
 export function getMessageRunStateLabel(message: UIMessage) {
   if (message.role !== "assistant") return undefined;
   const summary = (message.metadata as ChatMessageMetadata | undefined)?.runSummary;

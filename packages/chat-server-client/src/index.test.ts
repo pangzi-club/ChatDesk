@@ -135,7 +135,7 @@ describe("ChatServerClient", () => {
     const snapshots: string[] = [];
     const deltas: string[] = [];
     const compactions: number[] = [];
-    const contextUsages: number[] = [];
+    const contextUsages: Array<{ inputTokens: number; cacheReadTokens?: number }> = [];
     const progressSteps: number[] = [];
     const completedRuns: string[] = [];
     const client = new ChatServerClient({
@@ -152,7 +152,9 @@ describe("ChatServerClient", () => {
       onDelta: (event) => deltas.push(event.delta ?? ""),
       onContextCompacted: (event) =>
         compactions.push(event.contextCompaction?.estimatedTokensBefore ?? 0),
-      onContextUsage: (event) => contextUsages.push(event.contextUsage?.inputTokens ?? 0),
+      onContextUsage: (event) => {
+        if (event.contextUsage) contextUsages.push(event.contextUsage);
+      },
       onRunProgress: (event) => progressSteps.push(event.runProgress?.stepCount ?? 0),
       onRunDone: (event) => completedRuns.push(event.runSummary?.outcome ?? "missing"),
     });
@@ -185,7 +187,12 @@ describe("ChatServerClient", () => {
         id: "event-3",
         type: "context.usage",
         sessionId: "session-1",
-        contextUsage: { inputTokens: 48_500, source: "provider", stepNumber: 2 },
+        contextUsage: {
+          inputTokens: 48_500,
+          cacheReadTokens: 32_000,
+          source: "provider",
+          stepNumber: 2,
+        },
         timestamp: new Date().toISOString(),
       }),
     });
@@ -231,7 +238,9 @@ describe("ChatServerClient", () => {
     assert.deepEqual(snapshots, ["0"]);
     assert.deepEqual(deltas, ["hello"]);
     assert.deepEqual(compactions, [120_000]);
-    assert.deepEqual(contextUsages, [48_500]);
+    assert.deepEqual(contextUsages, [
+      { inputTokens: 48_500, cacheReadTokens: 32_000, source: "provider", stepNumber: 2 },
+    ]);
     assert.deepEqual(progressSteps, [18]);
     assert.deepEqual(completedRuns, ["completed"]);
   });
