@@ -732,9 +732,15 @@ export type ChatServerConfigData = {
 export type ChatServerProviderModel = {
   id: string;
   contextLength?: number;
+  outputContext?: number;
+  supportsTools?: boolean;
   supportsImageIn?: boolean;
   supportsVideoIn?: boolean;
   supportsReasoning?: boolean;
+  inputPricePerMillion?: number;
+  outputPricePerMillion?: number;
+  cacheReadPricePerMillion?: number;
+  cacheWritePricePerMillion?: number;
 };
 
 export type ChatServerReviewerLog = {

@@ -29,6 +29,7 @@ import {
   Sparkles,
   SquareTerminal,
   Trash2,
+  Waypoints,
   Wrench,
   X,
 } from "lucide-react";
@@ -2290,6 +2291,8 @@ const DEEPSEEK_CHAT_BASE_URL = "https://api.deepseek.com/chat/completions";
 const DEEPSEEK_RESPONSES_BASE_URL = "https://api.deepseek.com";
 const KIMI_CHAT_BASE_URL = "https://api.moonshot.cn/v1";
 const MINIMAX_CHAT_BASE_URL = "https://api.minimaxi.com/v1";
+const OPENROUTER_CHAT_BASE_URL = "https://openrouter.ai/api/v1";
+const OPENROUTER_MODEL_PAGE_SIZE = 20;
 
 function deepseekBaseUrl(responsive: boolean) {
   return responsive ? DEEPSEEK_RESPONSES_BASE_URL : DEEPSEEK_CHAT_BASE_URL;
@@ -2399,10 +2402,20 @@ const providerPresets = {
       },
     ],
   },
+  openrouter: {
+    label: "OpenRouter",
+    baseUrl: OPENROUTER_CHAT_BASE_URL,
+    models: [],
+  },
 } as const;
 
 type ProviderKey = keyof typeof providerPresets;
-const PROVIDER_KEYS: ProviderKey[] = ["deepseek", "kimi", "minimax", "custom"];
+type CatalogProviderKey = Exclude<ProviderKey, "custom">;
+const PROVIDER_KEYS: ProviderKey[] = ["deepseek", "kimi", "minimax", "openrouter", "custom"];
+
+function isCatalogProvider(provider: ProviderKey): provider is CatalogProviderKey {
+  return provider !== "custom";
+}
 
 function getProviderIcon(provider: ProviderKey) {
   switch (provider) {
@@ -2412,8 +2425,23 @@ function getProviderIcon(provider: ProviderKey) {
       return Sparkles;
     case "minimax":
       return Server;
+    case "openrouter":
+      return Waypoints;
     case "custom":
       return Wrench;
+  }
+}
+
+function providerDocsUrl(provider: CatalogProviderKey) {
+  switch (provider) {
+    case "deepseek":
+      return "https://platform.deepseek.com/api-docs";
+    case "kimi":
+      return "https://platform.kimi.com/docs";
+    case "minimax":
+      return "https://platform.minimaxi.com/docs";
+    case "openrouter":
+      return "https://openrouter.ai/docs/quickstart";
   }
 }
 
@@ -2424,6 +2452,10 @@ type ProviderPresetModel = {
   supportsReasoning: boolean;
   inputContext?: number;
   outputContext?: number;
+  inputPricePerMillion?: number;
+  outputPricePerMillion?: number;
+  cacheReadPricePerMillion?: number;
+  cacheWritePricePerMillion?: number;
 };
 
 type ListedProviderModel = ChatServerProviderModel;
@@ -2432,6 +2464,7 @@ function providerKeyForLabel(label: string): ProviderKey {
   if (label === providerPresets.deepseek.label) return "deepseek";
   if (label === providerPresets.kimi.label) return "kimi";
   if (label === providerPresets.minimax.label) return "minimax";
+  if (label === providerPresets.openrouter.label) return "openrouter";
   return "custom";
 }
 
@@ -2730,16 +2763,11 @@ function ModelDialog({
   const [isTesting, setIsTesting] = useState(false);
   const [providerModels, setProviderModels] = useState<ProviderPresetModel[]>(() => {
     const initialProviderKey = providerKeyForLabel(initialModel.provider);
-    const models: ProviderPresetModel[] =
-      initialProviderKey === "deepseek" ||
-      initialProviderKey === "kimi" ||
-      initialProviderKey === "minimax"
-        ? providerPresets[initialProviderKey].models.map((item) => ({ ...item }))
-        : [];
+    const models: ProviderPresetModel[] = isCatalogProvider(initialProviderKey)
+      ? providerPresets[initialProviderKey].models.map((item) => ({ ...item }))
+      : [];
     if (
-      (initialProviderKey === "deepseek" ||
-        initialProviderKey === "kimi" ||
-        initialProviderKey === "minimax") &&
+      isCatalogProvider(initialProviderKey) &&
       initialModel.name &&
       !models.some((item) => item.name === initialModel.name)
     ) {
@@ -2750,23 +2778,41 @@ function ModelDialog({
         supportsReasoning: initialModel.supportsReasoning,
         inputContext: initialModel.inputContext,
         outputContext: initialModel.outputContext,
+        inputPricePerMillion: initialModel.inputPricePerMillion,
+        outputPricePerMillion: initialModel.outputPricePerMillion,
+        cacheReadPricePerMillion: initialModel.cacheReadPricePerMillion,
+        cacheWritePricePerMillion: initialModel.cacheWritePricePerMillion,
       });
     }
     return models;
   });
   const [providerModelsProvider, setProviderModelsProvider] = useState<ProviderKey | null>(() => {
     const key = providerKeyForLabel(initialModel.provider);
-    return key === "deepseek" || key === "kimi" || key === "minimax" ? key : null;
+    return isCatalogProvider(key) ? key : null;
   });
+  const [modelSearch, setModelSearch] = useState("");
+  const [visibleProviderModelCount, setVisibleProviderModelCount] = useState(
+    OPENROUTER_MODEL_PAGE_SIZE,
+  );
   const [testState, setTestState] = useState<
     { type: "success" | "error"; message: string } | undefined
   >();
   const providerKey = providerKeyForLabel(model.provider);
   const presetModels: ProviderPresetModel[] =
-    (providerKey === "deepseek" || providerKey === "kimi" || providerKey === "minimax") &&
-    providerModelsProvider === providerKey
+    isCatalogProvider(providerKey) && providerModelsProvider === providerKey
       ? providerModels
       : providerPresets[providerKey].models.map((item) => ({ ...item }));
+  const filteredPresetModels =
+    providerKey === "openrouter" && modelSearch.trim()
+      ? presetModels.filter((item) =>
+          item.name.toLocaleLowerCase().includes(modelSearch.trim().toLocaleLowerCase()),
+        )
+      : presetModels;
+  const visiblePresetModels =
+    providerKey === "openrouter"
+      ? filteredPresetModels.slice(0, visibleProviderModelCount)
+      : filteredPresetModels;
+  const hasMoreProviderModels = visiblePresetModels.length < filteredPresetModels.length;
   const providerBaseUrl = model.baseUrl.trim();
   const providerApiKey = model.apiKey.trim();
   const providerModelsQueryKey = providerModelsCacheKey(providerBaseUrl, providerApiKey);
@@ -2821,24 +2867,33 @@ function ModelDialog({
           ? /^deepseek-/i
           : providerKey === "minimax"
             ? /^minimax-/i
-            : /^(kimi-|moonshot-)/i;
+            : providerKey === "kimi"
+              ? /^(kimi-|moonshot-)/i
+              : /./;
       const nextModels: ProviderPresetModel[] = (listed as ListedProviderModel[])
         .filter((item) => modelPrefix.test(item.id))
         .map((item: ChatServerProviderModel) => ({
           name: item.id,
-          supportsTools: true,
+          supportsTools: providerKey === "openrouter" ? item.supportsTools === true : true,
           supportsImages:
             providerKey === "minimax"
               ? item.id.toLowerCase() === "minimax-m3"
               : item.supportsImageIn === true,
           supportsReasoning: providerKey === "minimax" ? true : item.supportsReasoning === true,
           inputContext: item.contextLength,
+          outputContext: item.outputContext,
+          inputPricePerMillion: item.inputPricePerMillion,
+          outputPricePerMillion: item.outputPricePerMillion,
+          cacheReadPricePerMillion: item.cacheReadPricePerMillion,
+          cacheWritePricePerMillion: item.cacheWritePricePerMillion,
         }));
       if (nextModels.length === 0) {
         throw new Error(`接口未返回可用的 ${providerPresets[providerKey].label} 模型`);
       }
       setProviderModels(nextModels);
       setProviderModelsProvider(providerKey);
+      setModelSearch("");
+      setVisibleProviderModelCount(OPENROUTER_MODEL_PAGE_SIZE);
       const selected = nextModels.find((item) => item.name === model.name) ?? nextModels[0];
       setModel((current) => ({ ...current, ...selected, baseUrl }));
       setTestState({
@@ -2871,6 +2926,8 @@ function ModelDialog({
     const firstModel = preset.models[0] as ProviderPresetModel | undefined;
     setError("");
     setTestState(undefined);
+    setModelSearch("");
+    setVisibleProviderModelCount(OPENROUTER_MODEL_PAGE_SIZE);
     setModel((current) => ({
       ...current,
       provider: preset.label,
@@ -2881,8 +2938,11 @@ function ModelDialog({
             ? KIMI_CHAT_BASE_URL
             : nextProvider === "minimax"
               ? MINIMAX_CHAT_BASE_URL
-              : "",
-      responsive: nextProvider === "kimi" ? false : current.responsive,
+              : nextProvider === "openrouter"
+                ? OPENROUTER_CHAT_BASE_URL
+                : "",
+      responsive:
+        nextProvider === "kimi" || nextProvider === "openrouter" ? false : current.responsive,
       ...(nextProvider !== "custom" && firstModel
         ? {
             name: firstModel.name,
@@ -2892,8 +2952,26 @@ function ModelDialog({
             customProtocol: false,
             inputContext: firstModel.inputContext,
             outputContext: firstModel.outputContext,
+            inputPricePerMillion: firstModel.inputPricePerMillion,
+            outputPricePerMillion: firstModel.outputPricePerMillion,
+            cacheReadPricePerMillion: firstModel.cacheReadPricePerMillion,
+            cacheWritePricePerMillion: firstModel.cacheWritePricePerMillion,
           }
-        : {}),
+        : nextProvider === "openrouter"
+          ? {
+              name: "",
+              supportsTools: false,
+              supportsImages: false,
+              supportsReasoning: false,
+              customProtocol: false,
+              inputContext: undefined,
+              outputContext: undefined,
+              inputPricePerMillion: undefined,
+              outputPricePerMillion: undefined,
+              cacheReadPricePerMillion: undefined,
+              cacheWritePricePerMillion: undefined,
+            }
+          : {}),
     }));
   }
 
@@ -2910,13 +2988,19 @@ function ModelDialog({
           ? deepseekBaseUrl(current.responsive)
           : providerKey === "minimax"
             ? MINIMAX_CHAT_BASE_URL
-            : KIMI_CHAT_BASE_URL,
+            : providerKey === "openrouter"
+              ? OPENROUTER_CHAT_BASE_URL
+              : KIMI_CHAT_BASE_URL,
       supportsTools: preset.supportsTools,
       supportsImages: preset.supportsImages,
       supportsReasoning: preset.supportsReasoning,
       customProtocol: false,
       inputContext: preset.inputContext,
       outputContext: preset.outputContext,
+      inputPricePerMillion: preset.inputPricePerMillion,
+      outputPricePerMillion: preset.outputPricePerMillion,
+      cacheReadPricePerMillion: preset.cacheReadPricePerMillion,
+      cacheWritePricePerMillion: preset.cacheWritePricePerMillion,
     }));
   }
 
@@ -2997,27 +3081,13 @@ function ModelDialog({
                 </SelectContent>
               </Select>
             </div>
-            {providerKey !== "custom" ? (
+            {isCatalogProvider(providerKey) ? (
               <a
                 className="mb-2 inline-flex shrink-0 items-center gap-1 text-sm text-sky-500 hover:text-sky-400"
-                href={
-                  providerKey === "kimi"
-                    ? "https://platform.kimi.com/docs"
-                    : providerKey === "minimax"
-                      ? "https://platform.minimaxi.com/docs"
-                      : "https://platform.deepseek.com/api-docs"
-                }
+                href={providerDocsUrl(providerKey)}
                 onClick={(event) => {
                   event.preventDefault();
-                  window.open(
-                    providerKey === "kimi"
-                      ? "https://platform.kimi.com/docs"
-                      : providerKey === "minimax"
-                        ? "https://platform.minimaxi.com/docs"
-                        : "https://platform.deepseek.com/api-docs",
-                    "_blank",
-                    "noopener,noreferrer",
-                  );
+                  window.open(providerDocsUrl(providerKey), "_blank", "noopener,noreferrer");
                 }}
                 rel="noreferrer"
                 target="_blank"
@@ -3026,10 +3096,7 @@ function ModelDialog({
               </a>
             ) : null}
           </div>
-          {providerKey === "custom" ||
-          providerKey === "deepseek" ||
-          providerKey === "kimi" ||
-          providerKey === "minimax" ? (
+          {providerKey === "custom" || isCatalogProvider(providerKey) ? (
             <div className="block text-sm">
               <label className="font-medium" htmlFor="model-base-url">
                 接口地址
@@ -3045,7 +3112,7 @@ function ModelDialog({
                 }
                 value={model.baseUrl}
               />
-              {providerKey === "deepseek" || providerKey === "kimi" || providerKey === "minimax" ? (
+              {isCatalogProvider(providerKey) ? (
                 <Button
                   className="mt-2"
                   disabled={isLoadingProviderModels || isTesting || isSaving}
@@ -3090,19 +3157,62 @@ function ModelDialog({
             <label className="font-medium" htmlFor="model-name">
               模型名称
             </label>
-            {providerKey === "deepseek" || providerKey === "kimi" || providerKey === "minimax" ? (
-              <Select value={model.name} onValueChange={handlePresetModelChange}>
-                <SelectTrigger className="mt-2 h-10 w-full bg-background" id="model-name">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {presetModels.map((preset) => (
-                    <SelectItem key={preset.name} value={preset.name}>
-                      {preset.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            {isCatalogProvider(providerKey) ? (
+              <>
+                {providerKey === "openrouter" && presetModels.length > 0 ? (
+                  <Input
+                    className="mt-2 h-10 bg-background"
+                    id="model-search"
+                    onChange={(event) => {
+                      setModelSearch(event.target.value);
+                      setVisibleProviderModelCount(OPENROUTER_MODEL_PAGE_SIZE);
+                    }}
+                    placeholder="搜索模型名称或 slug"
+                    value={modelSearch}
+                  />
+                ) : null}
+                {isLoadingProviderModels && presetModels.length === 0 ? (
+                  <div
+                    aria-label="正在加载模型列表"
+                    className="mt-2 h-10 w-full animate-pulse rounded-md bg-muted"
+                    role="status"
+                  />
+                ) : (
+                  <Select value={model.name} onValueChange={handlePresetModelChange}>
+                    <SelectTrigger className="mt-2 h-10 w-full bg-background" id="model-name">
+                      <SelectValue placeholder="先获取模型" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {visiblePresetModels.map((preset) => (
+                        <SelectItem key={preset.name} value={preset.name}>
+                          {preset.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                {providerKey === "openrouter" && filteredPresetModels.length > 0 ? (
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground text-xs">
+                      已显示 {visiblePresetModels.length} / {filteredPresetModels.length}
+                    </span>
+                    {hasMoreProviderModels ? (
+                      <Button
+                        onClick={() =>
+                          setVisibleProviderModelCount(
+                            (count) => count + OPENROUTER_MODEL_PAGE_SIZE,
+                          )
+                        }
+                        size="sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        加载更多
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </>
             ) : (
               <Input
                 className="mt-2 h-10 bg-background"
@@ -3113,7 +3223,10 @@ function ModelDialog({
               />
             )}
           </div>
-          {providerKey === "custom" || providerKey === "kimi" || providerKey === "minimax" ? (
+          {providerKey === "custom" ||
+          providerKey === "kimi" ||
+          providerKey === "minimax" ||
+          providerKey === "openrouter" ? (
             <fieldset>
               <legend className="font-medium text-sm">高级配置</legend>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -3137,7 +3250,7 @@ function ModelDialog({
                   checked={model.customProtocol}
                   onChange={(value) => update("customProtocol", value)}
                 />
-                {providerKey !== "kimi" ? (
+                {providerKey === "custom" || providerKey === "minimax" ? (
                   <Toggle
                     label="Responses API"
                     checked={model.responsive}

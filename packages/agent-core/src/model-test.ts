@@ -11,10 +11,25 @@ export type ModelTestInput = {
 export type ProviderModel = {
   id: string;
   contextLength?: number;
+  outputContext?: number;
+  supportsTools?: boolean;
   supportsImageIn?: boolean;
   supportsVideoIn?: boolean;
   supportsReasoning?: boolean;
+  inputPricePerMillion?: number;
+  outputPricePerMillion?: number;
+  cacheReadPricePerMillion?: number;
+  cacheWritePricePerMillion?: number;
 };
+
+function positiveNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+function pricePerMillion(value: unknown) {
+  const price = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  return Number.isFinite(price) && price >= 0 ? price * 1_000_000 : undefined;
+}
 
 function validateModelEndpoint(value: string) {
   const url = new URL(value);
@@ -48,16 +63,43 @@ export async function listProviderModels(input: Pick<ModelTestInput, "baseUrl" |
     if (!item || typeof item !== "object") return [];
     const value = item as Record<string, unknown>;
     if (typeof value.id !== "string" || !value.id.trim()) return [];
+    const architecture =
+      value.architecture && typeof value.architecture === "object"
+        ? (value.architecture as Record<string, unknown>)
+        : undefined;
+    const inputModalities = Array.isArray(architecture?.input_modalities)
+      ? architecture.input_modalities
+      : [];
+    const supportedParameters = Array.isArray(value.supported_parameters)
+      ? value.supported_parameters
+      : [];
+    const topProvider =
+      value.top_provider && typeof value.top_provider === "object"
+        ? (value.top_provider as Record<string, unknown>)
+        : undefined;
+    const pricing =
+      value.pricing && typeof value.pricing === "object"
+        ? (value.pricing as Record<string, unknown>)
+        : undefined;
     return [
       {
         id: value.id,
-        contextLength:
-          typeof value.context_length === "number" && value.context_length > 0
-            ? value.context_length
-            : undefined,
-        supportsImageIn: value.supports_image_in === true,
-        supportsVideoIn: value.supports_video_in === true,
-        supportsReasoning: value.supports_reasoning === true,
+        contextLength: positiveNumber(value.context_length),
+        outputContext: positiveNumber(topProvider?.max_completion_tokens),
+        supportsTools:
+          value.supports_tools === true ||
+          supportedParameters.includes("tools") ||
+          supportedParameters.includes("tool_choice"),
+        supportsImageIn: value.supports_image_in === true || inputModalities.includes("image"),
+        supportsVideoIn: value.supports_video_in === true || inputModalities.includes("video"),
+        supportsReasoning:
+          value.supports_reasoning === true ||
+          supportedParameters.includes("reasoning") ||
+          supportedParameters.includes("include_reasoning"),
+        inputPricePerMillion: pricePerMillion(pricing?.prompt),
+        outputPricePerMillion: pricePerMillion(pricing?.completion),
+        cacheReadPricePerMillion: pricePerMillion(pricing?.input_cache_read),
+        cacheWritePricePerMillion: pricePerMillion(pricing?.input_cache_write),
       },
     ];
   });
