@@ -16,7 +16,7 @@
 | | 浏览器 | 打开、截图、点击、执行 JS |
 | | 代码搜索 | 内容 grep、文件名模式、语义检索 |
 | 上下文 | 会话历史 | 多轮对话、流式输出 |
-| | 长期记忆 | 跨会话注入用户偏好 |
+| | 长期记忆 | 全局/Workspace 两阶段提取与按需召回 |
 | | 压缩 | 上下文过长时自动摘要（compact） |
 | 工具生态 | MCP | 标准协议接入外部工具 |
 | | Skills | 可发现、可选用的提示词/流程包 |
@@ -54,7 +54,7 @@
 
 ### ✅ 上下文与记忆
 - **会话历史**：`store.ts` 持久化，CRUD 齐全。
-- **长期记忆**：`memory-store.ts`，可编辑的 JSON 记忆注入 system prompt。
+- **长期记忆**：`memory-store.ts` + `memory-coordinator.ts` 提供全局与 Workspace 隔离的两阶段异步提取、来源证据、增量整合、90 天未使用归档和可编辑固定记忆。摘要常驻 system prompt，详细条目通过 `search_memory` 渐进式召回；所有后台模型调用进入统一 AI 用量日志。
 - **标题自动生成**：`deriveTitle` 取首条用户消息前 40 字。
 - **自动压缩**：`prepareStep` 在上下文超过动态阈值时剪枝旧 reasoning 与工具结果，并通过 SSE 和消息 metadata 向用户提示；完整聊天记录不受影响。详见 `docs/chat-context-compaction.md`。
 

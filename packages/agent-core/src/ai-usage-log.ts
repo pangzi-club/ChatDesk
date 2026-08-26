@@ -23,6 +23,7 @@ function isEntry(value: unknown): value is ChatServerAiUsageLog {
     typeof entry.operation === "string" &&
     (entry.sessionId === undefined || typeof entry.sessionId === "string") &&
     (entry.runId === undefined || typeof entry.runId === "string") &&
+    (entry.jobId === undefined || typeof entry.jobId === "string") &&
     (entry.callId === undefined || typeof entry.callId === "string") &&
     (entry.invocationIndex === undefined ||
       (typeof entry.invocationIndex === "number" && Number.isInteger(entry.invocationIndex))) &&

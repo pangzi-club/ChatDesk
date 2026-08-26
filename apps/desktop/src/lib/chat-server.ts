@@ -16,6 +16,8 @@ import type {
   ChatSession,
   DeveloperEnvironmentStatus,
   HealthResponse,
+  MemoryItem,
+  MemorySettings,
   RunStartInput,
   SessionIndexItem,
   SystemPromptSnapshot,
@@ -644,8 +646,46 @@ export async function loadChatServerMemory(port = CHAT_SERVER_DEFAULT_PORT) {
   return createClient(port).getMemory();
 }
 
-export async function saveChatServerMemory(value: unknown, port = CHAT_SERVER_DEFAULT_PORT) {
-  return createClient(port).saveMemory(value);
+export async function updateChatServerMemorySettings(
+  value: Partial<MemorySettings>,
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  return createClient(port).updateMemorySettings(value);
+}
+
+export async function createChatServerMemoryItem(
+  value: Pick<MemoryItem, "content"> & Partial<MemoryItem>,
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  return createClient(port).createMemoryItem(value);
+}
+
+export async function updateChatServerMemoryItem(
+  id: string,
+  value: Partial<MemoryItem>,
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  return createClient(port).updateMemoryItem(id, value);
+}
+
+export async function deleteChatServerMemoryItem(id: string, port = CHAT_SERVER_DEFAULT_PORT) {
+  return createClient(port).deleteMemoryItem(id);
+}
+
+export async function loadChatServerMemorySources(port = CHAT_SERVER_DEFAULT_PORT) {
+  return createClient(port).getMemorySources();
+}
+
+export async function consolidateChatServerMemory(port = CHAT_SERVER_DEFAULT_PORT) {
+  return createClient(port).consolidateMemory();
+}
+
+export async function previewChatServerMemoryBackfill(port = CHAT_SERVER_DEFAULT_PORT) {
+  return createClient(port).previewMemoryBackfill();
+}
+
+export async function enqueueChatServerMemoryBackfill(port = CHAT_SERVER_DEFAULT_PORT) {
+  return createClient(port).enqueueMemoryBackfill();
 }
 
 export async function loadChatServerSkills(port = CHAT_SERVER_DEFAULT_PORT) {
@@ -872,7 +912,7 @@ export async function stopChatServerJob(
 
 export async function loadChatServerSystemPromptPreview(
   sessionId: string,
-  input: Pick<RunStartInput, "system" | "memory" | "cwd" | "workspaceId" | "toolNames">,
+  input: Pick<RunStartInput, "system" | "cwd" | "workspaceId" | "toolNames">,
   port = CHAT_SERVER_DEFAULT_PORT,
 ) {
   const response = await chatServerRequest(

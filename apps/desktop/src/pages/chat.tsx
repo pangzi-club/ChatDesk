@@ -140,8 +140,6 @@ import {
 } from "@/lib/chat-conversation-markdown";
 import { materializeGeneratedImages } from "@/lib/chat-image-generation";
 import { appendLiveDraftText, mergeLiveDraft } from "@/lib/chat-live-draft";
-import { DEFAULT_CHAT_MEMORY, formatMemoryForInject, loadChatMemory } from "@/lib/chat-memory";
-import { isWorkspaceMemoryExcludedTool, scheduleMemoryUpdateFromTurn } from "@/lib/chat-memory-ops";
 import {
   type ChatFilePart,
   type ChatSourcePart,
@@ -339,10 +337,6 @@ function ChatPage() {
     queryKey: ["models"],
     queryFn: loadModels,
   });
-  const { data: chatMemory = DEFAULT_CHAT_MEMORY } = useQuery({
-    queryKey: ["chat-memory"],
-    queryFn: loadChatMemory,
-  });
   const { data: chatTools = DEFAULT_CHAT_TOOLS } = useQuery({
     queryKey: ["chat-tools"],
     queryFn: loadChatToolsSettings,
@@ -377,8 +371,6 @@ function ChatPage() {
     queryKey: ["workspace-projects"],
     queryFn: loadWorkspaceProjects,
   });
-  const memoryRef = useRef(chatMemory);
-  memoryRef.current = chatMemory;
   const toolsRef = useRef(chatTools);
   toolsRef.current = chatTools;
   const skillsRef = useRef<SkillDefinition[]>(availableSkills);
@@ -461,7 +453,6 @@ function ChatPage() {
   const workspaceSelectionInitializedRef = useRef(false);
   const sandboxModeInitializedRef = useRef(false);
   const savedFingerprintRef = useRef("");
-  const extractedFingerprintRef = useRef("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const shouldFollowScrollRef = useRef(true);
   const [conversationCopiedKind, setConversationCopiedKind] = useState<"id" | "markdown" | null>(
@@ -527,7 +518,6 @@ function ChatPage() {
   }, [sessionCwd, sessionId, workspaceKey, workspaceProjects]);
 
   const getPromptInput = useCallback(async () => {
-    const memory = memoryRef.current;
     const cwd = workspaceRef.current.trim();
     const workspaceId = isDefaultWorkspaceId(workspaceKey)
       ? DEFAULT_WORKSPACE_ID
@@ -551,18 +541,16 @@ function ChatPage() {
       .join("\n\n");
     return {
       system,
-      memory: memory.enabled && memory.items.length > 0 ? formatMemoryForInject(memory.items) : "",
       cwd: cwd || undefined,
       workspaceId: workspaceId || undefined,
       toolNames: activeTools.toolNames,
-    } satisfies Pick<RunStartInput, "system" | "memory" | "cwd" | "workspaceId" | "toolNames">;
+    } satisfies Pick<RunStartInput, "system" | "cwd" | "workspaceId" | "toolNames">;
   }, [allowedSkillIds, selectedSkillIds, workspaceKey]);
   const promptKey = [
     selectedCwd,
     workspaceKey,
     selectedModel?.id ?? "",
     selectedSkillIds.join(","),
-    JSON.stringify(chatMemory),
     JSON.stringify(chatTools),
   ].join("|");
   const selectedMcpIds = useMemo(
@@ -799,7 +787,6 @@ function ChatPage() {
       setSessionKind("chat");
       setSandboxMode(sandboxModeRef.current);
       savedFingerprintRef.current = "";
-      extractedFingerprintRef.current = "";
       suppressSaveRef.current = false;
       setMessages([]);
       setInput("");
@@ -1254,7 +1241,6 @@ function ChatPage() {
       }
       appliedRouteKeyRef.current = routeKey;
       savedFingerprintRef.current = "";
-      extractedFingerprintRef.current = "";
       pendingSessionRef.current = session;
       setSessionId(session.id);
       setSessionHydrateGeneration((current) => current + 1);
@@ -1441,43 +1427,11 @@ function ChatPage() {
           setMessages(canonicalMessages);
         }
         void queryClient.invalidateQueries({ queryKey: ["chat-index"] });
-        if (extractedFingerprintRef.current === fingerprint) return;
-        extractedFingerprintRef.current = fingerprint;
-        const lastUser = [...canonicalMessages]
-          .reverse()
-          .find((message) => message.role === "user");
-        const canonicalLastMessage = [...canonicalMessages]
-          .reverse()
-          .find((message) => message.role === "assistant");
-        scheduleMemoryUpdateFromTurn({
-          model: selectedModel,
-          sessionId,
-          userText: lastUser ? messageText(lastUser) : "",
-          assistantText: canonicalLastMessage ? messageText(canonicalLastMessage) : "",
-          workspacePath: selectedCwd,
-          toolNames: (canonicalLastMessage?.parts ?? [])
-            .filter(isToolUIPart)
-            .map((part) => getToolName(part))
-            .filter(isWorkspaceMemoryExcludedTool),
-          onStoreChange: (store) => {
-            queryClient.setQueryData(["chat-memory"], store);
-          },
-        });
       } catch (saveError) {
         console.error("Failed to save chat session", saveError);
       }
     })();
-  }, [
-    messages,
-    queryClient,
-    selectedCwd,
-    selectedModel,
-    serverRunActive,
-    serverSessionStatus,
-    sessionId,
-    status,
-    setMessages,
-  ]);
+  }, [messages, queryClient, serverRunActive, serverSessionStatus, sessionId, status, setMessages]);
 
   useEffect(() => {
     const scrollElement = scrollRef.current;
@@ -3683,7 +3637,7 @@ function createModelTransport(
   getPlanId: () => string | undefined,
   getTitle: () => string,
   getPromptInput: () => Promise<
-    Pick<RunStartInput, "system" | "memory" | "cwd" | "workspaceId" | "toolNames">
+    Pick<RunStartInput, "system" | "cwd" | "workspaceId" | "toolNames">
   >,
 ): ChatTransport<UIMessage> {
   return new DefaultChatTransport<UIMessage>({

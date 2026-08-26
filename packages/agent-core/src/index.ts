@@ -32,6 +32,11 @@ export {
 export { type ImageGenerationRecord, ImageGenerationStore } from "./image-generation-store.ts";
 export { JobRegistry, type StartJobInput } from "./job-registry.ts";
 export { McpRuntime } from "./mcp-runtime.ts";
+export {
+  MemoryCoordinator,
+  memorySessionEligibility,
+  redactMemorySecrets,
+} from "./memory-coordinator.ts";
 export { MemoryStore } from "./memory-store.ts";
 export {
   applyModelAdaptor,

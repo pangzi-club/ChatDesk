@@ -476,7 +476,6 @@ describe("chat server", () => {
         body: JSON.stringify({
           workspaceId: project.id,
           system: "工具提示",
-          memory: "记忆提示",
         }),
       },
     );
@@ -487,7 +486,8 @@ describe("chat server", () => {
       cwd?: string;
     };
     assert.equal(preview.cwd, await realpath(workspace));
-    assert.match(preview.text, /只改动源码。[\s\S]*工具提示[\s\S]*记忆提示/);
+    assert.match(preview.text, /只改动源码。[\s\S]*工具提示/);
+    assert.equal(preview.sections.find((section) => section.id === "memory")?.included, false);
     assert.equal(preview.sections.find((section) => section.id === "agents")?.included, true);
     assert.equal(server.runs.activeCount(), 0);
   });
@@ -744,16 +744,30 @@ describe("chat server", () => {
     assert.deepEqual(loadedConfigData.developerToolPaths, ["/usr/bin"]);
     assert.deepEqual(loadedConfigData.disabledSkillIds, ["agents:demo"]);
 
-    const memory = await server.app.request("http://localhost/v1/memory", {
-      method: "PUT",
+    const memorySettings = await server.app.request("http://localhost/v1/memory/settings", {
+      method: "PATCH",
       headers: { ...auth(), "Content-Type": "application/json" },
       body: JSON.stringify({
-        schemaVersion: 1,
-        enabled: true,
-        items: [{ id: "m1", content: "事实" }],
+        useMemories: true,
+        generateMemories: false,
+        maxUnusedDays: 120,
       }),
     });
-    assert.equal(memory.status, 200);
+    assert.equal(memorySettings.status, 200);
+    const memoryItem = await server.app.request("http://localhost/v1/memory/items", {
+      method: "POST",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ content: "事实", scope: "global", category: "preference" }),
+    });
+    assert.equal(memoryItem.status, 201);
+    const memory = await server.app.request("http://localhost/v1/memory", { headers: auth() });
+    const memoryData = await memory.json();
+    assert.equal(memoryData.settings.maxUnusedDays, 120);
+    assert.equal(memoryData.items[0]?.content, "事实");
+    const memorySources = await server.app.request("http://localhost/v1/memory/sources", {
+      headers: auth(),
+    });
+    assert.equal(memorySources.status, 200);
 
     await server.app.request("http://localhost/v1/sessions", {
       method: "POST",

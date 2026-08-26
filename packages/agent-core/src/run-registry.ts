@@ -37,6 +37,9 @@ import type { ChatConfigStore } from "./chat-config.ts";
 import { createClientTools } from "./client-tools.ts";
 import type { EventHub } from "./events.ts";
 import type { JobRegistry } from "./job-registry.ts";
+import type { MemoryCoordinator } from "./memory-coordinator.ts";
+import type { MemoryStore } from "./memory-store.ts";
+import { createSearchMemoryTool, SEARCH_MEMORY_TOOL_NAME } from "./memory-tool.ts";
 import { createConfiguredLanguageModel, supportsRequiredToolChoice } from "./model-adaptor.ts";
 import type { PlanStore } from "./plan-store.ts";
 import { createPlanWriteTool } from "./plan-tool.ts";
@@ -432,6 +435,8 @@ export class RunRegistry {
   ) => LanguageModel;
   private readonly modelStreamTimeout: ModelStreamTimeout;
   private readonly jobs?: JobRegistry;
+  private readonly memory?: MemoryStore;
+  private readonly memoryCoordinator?: MemoryCoordinator;
 
   constructor(
     store: SessionStore,
@@ -444,6 +449,8 @@ export class RunRegistry {
     createLanguageModel?: (model: import("./protocol.ts").ServerModelConfig) => LanguageModel,
     modelStreamTimeout: ModelStreamTimeout = MODEL_STREAM_TIMEOUT,
     jobs?: JobRegistry,
+    memory?: MemoryStore,
+    memoryCoordinator?: MemoryCoordinator,
   ) {
     this.store = store;
     this.events = events;
@@ -455,6 +462,8 @@ export class RunRegistry {
     this.createLanguageModel = createLanguageModel;
     this.modelStreamTimeout = modelStreamTimeout;
     this.jobs = jobs;
+    this.memory = memory;
+    this.memoryCoordinator = memoryCoordinator;
     this.journal = new RunJournal(store.root);
     this.reviewLog = new SandboxReviewLogStore(store.root);
   }
@@ -656,10 +665,31 @@ export class RunRegistry {
           ? `用户已确认执行以下计划：\n\n${activePlan.content}`
           : "";
     const canCreateTask = planMode !== "plan" && current.kind !== "task";
+    const memorySummary = this.memory?.formatSummary(workspaceId) ?? "";
+    const fallbackMemory =
+      this.memory && !model.supportsTools
+        ? await this.memory.search(
+            [...messages]
+              .reverse()
+              .find((message) => message.role === "user")
+              ?.parts.filter((part) => part.type === "text")
+              .map((part) => part.text)
+              .join(" ") ?? "",
+            workspaceId,
+          )
+        : [];
+    const memoryPrompt = [
+      memorySummary,
+      fallbackMemory.length > 0
+        ? `与当前请求相关的长期记忆：\n${fallbackMemory.map((item) => `- ${item.content}`).join("\n")}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
     const prompt = await buildSystemPrompt({
       cwd: effectiveCwd,
       system: input.system,
-      memory: input.memory,
+      memory: memoryPrompt,
       workspaceToolInstructions,
       planInstructions,
       todoToolInstructions: TODO_TOOL_INSTRUCTIONS,
@@ -882,6 +912,9 @@ export class RunRegistry {
       const tools = model.supportsTools
         ? {
             [SKILL_TOOL_NAME]: createReadSkillTool(),
+            ...(this.memory?.getSettings().useMemories
+              ? { [SEARCH_MEMORY_TOOL_NAME]: createSearchMemoryTool(this.memory, workspaceId) }
+              : {}),
             ...(planMode === "plan"
               ? {
                   plan_write: createPlanWriteTool(
@@ -1493,6 +1526,11 @@ export class RunRegistry {
         title: resolveSessionTitle(current.title, nextMessages),
       };
       await this.store.save(updated);
+      if (completion.outcome === "completed") {
+        await this.memoryCoordinator
+          ?.scheduleSession(updated)
+          .catch((error) => console.error("Failed to schedule memory extraction", error));
+      }
       this.drafts.delete(sessionId);
       const finalMessage = nextMessages[nextMessages.length - 1];
       this.events.publish({

@@ -75,25 +75,27 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { getReturnPath } from "@/lib/app-return-path";
-import {
-  type ChatMemoryStore,
-  DEFAULT_CHAT_MEMORY,
-  loadChatMemory,
-  saveChatMemory,
-} from "@/lib/chat-memory";
-import { compactChatMemory } from "@/lib/chat-memory-ops";
+import { DEFAULT_CHAT_MEMORY, loadChatMemory } from "@/lib/chat-memory";
 import type { ChatServerProviderModel } from "@/lib/chat-server";
 import {
   canRestartChatServer,
   checkChatServer,
+  consolidateChatServerMemory,
+  createChatServerMemoryItem,
+  deleteChatServerMemoryItem,
+  enqueueChatServerMemoryBackfill,
   importDeveloperEnvironment,
   listChatServerModels,
   loadChatServerConfig,
+  loadChatServerMemorySources,
   loadChatServerPort,
   loadDeveloperEnvironment,
+  previewChatServerMemoryBackfill,
   restartChatServer,
   saveChatServerConfig,
   testChatServerModel,
+  updateChatServerMemoryItem,
+  updateChatServerMemorySettings,
   updateChatServerPort,
 } from "@/lib/chat-server";
 import {
@@ -127,7 +129,6 @@ import {
 import {
   formatModelContextSize,
   formatModelLabel,
-  getDefaultModel,
   loadModels,
   type ModelConfig,
   saveModels,
@@ -156,6 +157,7 @@ import {
   type SystemLog,
   type SystemLogLevel,
 } from "@/lib/system-log";
+import { loadWorkspaceProjects } from "@/lib/workspaces";
 
 const themes: Array<{ value: Theme; label: string; description: string }> = [
   { value: "system", label: "跟随系统", description: "根据操作系统自动切换" },
@@ -1008,21 +1010,30 @@ function MemorySettingsPage() {
   const memoryQuery = useQuery({
     queryKey: ["chat-memory"],
     queryFn: loadChatMemory,
+    refetchOnMount: "always",
+  });
+  const sourcesQuery = useQuery({
+    queryKey: ["chat-memory-sources"],
+    queryFn: () => loadChatServerMemorySources(),
+    refetchOnMount: "always",
+  });
+  const backfillQuery = useQuery({
+    queryKey: ["chat-memory-backfill"],
+    queryFn: () => previewChatServerMemoryBackfill(),
+    refetchOnMount: "always",
+  });
+  const workspacesQuery = useQuery({
+    queryKey: ["workspace-projects"],
+    queryFn: loadWorkspaceProjects,
   });
   const store = memoryQuery.data ?? DEFAULT_CHAT_MEMORY;
-  const defaultModel = getDefaultModel(modelsQuery.data ?? []);
 
-  function handleStoreChange(next: ChatMemoryStore) {
-    queryClient.setQueryData(["chat-memory"], next);
-    void saveChatMemory(next).catch((error) => console.error("Failed to save chat memory", error));
-  }
-
-  async function handleCompact() {
-    if (!defaultModel) {
-      throw new Error("请先在“模型”设置中选择默认模型，再整理长期记忆。");
-    }
-    const next = await compactChatMemory(defaultModel);
-    queryClient.setQueryData(["chat-memory"], next);
+  async function refreshMemory() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["chat-memory"] }),
+      queryClient.invalidateQueries({ queryKey: ["chat-memory-sources"] }),
+      queryClient.invalidateQueries({ queryKey: ["chat-memory-backfill"] }),
+    ]);
   }
 
   return (
@@ -1030,7 +1041,7 @@ function MemorySettingsPage() {
       <SettingsHeading
         eyebrow="Chat"
         title="长期记忆"
-        description="全局共享的用户记忆，开启后会自动抽取并在后续对话中使用。"
+        description="跨会话保存用户偏好与 Workspace 项目知识，并按需召回相关细节。"
       />
       <section className="rounded-lg border border-border bg-card px-5 py-5">
         {memoryQuery.isPending ? (
@@ -1047,11 +1058,40 @@ function MemorySettingsPage() {
         ) : (
           <div className="flex flex-col gap-4">
             <ChatMemorySettings
-              compactDisabled={modelsQuery.isPending}
-              idPrefix="settings-memory"
-              onCompact={handleCompact}
-              store={store}
-              onStoreChange={handleStoreChange}
+              backfill={backfillQuery.data}
+              jobs={sourcesQuery.data?.jobs ?? []}
+              models={modelsQuery.data ?? []}
+              overview={store}
+              sources={sourcesQuery.data?.sources ?? []}
+              workspaces={(workspacesQuery.data ?? []).map((workspace) => ({
+                id: workspace.id,
+                name: workspace.name ?? workspace.path,
+              }))}
+              onBackfill={async () => {
+                await enqueueChatServerMemoryBackfill();
+                await refreshMemory();
+              }}
+              onConsolidate={async () => {
+                await consolidateChatServerMemory();
+                await refreshMemory();
+              }}
+              onTabChange={() => void refreshMemory()}
+              onCreate={async (value) => {
+                await createChatServerMemoryItem(value);
+                await refreshMemory();
+              }}
+              onDelete={async (id) => {
+                await deleteChatServerMemoryItem(id);
+                await refreshMemory();
+              }}
+              onSettingsChange={async (value) => {
+                await updateChatServerMemorySettings(value);
+                await refreshMemory();
+              }}
+              onUpdate={async (id, value) => {
+                await updateChatServerMemoryItem(id, value);
+                await refreshMemory();
+              }}
             />
           </div>
         )}

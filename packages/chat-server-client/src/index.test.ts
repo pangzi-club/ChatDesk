@@ -91,6 +91,37 @@ describe("ChatServerClient", () => {
     assert.deepEqual(JSON.parse(String(requestInit?.body)), { title: "新标题" });
   });
 
+  it("uses the typed memory settings and item endpoints", async () => {
+    const requests: Array<{ url: string; method?: string; body?: unknown }> = [];
+    const client = new ChatServerClient({
+      baseUrl: "http://localhost",
+      fetchImpl: async (input, init) => {
+        requests.push({
+          url: String(input),
+          method: init?.method,
+          ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}),
+        });
+        return new Response(JSON.stringify({ schemaVersion: 2 }), { status: 200 });
+      },
+    });
+
+    await client.updateMemorySettings({ generateMemories: false });
+    await client.createMemoryItem({ content: "用户偏好中文", scope: "global" });
+
+    assert.deepEqual(requests, [
+      {
+        url: "http://localhost/v1/memory/settings",
+        method: "PATCH",
+        body: { generateMemories: false },
+      },
+      {
+        url: "http://localhost/v1/memory/items",
+        method: "POST",
+        body: { content: "用户偏好中文", scope: "global" },
+      },
+    ]);
+  });
+
   it("encodes attachment bytes using the server upload contract", async () => {
     let body = "";
     const client = new ChatServerClient({

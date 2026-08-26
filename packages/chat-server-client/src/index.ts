@@ -9,6 +9,12 @@ import type {
   ChatSession,
   DeveloperEnvironmentStatus,
   HealthResponse,
+  MemoryBackfillPreview,
+  MemoryItem,
+  MemoryJob,
+  MemoryOverview,
+  MemorySettings,
+  MemorySource,
   RunStartInput,
   ServerEvent,
   SessionIndexItem,
@@ -400,18 +406,82 @@ export class ChatServerClient {
   }
 
   getMemory() {
-    return this.json<unknown>("/v1/memory", undefined, "Chat Server 记忆加载失败");
+    return this.json<MemoryOverview>("/v1/memory", undefined, "Chat Server 记忆加载失败");
   }
 
-  saveMemory(value: unknown) {
-    return this.json<unknown>(
-      "/v1/memory",
+  updateMemorySettings(value: Partial<MemorySettings>) {
+    return this.json<MemoryOverview>(
+      "/v1/memory/settings",
       {
-        method: "PUT",
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(value),
       },
-      "Chat Server 记忆保存失败",
+      "Chat Server 记忆设置保存失败",
+    );
+  }
+
+  createMemoryItem(value: Pick<MemoryItem, "content"> & Partial<MemoryItem>) {
+    return this.json<MemoryItem>(
+      "/v1/memory/items",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(value),
+      },
+      "Chat Server 记忆创建失败",
+    );
+  }
+
+  updateMemoryItem(id: string, value: Partial<MemoryItem>) {
+    return this.json<MemoryItem>(
+      `/v1/memory/items/${encodePath(id)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(value),
+      },
+      "Chat Server 记忆更新失败",
+    );
+  }
+
+  deleteMemoryItem(id: string) {
+    return this.json<void>(
+      `/v1/memory/items/${encodePath(id)}`,
+      { method: "DELETE" },
+      "Chat Server 记忆删除失败",
+    );
+  }
+
+  getMemorySources() {
+    return this.json<{ sources: MemorySource[]; jobs: MemoryJob[] }>(
+      "/v1/memory/sources",
+      undefined,
+      "Chat Server 记忆来源加载失败",
+    );
+  }
+
+  consolidateMemory() {
+    return this.json<MemoryJob>(
+      "/v1/memory/consolidate",
+      { method: "POST" },
+      "Chat Server 记忆整理失败",
+    );
+  }
+
+  previewMemoryBackfill() {
+    return this.json<MemoryBackfillPreview>(
+      "/v1/memory/backfill",
+      undefined,
+      "Chat Server 历史回填预览失败",
+    );
+  }
+
+  enqueueMemoryBackfill() {
+    return this.json<{ queued: number }>(
+      "/v1/memory/backfill",
+      { method: "POST" },
+      "Chat Server 历史回填失败",
     );
   }
 
@@ -606,6 +676,12 @@ export type {
   ChatServerReviewerLog,
   ChatSession,
   HealthResponse,
+  MemoryBackfillPreview,
+  MemoryItem,
+  MemoryJob,
+  MemoryOverview,
+  MemorySettings,
+  MemorySource,
   RunStartInput,
   ServerEvent,
   SessionIndexItem,
