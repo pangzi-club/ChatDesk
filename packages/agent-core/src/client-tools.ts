@@ -54,23 +54,44 @@ const clientTools: ToolSet = {
       path: z.string().optional(),
       pattern: z.string().optional().describe("文件 glob，例如 **/*.ts 或 package*.json"),
       query: z.string().optional().describe("要查找的不区分大小写文本关键词"),
+      include: z.string().optional().describe("内容搜索的文件 glob，例如 *.ts"),
+      regex: z.boolean().optional().describe("将 query 作为 ripgrep 正则表达式"),
       maxResults: z.number().int().min(1).max(500).optional(),
     }),
   }),
   read_file: tool({
     description: "读取当前 workspace 内的文本文件。",
-    inputSchema: z.object({ path: z.string().min(1) }),
+    inputSchema: z.object({
+      path: z.string().min(1).optional(),
+      file_path: z.string().min(1).optional(),
+      startLine: z.number().int().positive().optional(),
+      endLine: z.number().int().positive().optional(),
+      offset: z.number().int().positive().optional(),
+      limit: z.number().int().positive().optional(),
+      view_range: z.array(z.number().int()).length(2).optional(),
+    }),
   }),
   write_file: tool({
     description: "创建或完整覆盖当前 workspace 内的文本文件。",
-    inputSchema: z.object({ path: z.string().min(1), content: z.string() }),
+    inputSchema: z.object({
+      path: z.string().min(1).optional(),
+      file_path: z.string().min(1).optional(),
+      content: z.string().optional(),
+      file_text: z.string().optional(),
+    }),
   }),
   edit_file: tool({
     description: "在当前 workspace 内使用唯一匹配的文本替换文件内容。",
     inputSchema: z.object({
-      path: z.string().min(1),
-      oldText: z.string().min(1),
-      newText: z.string(),
+      path: z.string().min(1).optional(),
+      file_path: z.string().min(1).optional(),
+      oldText: z.string().min(1).optional(),
+      newText: z.string().optional(),
+      old_string: z.string().min(1).optional(),
+      new_string: z.string().optional(),
+      new_str: z.string().optional(),
+      replace_all: z.boolean().optional(),
+      insert_line: z.number().int().min(0).optional(),
     }),
   }),
   apply_patch: tool({
@@ -85,7 +106,15 @@ const clientTools: ToolSet = {
   bash: tool({
     description:
       "在 workspace 中执行 Bash 命令。优先使用 search_files 搜索源码；若当前没有该工具，可使用 rg 并遵循 .gitignore，避免扫描 node_modules、.git、dist 或 target。Bash 也适合运行测试、构建、Git 状态等命令。",
-    inputSchema: z.object({ command: z.string().min(1) }),
+    inputSchema: z.object({
+      command: z.string().min(1),
+      description: z.string().min(1).optional(),
+      timeoutMs: z.number().int().min(0).max(120_000).optional(),
+      workdir: z.string().optional(),
+      cwd: z.string().optional(),
+      run_in_background: z.boolean().optional(),
+      block_until: z.number().int().min(0).max(120_000).optional(),
+    }),
   }),
   browser_open: tool({
     description: "在隔离的 Headless Chromium session 中打开 HTTP(S) 页面。",

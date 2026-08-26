@@ -4,7 +4,12 @@ import path from "node:path";
 import { type ToolSet, tool } from "ai";
 import { z } from "zod";
 import { buildEditFailureMessage } from "./file-edit.ts";
-import { type ReadFileOptions, type ReadFileResult, readTextFileRange } from "./file-read.ts";
+import {
+  type ReadFileOptions,
+  type ReadFileResult,
+  readTextFileRange,
+  resolveReadRange,
+} from "./file-read.ts";
 import { type FileSearchResult, MAX_SEARCH_RESULTS, searchWorkspaceFiles } from "./file-search.ts";
 import type { JobRegistry } from "./job-registry.ts";
 import type { SandboxMode } from "./protocol.ts";
@@ -48,6 +53,29 @@ type ApplyPatchResult = {
   changedFiles: string[];
   stats: Array<{ path: string; additions: number | null; deletions: number | null }>;
 };
+
+function resolveAliasedPath(pathValue: string | undefined, filePath: string | undefined) {
+  const path = pathValue?.trim() || "";
+  const alias = filePath?.trim() || "";
+  if (path && alias && path !== alias) throw new Error("path 与 file_path 必须指向同一文件");
+  const resolved = path || alias;
+  if (!resolved) throw new Error("必须提供 path 或 file_path");
+  return resolved;
+}
+
+function resolveEditInput(input: {
+  oldText?: string;
+  newText?: string;
+  old_string?: string;
+  new_string?: string;
+  new_str?: string;
+}) {
+  const oldText = input.oldText ?? input.old_string;
+  const newText = input.newText ?? input.new_string ?? input.new_str;
+  if (!oldText) throw new Error("必须提供 oldText 或 old_string");
+  if (newText === undefined) throw new Error("必须提供 newText、new_string 或 new_str");
+  return { oldText, newText };
+}
 export type WorkspaceToolPreflight =
   | { status: "ok"; result: unknown }
   | { status: "error"; error: unknown }
@@ -115,7 +143,19 @@ export async function preflightWorkspaceTool(options: {
       };
     }
     if (options.toolName === "read_file") {
-      const input = options.input as { path: string } & ReadFileOptions;
+      const rawInput = options.input as {
+        path?: string;
+        file_path?: string;
+        startLine?: number;
+        endLine?: number;
+        offset?: number;
+        limit?: number;
+        view_range?: number[];
+      };
+      const input = {
+        path: resolveAliasedPath(rawInput.path, rawInput.file_path),
+        ...resolveReadRange(rawInput),
+      };
       return {
         status: "ok",
         result: await readTextFile(
@@ -142,7 +182,15 @@ export async function preflightWorkspaceTool(options: {
       };
     }
     if (options.toolName === "bash") {
-      const input = options.input as { command: string; cwd?: string };
+      const rawInput = options.input as {
+        command: string;
+        cwd?: string;
+        workdir?: string;
+      };
+      if (rawInput.cwd && rawInput.workdir && rawInput.cwd !== rawInput.workdir) {
+        throw new Error("cwd 与 workdir 必须指向同一目录");
+      }
+      const input = { command: rawInput.command, cwd: rawInput.cwd ?? rawInput.workdir };
       const commandCwd = resolveCommandCwd(options.cwd, input.cwd, options.mode, false);
       const result = await runSandboxedShell(input.command, {
         cwd: commandCwd,
@@ -437,14 +485,20 @@ export function createWorkspaceTools(
       },
     }),
     read_file: tool({
-      description: `读取文本文件。单次最多返回 64 KiB；结果截断时使用 startLine/endLine 继续读取。${pathScope}`,
+      description: `读取 UTF-8 文本文件。支持 path/file_path、startLine/endLine、offset/limit 和 view_range；单次最多返回 64 KiB，结果截断时继续分段读取。${pathScope}`,
       inputSchema: z.object({
-        path: z.string().min(1),
+        path: z.string().min(1).optional(),
+        file_path: z.string().min(1).optional(),
         startLine: z.number().int().positive().optional(),
         endLine: z.number().int().positive().optional(),
+        offset: z.number().int().positive().optional(),
+        limit: z.number().int().positive().optional(),
+        view_range: z.array(z.number().int()).length(2).optional(),
       }),
-      execute: async ({ path: relativePath, startLine, endLine }, { toolCallId, abortSignal }) => {
-        const input = { path: relativePath, startLine, endLine };
+      execute: async (rawInput, { toolCallId, abortSignal }) => {
+        const relativePath = resolveAliasedPath(rawInput.path, rawInput.file_path);
+        const range = resolveReadRange(rawInput);
+        const input = { path: relativePath, ...range };
         const preflight = consumePreflight(preflightResults, toolCallId, approvedToolCallIds);
         if (preflight) {
           const output = await (resolvePreflight(preflight) as Promise<ReadFileResult>);
@@ -457,7 +511,7 @@ export function createWorkspaceTools(
             mode,
             approvedToolCallIds.has(toolCallId),
             readablePaths,
-            { startLine, endLine },
+            range,
             abortSignal,
           );
           return onReadOnlyToolResult?.("read_file", input, output, toolCallId) ?? output;
@@ -467,26 +521,20 @@ export function createWorkspaceTools(
             toolCallId,
             input,
             retry: () =>
-              readTextFile(
-                cwd,
-                relativePath,
-                mode,
-                true,
-                readablePaths,
-                { startLine, endLine },
-                abortSignal,
-              ),
+              readTextFile(cwd, relativePath, mode, true, readablePaths, range, abortSignal),
           });
           return onReadOnlyToolResult?.("read_file", input, output, toolCallId) ?? output;
         }
       },
     }),
     search_files: tool({
-      description: `按 glob 文件名模式或文本关键词搜索文件，pattern 支持 **/*.ts，query 不区分大小写并返回首个命中行。Git workspace 遵循 .gitignore，非 Git workspace 跳过 .git、node_modules、target、dist。${pathScope}`,
+      description: `按文件 glob 或内容关键词/正则搜索文件。pattern 对应 glob；query 对应 grep 内容模式；include 可限制文件类型，regex=true 时 query 使用 ripgrep 正则。不要用 Bash 的 find/grep/rg 替代本工具。${pathScope}`,
       inputSchema: z.object({
         path: z.string().optional(),
         pattern: z.string().optional().describe("文件 glob，例如 **/*.ts 或 package*.json"),
         query: z.string().optional().describe("要查找的不区分大小写文本关键词"),
+        include: z.string().optional().describe("内容搜索的文件 glob，例如 *.ts"),
+        regex: z.boolean().optional().describe("将 query 作为 ripgrep 正则表达式"),
         maxResults: z.number().int().min(1).max(MAX_SEARCH_RESULTS).optional(),
       }),
       execute: async (options, { toolCallId, abortSignal }) => {
@@ -519,9 +567,17 @@ export function createWorkspaceTools(
       },
     }),
     write_file: tool({
-      description: `创建或覆盖文本文件。${pathScope}`,
-      inputSchema: z.object({ path: z.string().min(1), content: z.string() }),
-      execute: async ({ path: relativePath, content }, { toolCallId, abortSignal }) => {
+      description: `创建或覆盖 UTF-8 文本文件。支持 path/file_path 和 content/file_text；已有文件的定向修改优先使用 edit_file。${pathScope}`,
+      inputSchema: z.object({
+        path: z.string().min(1).optional(),
+        file_path: z.string().min(1).optional(),
+        content: z.string().optional(),
+        file_text: z.string().optional(),
+      }),
+      execute: async (rawInput, { toolCallId, abortSignal }) => {
+        const relativePath = resolveAliasedPath(rawInput.path, rawInput.file_path);
+        const content = rawInput.content ?? rawInput.file_text;
+        if (content === undefined) throw new Error("必须提供 content 或 file_text");
         const input = { path: relativePath, content };
         const write = async (allowOutside: boolean) => {
           const root = rootPath(cwd);
@@ -563,14 +619,33 @@ export function createWorkspaceTools(
       },
     }),
     edit_file: tool({
-      description: `将文件中唯一匹配的文本替换为新内容。${pathScope}`,
+      description: `对现有文本文件做精确替换或按行插入。支持 path/file_path、oldText/old_string、newText/new_string/new_str、replace_all 和 insert_line；默认要求唯一匹配。${pathScope}`,
       inputSchema: z.object({
-        path: z.string().min(1),
-        oldText: z.string().min(1),
-        newText: z.string(),
+        path: z.string().min(1).optional(),
+        file_path: z.string().min(1).optional(),
+        oldText: z.string().min(1).optional(),
+        newText: z.string().optional(),
+        old_string: z.string().min(1).optional(),
+        new_string: z.string().optional(),
+        new_str: z.string().optional(),
+        replace_all: z.boolean().optional(),
+        insert_line: z.number().int().min(0).optional(),
       }),
-      execute: async ({ path: relativePath, oldText, newText }, { toolCallId, abortSignal }) => {
-        const input = { path: relativePath, oldText, newText };
+      execute: async (rawInput, { toolCallId, abortSignal }) => {
+        const relativePath = resolveAliasedPath(rawInput.path, rawInput.file_path);
+        const insertText = rawInput.newText ?? rawInput.new_string ?? rawInput.new_str;
+        const { oldText, newText } =
+          rawInput.insert_line !== undefined && insertText !== undefined
+            ? { oldText: rawInput.oldText ?? rawInput.old_string ?? "", newText: insertText }
+            : resolveEditInput(rawInput);
+        const replaceAll = rawInput.replace_all === true;
+        const input = {
+          path: relativePath,
+          oldText,
+          newText,
+          replaceAll,
+          insertLine: rawInput.insert_line,
+        };
         const edit = async (allowOutside: boolean) => {
           const root = rootPath(cwd);
           const target = resolveTarget(root, relativePath, mode, allowOutside);
@@ -583,6 +658,8 @@ export function createWorkspaceTools(
                 path: target,
                 oldText,
                 newText,
+                replaceAll,
+                insertLine: rawInput.insert_line,
                 allowOutside: outsideWorkspace,
               },
               {
@@ -597,9 +674,23 @@ export function createWorkspaceTools(
             return result.result as { path: string; changed: boolean };
           }
           const content = await readFile(target, "utf8");
+          if (rawInput.insert_line !== undefined) {
+            const lines = content.split(/\r?\n/);
+            if (rawInput.insert_line > lines.length) {
+              throw new Error(`insert_line 必须在 0-${lines.length} 之间`);
+            }
+            lines.splice(rawInput.insert_line, 0, newText);
+            await writeFile(target, lines.join("\n"), "utf8");
+            return { path: path.relative(root, target), changed: true };
+          }
           const count = content.split(oldText).length - 1;
-          if (count !== 1) throw new Error(buildEditFailureMessage(content, oldText, count));
-          await writeFile(target, content.replace(oldText, newText), "utf8");
+          if (!replaceAll && count !== 1)
+            throw new Error(buildEditFailureMessage(content, oldText, count));
+          await writeFile(
+            target,
+            replaceAll ? content.replaceAll(oldText, newText) : content.replace(oldText, newText),
+            "utf8",
+          );
           return { path: path.relative(root, target), changed: true };
         };
         try {
@@ -636,10 +727,14 @@ export function createWorkspaceTools(
       },
     }),
     bash: tool({
-      description: `执行 Bash 命令。${pathScope}完全访问模式支持外部 Bash cwd。优先使用 search_files 搜索源码；若当前没有该工具，可使用 rg 并遵循 .gitignore，避免扫描 node_modules、.git、dist 或 target。Bash 也适合运行测试、构建、Git 状态等命令。`,
+      description: `执行 Bash 命令。每次调用检查退出码；长任务使用 run_in_background，工作目录使用 workdir/cwd。${pathScope}优先使用 search_files 搜索源码。`,
       inputSchema: z.object({
         command: z.string().min(1),
-        cwd: z.string().optional().describe("可选的 Bash 工作目录；完全访问模式支持外部绝对路径"),
+        description: z.string().min(1).optional().describe("命令的简短说明"),
+        timeoutMs: z.number().int().min(0).max(120_000).optional().describe("同步执行超时时间"),
+        workdir: z.string().optional().describe("Bash 工作目录"),
+        cwd: z.string().optional().describe("Bash 工作目录的 ChatDesk 别名"),
+        run_in_background: z.boolean().optional().describe("立即返回后台 Job"),
         block_until: z
           .number()
           .int()
@@ -648,7 +743,20 @@ export function createWorkspaceTools(
           .optional()
           .describe("最多同步等待毫秒；0 立即转为后台 Job"),
       }),
-      execute: async ({ command, cwd: requestedCwd, block_until }, { toolCallId, abortSignal }) => {
+      execute: async (rawInput, { toolCallId, abortSignal }) => {
+        const {
+          command,
+          cwd: cwdAlias,
+          workdir,
+          timeoutMs,
+          run_in_background,
+          block_until: explicitBlockUntil,
+        } = rawInput;
+        if (cwdAlias && workdir && cwdAlias !== workdir) {
+          throw new Error("cwd 与 workdir 必须指向同一目录");
+        }
+        const requestedCwd = cwdAlias ?? workdir;
+        const block_until = explicitBlockUntil ?? (run_in_background ? 0 : timeoutMs);
         const input = { command, cwd: requestedCwd };
         const approved = approvedToolCallIds.has(toolCallId);
         const approvedPreflight = toolCallId ? preflightResults.get(toolCallId) : undefined;
@@ -663,6 +771,7 @@ export function createWorkspaceTools(
             mode,
             allowOutside: permissions.allowOutside,
             allowNetwork: permissions.allowNetwork,
+            timeoutMs,
             readablePaths,
             developerToolPaths,
             abortSignal,

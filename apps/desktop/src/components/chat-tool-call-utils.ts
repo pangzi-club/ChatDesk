@@ -79,7 +79,7 @@ export function resolveWorkspaceToolFileTarget(
   }
 
   const outputPath = getStringProperty(output, "path");
-  const inputPath = getStringProperty(input, "path");
+  const inputPath = getStringProperty(input, "path") || getStringProperty(input, "file_path");
   const path = outputPath || inputPath;
   if (!path) return null;
 
@@ -94,7 +94,12 @@ function extractWorkspaceToolSubject(toolName: string, input: unknown, output: u
   const inputRecord = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
   const outputRecord =
     output && typeof output === "object" ? (output as Record<string, unknown>) : {};
-  const inputPath = typeof inputRecord.path === "string" ? inputRecord.path : "";
+  const inputPath =
+    typeof inputRecord.path === "string"
+      ? inputRecord.path
+      : typeof inputRecord.file_path === "string"
+        ? inputRecord.file_path
+        : "";
   const outputPath = typeof outputRecord.path === "string" ? outputRecord.path : "";
   const fileTarget = resolveWorkspaceToolFileTarget(toolName, input, output);
   const searchKeyword =

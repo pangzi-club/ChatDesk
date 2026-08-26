@@ -7,6 +7,27 @@ export type ReadFileOptions = {
   endLine?: number;
 };
 
+export function resolveReadRange(input: {
+  startLine?: number;
+  endLine?: number;
+  offset?: number;
+  limit?: number;
+  view_range?: number[];
+}): ReadFileOptions {
+  const viewRange = input.view_range;
+  const startLine =
+    input.startLine ??
+    (viewRange?.length ? (viewRange[0] > 0 ? viewRange[0] : undefined) : undefined) ??
+    (input.offset !== undefined ? Math.max(1, input.offset) : undefined);
+  const endLine =
+    input.endLine ??
+    (viewRange?.length && viewRange[1] !== -1 ? viewRange[1] : undefined) ??
+    (input.limit !== undefined && startLine !== undefined
+      ? startLine + Math.max(1, input.limit) - 1
+      : undefined);
+  return { startLine, endLine };
+}
+
 export type ReadFileResult = {
   path: string;
   content: string;

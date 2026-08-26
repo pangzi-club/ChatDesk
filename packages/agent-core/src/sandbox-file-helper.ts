@@ -3,7 +3,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { buildEditFailureMessage } from "./file-edit.ts";
-import { readTextFileRange } from "./file-read.ts";
+import { readTextFileRange, resolveReadRange } from "./file-read.ts";
 import { searchWorkspaceFiles } from "./file-search.ts";
 
 const SKIPPED_DIRECTORIES = new Set([".git", "node_modules", "target", "dist"]);
@@ -26,6 +26,9 @@ type Request =
       path: string;
       startLine?: number;
       endLine?: number;
+      offset?: number;
+      limit?: number;
+      view_range?: number[];
       readablePaths?: string[];
     }
   | {
@@ -34,6 +37,8 @@ type Request =
       path?: string;
       pattern?: string;
       query?: string;
+      include?: string;
+      regex?: boolean;
       maxResults?: number;
       readablePaths?: string[];
       developerToolPaths?: string[];
@@ -51,6 +56,8 @@ type Request =
       path: string;
       oldText: string;
       newText: string;
+      replaceAll?: boolean;
+      insertLine?: number;
       allowOutside?: boolean;
     }
   | {
@@ -130,7 +137,7 @@ async function listDirectory(request: Extract<Request, { operation: "list_dir" }
 
 async function readTextFile(request: Extract<Request, { operation: "read_file" }>) {
   const { root, target } = targetPath(request);
-  return readTextFileRange(target, displayPath(root, target), request);
+  return readTextFileRange(target, displayPath(root, target), resolveReadRange(request));
 }
 
 async function searchFiles(request: Extract<Request, { operation: "search_files" }>) {
@@ -147,11 +154,26 @@ async function writeTextFile(request: Extract<Request, { operation: "write_file"
 async function editTextFile(request: Extract<Request, { operation: "edit_file" }>) {
   const { root, target } = writeTargetPath(request);
   const content = await readFile(target, "utf8");
+  if (request.insertLine !== undefined) {
+    const lines = content.split(/\r?\n/);
+    if (request.insertLine > lines.length) {
+      throw new Error(`insertLine 必须在 0-${lines.length} 之间`);
+    }
+    lines.splice(request.insertLine, 0, request.newText);
+    await writeFile(target, lines.join("\n"), "utf8");
+    return { path: displayPath(root, target), changed: true };
+  }
   const count = content.split(request.oldText).length - 1;
-  if (count !== 1) {
+  if (!request.replaceAll && count !== 1) {
     throw new Error(buildEditFailureMessage(content, request.oldText, count));
   }
-  await writeFile(target, content.replace(request.oldText, request.newText), "utf8");
+  await writeFile(
+    target,
+    request.replaceAll
+      ? content.replaceAll(request.oldText, request.newText)
+      : content.replace(request.oldText, request.newText),
+    "utf8",
+  );
   return { path: displayPath(root, target), changed: true };
 }
 

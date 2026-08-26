@@ -9,6 +9,7 @@ import { type ToolSet, tool } from "ai";
 import { z } from "zod";
 import { createConversationTools } from "./conversation-tools.ts";
 import type { SessionStore } from "./store.ts";
+import { createWebTools } from "./web-tools.ts";
 
 const ASPECT_RATIO_SCHEMA = z.enum(IMAGE_ASPECT_RATIOS);
 const RESOLUTION_SCHEMA = z.enum(IMAGE_RESOLUTIONS);
@@ -33,6 +34,7 @@ export function createBusinessTools(
   const kieKey = apiKeys.kie ?? "";
   return {
     ...(sessions ? createConversationTools(sessions) : {}),
+    ...createWebTools(),
     image_generation: tool({
       description:
         "根据文字描述生成图片。会创建 KIE 生图任务并等待完成后返回图片 URL；适合插画、海报、场景图等。",

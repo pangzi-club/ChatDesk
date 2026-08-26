@@ -36,28 +36,51 @@ export function createChatWorkspaceTools(
     }),
     search_files: tool({
       description:
-        "按 glob 文件名模式或文本关键词搜索文件；pattern 支持 **/*.ts，query 不区分大小写并返回首个命中行，Git workspace 遵循 .gitignore。",
+        "按文件 glob 或内容关键词/正则搜索文件；pattern 对应 glob，query 对应 grep 内容模式，include 可限制文件类型，regex=true 时 query 使用 ripgrep 正则。",
       inputSchema: z.object({
         path: z.string().optional(),
         pattern: z.string().optional().describe("文件 glob，例如 **/*.ts 或 package*.json"),
         query: z.string().optional().describe("要查找的不区分大小写文本关键词"),
+        include: z.string().optional().describe("内容搜索的文件 glob，例如 *.ts"),
+        regex: z.boolean().optional().describe("将 query 作为 ripgrep 正则表达式"),
         maxResults: z.number().int().min(1).max(500).optional(),
       }),
     }),
     read_file: tool({
-      description: "读取 workspace 内的文本文件。",
-      inputSchema: z.object({ path: z.string().min(1) }),
+      description: "读取 workspace 内的 UTF-8 文本文件，支持 path/file_path、行范围和 view_range。",
+      inputSchema: z.object({
+        path: z.string().min(1).optional(),
+        file_path: z.string().min(1).optional(),
+        startLine: z.number().int().positive().optional(),
+        endLine: z.number().int().positive().optional(),
+        offset: z.number().int().positive().optional(),
+        limit: z.number().int().positive().optional(),
+        view_range: z.array(z.number().int()).length(2).optional(),
+      }),
     }),
     write_file: tool({
-      description: "创建或覆盖 workspace 内的文本文件。",
-      inputSchema: z.object({ path: z.string().min(1), content: z.string() }),
+      description:
+        "创建或覆盖 workspace 内的 UTF-8 文本文件，支持 path/file_path 和 content/file_text。",
+      inputSchema: z.object({
+        path: z.string().min(1).optional(),
+        file_path: z.string().min(1).optional(),
+        content: z.string().optional(),
+        file_text: z.string().optional(),
+      }),
     }),
     edit_file: tool({
-      description: "将 workspace 文件中唯一匹配的文本替换为新内容。",
+      description:
+        "对 workspace 文件做精确替换或按行插入，支持 DeepSeek 风格字段；默认要求唯一匹配。",
       inputSchema: z.object({
-        path: z.string().min(1),
-        oldText: z.string().min(1),
-        newText: z.string(),
+        path: z.string().min(1).optional(),
+        file_path: z.string().min(1).optional(),
+        oldText: z.string().min(1).optional(),
+        newText: z.string().optional(),
+        old_string: z.string().min(1).optional(),
+        new_string: z.string().optional(),
+        new_str: z.string().optional(),
+        replace_all: z.boolean().optional(),
+        insert_line: z.number().int().min(0).optional(),
       }),
     }),
     apply_patch: tool({
@@ -71,8 +94,16 @@ export function createChatWorkspaceTools(
     }),
     bash: tool({
       description:
-        "在 workspace 中执行 Bash 命令。优先使用 search_files 搜索源码；若当前没有该工具，可使用 rg 并遵循 .gitignore，避免扫描 node_modules、.git、dist 或 target。Bash 也适合运行测试、构建、Git 状态等命令。",
-      inputSchema: z.object({ command: z.string().min(1) }),
+        "在 workspace 中执行 Bash 命令。每次调用检查退出码；长任务使用 run_in_background，工作目录使用 workdir/cwd。优先使用 search_files 搜索源码。",
+      inputSchema: z.object({
+        command: z.string().min(1),
+        description: z.string().min(1).optional(),
+        timeoutMs: z.number().int().min(0).max(120_000).optional(),
+        workdir: z.string().optional(),
+        cwd: z.string().optional(),
+        run_in_background: z.boolean().optional(),
+        block_until: z.number().int().min(0).max(120_000).optional(),
+      }),
     }),
   };
   if (pack === "all") return tools;

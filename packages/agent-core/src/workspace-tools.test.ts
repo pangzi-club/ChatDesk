@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, it } from "vitest";
 import { SandboxBlockedError } from "./sandbox-exec.ts";
 import {
@@ -175,5 +178,77 @@ describe("workspace bash approval permissions", () => {
       sandboxBlocked: false,
     });
     assert.equal(reviewed, false);
+  });
+});
+
+describe("DeepSeek-compatible workspace tool inputs", () => {
+  it("accepts file_path with offset/limit and rejects conflicting path aliases", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-tools-"));
+    await writeFile(path.join(root, "sample.txt"), "one\ntwo\nthree\nfour", "utf8");
+    const tools = createWorkspaceTools(root, "full");
+    const execute = tools.read_file.execute;
+    if (typeof execute !== "function") throw new Error("read_file execute missing");
+    const output = (await execute(
+      { file_path: "sample.txt", offset: 2, limit: 2 },
+      {} as Parameters<typeof execute>[1],
+    )) as { content: string; startLine: number; endLine: number };
+    assert.deepEqual(
+      { content: output.content, startLine: output.startLine, endLine: output.endLine },
+      { content: "two\nthree", startLine: 2, endLine: 3 },
+    );
+    await assert.rejects(() =>
+      execute({ path: "sample.txt", file_path: "other.txt" }, {} as Parameters<typeof execute>[1]),
+    );
+  });
+
+  it("accepts file_text, replace_all, and insert_line aliases", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-tools-"));
+    const tools = createWorkspaceTools(root, "full");
+    const write = tools.write_file.execute;
+    const edit = tools.edit_file.execute;
+    if (typeof write !== "function" || typeof edit !== "function") {
+      throw new Error("write/edit execute missing");
+    }
+    await write(
+      { file_path: "sample.txt", file_text: "alpha\nalpha" },
+      {} as Parameters<typeof write>[1],
+    );
+    await edit(
+      {
+        file_path: "sample.txt",
+        old_string: "alpha",
+        new_string: "beta",
+        replace_all: true,
+      },
+      {} as Parameters<typeof edit>[1],
+    );
+    await edit(
+      { file_path: "sample.txt", insert_line: 1, new_str: "inserted" },
+      {} as Parameters<typeof edit>[1],
+    );
+    assert.equal(await readFile(path.join(root, "sample.txt"), "utf8"), "beta\ninserted\nbeta");
+  });
+
+  it("supports include filters, regular expressions, and Bash workdir", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-tools-"));
+    await writeFile(path.join(root, "sample.ts"), "const value42 = true;", "utf8");
+    await writeFile(path.join(root, "sample.txt"), "const value42 = true;", "utf8");
+    const tools = createWorkspaceTools(root, "full");
+    const search = tools.search_files.execute;
+    const bash = tools.bash.execute;
+    if (typeof search !== "function" || typeof bash !== "function") {
+      throw new Error("search/bash execute missing");
+    }
+    const result = (await search(
+      { query: "value[0-9]+", regex: true, include: "*.ts" },
+      {} as Parameters<typeof search>[1],
+    )) as { matches: string[] };
+    assert.deepEqual(result.matches, ["sample.ts"]);
+    const bashResult = (await bash(
+      { command: "pwd", workdir: ".", timeoutMs: 5_000, description: "Print working directory" },
+      {} as Parameters<typeof bash>[1],
+    )) as { code: number; out: string };
+    assert.equal(bashResult.code, 0);
+    assert.equal(bashResult.out.trim(), await realpath(root));
   });
 });

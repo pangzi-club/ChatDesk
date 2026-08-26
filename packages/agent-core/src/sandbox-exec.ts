@@ -268,6 +268,9 @@ export type SandboxFileRequest =
       path: string;
       startLine?: number;
       endLine?: number;
+      offset?: number;
+      limit?: number;
+      view_range?: number[];
       readablePaths?: string[];
     }
   | {
@@ -276,6 +279,8 @@ export type SandboxFileRequest =
       path?: string;
       pattern?: string;
       query?: string;
+      include?: string;
+      regex?: boolean;
       maxResults?: number;
       readablePaths?: string[];
       developerToolPaths?: string[];
@@ -293,6 +298,8 @@ export type SandboxFileRequest =
       path: string;
       oldText: string;
       newText: string;
+      replaceAll?: boolean;
+      insertLine?: number;
       allowOutside?: boolean;
     }
   | { operation: "apply_patch"; workspace: string; patch: string };

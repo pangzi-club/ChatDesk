@@ -33,6 +33,7 @@ export const CHAT_TOOL_DISPLAY_NAMES: Record<string, string> = {
   ...CHAT_WORKSPACE_TOOL_DISPLAY_NAMES,
   ...CHAT_BROWSER_TOOL_DISPLAY_NAMES,
   web_search: "Web Search · 联网搜索",
+  web_fetch: "Web Fetch · 获取网页",
   image_generation: "Image Generation · 图片生成",
   list_threads: "List Threads · 对话列表",
   search_threads: "Search Threads · 对话搜索",
@@ -75,10 +76,12 @@ function createPackTools(pack: ChatToolPackId): ToolSet {
 }
 
 function createWebSearchTools(): ToolSet {
-  // Provider-executed tools are accepted by streamText, but ToolSet's
-  // intersection with Pick<..., 'execute' | ...> is too strict for them.
   return {
     web_search: openai.tools.webSearch({}) as unknown as ToolSet[string],
+    web_fetch: tool({
+      description: "获取指定 HTTP(S) URL 的文本内容，并在回答中引用 URL。",
+      inputSchema: z.object({ url: z.string().url() }),
+    }),
   };
 }
 
@@ -198,7 +201,9 @@ export function formatToolsSystemHint(activePacks: ChatToolPackId[]): string {
 
   const lines = [
     "你可以使用下列工具获取信息。需要事实或实时数据时主动调用工具，不要编造。",
-    "用中文简洁总结工具结果；需要多步时先列表再取详情；联网搜索请注明来源要点；图片生成需等待任务完成，完成后简要说明画面。",
+    "读取或修改已有文件前先用 read_file 查看；文件搜索优先使用 search_files，不要用 Bash 的 cat/find/grep/rg 代替。读取大文件时按行范围继续读取。",
+    "Bash 每次调用都检查退出码；沙箱拒绝是权限策略结果，不要绕过重试。后台命令使用 Job 工具等待、读取输出或停止。",
+    "联网搜索使用 web_search 的 queries 数组，需要完整页面时再调用 web_fetch；最终回答将来源写成 Markdown 链接。图片生成需等待任务完成。",
     "当前可用工具包：",
   ];
 

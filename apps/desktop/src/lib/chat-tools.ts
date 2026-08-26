@@ -76,7 +76,7 @@ export const CHAT_TOOL_PACKS: ChatToolPackMeta[] = [
   {
     id: "web_search",
     label: "Web Search",
-    description: "通过 Responses API 联网搜索近期公开信息（OpenAI web_search）。",
+    description: "通过 Responses API 搜索近期公开信息并抓取指定 URL，返回来源要点。",
     examples: [
       "上周旧金山发生了什么？",
       "搜索今天 AI 领域的重要新闻",
@@ -84,7 +84,7 @@ export const CHAT_TOOL_PACKS: ChatToolPackMeta[] = [
     ],
     requiresResponsive: true,
     category: "web",
-    toolNames: ["web_search"],
+    toolNames: ["web_search", "web_fetch"],
   },
   {
     id: "image_generation",

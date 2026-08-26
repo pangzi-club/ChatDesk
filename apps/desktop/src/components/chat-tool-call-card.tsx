@@ -291,14 +291,18 @@ function extractJobResult(output: unknown) {
   };
 }
 
-/** OpenAI web_search 入参恒为空；查询词在 output.action 里。 */
-function extractWebSearchSummary(output: unknown): {
+/** 支持 provider 搜索结果和 Chat 自有 web_search 的统一摘要格式。 */
+function extractWebSearchSummary(
+  output: unknown,
+  input?: unknown,
+): {
   actionLabel?: string;
   queries: string[];
   sources: string[];
 } | null {
   if (!output || typeof output !== "object") return null;
   const record = output as {
+    queries?: string[];
     action?: {
       type?: string;
       query?: string;
@@ -306,10 +310,23 @@ function extractWebSearchSummary(output: unknown): {
       url?: string | null;
       pattern?: string | null;
     };
-    sources?: Array<{ type?: string; url?: string; name?: string }>;
+    sources?: Array<{ type?: string; url?: string; name?: string } | string>;
   };
   const action = record.action;
   const queries: string[] = [];
+  if (Array.isArray(record.queries)) {
+    for (const query of record.queries) {
+      if (typeof query === "string" && query.trim()) queries.push(query.trim());
+    }
+  }
+  if (queries.length === 0 && input && typeof input === "object") {
+    const inputQueries = (input as { queries?: unknown }).queries;
+    if (Array.isArray(inputQueries)) {
+      for (const query of inputQueries) {
+        if (typeof query === "string" && query.trim()) queries.push(query.trim());
+      }
+    }
+  }
   if (action?.type === "search") {
     if (Array.isArray(action.queries)) {
       for (const query of action.queries) {
@@ -330,13 +347,15 @@ function extractWebSearchSummary(output: unknown): {
 
   const sources = (record.sources ?? [])
     .map((source) => {
+      if (typeof source === "string") return source;
       if (source.type === "url" && typeof source.url === "string") return source.url;
+      if (typeof source.url === "string") return source.url;
       if (source.type === "api" && typeof source.name === "string") return source.name;
       return null;
     })
     .filter((value): value is string => Boolean(value));
 
-  if (!action && sources.length === 0) return null;
+  if (!action && queries.length === 0 && sources.length === 0) return null;
   return {
     actionLabel: action?.type,
     queries,
@@ -432,7 +451,7 @@ export function ChatToolCallCard({
   const manualApproval = state === "approval-requested" && !approval?.isAutomatic;
   const webSearch =
     toolName === "web_search" || toolName === "web_search_preview"
-      ? extractWebSearchSummary(output)
+      ? extractWebSearchSummary(output, input)
       : null;
   const isImageGeneration = toolName === IMAGE_GENERATION_TOOL_NAME;
   const isBrowserScreenshot = toolName === BROWSER_SCREENSHOT_TOOL_NAME;

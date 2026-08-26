@@ -14,6 +14,8 @@ const execFileAsync = promisify(execFile);
 export type FileSearchOptions = {
   pattern?: string;
   query?: string;
+  include?: string;
+  regex?: boolean;
   maxResults?: number;
 };
 
@@ -107,6 +109,10 @@ function matchesPattern(root: string, target: string, pattern: string | undefine
   return globRegex(normalizedPattern).test(candidate);
 }
 
+function matchesAnyPattern(root: string, target: string, patterns: Array<string | undefined>) {
+  return patterns.filter(Boolean).every((pattern) => matchesPattern(root, target, pattern));
+}
+
 async function executeRipgrep(root: string, args: string[]) {
   try {
     return (
@@ -140,12 +146,13 @@ async function runRipgrep(root: string, start: string, options: FileSearchOption
     "--glob",
     "!dist/**",
     ...(pattern ? ["--iglob", pattern] : []),
+    ...(options.include ? ["--iglob", options.include] : []),
   ];
   const args = query
     ? [
         "--json",
         "--ignore-case",
-        "--fixed-strings",
+        ...(options.regex ? [] : ["--fixed-strings"]),
         "--max-count",
         "1",
         "--max-filesize",
@@ -265,7 +272,8 @@ async function builtinSearch(root: string, start: string, options: FileSearchOpt
 
   const matches: string[] = [];
   for (const target of candidates) {
-    if (!matchesPattern(root, target, options.pattern?.trim())) continue;
+    if (!matchesAnyPattern(root, target, [options.pattern?.trim(), options.include?.trim()]))
+      continue;
     try {
       const metadata = await stat(target);
       if (!metadata.isFile() || metadata.size > MAX_FILE_BYTES) continue;
@@ -273,7 +281,10 @@ async function builtinSearch(root: string, start: string, options: FileSearchOpt
         const content = await readFile(target);
         if (content.includes(0)) continue;
         const lines = content.toString("utf8").split(/\r?\n/);
-        const lineIndex = lines.findIndex((line) => line.toLowerCase().includes(query));
+        const matcher = options.regex ? new RegExp(options.query ?? "", "i") : undefined;
+        const lineIndex = lines.findIndex((line) =>
+          matcher ? matcher.test(line) : line.toLowerCase().includes(query),
+        );
         if (lineIndex < 0) continue;
         const preview = lines[lineIndex].slice(0, 500);
         contentMatches.push({

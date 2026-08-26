@@ -566,7 +566,12 @@ function toolGlanceDetail(name: string, input: unknown, output: unknown) {
     return stringField(input, "query") || stringField(input, "pattern");
   }
   if (name === "web_search") {
-    return stringField(input, "query") || stringField(input, "search");
+    const query = stringField(input, "query") || stringField(input, "search");
+    if (query) return query;
+    const queries = recordValue(input)?.queries;
+    return Array.isArray(queries)
+      ? queries.filter((value): value is string => typeof value === "string").join(" · ")
+      : "";
   }
   if (name === "apply_patch") {
     const changedFiles = recordValue(output)?.changedFiles;
@@ -579,7 +584,8 @@ function toolGlanceDetail(name: string, input: unknown, output: unknown) {
     const todos = recordValue(input)?.todos;
     return Array.isArray(todos) && todos.length > 0 ? `${todos.length} 项` : "";
   }
-  const path = stringField(output, "path") || stringField(input, "path");
+  const path =
+    stringField(output, "path") || stringField(input, "path") || stringField(input, "file_path");
   if (path) return lastPathSegment(path);
   return (
     stringField(input, "url") ||
