@@ -5,6 +5,7 @@ export const USAGE = `用法:
   -p, --prompt <text>   发送一条消息并打印最终回答
   --model <id>          指定模型 id 或名称（默认使用桌面里的默认模型）
   --cwd <path>          指定 workspace 目录（默认当前工作目录）
+                        桌面端运行时自动复用桌面端 Chat Server 和配置
   -h, --help            显示帮助`;
 
 export type ParsedArgs =

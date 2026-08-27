@@ -21,6 +21,7 @@ import {
   readFileSync,
   readdirSync,
   renameSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
@@ -50,6 +51,15 @@ import { TerminalManager } from "./terminal-manager.js";
 import { createTrayIconBuffer, padTrayMenuLabel } from "./tray-icon.js";
 
 type DesktopUserStoreFile = "settings.json" | "bookmarks.json";
+const CHAT_SERVER_RUNTIME_PROTOCOL_VERSION = 1;
+type ChatServerRuntimeDescriptor = {
+  protocolVersion: typeof CHAT_SERVER_RUNTIME_PROTOCOL_VERSION;
+  pid: number;
+  host: string;
+  port: number;
+  token: string;
+  startedAt: string;
+};
 type WindowState = {
   x: number;
   y: number;
@@ -414,22 +424,55 @@ function supervisorToken() {
   return process.env.CHATDESK_CHAT_SERVER_TOKEN || process.env.CHAT_SERVER_TOKEN || undefined;
 }
 
+function chatServerRuntimePath(dataDir: string) {
+  return join(dataDir, ".chatdesk-runtime.json");
+}
+
+function publishChatServerRuntime(dataDir: string, info: { host: string; port: number; token: string }) {
+  const target = chatServerRuntimePath(dataDir);
+  const temporary = `${target}.${process.pid}.tmp`;
+  const descriptor: ChatServerRuntimeDescriptor = {
+    protocolVersion: CHAT_SERVER_RUNTIME_PROTOCOL_VERSION,
+    pid: process.pid,
+    host: info.host,
+    port: info.port,
+    token: info.token,
+    startedAt: new Date().toISOString(),
+  };
+  writeFileSync(temporary, `${JSON.stringify(descriptor)}\n`, { mode: 0o600 });
+  chmodSync(temporary, 0o600);
+  renameSync(temporary, target);
+}
+
+function clearChatServerRuntime(dataDir: string) {
+  try {
+    unlinkSync(chatServerRuntimePath(dataDir));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+}
+
 async function setupSupervisor() {
   const worker = resolveChatServerWorker();
   const nodeRuntime = resolveNodeRuntime(worker);
   const usingElectronRuntime = nodeRuntime === process.execPath;
   const watch = process.env.CHATDESK_CHAT_SERVER_WATCH === "1";
+  const dataDir = join(userDataDirectory(), "chat-server");
   supervisor = new ChatServerSupervisor({
     command: nodeRuntime,
     args: chatServerLaunchArgs(worker, watch),
     cwd: dirname(worker),
-    dataDir: join(userDataDirectory(), "chat-server"),
+    dataDir,
     env: chatServerRuntimeEnvironment(worker, usingElectronRuntime),
     production: !watch,
     ...(supervisorPort() ? { port: supervisorPort() } : {}),
     ...(supervisorToken() ? { token: supervisorToken() } : {}),
   });
-  supervisor.subscribe((info) => emit("chat-server-state", info));
+  supervisor.subscribe((info) => {
+    emit("chat-server-state", info);
+    if (info.running) publishChatServerRuntime(dataDir, info);
+    else clearChatServerRuntime(dataDir);
+  });
   await supervisor.start();
 }
 

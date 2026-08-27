@@ -26,6 +26,9 @@ importers:
       '@chatdesk/agent-core':
         specifier: workspace:*
         version: link:../../packages/agent-core
+      '@chatdesk/chat-server-client':
+        specifier: workspace:*
+        version: link:../../packages/chat-server-client
       '@chatdesk/shared':
         specifier: workspace:*
         version: link:../../packages/shared

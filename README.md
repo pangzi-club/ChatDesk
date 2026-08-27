@@ -47,7 +47,7 @@ pnpm desktop:sidecars # 仅构建桌面端 sidecar
 pnpm dev:web     # 仅启动 Vite 前端
 pnpm dev:server  # 仅启动 Chat Server
 pnpm server:test # Chat Server 测试
-pnpm chatdesk -- -p "今天天气怎么样"  # 进程内 CLI：默认 workspace 为当前目录
+pnpm chatdesk -- -p "今天天气怎么样"  # 桌面端运行时复用其 Chat Server，否则进程内运行
 pnpm add -g ./apps/cli               # 把 chatdesk 装到 pnpm 全局 bin（pnpm 11 已去掉 link --global）
 pnpm desktop:dev # 启动 Electron 桌面开发模式
 ```

@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@chatdesk/agent-core": "workspace:*",
+    "@chatdesk/chat-server-client": "workspace:*",
     "@chatdesk/shared": "workspace:*"
   },
   "devDependencies": {

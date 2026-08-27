@@ -49,6 +49,11 @@ export type ChatEventHandlers = {
   onJobDone?: (event: ServerEvent & { type: "job.done" }) => void;
 };
 
+export type RunStreamResult = {
+  done?: ServerEvent & { type: "run.done" };
+  error?: ServerEvent & { type: "run.error" };
+};
+
 export class ChatServerError extends Error {
   readonly status: number;
   readonly payload: unknown;
@@ -310,12 +315,61 @@ export class ChatServerClient {
     return new Uint8Array(await response.arrayBuffer());
   }
 
-  startRun(sessionId: string, input: RunStartInput) {
+  startRun(sessionId: string, input: RunStartInput, signal?: AbortSignal) {
     return this.request(`/v1/sessions/${encodePath(sessionId)}/runs`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
+      signal,
     });
+  }
+
+  async startRunAndWait(
+    sessionId: string,
+    input: RunStartInput,
+    options: { signal?: AbortSignal; onEvent?: (event: ServerEvent) => void } = {},
+  ): Promise<RunStreamResult> {
+    const response = await this.startRun(sessionId, input, options.signal);
+    if (!response.ok || !response.body) {
+      throw new ChatServerError((await response.text()) || "Chat Server 运行失败", response.status);
+    }
+    const reader = response.body.getReader();
+    try {
+      while (true) {
+        const next = await reader.read();
+        if (next.done) break;
+      }
+      const deadline = Date.now() + 120_000;
+      while (Date.now() < deadline) {
+        if (options.signal?.aborted)
+          throw new DOMException("The operation was aborted", "AbortError");
+        const session = await this.loadSession(sessionId);
+        const messages = session?.messages ?? [];
+        const last = messages[messages.length - 1];
+        const metadata = last?.metadata;
+        const summary =
+          metadata && typeof metadata === "object" && "runSummary" in metadata
+            ? metadata.runSummary
+            : undefined;
+        if (summary && typeof summary === "object" && "outcome" in summary) {
+          const event = {
+            id: `run-${sessionId}`,
+            type: summary.outcome === "error" ? "run.error" : "run.done",
+            sessionId,
+            runSummary: summary,
+            timestamp: new Date().toISOString(),
+          } as ServerEvent;
+          options.onEvent?.(event);
+          return event.type === "run.error"
+            ? { error: event as ServerEvent & { type: "run.error" } }
+            : { done: event as ServerEvent & { type: "run.done" } };
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      throw new Error("等待 Chat Server 运行结果超时");
+    } finally {
+      await reader.cancel().catch(() => undefined);
+    }
   }
 
   stopRun(sessionId: string) {

@@ -122,6 +122,34 @@ describe("ChatServerClient", () => {
     );
   });
 
+  it("waits for the persisted terminal run summary after draining the run stream", async () => {
+    const client = new ChatServerClient({
+      baseUrl: "http://localhost",
+      fetchImpl: async (input) => {
+        if (String(input).endsWith("/runs")) {
+          return new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.close();
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            messages: [
+              { role: "assistant", parts: [], metadata: { runSummary: { outcome: "success" } } },
+            ],
+          }),
+          { status: 200 },
+        );
+      },
+    });
+    const result = await client.startRunAndWait("session", { modelId: "mock" });
+    assert.equal(result.done?.sessionId, "session");
+  });
+
   it("dispatches typed SSE events through the injected event source", () => {
     const listeners = new Map<string, (event: { data: string }) => void>();
     const source: EventSourceLike = {

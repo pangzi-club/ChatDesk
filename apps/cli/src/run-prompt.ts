@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, stat } from "node:fs/promises";
+import { mkdir, readFile, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -9,12 +9,23 @@ import {
   createAgentCore,
   resolveSessionTitleModel,
 } from "@chatdesk/agent-core";
+import { ChatServerClient } from "@chatdesk/chat-server-client";
 import {
   CHAT_SCHEMA_VERSION,
   type ChatRunSummary,
   deriveTitle,
   textFromMessage,
 } from "@chatdesk/shared";
+
+const CHAT_SERVER_RUNTIME_PROTOCOL_VERSION = 1;
+type ChatServerRuntimeDescriptor = {
+  protocolVersion: typeof CHAT_SERVER_RUNTIME_PROTOCOL_VERSION;
+  pid: number;
+  host: string;
+  port: number;
+  token: string;
+  startedAt: string;
+};
 
 const CLI_WORKSPACE_TOOL_NAMES = [
   "list_dir",
@@ -52,6 +63,88 @@ function writeLine(stream: Pick<NodeJS.WritableStream, "write">, text: string) {
 function lockHint(message: string) {
   if (!message.includes("数据目录已被进程")) return message;
   return `${message}\n请先退出 ChatDesk 桌面应用，或设置 CHAT_SERVER_DATA_DIR 使用其它目录。`;
+}
+
+async function readRuntimeDescriptor(dataDir: string): Promise<ChatServerRuntimeDescriptor | null> {
+  try {
+    const value = JSON.parse(
+      await readFile(path.join(dataDir, ".chatdesk-runtime.json"), "utf8"),
+    ) as Partial<ChatServerRuntimeDescriptor>;
+    const port = typeof value.port === "number" ? value.port : -1;
+    if (
+      value.protocolVersion !== CHAT_SERVER_RUNTIME_PROTOCOL_VERSION ||
+      typeof value.pid !== "number" ||
+      typeof value.host !== "string" ||
+      !Number.isInteger(port) ||
+      port < 1024 ||
+      port > 65535 ||
+      typeof value.token !== "string" ||
+      !value.token ||
+      typeof value.startedAt !== "string"
+    )
+      return null;
+    return value as ChatServerRuntimeDescriptor;
+  } catch {
+    return null;
+  }
+}
+
+async function runPromptViaServer(
+  dataDir: string,
+  prompt: string,
+  modelId: string | undefined,
+  cwd: string,
+  stdout: Pick<NodeJS.WritableStream, "write">,
+  signal?: AbortSignal,
+) {
+  const descriptor = await readRuntimeDescriptor(dataDir);
+  if (!descriptor) return null;
+  const client = new ChatServerClient({
+    baseUrl: `http://${descriptor.host}:${descriptor.port}`,
+    token: descriptor.token,
+  });
+  try {
+    await client.health();
+  } catch {
+    return null;
+  }
+  let sessionId: string | undefined;
+  try {
+    const config = await client.getConfig();
+    const model = resolveCliModel(config, modelId);
+    const session = await client.createSession({ cwd });
+    sessionId = session.id;
+    const userMessage = {
+      id: randomUUID(),
+      role: "user" as const,
+      parts: [{ type: "text" as const, text: prompt }],
+    };
+    const result = await client.startRunAndWait(
+      session.id,
+      {
+        message: userMessage,
+        modelId: model.id ?? model.name,
+        workspaceId: session.workspaceId,
+        cwd: session.cwd,
+        sandboxMode: "auto",
+        toolNames: [...CLI_WORKSPACE_TOOL_NAMES],
+      },
+      { signal },
+    );
+    const saved = await client.loadSession(session.id);
+    const last = lastAssistant(saved);
+    const text = last ? textFromMessage(last).trim() : "";
+    if (text) writeLine(stdout, text);
+    const outcome = result.error?.runSummary?.outcome ?? result.done?.runSummary?.outcome;
+    if (result.error || outcome === "error" || outcome === "stopped" || !text) return 1;
+    return 0;
+  } catch (error) {
+    if (error instanceof Error && (error.name === "AbortError" || signal?.aborted)) {
+      if (sessionId) await client.stopRun(sessionId).catch(() => undefined);
+      return 1;
+    }
+    throw error;
+  }
 }
 
 function resolveCliModel(
@@ -114,6 +207,16 @@ export async function runPrompt(options: RunPromptOptions) {
   }
 
   await mkdir(dataDir, { recursive: true });
+
+  const attached = await runPromptViaServer(
+    dataDir,
+    prompt,
+    options.modelId?.trim() || undefined,
+    cwd,
+    stdout,
+    options.signal,
+  );
+  if (attached !== null) return attached;
 
   let core: AgentCore | undefined;
   let sessionId: string | undefined;
