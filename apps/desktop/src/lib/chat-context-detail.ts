@@ -24,6 +24,8 @@ export type ContextDetailAnalysis = {
   totalEstimatedTokens: number;
 };
 
+type ContextDetailCachedSegment = Omit<ContextDetailSegment, "id" | "messageId" | "percent">;
+
 export const CONTEXT_DETAIL_CATEGORIES: Array<{
   category: ContextDetailCategory;
   label: string;
@@ -66,43 +68,37 @@ function segmentPayload(parts: UIMessage["parts"]) {
   return JSON.stringify(visibleValue(parts));
 }
 
-function appendMessageSegments(
-  target: Omit<ContextDetailSegment, "percent">[],
+function messageSegments(
   message: UIMessage,
-  messageIndex: number,
-) {
+  estimateTokens: (value: string) => number,
+): ContextDetailCachedSegment[] {
+  const target: ContextDetailCachedSegment[] = [];
   if (message.role === "user") {
     const payload = segmentPayload(message.parts);
-    const estimatedTokens = estimateTokenCount(payload);
-    if (estimatedTokens === 0) return;
+    const estimatedTokens = estimateTokens(payload);
+    if (estimatedTokens === 0) return target;
     target.push({
-      id: `message-${messageIndex}-user`,
       category: "user",
       estimatedTokens,
       preview:
         compactPreview(message.parts.map(partPreview).filter(Boolean).join(" · ")) || "用户消息",
-      messageId: message.id,
     });
-    return;
+    return target;
   }
 
   let runCategory: ContextDetailCategory | undefined;
   let runParts: UIMessage["parts"] = [];
-  let runIndex = 0;
   const flush = () => {
     if (!runCategory || runParts.length === 0) return;
-    const estimatedTokens = estimateTokenCount(segmentPayload(runParts));
+    const estimatedTokens = estimateTokens(segmentPayload(runParts));
     if (estimatedTokens > 0) {
       target.push({
-        id: `message-${messageIndex}-${runIndex}`,
         category: runCategory,
         estimatedTokens,
         preview:
           compactPreview(runParts.map(partPreview).filter(Boolean).join(" · ")) ||
           (runCategory === "tool" ? "工具调用" : "助手消息"),
-        messageId: message.id,
       });
-      runIndex += 1;
     }
     runParts = [];
   };
@@ -114,41 +110,69 @@ function appendMessageSegments(
     runParts.push(part);
   }
   flush();
+  return target;
 }
 
-export function analyzeChatContext(
-  systemPrompt: string | undefined,
-  messages: UIMessage[],
-): ContextDetailAnalysis {
-  const rawSegments: Omit<ContextDetailSegment, "percent">[] = [];
-  if (systemPrompt?.trim()) {
-    rawSegments.push({
-      id: "system-prompt",
-      category: "system",
-      estimatedTokens: estimateTokenCount(systemPrompt),
-      preview: compactPreview(systemPrompt),
-    });
-  }
-  for (const [index, message] of messages.entries()) {
-    appendMessageSegments(rawSegments, message, index);
-  }
-  const totalEstimatedTokens = rawSegments.reduce(
-    (total, segment) => total + segment.estimatedTokens,
-    0,
-  );
-  const segments = rawSegments.map((segment) => ({
-    ...segment,
-    percent: totalEstimatedTokens > 0 ? (segment.estimatedTokens / totalEstimatedTokens) * 100 : 0,
-  }));
-  const summaries = CONTEXT_DETAIL_CATEGORIES.map(({ category }) => {
-    const estimatedTokens = segments
-      .filter((segment) => segment.category === category)
-      .reduce((total, segment) => total + segment.estimatedTokens, 0);
-    return {
-      category,
-      estimatedTokens,
-      percent: totalEstimatedTokens > 0 ? (estimatedTokens / totalEstimatedTokens) * 100 : 0,
-    };
-  }).filter((summary) => summary.estimatedTokens > 0);
-  return { segments, summaries, totalEstimatedTokens };
+export function createChatContextAnalyzer(
+  estimateTokens: (value: string) => number = estimateTokenCount,
+) {
+  const messageCache = new WeakMap<UIMessage, ContextDetailCachedSegment[]>();
+  let cachedSystemPrompt: string | undefined;
+  let cachedSystemSegment: Omit<ContextDetailSegment, "percent"> | undefined;
+
+  return (systemPrompt: string | undefined, messages: UIMessage[]): ContextDetailAnalysis => {
+    const rawSegments: Omit<ContextDetailSegment, "percent">[] = [];
+    if (systemPrompt?.trim()) {
+      if (systemPrompt !== cachedSystemPrompt || !cachedSystemSegment) {
+        cachedSystemPrompt = systemPrompt;
+        cachedSystemSegment = {
+          id: "system-prompt",
+          category: "system",
+          estimatedTokens: estimateTokens(systemPrompt),
+          preview: compactPreview(systemPrompt),
+        };
+      }
+      rawSegments.push(cachedSystemSegment);
+    }
+    for (const [messageIndex, message] of messages.entries()) {
+      let cached = messageCache.get(message);
+      if (!cached) {
+        cached = messageSegments(message, estimateTokens);
+        messageCache.set(message, cached);
+      }
+      cached.forEach((segment, segmentIndex) => {
+        rawSegments.push({
+          ...segment,
+          id: `message-${messageIndex}-${segmentIndex}`,
+          messageId: message.id,
+        });
+      });
+    }
+    const totalEstimatedTokens = rawSegments.reduce(
+      (total, segment) => total + segment.estimatedTokens,
+      0,
+    );
+    const segments = rawSegments.map((segment) => ({
+      ...segment,
+      percent:
+        totalEstimatedTokens > 0 ? (segment.estimatedTokens / totalEstimatedTokens) * 100 : 0,
+    }));
+    const summaries = CONTEXT_DETAIL_CATEGORIES.map(({ category }) => {
+      const estimatedTokens = segments
+        .filter((segment) => segment.category === category)
+        .reduce((total, segment) => total + segment.estimatedTokens, 0);
+      return {
+        category,
+        estimatedTokens,
+        percent: totalEstimatedTokens > 0 ? (estimatedTokens / totalEstimatedTokens) * 100 : 0,
+      };
+    }).filter((summary) => summary.estimatedTokens > 0);
+    return { segments, summaries, totalEstimatedTokens };
+  };
+}
+
+const defaultAnalyzer = createChatContextAnalyzer();
+
+export function analyzeChatContext(systemPrompt: string | undefined, messages: UIMessage[]) {
+  return defaultAnalyzer(systemPrompt, messages);
 }

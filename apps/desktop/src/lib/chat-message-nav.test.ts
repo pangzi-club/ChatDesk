@@ -4,6 +4,7 @@ import {
   buildUserMessageNavItem,
   CHAT_MESSAGE_NAV_ATTACHMENT_TITLE,
   CHAT_MESSAGE_NAV_TITLE_CHARS,
+  createUserMessageNavItemsSelector,
   listUserMessageNavItems,
   resolveActiveUserMessageId,
 } from "./chat-message-nav";
@@ -76,6 +77,35 @@ describe("listUserMessageNavItems", () => {
     expect(items).toEqual([
       { id: "file-1", title: CHAT_MESSAGE_NAV_ATTACHMENT_TITLE, snippet: "" },
     ]);
+  });
+});
+
+describe("createUserMessageNavItemsSelector", () => {
+  it("reuses items when only the assistant draft changes", () => {
+    const select = createUserMessageNavItemsSelector();
+    const user = userMessage("u1", "第一问");
+    const first = select([
+      user,
+      { id: "a1", role: "assistant", parts: [{ type: "text", text: "回" }] },
+    ]);
+    const second = select([
+      user,
+      { id: "a1", role: "assistant", parts: [{ type: "text", text: "回答" }] },
+    ]);
+
+    expect(second).toBe(first);
+  });
+
+  it("rebuilds items when a user message changes or is appended", () => {
+    const select = createUserMessageNavItemsSelector();
+    const firstUser = userMessage("u1", "第一问");
+    const first = select([firstUser]);
+    const changed = select([userMessage("u1", "修改后的问题")]);
+    const appended = select([firstUser, userMessage("u2", "第二问")]);
+
+    expect(changed).not.toBe(first);
+    expect(changed[0]?.title).toBe("修改后的问题");
+    expect(appended.map((item) => item.id)).toEqual(["u1", "u2"]);
   });
 });
 

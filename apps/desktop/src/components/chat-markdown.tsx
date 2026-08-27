@@ -1,8 +1,13 @@
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
 import { createMathPlugin } from "@streamdown/math";
-import type { ComponentProps, MouseEvent as ReactMouseEvent, ReactNode } from "react";
-import { defaultRemarkPlugins, Streamdown } from "streamdown";
+import {
+  type ComponentProps,
+  memo,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from "react";
+import { type Components, defaultRemarkPlugins, Streamdown } from "streamdown";
 import "katex/dist/katex.min.css";
 import "streamdown/styles.css";
 import { isLocalBrowserPreviewUrl, normalizeBrowserPreviewUrl } from "@/lib/browser-preview";
@@ -26,22 +31,28 @@ type MarkdownExtraProps = {
   node?: unknown;
 };
 
-export function ChatMarkdown({ children, isAnimating }: ChatMarkdownProps) {
+const CHAT_MARKDOWN_COMPONENTS: Components = {
+  a: ChatMarkdownLink,
+  img: ChatMarkdownImage,
+  inlineCode: ChatMarkdownInlineCode,
+};
+
+export const ChatMarkdown = memo(function ChatMarkdown({
+  children,
+  isAnimating,
+}: ChatMarkdownProps) {
   return (
     <Streamdown
-      components={{
-        a: ChatMarkdownLink,
-        img: ChatMarkdownImage,
-        inlineCode: ChatMarkdownInlineCode,
-      }}
+      components={CHAT_MARKDOWN_COMPONENTS}
       isAnimating={isAnimating}
+      mode={isAnimating ? "streaming" : "static"}
       plugins={STREAMDOWN_PLUGINS}
       remarkPlugins={CHAT_REMARK_PLUGINS}
     >
       {children}
     </Streamdown>
   );
-}
+});
 
 function ChatMarkdownLink({
   children,

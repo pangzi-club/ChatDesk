@@ -2,12 +2,12 @@ import type { SystemPromptSnapshot } from "@chatdesk/shared";
 import { useQuery } from "@tanstack/react-query";
 import type { UIMessage } from "ai";
 import { AlertCircle } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
-  analyzeChatContext,
   CONTEXT_DETAIL_CATEGORIES,
   type ContextDetailCategory,
+  createChatContextAnalyzer,
 } from "@/lib/chat-context-detail";
 import { loadChatServerSystemPromptPreview } from "@/lib/chat-server";
 import type { ContextDetailPromptInput } from "@/lib/context-detail-events";
@@ -33,14 +33,22 @@ export function ChatContextDetail({
   sessionId,
   systemPrompt,
 }: ChatContextDetailProps) {
+  const analyzerRef = useRef<{
+    sessionId: string;
+    analyze: ReturnType<typeof createChatContextAnalyzer>;
+  } | null>(null);
+  if (!analyzerRef.current || analyzerRef.current.sessionId !== sessionId) {
+    analyzerRef.current = { sessionId, analyze: createChatContextAnalyzer() };
+  }
+  const analyzeContext = analyzerRef.current.analyze;
   const promptKey = JSON.stringify(promptInput);
   const promptQuery = useQuery({
     queryKey: ["chat-context-detail-prompt", sessionId, promptKey, systemPrompt?.text],
     queryFn: () => systemPrompt ?? loadChatServerSystemPromptPreview(sessionId, promptInput),
   });
   const analysis = useMemo(
-    () => analyzeChatContext(promptQuery.data?.text, messages),
-    [messages, promptQuery.data?.text],
+    () => analyzeContext(promptQuery.data?.text, messages),
+    [analyzeContext, messages, promptQuery.data?.text],
   );
 
   if (promptQuery.isPending) {

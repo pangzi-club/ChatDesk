@@ -1,6 +1,6 @@
 import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
-import { analyzeChatContext } from "./chat-context-detail";
+import { analyzeChatContext, createChatContextAnalyzer } from "./chat-context-detail";
 
 describe("chat context detail", () => {
   it("keeps system and message segments in sending order", () => {
@@ -75,5 +75,36 @@ describe("chat context detail", () => {
       summaries: [],
       totalEstimatedTokens: 0,
     });
+  });
+
+  it("reuses unchanged message analysis and only estimates a changed draft", () => {
+    const estimated: string[] = [];
+    const analyze = createChatContextAnalyzer((value) => {
+      estimated.push(value);
+      return Math.ceil(value.length / 4);
+    });
+    const user = {
+      id: "user-1",
+      role: "user",
+      parts: [{ type: "text", text: "问题" }],
+    } as UIMessage;
+    const firstDraft = {
+      id: "assistant-1",
+      role: "assistant",
+      parts: [{ type: "text", text: "回" }],
+    } as UIMessage;
+
+    analyze(undefined, [user, firstDraft]);
+    expect(estimated).toHaveLength(2);
+
+    const secondDraft = {
+      ...firstDraft,
+      parts: [{ type: "text", text: "回答" }],
+    } as UIMessage;
+    const result = analyze(undefined, [user, secondDraft]);
+
+    expect(estimated).toHaveLength(3);
+    expect(result.segments[0]?.messageId).toBe("user-1");
+    expect(result.segments[1]?.preview).toBe("回答");
   });
 });

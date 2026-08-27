@@ -139,7 +139,12 @@ import {
   copyChatConversationMarkdown,
 } from "@/lib/chat-conversation-markdown";
 import { materializeGeneratedImages } from "@/lib/chat-image-generation";
-import { appendLiveDraftText, mergeLiveDraft } from "@/lib/chat-live-draft";
+import {
+  appendLiveDraftText,
+  CHAT_STREAM_UPDATE_THROTTLE_MS,
+  createLiveDraftRenderBatcher,
+  mergeLiveDraft,
+} from "@/lib/chat-live-draft";
 import { DEFAULT_CHAT_MEMORY, formatMemoryForInject, loadChatMemory } from "@/lib/chat-memory";
 import { isWorkspaceMemoryExcludedTool, scheduleMemoryUpdateFromTurn } from "@/lib/chat-memory-ops";
 import {
@@ -152,7 +157,7 @@ import {
   previewCollapsedChatUserMessage,
   shouldCollapseChatUserMessage,
 } from "@/lib/chat-message-collapse";
-import { listUserMessageNavItems } from "@/lib/chat-message-nav";
+import { createUserMessageNavItemsSelector } from "@/lib/chat-message-nav";
 import {
   findLatestPlanWriteAnchor,
   findLatestPlanWriteContent,
@@ -263,7 +268,7 @@ import {
 import { loadWorkspaceProjects, workspaceGitQueryKey } from "@/lib/workspaces";
 
 const EMPTY_STRING_ARRAY: string[] = [];
-const CHAT_STREAM_UPDATE_THROTTLE_MS = 50;
+const CONTEXT_DETAIL_STREAM_UPDATE_THROTTLE_MS = 500;
 type PlanTransitionState = "idle" | "entering" | "exiting";
 type QueuedComposerMessage = {
   id: string;
@@ -630,6 +635,20 @@ function ChatPage() {
       console.error("Chat request failed", chatError);
     },
   });
+  const liveDraftRenderBatcher = useMemo(
+    () =>
+      createLiveDraftRenderBatcher((eventSessionId) => {
+        if (
+          activeSessionRef.current !== eventSessionId ||
+          attachedStreamSessionRef.current === eventSessionId
+        ) {
+          return;
+        }
+        const draft = liveDraftsRef.current.get(eventSessionId);
+        if (draft) setMessages((current) => mergeLiveDraft(current, draft));
+      }, CHAT_STREAM_UPDATE_THROTTLE_MS),
+    [setMessages],
+  );
   const openContextDetailPanel = useCallback(async () => {
     const promptInput = await getPromptInput();
     openContextDetail({
@@ -639,14 +658,6 @@ function ChatPage() {
       ...(systemPromptRef.current ? { systemPrompt: systemPromptRef.current } : {}),
     });
   }, [getPromptInput, messages, sessionId]);
-
-  useEffect(() => {
-    updateContextDetail({
-      sessionId,
-      messages,
-      ...(systemPromptRef.current ? { systemPrompt: systemPromptRef.current } : {}),
-    });
-  }, [messages, sessionId]);
 
   useEffect(() => {
     void promptKey;
@@ -857,9 +868,12 @@ function ChatPage() {
     // active; its full message snapshots and text deltas restore the response when we return.
     const sessionToDetach = sessionId;
     return () => {
-      if (sessionToDetach) stop();
+      if (sessionToDetach) {
+        liveDraftRenderBatcher.cancel(sessionToDetach);
+        stop();
+      }
     };
-  }, [sessionId, stop]);
+  }, [liveDraftRenderBatcher, sessionId, stop]);
 
   useEffect(() => {
     let active = true;
@@ -904,10 +918,11 @@ function ChatPage() {
             activeSessionRef.current === eventSessionId &&
             attachedStreamSessionRef.current !== eventSessionId
           ) {
-            setMessages((messages) => mergeLiveDraft(messages, next));
+            liveDraftRenderBatcher.schedule(eventSessionId);
           }
         },
         onMessageUpdated: ({ sessionId: eventSessionId, message }) => {
+          liveDraftRenderBatcher.cancel(eventSessionId);
           if (message) liveDraftsRef.current.set(eventSessionId, message);
           if (activeSessionRef.current === eventSessionId && message) {
             setMessages((messages) => mergeLiveDraft(messages, message));
@@ -941,6 +956,7 @@ function ChatPage() {
           }
         },
         onRunFinished: ({ sessionId: eventSessionId, runSummary }) => {
+          liveDraftRenderBatcher.flush(eventSessionId);
           if (activeSessionRef.current === eventSessionId) {
             attachedStreamSessionRef.current = null;
           }
@@ -1009,8 +1025,9 @@ function ChatPage() {
     return () => {
       active = false;
       cleanup?.();
+      liveDraftRenderBatcher.cancelAll();
     };
-  }, [setMessages]);
+  }, [liveDraftRenderBatcher, setMessages]);
 
   useEffect(() => {
     void loadChatDisplaySettings().then(setChatDisplay);
@@ -1072,6 +1089,59 @@ function ChatPage() {
 
   const isGenerating =
     serverRunActive || (localRunActive && attachedStreamSessionRef.current === sessionId);
+  const pendingContextDetailRef = useRef({ sessionId, messages });
+  const contextDetailTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastContextDetailSyncAtRef = useRef(0);
+  const contextDetailSessionRef = useRef(sessionId);
+  useEffect(() => {
+    return () => {
+      if (contextDetailTimerRef.current !== null) {
+        clearTimeout(contextDetailTimerRef.current);
+        contextDetailTimerRef.current = null;
+      }
+    };
+  }, []);
+  useEffect(() => {
+    if (contextDetailSessionRef.current !== sessionId) {
+      if (contextDetailTimerRef.current !== null) {
+        clearTimeout(contextDetailTimerRef.current);
+        contextDetailTimerRef.current = null;
+      }
+      contextDetailSessionRef.current = sessionId;
+      lastContextDetailSyncAtRef.current = 0;
+    }
+    pendingContextDetailRef.current = { sessionId, messages };
+    const syncContextDetail = () => {
+      contextDetailTimerRef.current = null;
+      const pending = pendingContextDetailRef.current;
+      if (pending.sessionId !== activeSessionRef.current) return;
+      lastContextDetailSyncAtRef.current = Date.now();
+      updateContextDetail({
+        sessionId: pending.sessionId,
+        messages: pending.messages,
+        ...(systemPromptRef.current ? { systemPrompt: systemPromptRef.current } : {}),
+      });
+    };
+
+    if (!isGenerating) {
+      if (contextDetailTimerRef.current !== null) {
+        clearTimeout(contextDetailTimerRef.current);
+        contextDetailTimerRef.current = null;
+      }
+      syncContextDetail();
+      return;
+    }
+
+    const elapsed = Date.now() - lastContextDetailSyncAtRef.current;
+    if (elapsed >= CONTEXT_DETAIL_STREAM_UPDATE_THROTTLE_MS) {
+      syncContextDetail();
+    } else if (contextDetailTimerRef.current === null) {
+      contextDetailTimerRef.current = setTimeout(
+        syncContextDetail,
+        CONTEXT_DETAIL_STREAM_UPDATE_THROTTLE_MS - elapsed,
+      );
+    }
+  }, [isGenerating, messages, sessionId]);
   const runStartedAt = runStartedAtBySession[sessionId];
   const workspaceGitQuery = useQuery({
     queryKey: workspaceGitQueryKey(workspaceKey, selectedCwd),
@@ -2349,10 +2419,8 @@ function ChatPage() {
   const showHydrateSkeleton =
     chatRoute.kind === "session" && (isHydratingSession || chatRoute.sessionId !== sessionId);
   const showEmptyState = !showHydrateSkeleton && messages.length === 0;
-  const userMessageNavItems = useMemo(
-    () => (showHydrateSkeleton ? [] : listUserMessageNavItems(messages)),
-    [messages, showHydrateSkeleton],
-  );
+  const selectUserMessageNavItems = useMemo(() => createUserMessageNavItemsSelector(), []);
+  const userMessageNavItems = showHydrateSkeleton ? [] : selectUserMessageNavItems(messages);
   const jumpToUserMessage = useCallback((_id: string) => {
     shouldFollowScrollRef.current = false;
   }, []);

@@ -8,6 +8,7 @@ import { ChatComposerInput, type ChatComposerInputHandle } from "@/components/ch
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { Button } from "@/components/ui/button";
 import { appendComposerSelection } from "@/lib/chat-composer-selection";
+import { CHAT_STREAM_UPDATE_THROTTLE_MS } from "@/lib/chat-live-draft";
 import {
   chatServerFetch,
   chatServerHeaders,
@@ -67,7 +68,11 @@ export function SideChat({
       }),
     [contextMessages, model, sessionId],
   );
-  const { error, messages, sendMessage, status, stop } = useChat({ id: sessionId, transport });
+  const { error, messages, sendMessage, status, stop } = useChat({
+    id: sessionId,
+    transport,
+    throttle: CHAT_STREAM_UPDATE_THROTTLE_MS,
+  });
   const busy = status === "submitted" || status === "streaming";
 
   useEffect(() => {

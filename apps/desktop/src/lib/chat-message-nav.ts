@@ -61,6 +61,24 @@ export function listUserMessageNavItems(messages: UIMessage[]): UserMessageNavIt
     .map(buildUserMessageNavItem);
 }
 
+export function createUserMessageNavItemsSelector() {
+  let previousMessages: UIMessage[] = [];
+  let previousItems: UserMessageNavItem[] = [];
+
+  return (messages: UIMessage[]) => {
+    const userMessages = messages.filter((message) => message.role === "user");
+    if (
+      userMessages.length === previousMessages.length &&
+      userMessages.every((message, index) => message === previousMessages[index])
+    ) {
+      return previousItems;
+    }
+    previousMessages = userMessages;
+    previousItems = listUserMessageNavItems(userMessages);
+    return previousItems;
+  };
+}
+
 export function resolveActiveUserMessageId(
   items: Pick<UserMessageNavItem, "id">[],
   getTop: (id: string) => number | null,

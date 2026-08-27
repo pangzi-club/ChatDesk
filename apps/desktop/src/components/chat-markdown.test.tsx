@@ -25,3 +25,26 @@ describe("ChatMarkdown CJK", () => {
     );
   });
 });
+
+describe("ChatMarkdown streaming", () => {
+  it("repairs incomplete markdown only while the response is streaming", () => {
+    const streaming = renderToStaticMarkup(
+      <ChatMarkdown isAnimating={true}>**unfinished</ChatMarkdown>,
+    );
+    const complete = renderToStaticMarkup(
+      <ChatMarkdown isAnimating={false}>**unfinished</ChatMarkdown>,
+    );
+
+    expect(streaming).toContain('data-streamdown="strong"');
+    expect(complete).not.toContain('data-streamdown="strong"');
+  });
+
+  it("keeps local preview URLs interactive", () => {
+    const markup = renderToStaticMarkup(
+      <ChatMarkdown isAnimating={false}>`http://localhost:3000`</ChatMarkdown>,
+    );
+
+    expect(markup).toContain("chat-local-preview-code");
+    expect(markup).toContain("在 Browser 中打开 http://localhost:3000");
+  });
+});
