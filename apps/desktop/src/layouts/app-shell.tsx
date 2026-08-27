@@ -28,6 +28,7 @@ import {
   LoaderCircle,
   Maximize2,
   MessageCircle,
+  MessageSquare,
   MessageSquarePlus,
   Minimize2,
   MoreHorizontal,
@@ -143,6 +144,7 @@ import {
   loadChatPlan,
   loadChatPlans,
   loadChatServerPort,
+  loadFeishuUnread,
   loadServerWorkspaceFile,
   loadServerWorkspaceFiles,
   loadServerWorkspaceGit,
@@ -170,6 +172,7 @@ import {
 import { getDesktopBridge, isDesktop } from "@/lib/desktop-bridge";
 import { explorerFileIconKind } from "@/lib/explorer-file-icon";
 import { subscribeFileViewerOpen } from "@/lib/file-viewer-events";
+import { loadGeneralSettings, notifyFeishuMessage } from "@/lib/general-settings";
 import { subscribeImagePreviewOpen } from "@/lib/image-preview-events";
 import {
   requestPlanExecution,
@@ -216,7 +219,7 @@ import {
 
 const navItems = [
   { to: "/chat", label: "Chat", icon: MessageCircle },
-  { to: "/image-generation", label: "Image", icon: Image },
+  { to: "/channels", label: "Channel", icon: MessageSquare },
   { to: "/automations", label: "Automations", icon: Clock3 },
 ] satisfies Array<{
   to: string;
@@ -240,12 +243,18 @@ const commandItems = [
   { to: "/chat", label: "Chat", icon: MessageCircle, keywords: ["对话", "聊天"] },
   { to: "/automations", label: "Automations", icon: Clock3, keywords: ["自动化", "任务"] },
   {
-    to: "/image-generation",
-    label: "Image",
-    icon: Image,
-    keywords: ["图片", "生成", "image"],
+    to: "/channels",
+    label: "Channel",
+    icon: MessageSquare,
+    keywords: ["飞书", "消息", "联系人", "channel"],
   },
   { to: "/settings", label: "Settings", icon: Settings, keywords: ["设置"] },
+  {
+    to: "/settings/channel",
+    label: "Channel",
+    icon: MessageSquare,
+    keywords: ["设置", "飞书", "channel", "消息"],
+  },
   {
     to: "/settings/general",
     label: "常规",
@@ -476,6 +485,7 @@ async function saveSidebarConversationView(view: SidebarConversationView) {
 }
 
 function AppShell() {
+  const [feishuUnreadCount, setFeishuUnreadCount] = useState(0);
   const [isCommandMenuOpen, setIsCommandMenuOpen] = useState(false);
   const [isChatSearchOpen, setIsChatSearchOpen] = useState(false);
   const [sidebarConversationView, setSidebarConversationView] = useState<SidebarConversationView>(
@@ -489,6 +499,43 @@ function AppShell() {
   const mainSidebarWidthRef = useRef(mainSidebarState.width);
   const location = useLocation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    const refresh = () =>
+      void loadFeishuUnread()
+        .then((items) =>
+          setFeishuUnreadCount(items.reduce((sum, item) => sum + item.unreadCount, 0)),
+        )
+        .catch(() => undefined);
+    refresh();
+    const handleLocalUnreadUpdate = () => refresh();
+    window.addEventListener("chatdesk:feishu-unread-updated", handleLocalUnreadUpdate);
+    const cleanup = subscribeChatServerEvents(14317, {
+      onChannelMessageReceived: (event) => {
+        void queryClient.invalidateQueries({ queryKey: ["feishu-unread"] });
+        refresh();
+        const message = event.channelMessage;
+        if (message)
+          void loadGeneralSettings().then((settings) => {
+            if (settings.notifyOnFeishuMessage)
+              return notifyFeishuMessage(
+                "飞书消息",
+                `${message.senderName ?? "联系人"}：${message.text.slice(0, 80)}`,
+                settings.notifyOnlyWhenWindowUnfocused,
+              );
+            return undefined;
+          });
+      },
+      onChannelUnreadUpdated: () => {
+        void queryClient.invalidateQueries({ queryKey: ["feishu-unread"] });
+        refresh();
+      },
+    });
+    return () => {
+      window.removeEventListener("chatdesk:feishu-unread-updated", handleLocalUnreadUpdate);
+      cleanup?.();
+    };
+  }, [queryClient]);
 
   useEffect(() => {
     if (!isDesktop()) return;
@@ -1275,7 +1322,11 @@ function AppShell() {
                       aria-label="Secondary navigation"
                     >
                       {navItems.slice(1).map((item) => (
-                        <SidebarNavItem item={item} key={item.to} />
+                        <SidebarNavItem
+                          item={item}
+                          key={item.to}
+                          unreadCount={item.to === "/channels" ? feishuUnreadCount : 0}
+                        />
                       ))}
                     </nav>
                     <WorkspaceConversationGroups view={sidebarConversationView} />
@@ -1611,7 +1662,13 @@ function MainSidebarToggleButton({
   );
 }
 
-function SidebarNavItem({ item }: { item: (typeof navItems)[number] }) {
+function SidebarNavItem({
+  item,
+  unreadCount = 0,
+}: {
+  item: (typeof navItems)[number];
+  unreadCount?: number;
+}) {
   const location = useLocation();
   const Icon = item.icon;
   const isChatItem = item.to === "/chat";
@@ -1632,6 +1689,11 @@ function SidebarNavItem({ item }: { item: (typeof navItems)[number] }) {
         <>
           <Icon className="size-4 shrink-0" />
           <span className="max-md:hidden">{item.label}</span>
+          {unreadCount > 0 ? (
+            <span className="ml-auto inline-flex min-w-3 items-center justify-center rounded-full bg-primary px-1 text-[9px] leading-3 text-primary-foreground max-md:absolute max-md:top-0 max-md:right-1">
+              {unreadCount > 99 ? "99+" : unreadCount}
+            </span>
+          ) : null}
           <span className="sr-only">{(isItemActive ?? isActive) ? "当前页面" : ""}</span>
         </>
       )}

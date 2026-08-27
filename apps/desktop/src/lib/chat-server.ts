@@ -1,5 +1,8 @@
 import { ChatServerClient, ChatServerError } from "@chatdesk/chat-server-client";
 import type {
+  ChannelContact,
+  ChannelMessage,
+  ChannelUnreadState,
   ChatContextCompaction,
   ChatContextUsage,
   ChatIndexItem,
@@ -15,8 +18,10 @@ import type {
   ChatServerReviewerLog,
   ChatSession,
   DeveloperEnvironmentStatus,
+  FeishuChannelStatus,
   HealthResponse,
   RunStartInput,
+  ServerEvent,
   SessionIndexItem,
   SystemPromptSnapshot,
   WorkspaceGitCommitResult,
@@ -84,6 +89,7 @@ export type ChatServerConnectionStatus = {
   health: ChatServerHealth | null;
 };
 export type ChatServerSession = SessionIndexItem;
+export type { ChannelContact, ChannelMessage, ChannelUnreadState, FeishuChannelStatus };
 export type PlatformCapabilities = {
   platform: string;
   git: boolean;
@@ -944,6 +950,57 @@ export async function chatServerFetch(input: RequestInfo | URL, init?: RequestIn
   return requestChatServerResponse(`${url.pathname}${url.search}`, init, selectedPort);
 }
 
+export async function loadFeishuChannelStatus(port?: number) {
+  const response = await chatServerRequest("/v1/channels/feishu/config", undefined, port);
+  return (await response.json()) as FeishuChannelStatus;
+}
+export async function saveFeishuChannelConfig(
+  input: { appId: string; appSecret: string },
+  port?: number,
+) {
+  const response = await chatServerRequest(
+    "/v1/channels/feishu/config",
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) },
+    port,
+  );
+  return (await response.json()) as FeishuChannelStatus;
+}
+export async function testFeishuChannel(port?: number) {
+  const response = await chatServerRequest("/v1/channels/feishu/test", { method: "POST" }, port);
+  return (await response.json()) as FeishuChannelStatus;
+}
+export async function deleteFeishuChannelConfig(port?: number) {
+  const response = await chatServerRequest(
+    "/v1/channels/feishu/config",
+    { method: "DELETE" },
+    port,
+  );
+  return (await response.json()) as FeishuChannelStatus;
+}
+export async function loadFeishuContacts(port?: number) {
+  const response = await chatServerRequest("/v1/channels/feishu/contacts", undefined, port);
+  return (await response.json()) as ChannelContact[];
+}
+export async function loadFeishuUnread(port?: number) {
+  const response = await chatServerRequest("/v1/channels/feishu/unread", undefined, port);
+  return (await response.json()) as ChannelUnreadState[];
+}
+export async function loadFeishuMessages(contactId: string, port?: number) {
+  const response = await chatServerRequest(
+    `/v1/channels/feishu/contacts/${encodeURIComponent(contactId)}/messages`,
+    undefined,
+    port,
+  );
+  return (await response.json()) as ChannelMessage[];
+}
+export async function markFeishuContactRead(contactId: string, port?: number) {
+  await chatServerRequest(
+    `/v1/channels/feishu/contacts/${encodeURIComponent(contactId)}/read`,
+    { method: "POST" },
+    port,
+  );
+}
+
 export function subscribeChatServerEvents(
   port: number,
   handlers: {
@@ -982,6 +1039,9 @@ export function subscribeChatServerEvents(
     onJobUpdated?: (event: { sessionId: string; job?: ChatJobSummary }) => void;
     onJobOutput?: (event: { sessionId: string; jobOutput?: ChatJobOutputPage }) => void;
     onJobDone?: (event: { sessionId: string; job?: ChatJobSummary }) => void;
+    onChannelMessageReceived?: (event: ServerEvent) => void;
+    onChannelUnreadUpdated?: (event: ServerEvent) => void;
+    onChannelConnectionStatus?: (event: ServerEvent) => void;
   },
 ) {
   let closed = false;
@@ -989,6 +1049,11 @@ export function subscribeChatServerEvents(
   void initializeChatServer().then(() => {
     if (closed) return;
     cleanup = createClient(port).subscribeEvents({
+      onEvent: (event) => {
+        if (event.type === "channel.message.received") handlers.onChannelMessageReceived?.(event);
+        if (event.type === "channel.unread.updated") handlers.onChannelUnreadUpdated?.(event);
+        if (event.type === "channel.connection.status") handlers.onChannelConnectionStatus?.(event);
+      },
       onSnapshot: handlers.onSnapshot,
       onStatus: (event) => {
         if (event.sessionId && event.status) {

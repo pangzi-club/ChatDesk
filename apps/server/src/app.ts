@@ -45,8 +45,10 @@ import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { ArchiveStore } from "./archive-store.ts";
 import { AutomationScheduler, AutomationStore } from "./automation-store.ts";
+import { ChannelStore } from "./channel-store.ts";
 import type { ServerConfig } from "./config.ts";
 import { chatServerCorsOrigin } from "./cors.ts";
+import { FeishuChannelManager } from "./feishu-channel.ts";
 import { createMockLongResponse } from "./mock-long-response.ts";
 import { withSseKeepAlive } from "./sse-keepalive.ts";
 
@@ -470,6 +472,9 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     message: "Chat Server 已启动",
   });
   const automations = new AutomationStore(config.dataDir);
+  const channels = new ChannelStore(config.dataDir);
+  const feishu = new FeishuChannelManager(channels, events);
+  await feishu.start();
   await automations.init();
   const automationScheduler = new AutomationScheduler(automations, (task, message) =>
     activityLogs
@@ -519,6 +524,56 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   );
 
   app.get("/v1/platform/capabilities", (c) => c.json(nodePlatform.capabilities()));
+
+  app.get("/v1/channels/feishu/config", async (c) => {
+    const value = await channels.getConfig();
+    return c.json(
+      feishu.getStatus().configured
+        ? feishu.getStatus()
+        : { ...feishu.getStatus(), configured: Boolean(value), appId: value?.appId },
+    );
+  });
+  app.put("/v1/channels/feishu/config", async (c) => {
+    const body = (await c.req.json()) as { appId?: unknown; appSecret?: unknown };
+    if (
+      typeof body.appId !== "string" ||
+      !body.appId.trim() ||
+      typeof body.appSecret !== "string" ||
+      !body.appSecret.trim()
+    ) {
+      return jsonError("App ID 和 App Secret 不能为空", 400);
+    }
+    await feishu.saveConfig({ appId: body.appId.trim(), appSecret: body.appSecret.trim() });
+    return c.json(feishu.getStatus());
+  });
+  app.delete("/v1/channels/feishu/config", async (c) => {
+    await feishu.clearConfig();
+    return c.json(feishu.getStatus());
+  });
+  app.post("/v1/channels/feishu/test", async (c) => {
+    const value = await channels.getConfig();
+    if (!value) return jsonError("尚未配置飞书账户", 400);
+    return c.json(feishu.getStatus());
+  });
+  app.get("/v1/channels/feishu/contacts", async (c) => c.json(await channels.listContacts()));
+  app.get("/v1/channels/feishu/unread", async (c) => c.json(await channels.listUnread()));
+  app.get("/v1/channels/feishu/contacts/:contactId/messages", async (c) =>
+    c.json(await channels.listMessages(c.req.param("contactId"))),
+  );
+  app.post("/v1/channels/feishu/contacts/:contactId/read", async (c) => {
+    await channels.markRead(c.req.param("contactId"));
+    return c.json({ ok: true });
+  });
+  app.post("/v1/channels/feishu/contacts/:contactId/messages", async (c) => {
+    const body = (await c.req.json()) as { text?: unknown };
+    if (typeof body.text !== "string" || !body.text.trim()) return jsonError("消息不能为空", 400);
+    try {
+      const message = await feishu.sendText(c.req.param("contactId"), body.text.trim());
+      return c.json({ ok: true, message });
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error), 502);
+    }
+  });
   app.get("/v1/platform/file", async (c) => {
     const requested = c.req.query("path") || "";
     try {
@@ -1582,6 +1637,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     config,
     shutdown: async () => {
       automationScheduler.stop();
+      await feishu.stop();
       await core.shutdown();
     },
   };

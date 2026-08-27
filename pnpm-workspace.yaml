@@ -5,6 +5,7 @@ allowBuilds:
   electron-winstaller: true
   esbuild: true
   node-pty: true
+  protobufjs: true
 enableGlobalVirtualStore: true
 packageExtensions:
   ink-testing-library:

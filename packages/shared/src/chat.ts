@@ -699,7 +699,10 @@ export type ServerEvent = {
     | "plan.updated"
     | "job.updated"
     | "job.output"
-    | "job.done";
+    | "job.done"
+    | "channel.message.received"
+    | "channel.unread.updated"
+    | "channel.connection.status";
   sessionId: string;
   runId?: string;
   status?: SessionStatus;
@@ -717,7 +720,61 @@ export type ServerEvent = {
   planUpdatedAt?: string;
   job?: ChatJobSummary;
   jobOutput?: ChatJobOutputPage;
+  channelProvider?: ChannelProvider;
+  channelContactId?: string;
+  channelMessage?: ChannelMessage;
+  channelUnread?: ChannelUnreadState[];
+  channelStatus?: FeishuChannelStatus;
   timestamp: string;
+};
+
+export type ChannelProvider = "feishu";
+export type ChannelConnectionStatus =
+  | "unconfigured"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "error"
+  | "permission_denied";
+export type ChannelContact = {
+  id: string;
+  provider: ChannelProvider;
+  name: string;
+  avatarUrl?: string;
+  lastMessagePreview?: string;
+  lastMessageAt?: string;
+  unreadCount: number;
+};
+export type ChannelMessage = {
+  id: string;
+  provider: ChannelProvider;
+  contactId: string;
+  senderId: string;
+  senderName?: string;
+  text: string;
+  direction: "inbound" | "outbound";
+  status: "received" | "sending" | "sent" | "failed";
+  createdAt: string;
+};
+export type ChannelUnreadState = {
+  contactId: string;
+  unreadCount: number;
+  lastReadMessageId?: string;
+  lastReceivedAt?: string;
+};
+export type FeishuChannelConfig = {
+  appId: string;
+  appSecret: string;
+};
+export type FeishuChannelStatus = {
+  provider: ChannelProvider;
+  configured: boolean;
+  status: ChannelConnectionStatus;
+  appId?: string;
+  botName?: string;
+  lastConnectedAt?: string;
+  lastReceivedAt?: string;
+  lastError?: string;
 };
 
 export type HealthResponse = {

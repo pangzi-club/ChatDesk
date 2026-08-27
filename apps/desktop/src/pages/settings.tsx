@@ -17,6 +17,7 @@ import {
   Keyboard,
   KeyRound,
   LoaderCircle,
+  MessageSquare,
   Package,
   Palette,
   Pencil,
@@ -92,9 +93,12 @@ import {
   loadChatServerConfig,
   loadChatServerPort,
   loadDeveloperEnvironment,
+  loadFeishuChannelStatus,
   restartChatServer,
   saveChatServerConfig,
+  saveFeishuChannelConfig,
   testChatServerModel,
+  testFeishuChannel,
   updateChatServerPort,
 } from "@/lib/chat-server";
 import {
@@ -367,6 +371,7 @@ function SettingsLayout() {
         </p>
         <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto" aria-label="设置导航">
           <SettingsNavItem to="/settings/general" icon={Bell} label="常规" />
+          <SettingsNavItem to="/settings/channel" icon={MessageSquare} label="Channel" />
           <SettingsNavItem to="/settings/theme" icon={Palette} label="主题" />
           <SettingsNavItem to="/settings/shortcuts" icon={Keyboard} label="快捷键" />
           <SettingsNavItem to="/settings/models" icon={Package} label="模型" />
@@ -821,6 +826,31 @@ function GeneralSettingsPage() {
         </label>
         <label
           className="flex cursor-pointer items-center justify-between gap-4 border-border border-t px-5 py-4 transition-colors hover:bg-accent/40"
+          htmlFor="notify-feishu-message"
+        >
+          <span className="min-w-0">
+            <span className="block font-medium text-sm">收到飞书消息时显示通知</span>
+            <span className="mt-1 block text-muted-foreground text-xs">
+              仅在系统已授予 ChatDesk 通知权限时生效。
+            </span>
+          </span>
+          <Switch
+            aria-label="收到飞书消息时显示通知"
+            checked={settings.notifyOnFeishuMessage}
+            disabled={isLoading || isSaving}
+            id="notify-feishu-message"
+            onCheckedChange={(checked) => {
+              const next = { ...settings, notifyOnFeishuMessage: checked === true };
+              setSettings(next);
+              setIsSaving(true);
+              void saveGeneralSettings(next)
+                .catch(() => setNotice("保存通知设置失败，请重试。"))
+                .finally(() => setIsSaving(false));
+            }}
+          />
+        </label>
+        <label
+          className="flex cursor-pointer items-center justify-between gap-4 border-border border-t px-5 py-4 transition-colors hover:bg-accent/40"
           htmlFor="notify-chat-completion-unfocused"
         >
           <span className="min-w-0">
@@ -840,6 +870,78 @@ function GeneralSettingsPage() {
         {notice ? (
           <p className="border-border border-t px-5 py-3 text-muted-foreground text-xs">{notice}</p>
         ) : null}
+      </section>
+    </>
+  );
+}
+
+function FeishuChannelSettingsPage() {
+  const statusQuery = useQuery({
+    queryKey: ["feishu-status"],
+    queryFn: () => loadFeishuChannelStatus(),
+  });
+  const [appId, setAppId] = useState("");
+  const [appSecret, setAppSecret] = useState("");
+  const save = useMutation({
+    mutationFn: () => saveFeishuChannelConfig({ appId, appSecret }),
+    onSuccess: () => void statusQuery.refetch(),
+  });
+  const test = useMutation({
+    mutationFn: () => testFeishuChannel(),
+    onSuccess: () => void statusQuery.refetch(),
+  });
+  return (
+    <>
+      <SettingsHeading
+        eyebrow="Channel"
+        title="飞书"
+        description="连接飞书机器人，接收单聊消息并在 ChatDesk 中回复。"
+      />
+      <section className="space-y-4 rounded-lg border border-border bg-card p-5">
+        <div className="grid gap-3">
+          <label className="text-sm" htmlFor="feishu-app-id">
+            App ID
+            <Input
+              id="feishu-app-id"
+              value={appId}
+              onChange={(event) => setAppId(event.target.value)}
+              placeholder="cli_..."
+            />
+          </label>
+          <label className="text-sm" htmlFor="feishu-app-secret">
+            App Secret
+            <Input
+              id="feishu-app-secret"
+              type="password"
+              value={appSecret}
+              onChange={(event) => setAppSecret(event.target.value)}
+            />
+          </label>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            disabled={save.isPending || !appId.trim() || !appSecret.trim()}
+            onClick={() => void save.mutateAsync()}
+          >
+            保存
+          </Button>
+          <Button
+            disabled={test.isPending || !statusQuery.data?.configured}
+            onClick={() => void test.mutateAsync()}
+            variant="outline"
+          >
+            测试连接
+          </Button>
+        </div>
+        <div className="border-border border-t pt-4 text-sm">
+          <p>连接状态：{statusQuery.data?.status ?? "未配置"}</p>
+          {statusQuery.data?.botName ? (
+            <p className="mt-1 text-muted-foreground text-xs">机器人：{statusQuery.data.botName}</p>
+          ) : null}
+          {statusQuery.data?.lastError ? (
+            <p className="mt-1 text-destructive text-xs">{statusQuery.data.lastError}</p>
+          ) : null}
+        </div>
       </section>
     </>
   );
@@ -3498,6 +3600,7 @@ export {
   ChatServerSettingsPage,
   DevelopmentSettingsPage,
   EnvironmentSettingsPage,
+  FeishuChannelSettingsPage,
   GeneralSettingsPage,
   McpSettingsPage,
   MemorySettingsPage,

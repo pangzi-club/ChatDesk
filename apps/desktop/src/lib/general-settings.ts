@@ -5,12 +5,14 @@ export type GeneralSettings = {
   notifyOnChatCompletion: boolean;
   notifyOnlyWhenWindowUnfocused: boolean;
   notificationPermissionVerified: boolean;
+  notifyOnFeishuMessage: boolean;
 };
 
 export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   notifyOnChatCompletion: false,
   notifyOnlyWhenWindowUnfocused: true,
   notificationPermissionVerified: false,
+  notifyOnFeishuMessage: false,
 };
 
 const GENERAL_SETTINGS_STORE_KEY = "general";
@@ -28,6 +30,7 @@ function normalizeGeneralSettings(value: unknown): GeneralSettings {
         ? record.notifyOnlyWhenWindowUnfocused
         : DEFAULT_GENERAL_SETTINGS.notifyOnlyWhenWindowUnfocused,
     notificationPermissionVerified,
+    notifyOnFeishuMessage: record.notifyOnFeishuMessage === true,
   };
 }
 
@@ -85,6 +88,21 @@ export async function notifyChatCompletion(title: string, onlyWhenWindowUnfocuse
     return (await bridge.showNotification?.("对话已完成", title, onlyWhenWindowUnfocused)) ?? false;
   } catch (error) {
     console.error("Failed to show chat completion notification", error);
+    return false;
+  }
+}
+
+export async function notifyFeishuMessage(
+  title: string,
+  body: string,
+  onlyWhenWindowUnfocused = true,
+) {
+  const bridge = getDesktopBridge();
+  if (bridge?.runtime !== "electron") return false;
+  try {
+    return (await bridge.showNotification?.(title, body, onlyWhenWindowUnfocused)) ?? false;
+  } catch (error) {
+    console.error("Failed to show Feishu notification", error);
     return false;
   }
 }

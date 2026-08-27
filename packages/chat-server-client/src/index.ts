@@ -1,4 +1,7 @@
 import type {
+  ChannelContact,
+  ChannelMessage,
+  ChannelUnreadState,
   ChatIndexItem,
   ChatJobOutputPage,
   ChatJobSummary,
@@ -8,6 +11,7 @@ import type {
   ChatServerReviewerLog,
   ChatSession,
   DeveloperEnvironmentStatus,
+  FeishuChannelStatus,
   HealthResponse,
   RunStartInput,
   ServerEvent,
@@ -202,6 +206,39 @@ export class ChatServerClient {
       undefined,
       "Chat Server 会话加载失败",
     );
+  }
+
+  getFeishuConfig() {
+    return this.json<FeishuChannelStatus>("/v1/channels/feishu/config");
+  }
+  saveFeishuConfig(input: { appId: string; appSecret: string }) {
+    return this.json<FeishuChannelStatus>("/v1/channels/feishu/config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  }
+  deleteFeishuConfig() {
+    return this.json<FeishuChannelStatus>("/v1/channels/feishu/config", { method: "DELETE" });
+  }
+  testFeishuConnection() {
+    return this.json<FeishuChannelStatus>("/v1/channels/feishu/test", { method: "POST" });
+  }
+  listFeishuContacts() {
+    return this.json<ChannelContact[]>("/v1/channels/feishu/contacts");
+  }
+  listFeishuUnread() {
+    return this.json<ChannelUnreadState[]>("/v1/channels/feishu/unread");
+  }
+  listFeishuMessages(contactId: string) {
+    return this.json<ChannelMessage[]>(
+      `/v1/channels/feishu/contacts/${encodePath(contactId)}/messages`,
+    );
+  }
+  markFeishuRead(contactId: string) {
+    return this.json<{ ok: true }>(`/v1/channels/feishu/contacts/${encodePath(contactId)}/read`, {
+      method: "POST",
+    });
   }
 
   createSession(options?: {
@@ -641,6 +678,9 @@ export class ChatServerClient {
         "run.error",
         "run.done",
         "plan.updated",
+        "channel.message.received",
+        "channel.unread.updated",
+        "channel.connection.status",
       ]) {
         next.addEventListener(eventType, (event) => dispatch(eventType, event.data));
       }
@@ -657,12 +697,16 @@ export class ChatServerClient {
 }
 
 export type {
+  ChannelContact,
+  ChannelMessage,
+  ChannelUnreadState,
   ChatIndexItem,
   ChatServerAiUsageLog,
   ChatServerConfigData,
   ChatServerProviderModel,
   ChatServerReviewerLog,
   ChatSession,
+  FeishuChannelStatus,
   HealthResponse,
   RunStartInput,
   ServerEvent,

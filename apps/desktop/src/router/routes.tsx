@@ -10,6 +10,7 @@ import {
 import { AppShell } from "@/layouts/app-shell";
 import { chatIndexRedirectPath } from "@/lib/chat-routes";
 import { AutomationsPage } from "@/pages/automations";
+import { ChannelsPage } from "@/pages/channels";
 import { ChatPage } from "@/pages/chat";
 import { HistoryDetailPage } from "@/pages/history";
 import { ImageGenerationPage } from "@/pages/image-generation";
@@ -18,6 +19,7 @@ import {
   ChatServerSettingsPage,
   DevelopmentSettingsPage,
   EnvironmentSettingsPage,
+  FeishuChannelSettingsPage,
   GeneralSettingsPage,
   McpSettingsPage,
   MemorySettingsPage,
@@ -55,6 +57,10 @@ const router = createHashRouter([
         ],
       },
       {
+        path: "channels",
+        element: <ChannelsPage />,
+      },
+      {
         path: "image-generation",
         element: <ImageGenerationPage />,
       },
@@ -68,6 +74,7 @@ const router = createHashRouter([
         children: [
           { index: true, element: <Navigate replace to="general" /> },
           { path: "general", element: <GeneralSettingsPage /> },
+          { path: "channel", element: <FeishuChannelSettingsPage /> },
           { path: "theme", element: <ThemeSettingsPage /> },
           { path: "shortcuts", element: <ShortcutsSettingsPage /> },
           { path: "keys", element: <ApiKeysSettingsPage /> },
