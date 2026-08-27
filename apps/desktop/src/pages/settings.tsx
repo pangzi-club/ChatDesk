@@ -1002,6 +1002,11 @@ function ShortcutsSettingsPage() {
       description: "在分栏与最大化窗口之间切换。",
     },
     {
+      action: "newConversation",
+      label: "新建对话",
+      description: "在当前 Workspace 中创建一个新的 Chat 对话。",
+    },
+    {
       action: "previousConversation",
       label: "上一条对话",
       description: "切换到侧栏中更靠上的对话。",

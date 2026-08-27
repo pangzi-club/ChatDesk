@@ -112,6 +112,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { rememberReturnPath } from "@/lib/app-return-path";
 import {
   type BrowserNavigationState,
@@ -783,6 +784,19 @@ function AppShell() {
         return;
       }
       if (!isChatPage) return;
+      if (matchesShortcut(event, shortcutSettings.newConversation)) {
+        if (chatRoute.kind === "session" && !chatSessionQuery.data) return;
+        event.preventDefault();
+        const isDefaultWorkspace = chatWorkspaceId === DEFAULT_WORKSPACE_ID;
+        navigate(
+          chatNewPath({
+            workspaceId: isDefaultWorkspace ? "" : chatWorkspaceId,
+            workspaceCwd: isDefaultWorkspace ? "" : chatWorkspaceCwd,
+          }),
+          { state: chatNewNavigationState() },
+        );
+        return;
+      }
       if (matchesShortcut(event, shortcutSettings.chatSidebar)) {
         event.preventDefault();
         setChatWindowStates((current) => {
@@ -813,7 +827,16 @@ function AppShell() {
 
     window.addEventListener("keydown", handleGlobalShortcut);
     return () => window.removeEventListener("keydown", handleGlobalShortcut);
-  }, [chatWindowKey, isChatPage, shortcutSettings]);
+  }, [
+    chatRoute.kind,
+    chatSessionQuery.data,
+    chatWorkspaceCwd,
+    chatWorkspaceId,
+    chatWindowKey,
+    isChatPage,
+    navigate,
+    shortcutSettings,
+  ]);
 
   useEffect(() => {
     function handleConversationShortcut(event: globalThis.KeyboardEvent) {
@@ -2158,19 +2181,23 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
           >
             List
           </h2>
-          <button
-            aria-label="新建对话"
-            className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100"
-            onClick={() =>
-              navigate(chatNewPath(), {
-                state: chatNewNavigationState(),
-              })
-            }
-            title="新建对话"
-            type="button"
-          >
-            <Plus className="size-3.5" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                aria-label="新建对话"
+                className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100"
+                onClick={() =>
+                  navigate(chatNewPath(), {
+                    state: chatNewNavigationState(),
+                  })
+                }
+                type="button"
+              >
+                <Plus className="size-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">新建对话</TooltipContent>
+          </Tooltip>
         </div>
       )}
       {view === "workspace" && addWorkspaceMutation.error ? (
@@ -2289,15 +2316,19 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
                       <span className="truncate">{group.label}</span>
                     </button>
                   )}
-                  <button
-                    aria-label={`在 ${group.label} 中新建对话`}
-                    className={`flex shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100 ${isRecent ? "mr-1 size-5" : "mr-0.5 size-6"}`}
-                    onClick={() => startWorkspaceSession(group)}
-                    title={`在 ${group.label} 中新建对话`}
-                    type="button"
-                  >
-                    <Plus className="size-3.5" />
-                  </button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        aria-label={`在 ${group.label} 中新建对话`}
+                        className={`flex shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100 ${isRecent ? "mr-1 size-5" : "mr-0.5 size-6"}`}
+                        onClick={() => startWorkspaceSession(group)}
+                        type="button"
+                      >
+                        <Plus className="size-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">在 {group.label} 中新建对话</TooltipContent>
+                  </Tooltip>
                   {group.key !== DEFAULT_WORKSPACE_ID ? (
                     <button
                       aria-label={`${workspaceProjectsQuery.data?.some((project) => project.id === group.key) ? "移除" : "移出"} ${group.label}`}

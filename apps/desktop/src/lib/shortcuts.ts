@@ -4,6 +4,7 @@ import { settingsStore } from "@/lib/settings-store";
 export type ShortcutAction =
   | "chatSidebar"
   | "chatSidebarMaximize"
+  | "newConversation"
   | "previousConversation"
   | "nextConversation";
 
@@ -26,6 +27,14 @@ export const DEFAULT_SHORTCUTS: ShortcutSettings = {
     ctrl: false,
     key: "m",
     meta: false,
+    shift: false,
+  },
+  newConversation: {
+    alt: false,
+    code: "KeyN",
+    ctrl: false,
+    key: "n",
+    meta: true,
     shift: false,
   },
   previousConversation: {
@@ -68,7 +77,7 @@ function normalizeBinding(value: unknown, fallback: ShortcutBinding): ShortcutBi
   return { ...value, code: value.code ?? keyToCode(value.key) };
 }
 
-function normalizeShortcuts(value: unknown): ShortcutSettings {
+export function normalizeShortcuts(value: unknown): ShortcutSettings {
   if (!value || typeof value !== "object") return DEFAULT_SHORTCUTS;
   const record = value as Record<string, unknown>;
   const storedMaximize = isBinding(record.chatSidebarMaximize)
@@ -85,6 +94,7 @@ function normalizeShortcuts(value: unknown): ShortcutSettings {
     chatSidebarMaximize: isLegacyMacosDefault
       ? DEFAULT_SHORTCUTS.chatSidebarMaximize
       : normalizeBinding(record.chatSidebarMaximize, DEFAULT_SHORTCUTS.chatSidebarMaximize),
+    newConversation: normalizeBinding(record.newConversation, DEFAULT_SHORTCUTS.newConversation),
     previousConversation: normalizeBinding(
       record.previousConversation,
       DEFAULT_SHORTCUTS.previousConversation,
