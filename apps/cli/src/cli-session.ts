@@ -17,6 +17,7 @@ import {
   type RunStartInput,
   textFromMessage,
 } from "@chatdesk/shared";
+import { type CliTurnEvent, cliTurnEventFromServer } from "./turn-events.ts";
 
 const CHAT_SERVER_RUNTIME_PROTOCOL_VERSION = 1;
 type ChatServerRuntimeDescriptor = {
@@ -57,6 +58,10 @@ export type CliChatServer = {
     input: RunStartInput,
     options?: { signal?: AbortSignal },
   ): Promise<RunStreamResult>;
+  subscribeEvents?(
+    handlers: { onEvent?: (event: import("@chatdesk/shared").ServerEvent) => void },
+    options?: { sessionId?: string },
+  ): () => void;
   loadSession(sessionId: string): Promise<ChatSession | null>;
   stopRun(sessionId: string): Promise<unknown>;
 };
@@ -72,7 +77,11 @@ export type CliTurnResult = {
 export type CliSession = {
   sessionId: string;
   modelLabel: string;
-  submit(prompt: string, signal?: AbortSignal): Promise<CliTurnResult>;
+  submit(
+    prompt: string,
+    signal?: AbortSignal,
+    onEvent?: (event: CliTurnEvent) => void,
+  ): Promise<CliTurnResult>;
   stop(): Promise<void>;
   close(): Promise<void>;
 };
@@ -241,7 +250,19 @@ async function openServerSession(
   return {
     sessionId,
     modelLabel,
-    async submit(prompt, signal) {
+    async submit(prompt, signal, onEvent) {
+      const unsubscribe = onEvent
+        ? client.subscribeEvents?.(
+            {
+              onEvent: (event) => {
+                if (event.sessionId !== sessionId) return;
+                const normalized = cliTurnEventFromServer(event);
+                if (normalized) onEvent(normalized);
+              },
+            },
+            { sessionId },
+          )
+        : undefined;
       try {
         const result = await client.startRunAndWait(sessionId, runInput(prompt), { signal });
         const saved = await client.loadSession(sessionId);
@@ -257,6 +278,8 @@ async function openServerSession(
           return turnFromSession(saved, modelLabel, { aborted: true });
         }
         throw error;
+      } finally {
+        unsubscribe?.();
       }
     },
     async stop() {
@@ -305,11 +328,22 @@ async function openLocalSession(
   return {
     sessionId,
     modelLabel,
-    async submit(prompt, signal) {
+    async submit(prompt, signal, onEvent) {
       const stopOnAbort = () => {
         void core.runs.stop(sessionId);
       };
       signal?.addEventListener("abort", stopOnAbort);
+      const subscription = onEvent ? core.events.subscribe(sessionId) : undefined;
+      let consuming = true;
+      const consumeEvents = async () => {
+        while (consuming && subscription) {
+          const event = await subscription.next();
+          if (!event || !consuming) break;
+          const normalized = cliTurnEventFromServer(event);
+          if (normalized) onEvent?.(normalized);
+        }
+      };
+      const eventTask = consumeEvents();
       try {
         if (signal?.aborted) {
           return { text: "", modelLabel, aborted: true };
@@ -326,6 +360,9 @@ async function openLocalSession(
         }
         throw error;
       } finally {
+        consuming = false;
+        subscription?.close();
+        await eventTask;
         signal?.removeEventListener("abort", stopOnAbort);
       }
     },

@@ -4,7 +4,7 @@ import { cleanup, render } from "ink-testing-library";
 import { createElement as h } from "react";
 import { afterEach, describe, it } from "vitest";
 import type { CliTurnResult } from "./cli-session.ts";
-import { InteractiveApp, isExitCommand } from "./interactive-app.ts";
+import { InteractiveApp, type InteractiveAppProps, isExitCommand } from "./interactive-app.ts";
 
 afterEach(() => {
   cleanup();
@@ -48,16 +48,25 @@ describe("InteractiveApp", () => {
     assert.equal(isExitCommand("hello"), false);
   });
 
-  it("waits for a complete reply before rendering Markdown", async () => {
+  it("renders streamed text before completion", async () => {
     const turn = deferred<CliTurnResult>();
-    const { lastFrame, stdin } = render(h(InteractiveApp, { submit: () => turn.promise }));
+    let emit: Parameters<InteractiveAppProps["submit"]>[2];
+    const { lastFrame, stdin } = render(
+      h(InteractiveApp, {
+        submit: (_prompt, _signal, onEvent) => {
+          emit = onEvent;
+          return turn.promise;
+        },
+      }),
+    );
     await typeLine(stdin, "请说明重点");
-    await waitForFrame(lastFrame, /正在回答/);
-    assert.doesNotMatch(lastFrame() ?? "", /助手/);
+    await waitForFrame(lastFrame, /正在思考/);
+    emit?.({ type: "text-delta", delta: "这是重点。" });
+    await waitForFrame(lastFrame, /重点/);
     turn.resolve(ok("这是 **重点**。"));
-    await waitForFrame(lastFrame, /助手/);
+    await waitForFrame(lastFrame, /Enter 发送/);
     assert.match(lastFrame() ?? "", /重点/);
-    assert.doesNotMatch(lastFrame() ?? "", /正在回答/);
+    assert.doesNotMatch(lastFrame() ?? "", /正在思考/);
     assert.doesNotMatch(lastFrame() ?? "", /\*\*重点\*\*/);
   });
 
@@ -134,7 +143,7 @@ describe("InteractiveApp", () => {
     assert.equal(count, 2);
   });
 
-  it("stops the active run and exits on Ctrl-C", async () => {
+  it("stops the active run on Ctrl-C without exiting", async () => {
     const turn = deferred<CliTurnResult>();
     const aborts: string[] = [];
     let stopped = 0;
@@ -154,12 +163,14 @@ describe("InteractiveApp", () => {
       }),
     );
     await typeLine(stdin, "进行中");
-    await waitForFrame(lastFrame, /正在回答/);
+    await waitForFrame(lastFrame, /正在思考/);
     stdin.write("\x03");
-    await waitForFrame(() => (exited ? "exited" : ""), /exited/);
+    await waitForFrame(lastFrame, /正在停止/);
     assert.deepEqual(aborts, ["进行中"]);
     assert.equal(stopped, 1);
-    assert.equal(exited, 1);
+    assert.equal(exited, 0);
+    turn.resolve({ text: "", modelLabel: "mock-model", aborted: true });
+    await waitForFrame(lastFrame, /运行已停止/);
     unmount();
   });
 });

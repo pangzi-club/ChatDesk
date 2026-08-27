@@ -547,7 +547,7 @@ export class ChatServerClient {
     await this.createSession({ id: sessionId, ...options });
   }
 
-  subscribeEvents(handlers: ChatEventHandlers) {
+  subscribeEvents(handlers: ChatEventHandlers, options: { sessionId?: string } = {}) {
     let source: EventSourceLike | undefined;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     let closed = false;
@@ -616,7 +616,10 @@ export class ChatServerClient {
     const connect = async () => {
       if (closed) return;
       const token = this.resolveToken();
-      const query = token ? `?token=${encodeURIComponent(token)}` : "";
+      const params = new URLSearchParams();
+      if (token) params.set("token", token);
+      if (options.sessionId) params.set("sessionId", options.sessionId);
+      const query = params.size > 0 ? `?${params.toString()}` : "";
       const next = this.eventSourceFactory(this.url(`/v1/events${query}`));
       source = next;
       next.onopen = () => {

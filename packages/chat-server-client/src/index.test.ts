@@ -309,4 +309,23 @@ describe("ChatServerClient", () => {
 
     cleanup();
   });
+
+  it("scopes an SSE subscription to one session", () => {
+    const source: EventSourceLike = {
+      onerror: null,
+      onopen: null,
+      addEventListener() {},
+      close() {},
+    };
+    const client = new ChatServerClient({
+      baseUrl: "http://localhost",
+      token: "sse-token",
+      eventSourceFactory: (url) => {
+        assert.equal(url, "http://localhost/v1/events?token=sse-token&sessionId=session%2Fone");
+        return source;
+      },
+    });
+
+    client.subscribeEvents({}, { sessionId: "session/one" })();
+  });
 });

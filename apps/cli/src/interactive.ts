@@ -15,12 +15,20 @@ export async function runInteractive(options: RunInteractiveOptions) {
   let instance: ReturnType<typeof render> | undefined;
   try {
     session = await openCliSession(options);
-    instance = render(h(InteractiveApp, { submit: session.submit, stop: session.stop }), {
-      exitOnCtrlC: false,
-      patchConsole: true,
-      ...(options.stdout ? { stdout: options.stdout } : {}),
-      ...(options.stdin ? { stdin: options.stdin } : {}),
-    });
+    instance = render(
+      h(InteractiveApp, {
+        submit: session.submit,
+        stop: session.stop,
+        modelLabel: session.modelLabel,
+        cwd: options.cwd ?? process.cwd(),
+      }),
+      {
+        exitOnCtrlC: false,
+        patchConsole: true,
+        ...(options.stdout ? { stdout: options.stdout } : {}),
+        ...(options.stdin ? { stdin: options.stdin } : {}),
+      },
+    );
     await instance.waitUntilExit();
     return 0;
   } catch (error) {
