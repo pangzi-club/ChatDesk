@@ -59,6 +59,7 @@ import {
   type DragEvent as ReactDragEvent,
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -772,6 +773,16 @@ function AppShell() {
     };
   }, []);
 
+  const toggleMainSidebar = useCallback(() => {
+    setMainSidebarState((current) => {
+      const next = { ...current, collapsed: !current.collapsed };
+      void saveMainSidebarState(next).catch((error) =>
+        console.error("Failed to save main sidebar state", error),
+      );
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     function handleGlobalShortcut(event: globalThis.KeyboardEvent) {
       const isTerminalInput =
@@ -781,6 +792,11 @@ function AppShell() {
         event.preventDefault();
         setIsChatSearchOpen(false);
         setIsCommandMenuOpen((isOpen) => !isOpen);
+        return;
+      }
+      if (matchesShortcut(event, shortcutSettings.mainSidebar)) {
+        event.preventDefault();
+        toggleMainSidebar();
         return;
       }
       if (!isChatPage) return;
@@ -836,6 +852,7 @@ function AppShell() {
     isChatPage,
     navigate,
     shortcutSettings,
+    toggleMainSidebar,
   ]);
 
   useEffect(() => {
@@ -875,14 +892,6 @@ function AppShell() {
     void saveMainSidebarState(state).catch((error) =>
       console.error("Failed to save main sidebar state", error),
     );
-  }
-
-  function toggleMainSidebar() {
-    setMainSidebarState((current) => {
-      const next = { ...current, collapsed: !current.collapsed };
-      persistMainSidebarState(next);
-      return next;
-    });
   }
 
   function setMainSidebarWidth(width: number) {

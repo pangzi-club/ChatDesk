@@ -2,6 +2,7 @@ import { isDesktop } from "@/lib/desktop-bridge";
 import { settingsStore } from "@/lib/settings-store";
 
 export type ShortcutAction =
+  | "mainSidebar"
   | "chatSidebar"
   | "chatSidebarMaximize"
   | "newConversation"
@@ -20,6 +21,7 @@ export type ShortcutBinding = {
 export type ShortcutSettings = Record<ShortcutAction, ShortcutBinding>;
 
 export const DEFAULT_SHORTCUTS: ShortcutSettings = {
+  mainSidebar: { alt: false, code: "KeyB", ctrl: false, key: "b", meta: true, shift: false },
   chatSidebar: { alt: true, code: "KeyB", ctrl: false, key: "b", meta: true, shift: false },
   chatSidebarMaximize: {
     alt: true,
@@ -90,6 +92,7 @@ export function normalizeShortcuts(value: unknown): ShortcutSettings {
     storedMaximize.meta &&
     !storedMaximize.code;
   return {
+    mainSidebar: normalizeBinding(record.mainSidebar, DEFAULT_SHORTCUTS.mainSidebar),
     chatSidebar: normalizeBinding(record.chatSidebar, DEFAULT_SHORTCUTS.chatSidebar),
     chatSidebarMaximize: isLegacyMacosDefault
       ? DEFAULT_SHORTCUTS.chatSidebarMaximize

@@ -992,6 +992,11 @@ function ShortcutsSettingsPage() {
 
   const items: Array<{ action: ShortcutAction; label: string; description: string }> = [
     {
+      action: "mainSidebar",
+      label: "左侧 Sidebar",
+      description: "展开或收起应用左侧 Sidebar。",
+    },
+    {
       action: "chatSidebar",
       label: "Chat 侧边栏按钮",
       description: "打开 Chat 右侧独立窗口。",
