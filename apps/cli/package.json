@@ -19,11 +19,17 @@
   "dependencies": {
     "@chatdesk/agent-core": "workspace:*",
     "@chatdesk/chat-server-client": "workspace:*",
-    "@chatdesk/shared": "workspace:*"
+    "@chatdesk/shared": "workspace:*",
+    "ink": "^6.8.0",
+    "ink-spinner": "^5.0.0",
+    "ink-text-input": "^6.0.0",
+    "react": "^19.2.8"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
+    "@types/react": "^19.2.18",
     "ai": "^7.0.51",
+    "ink-testing-library": "^4.0.0",
     "typescript": "7.0.2"
   }
 }

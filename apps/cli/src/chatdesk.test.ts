@@ -11,5 +11,8 @@ describe("chatdesk bin", () => {
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /用法:/);
     assert.match(result.stdout, /-p, --prompt/);
+    assert.match(result.stdout, /-i, --interactive/);
+    assert.match(result.stdout, /-v, --verbose/);
+    assert.match(result.stdout, /:q, :quit, :exit/);
   });
 });

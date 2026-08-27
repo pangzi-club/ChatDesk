@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { installAiSdkWarningFilter } from "@chatdesk/agent-core";
+import { runInteractive } from "./interactive.ts";
 import { parseArgs, USAGE } from "./parse-args.ts";
 import { runPrompt } from "./run-prompt.ts";
 
@@ -17,6 +18,13 @@ async function main() {
     process.stdout.write(`${USAGE}\n`);
     return;
   }
+  if (parsed.interactive) {
+    process.exitCode = await runInteractive({
+      modelId: parsed.model,
+      cwd: parsed.cwd,
+    });
+    return;
+  }
 
   const controller = new AbortController();
   const onSignal = () => controller.abort();
@@ -27,6 +35,7 @@ async function main() {
       prompt: parsed.prompt,
       modelId: parsed.model,
       cwd: parsed.cwd,
+      verbose: parsed.verbose,
       signal: controller.signal,
     });
   } finally {

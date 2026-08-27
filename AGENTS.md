@@ -104,10 +104,13 @@ Desktop UI must not import this package from pages or components. Wrap it in `ap
 
 - `apps/cli/src/chatdesk.mjs`: `bin` wrapper. Re-invokes `cli.ts` with `node --experimental-strip-types` so pnpm/npm can link a `chatdesk` executable.
 - `apps/cli/src/cli.ts`: Node process entrypoint and signal handling.
-- `apps/cli/src/parse-args.ts`: argv parsing for print mode (`-p` / `--prompt`, `--model`, `--cwd`).
-- `apps/cli/src/run-prompt.ts`: in-process `createAgentCore` composition — resolve data dir, register cwd as a workspace, start a detached run, print the final assistant text.
+- `apps/cli/src/parse-args.ts`: argv parsing for interactive mode, print mode (`-p` / `--prompt`), `--model`, `--cwd`, and `--verbose`.
+- `apps/cli/src/cli-session.ts`: shared session create/reuse, one-turn submit, wait-for-complete, and Chat Server attached / local AgentCore fallback.
+- `apps/cli/src/run-prompt.ts`: non-interactive print mode — submit one prompt, render the final Markdown answer, optionally print a verbose run summary.
+- `apps/cli/src/interactive.ts` and `interactive-app.ts`: Ink interactive mode. Reuse one session for multiple turns; wait for each run to finish, then render complete Markdown. Do not stream deltas.
+- `apps/cli/src/markdown.ts`: CLI Markdown parser and shared ANSI / Ink renderer.
 
-The CLI may import `@chatdesk/agent-core` and `@chatdesk/shared`. It must not import Hono, React, desktop pages, `apps/server`, or Electron host code. Default workspace is `process.cwd()` unless `--cwd` is passed; do not bind CLI sessions to the Default workspace task directory. Register the `chatdesk` bin globally with `pnpm add -g ./apps/cli` from the repository root (`pnpm link --global` was removed in pnpm 11).
+The CLI may import `@chatdesk/agent-core`, `@chatdesk/shared`, and Ink/React for the interactive TUI. It must not import Hono, desktop pages, `apps/server`, or Electron host code. Default workspace is `process.cwd()` unless `--cwd` is passed; do not bind CLI sessions to the Default workspace task directory. Register the `chatdesk` bin globally with `pnpm add -g ./apps/cli` from the repository root (`pnpm link --global` was removed in pnpm 11).
 
 ### Local Node Service (`apps/server`)
 

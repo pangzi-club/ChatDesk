@@ -6,3 +6,8 @@ allowBuilds:
   esbuild: true
   node-pty: true
 enableGlobalVirtualStore: true
+packageExtensions:
+  ink-testing-library:
+    peerDependencies:
+      ink: "*"
+      react: "*"

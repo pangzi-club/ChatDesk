@@ -5,5 +5,10 @@ export default defineConfig({
     name: "chatdesk-cli",
     environment: "node",
     include: ["src/**/*.test.ts"],
+    server: {
+      deps: {
+        inline: ["ink-testing-library"],
+      },
+    },
   },
 });
