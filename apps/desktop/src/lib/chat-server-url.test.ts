@@ -34,14 +34,14 @@ describe("resolveChatServerBaseUrl", () => {
     ).toBe("http://localhost:1420");
   });
 
-  it("routes packaged Electron REST requests through the loopback HTTP bridge", () => {
+  it("keeps packaged Electron REST requests on the renderer protocol", () => {
     expect(
       resolveChatServerRequestInput("chatdesk://localhost/v1/sessions?limit=20", {
         runtime: "electron",
         development: false,
         port: 19000,
       }),
-    ).toBe("http://127.0.0.1:19000/v1/sessions?limit=20");
+    ).toBe("chatdesk://localhost/v1/sessions?limit=20");
     expect(
       resolveChatServerRequestInput("http://localhost:1420/v1/sessions", {
         runtime: "electron",

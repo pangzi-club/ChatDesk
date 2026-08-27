@@ -132,19 +132,20 @@ async function runtimeFetch(input: RequestInfo | URL, init: RequestInit | undefi
     if (runtimeConfig.token) headers.set("Authorization", `Bearer ${runtimeConfig.token}`);
     else headers.delete("Authorization");
     const bridge = getDesktopBridge();
-    const useElectronBridge = bridge?.runtime === "electron" && !import.meta.env.DEV;
-    return (useElectronBridge ? desktopFetch : fetch)(
-      resolveChatServerRequestInput(input, {
-        runtime: bridge?.runtime,
-        development: import.meta.env.DEV,
-        port: runtimeConfig.port,
-      }),
-      {
-        ...init,
-        headers,
-        ...({ targetAddressSpace: "loopback" } as RequestInit),
-      },
-    );
+    const packagedElectron = bridge?.runtime === "electron" && !import.meta.env.DEV;
+    const resolvedInput = resolveChatServerRequestInput(input, {
+      runtime: bridge?.runtime,
+      development: import.meta.env.DEV,
+      port: runtimeConfig.port,
+    });
+    // Keep Chat Server requests on the registered protocol so Electron can
+    // return the native Response body stream to the renderer.
+    const useElectronBridge = packagedElectron && !isChatServerProtocolInput(resolvedInput);
+    return (useElectronBridge ? desktopFetch : fetch)(resolvedInput, {
+      ...init,
+      headers,
+      ...({ targetAddressSpace: "loopback" } as RequestInit),
+    });
   };
 
   let response: Response;
@@ -178,13 +179,19 @@ async function runtimeFetch(input: RequestInfo | URL, init: RequestInit | undefi
 
 export function resolveChatServerRequestInput(
   input: RequestInfo | URL,
-  options: { runtime?: string; development: boolean; port: number },
+  _options: { runtime?: string; development: boolean; port: number },
 ) {
-  if (options.runtime !== "electron" || options.development) return input;
+  return input;
+}
+
+function isChatServerProtocolInput(input: RequestInfo | URL) {
   const source = input instanceof Request ? input.url : String(input);
-  const url = new URL(source);
-  if (url.protocol !== "chatdesk:" || url.hostname !== "localhost") return input;
-  return `http://127.0.0.1:${normalizePort(options.port)}${url.pathname}${url.search}`;
+  try {
+    const url = new URL(source);
+    return url.protocol === "chatdesk:" && url.hostname === "localhost";
+  } catch {
+    return false;
+  }
 }
 
 function createClient(port = CHAT_SERVER_DEFAULT_PORT) {

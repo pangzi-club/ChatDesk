@@ -17,6 +17,8 @@ export type ChatServerHostInfo = {
 
 type HostProcess = Pick<EventEmitter, "once"> & {
   kill(signal?: NodeJS.Signals): boolean;
+  stdout?: Pick<EventEmitter, "on">;
+  stderr?: Pick<EventEmitter, "on">;
 };
 
 type SpawnProcess = (
@@ -137,6 +139,14 @@ export class ChatServerSupervisor {
     });
     this.child = child;
     this.startedAt = Date.now();
+    // Always drain child pipes. An unconsumed pipe can fill and block the
+    // Chat Server process, which otherwise looks like a random crash.
+    child.stdout?.on("data", (chunk: unknown) => {
+      if (chunk) console.log(`[Chat Server] ${String(chunk).trimEnd()}`);
+    });
+    child.stderr?.on("data", (chunk: unknown) => {
+      if (chunk) console.error(`[Chat Server] ${String(chunk).trimEnd()}`);
+    });
     child.once("exit", (code: number | null, signal: NodeJS.Signals | null) =>
       this.handleExit(child, code, signal),
     );
