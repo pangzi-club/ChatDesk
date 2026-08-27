@@ -39,8 +39,32 @@ const runtimeConfig: { port: number; token: string; managed: boolean } = {
 };
 let runtimePortKnown = Boolean(import.meta.env.VITE_CHAT_SERVER_PORT);
 let runtimeInitialization: Promise<void> | undefined;
+type ChatServerConnectionEvent = "failure" | "recovery";
+const chatServerConnectionListeners = new Set<(event: ChatServerConnectionEvent) => void>();
+let connectionFailurePending = false;
 
 export type ChatServerState = "running" | "starting" | "restarting" | "offline";
+
+export function subscribeChatServerConnection(
+  listener: (event: ChatServerConnectionEvent) => void,
+) {
+  chatServerConnectionListeners.add(listener);
+  return () => {
+    chatServerConnectionListeners.delete(listener);
+  };
+}
+
+function emitChatServerConnectionFailure() {
+  if (connectionFailurePending) return;
+  connectionFailurePending = true;
+  for (const listener of chatServerConnectionListeners) listener("failure");
+}
+
+function emitChatServerConnectionRecovery() {
+  if (!connectionFailurePending) return;
+  connectionFailurePending = false;
+  for (const listener of chatServerConnectionListeners) listener("recovery");
+}
 
 export type ChatServerRuntimeInfo = {
   host?: string;
@@ -127,14 +151,28 @@ async function runtimeFetch(input: RequestInfo | URL, init: RequestInit | undefi
   try {
     response = await request();
   } catch (error) {
-    if (!isDesktop() || !retryable) throw error;
-    await refreshChatServerRuntime();
-    response = await request();
+    if (!isDesktop() || !retryable) {
+      emitChatServerConnectionFailure();
+      throw error;
+    }
+    try {
+      await refreshChatServerRuntime();
+      response = await request();
+    } catch (retryError) {
+      emitChatServerConnectionFailure();
+      throw retryError;
+    }
   }
   if (response.status === 401 && isDesktop()) {
     await refreshChatServerRuntime();
-    response = await request();
+    try {
+      response = await request();
+    } catch (error) {
+      emitChatServerConnectionFailure();
+      throw error;
+    }
   }
+  emitChatServerConnectionRecovery();
   return response;
 }
 
@@ -291,7 +329,10 @@ export async function getChatServerStatus(): Promise<ChatServerConnectionStatus>
   try {
     const health = await checkChatServer(port);
     return { state: "running", info, health };
-  } catch {
+  } catch (error) {
+    if (error instanceof ChatServerError) {
+      return { state: "running", info, health: null };
+    }
     const latest =
       info?.state === "starting" || info?.state === "restarting"
         ? info
@@ -335,7 +376,9 @@ export async function checkChatServer(port = CHAT_SERVER_DEFAULT_PORT) {
     { signal: AbortSignal.timeout(1500) },
     port,
   );
-  if (!response.ok) throw new Error(`Chat Server 返回 ${response.status}`);
+  if (!response.ok) {
+    throw new ChatServerError(`Chat Server 返回 ${response.status}`, response.status);
+  }
   return (await response.json()) as ChatServerHealth;
 }
 

@@ -149,6 +149,7 @@ import {
   restartChatServer,
   restoreServerWorkspaceGit,
   stopChatServerRun,
+  subscribeChatServerConnection,
   subscribeChatServerEvents,
   updateChatSessionTitle,
 } from "@/lib/chat-server";
@@ -1419,11 +1420,10 @@ function ChatServerStatusBanner() {
   const statusQuery = useQuery({
     queryKey: ["chat-server-status"],
     queryFn: getChatServerStatus,
-    enabled,
-    refetchInterval: 60_000,
-    refetchIntervalInBackground: true,
+    enabled: false,
     retry: false,
   });
+  const statusProbeInFlight = useRef(false);
   const previousState = useRef<string | undefined>(undefined);
   const restartMutation = useMutation({
     mutationFn: restartChatServer,
@@ -1432,6 +1432,24 @@ function ChatServerStatusBanner() {
       void queryClient.invalidateQueries({ queryKey: ["chat-index"] });
     },
   });
+
+  useEffect(() => {
+    if (!enabled) return;
+    return subscribeChatServerConnection((event) => {
+      if (event === "recovery") {
+        queryClient.setQueryData<Awaited<ReturnType<typeof getChatServerStatus>>>(
+          ["chat-server-status"],
+          (current) => (current ? { ...current, state: "running" } : current),
+        );
+        return;
+      }
+      if (statusProbeInFlight.current) return;
+      statusProbeInFlight.current = true;
+      void statusQuery.refetch().finally(() => {
+        statusProbeInFlight.current = false;
+      });
+    });
+  }, [enabled, queryClient, statusQuery.refetch]);
 
   useEffect(() => {
     const state = statusQuery.data?.state;
