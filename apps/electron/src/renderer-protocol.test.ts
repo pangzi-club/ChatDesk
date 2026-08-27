@@ -3,6 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  chatServerProxyHeaders,
+  chatServerProxyRequestInit,
   chatServerProxyUrl,
   isEmbeddedWindowOpen,
   isRendererNavigation,
@@ -71,5 +73,34 @@ describe("Electron renderer protocol", () => {
     );
     expect(() => chatServerProxyUrl("chatdesk://localhost/settings", 19000)).toThrow();
     expect(() => chatServerProxyUrl("chatdesk://untrusted/v1/sessions", 19000)).toThrow();
+  });
+
+  it("removes renderer-only and transport headers before proxying", () => {
+    const headers = chatServerProxyHeaders({
+      Authorization: "Bearer test",
+      Connection: "keep-alive",
+      "Content-Length": "2",
+      "Content-Type": "application/json",
+      Host: "localhost",
+      Origin: "chatdesk://localhost",
+      "Sec-Fetch-Site": "same-origin",
+    });
+
+    expect([...headers.entries()]).toEqual([
+      ["authorization", "Bearer test"],
+      ["content-type", "application/json"],
+    ]);
+  });
+
+  it("buffers only the request body while leaving response streaming to net.fetch", () => {
+    const init = chatServerProxyRequestInit(
+      "POST",
+      { "Content-Type": "application/json", "Content-Length": "2" },
+      new TextEncoder().encode("{}").buffer,
+    );
+
+    expect(init.method).toBe("POST");
+    expect(init.headers).toEqual(new Headers({ "Content-Type": "application/json" }));
+    expect(new TextDecoder().decode(init.body as Uint8Array)).toBe("{}");
   });
 });

@@ -4,6 +4,14 @@ import { pathToFileURL } from "node:url";
 
 export const RENDERER_SCHEME = "chatdesk";
 export const RENDERER_ORIGIN = `${RENDERER_SCHEME}://localhost`;
+const BLOCKED_PROXY_REQUEST_HEADERS = new Set([
+  "connection",
+  "content-length",
+  "cookie",
+  "host",
+  "origin",
+  "proxy-authorization",
+]);
 
 export function rendererLoadUrl() {
   return `${RENDERER_ORIGIN}/`;
@@ -23,6 +31,32 @@ export function chatServerProxyUrl(requestUrl: string, port: number) {
     throw new Error("不是 Chat Server 代理请求");
   }
   return `http://127.0.0.1:${port}${url.pathname}${url.search}`;
+}
+
+export function chatServerProxyHeaders(source: HeadersInit) {
+  const headers = new Headers(source);
+  for (const name of [...headers.keys()]) {
+    const normalized = name.toLowerCase();
+    if (BLOCKED_PROXY_REQUEST_HEADERS.has(normalized) || normalized.startsWith("sec-fetch-")) {
+      headers.delete(name);
+    }
+  }
+  return headers;
+}
+
+export function chatServerProxyRequestInit(
+  method: string,
+  headers: HeadersInit,
+  body?: ArrayBuffer,
+) {
+  const normalizedMethod = method.toUpperCase();
+  return {
+    method: normalizedMethod,
+    headers: chatServerProxyHeaders(headers),
+    ...(normalizedMethod === "GET" || normalizedMethod === "HEAD" || body === undefined
+      ? {}
+      : { body: new Uint8Array(body) }),
+  } satisfies RequestInit;
 }
 
 export function isRendererNavigation(url: string, entry: string) {

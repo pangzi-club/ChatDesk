@@ -35,6 +35,8 @@ import {
 import { chatServerLaunchArgs, chatServerRuntimeRoot } from "./chat-server-launch.js";
 import { performHttpRequest } from "./http-bridge.js";
 import {
+  chatServerProxyHeaders,
+  chatServerProxyRequestInit,
   chatServerProxyUrl,
   isEmbeddedWindowOpen,
   isChatServerProxyPath,
@@ -596,25 +598,26 @@ function setupRendererProtocol() {
       const requestUrl = new URL(request.url);
       chatServerRequest = isChatServerProxyPath(requestUrl.pathname);
       if (chatServerRequest) {
-        const port = supervisor?.info().port ?? supervisorPort() ?? 14317;
-        const headers = new Headers(request.headers);
-        headers.delete("origin");
-        for (const name of [...headers.keys()]) {
-          if (name.startsWith("sec-fetch-")) headers.delete(name);
+        let info = supervisor?.info();
+        if (!info?.running && supervisor) {
+          info = await supervisor.start();
         }
-        return await net.fetch(chatServerProxyUrl(request.url, port), {
-          method: request.method,
-          headers,
-          ...(request.method === "GET" || request.method === "HEAD"
-            ? {}
-            : { body: request.body }),
-        });
+        const port = info?.port ?? supervisorPort() ?? 14317;
+        const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
+        // This is a loopback-only request. Node's fetch avoids Electron 43's
+        // net.fetch rejection when a custom-protocol request has a body, while
+        // still returning the response ReadableStream to the renderer.
+        return await fetch(
+          chatServerProxyUrl(request.url, port),
+          chatServerProxyRequestInit(request.method, request.headers, body),
+        );
       }
       return await net.fetch(rendererFileUrl(resolveRendererFile(root, request.url)));
     } catch (error) {
       if (chatServerRequest) {
         console.error("Chat Server proxy request failed", request.url, error);
-        return Response.json({ error: "Chat Server 代理请求失败" }, { status: 502 });
+        const detail = error instanceof Error ? error.message : String(error);
+        return Response.json({ error: `Chat Server 代理请求失败：${detail}` }, { status: 502 });
       }
       return new Response("Not found", { status: 404 });
     }
@@ -647,7 +650,7 @@ if (!gotSingleInstanceLock) {
   app.on("second-instance", () => {
     showMainWindow();
   });
-  void app.whenReady().then(() => {
+  void app.whenReady().then(async () => {
     setupRendererProtocol();
     setupAssetProtocol();
     setupIpc();
@@ -658,7 +661,7 @@ if (!gotSingleInstanceLock) {
     const iconPath = applicationIconPath();
     if (process.platform === "darwin" && iconPath) app.dock?.setIcon(iconPath);
     ensureTray();
-    void setupSupervisor().catch((error) => {
+    await setupSupervisor().catch((error) => {
       console.error("Chat Server startup failed", error);
     });
     createWindow();
