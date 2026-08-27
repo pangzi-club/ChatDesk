@@ -1806,6 +1806,9 @@ function ConversationSidebarRow({
                     {session.source === "cli" ? (
                       <span className="chat-session-kind">CLI</span>
                     ) : null}
+                    {session.source === "feishu" ? (
+                      <span className="chat-session-kind">飞书</span>
+                    ) : null}
                   </span>
                   {isList && !nested ? (
                     <span className="mt-0.5 flex items-center gap-1 truncate text-[11px] font-normal text-muted-foreground">

@@ -36,6 +36,7 @@ import {
   sessionTitleMaxOutputTokens,
   TODO_TOOL_INSTRUCTIONS,
   testModelConnection,
+  textFromMessage,
   type WorkspaceStore,
   workspaceSearchInstructions,
 } from "@chatdesk/agent-core";
@@ -473,7 +474,54 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   });
   const automations = new AutomationStore(config.dataDir);
   const channels = new ChannelStore(config.dataDir);
-  const feishu = new FeishuChannelManager(channels, events);
+  let feishu!: FeishuChannelManager;
+  feishu = new FeishuChannelManager(channels, events, async (item) => {
+    let sessionId = await channels.getSessionId(item.contactId);
+    if (!sessionId || !(await store.get(sessionId))) {
+      const session = emptySession();
+      sessionId = session.id;
+      await store.save({ ...session, title: item.senderName || "飞书对话", source: "feishu" });
+      await channels.setSessionId(item.contactId, sessionId);
+    }
+    const userMessage = {
+      id: `feishu-${item.id}`,
+      role: "user" as const,
+      parts: [{ type: "text" as const, text: item.text }],
+    };
+    try {
+      const configured = chatConfig
+        .get()
+        .models.find((model) =>
+          Boolean(
+            model &&
+              typeof model === "object" &&
+              (model as { isDefault?: unknown }).isDefault === true,
+          ),
+        ) as { id?: string; name?: string } | undefined;
+      if (!configured) throw new Error("未配置默认模型");
+      const response = await runs.start(sessionId, {
+        message: userMessage,
+        modelId: configured.id || configured.name,
+        planMode: "apply",
+      });
+      if (response.body) await response.body.pipeTo(new WritableStream({ write() {} }));
+      await runs.waitForRun(sessionId);
+      const session = await store.get(sessionId);
+      const reply = session?.messages
+        .slice()
+        .reverse()
+        .find((message) => message.role === "assistant");
+      const text = reply ? textFromMessage(reply) : "";
+      await feishu.sendText(item.contactId, text || "暂时无法生成回复，请稍后重试。");
+    } catch (error) {
+      await activityLogs.append({
+        level: "error",
+        source: "飞书自动回复",
+        message: error instanceof Error ? error.message : String(error),
+      });
+      await feishu.sendText(item.contactId, "暂时无法回复，请稍后重试。").catch(() => undefined);
+    }
+  });
   await feishu.start();
   await automations.init();
   const automationScheduler = new AutomationScheduler(automations, (task, message) =>
@@ -1403,7 +1451,11 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     try {
       const current = await store.get(c.req.param("id"));
       if (!current) return jsonError("会话不存在", 404);
+      if (current.source === "feishu") return jsonError("飞书会话为只读会话", 403);
       const body = await c.req.json();
+      if (body && typeof body === "object" && "source" in body) {
+        return jsonError("会话来源不可修改", 400);
+      }
       const incomingMessages = Array.isArray(body.messages) ? body.messages : undefined;
       const messages = incomingMessages
         ? mergeSessionMessages(current.messages, incomingMessages)
@@ -1523,6 +1575,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   app.post("/v1/sessions/:id/runs", async (c) => {
     try {
       const session = await store.get(c.req.param("id"));
+      if (session?.source === "feishu") return jsonError("飞书会话为只读会话", 403);
       if (session?.kind === "task") {
         return jsonError("任务会话不可交互", 400);
       }

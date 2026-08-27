@@ -19,6 +19,7 @@ import {
 import type { McpServerConfig } from "@/lib/mcp";
 
 type ChatToolsPickerProps = {
+  disabled?: boolean;
   settings: ChatToolsSettings;
   workspaceAvailable?: boolean;
   open: boolean;
@@ -30,6 +31,7 @@ type ChatToolsPickerProps = {
 };
 
 export function ChatToolsPicker({
+  disabled = false,
   settings,
   workspaceAvailable = false,
   open,
@@ -54,6 +56,7 @@ export function ChatToolsPicker({
       <DropdownMenuTrigger asChild>
         <button
           aria-label="选择 Tools"
+          disabled={disabled}
           className="chat-tools-picker !h-7 !gap-1.5 !px-2 !text-[11px]"
           type="button"
         >

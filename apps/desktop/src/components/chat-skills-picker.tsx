@@ -13,6 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { isBuiltinSkill, type SkillDefinition } from "@/lib/skills";
 
 type ChatSkillsPickerProps = {
+  disabled?: boolean;
   skills: SkillDefinition[];
   selectedSkillIds: string[];
   open: boolean;
@@ -21,6 +22,7 @@ type ChatSkillsPickerProps = {
 };
 
 export function ChatSkillsPicker({
+  disabled = false,
   skills,
   selectedSkillIds,
   open,
@@ -35,6 +37,7 @@ export function ChatSkillsPicker({
       <DropdownMenuTrigger asChild>
         <button
           aria-label="选择 Skills"
+          disabled={disabled}
           className="chat-tools-picker !h-7 !gap-1.5 !px-2 !text-[11px]"
           type="button"
         >

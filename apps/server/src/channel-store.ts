@@ -73,6 +73,16 @@ export class ChannelStore {
     await this.load();
     return [...this.value.unread];
   }
+  async getSessionId(contactId: string) {
+    await this.load();
+    return this.value.contacts.find((item) => item.id === contactId)?.sessionId;
+  }
+  async setSessionId(contactId: string, sessionId: string) {
+    await this.load();
+    const contact = this.value.contacts.find((item) => item.id === contactId);
+    if (contact) contact.sessionId = sessionId;
+    await this.save();
+  }
   async upsertMessage(message: ChannelMessage) {
     await this.load();
     if (this.value.messages.some((item) => item.id === message.id)) return false;

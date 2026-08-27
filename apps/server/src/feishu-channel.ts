@@ -8,14 +8,21 @@ export class FeishuChannelManager {
   private readonly store: ChannelStore;
   private readonly events: EventHub;
   private channel?: LarkChannel;
+  private readonly queues = new Map<string, Promise<void>>();
+  private readonly onMessage?: (item: ChannelMessage) => Promise<void>;
   private status: FeishuChannelStatus = {
     provider: "feishu",
     configured: false,
     status: "unconfigured",
   };
-  constructor(store: ChannelStore, events: EventHub) {
+  constructor(
+    store: ChannelStore,
+    events: EventHub,
+    onMessage?: (item: ChannelMessage) => Promise<void>,
+  ) {
     this.store = store;
     this.events = events;
+    this.onMessage = onMessage;
   }
   getStatus() {
     return this.status;
@@ -75,6 +82,17 @@ export class FeishuChannelManager {
         channelMessage: item,
         channelUnread: unread,
       });
+      if (this.onMessage) {
+        const previous = this.queues.get(item.contactId) ?? Promise.resolve();
+        const next = previous
+          .catch(() => undefined)
+          .then(() => this.onMessage?.(item))
+          .then(() => undefined);
+        this.queues.set(item.contactId, next);
+        void next.finally(() => {
+          if (this.queues.get(item.contactId) === next) this.queues.delete(item.contactId);
+        });
+      }
       this.events.publish({
         type: "channel.unread.updated",
         sessionId: "",

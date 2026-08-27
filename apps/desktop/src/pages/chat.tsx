@@ -7,6 +7,7 @@ import {
   type ChatRunProgress,
   type ChatRunSummary,
   type ChatSessionKind,
+  type ChatSessionSource,
   CREATE_TASK_TOOL_NAME,
   DEFAULT_WORKSPACE_ID,
   DEFAULT_WORKSPACE_NAME,
@@ -434,7 +435,8 @@ function ChatPage() {
   const [sessionKind, setSessionKind] = useState<ChatSessionKind>("chat");
   const sessionKindRef = useRef(sessionKind);
   sessionKindRef.current = sessionKind;
-  const [sessionSource, setSessionSource] = useState<"cli" | undefined>();
+  const [sessionSource, setSessionSource] = useState<ChatSessionSource | undefined>();
+  const isReadOnly = sessionSource === "feishu";
   const lastSyncedIndexTitleRef = useRef<{ sessionId: string; title: string } | null>(null);
   const [workspaceKey, setWorkspaceKey] = useState(() =>
     chatRoute.kind === "new" ? chatRoute.workspaceId : "",
@@ -1366,7 +1368,9 @@ function ChatPage() {
     suppressSaveRef.current = true;
     setSessionTitle(session.title);
     setSessionKind(session.kind === "task" ? "task" : "chat");
-    setSessionSource(session.source === "cli" ? "cli" : undefined);
+    setSessionSource(
+      session.source === "cli" || session.source === "feishu" ? session.source : undefined,
+    );
     setIsRenamingTitle(false);
     setWorkspaceKey(session.workspaceId ?? (session.cwd ? "" : DEFAULT_WORKSPACE_ID));
     setSessionCwd(
@@ -1673,7 +1677,7 @@ function ChatPage() {
   }, []);
 
   function handleDragEnter(event: React.DragEvent<HTMLDivElement>) {
-    if (sessionKindRef.current === "task") return;
+    if (sessionKindRef.current === "task" || isReadOnly) return;
     if (!event.dataTransfer.types.includes("Files")) return;
     event.preventDefault();
     dragCounterRef.current += 1;
@@ -1681,7 +1685,7 @@ function ChatPage() {
   }
 
   function handleDragOver(event: React.DragEvent<HTMLDivElement>) {
-    if (sessionKindRef.current === "task") return;
+    if (sessionKindRef.current === "task" || isReadOnly) return;
     if (!event.dataTransfer.types.includes("Files")) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
@@ -1698,7 +1702,7 @@ function ChatPage() {
   }
 
   function handleDrop(event: React.DragEvent<HTMLDivElement>) {
-    if (sessionKindRef.current === "task") return;
+    if (sessionKindRef.current === "task" || isReadOnly) return;
     if (!event.dataTransfer.types.includes("Files")) return;
     event.preventDefault();
     dragCounterRef.current = 0;
@@ -1709,7 +1713,7 @@ function ChatPage() {
   }
 
   async function enterPlanMode() {
-    if (sessionKindRef.current === "task") return false;
+    if (sessionKindRef.current === "task" || isReadOnly) return false;
     if (isGenerating || planTransitionRef.current !== "idle") return false;
     const requestId = ++planCreationRequestRef.current;
     const targetSessionId = sessionId;
@@ -1798,7 +1802,7 @@ function ChatPage() {
     pending: PendingAttachment[],
     options: { clearComposer?: boolean } = {},
   ) {
-    if (sessionKindRef.current === "task") return;
+    if (sessionKindRef.current === "task" || isReadOnly) return;
     if (!text && pending.length === 0) return;
     const clearComposer = options.clearComposer ?? true;
     promoteDraftSession();
@@ -1862,7 +1866,7 @@ function ChatPage() {
   sendPreparedMessageRef.current = sendPreparedMessage;
 
   function queuePreparedMessage(text: string, pending: PendingAttachment[]) {
-    if ((!text && pending.length === 0) || !isGenerating) return;
+    if (isReadOnly || (!text && pending.length === 0) || !isGenerating) return;
     promoteDraftSession();
     const nextMessages = [
       ...queuedMessagesRef.current,
@@ -2002,6 +2006,7 @@ function ChatPage() {
   }, [sessionId]);
 
   function addSelectionToComposer() {
+    if (isReadOnly) return;
     const snippet = selectedSnippetRef.current;
     if (!snippet) return;
     setSelectionToolbar(null);
@@ -2084,7 +2089,7 @@ function ChatPage() {
   }, []);
 
   function submitMessage() {
-    if (sessionKindRef.current === "task") return;
+    if (sessionKindRef.current === "task" || isReadOnly) return;
     const text = input.trim();
     const pending = pendingAttachmentsRef.current;
     const hasUploading = pending.some((item) => item.status === "uploading");
@@ -2470,6 +2475,7 @@ function ChatPage() {
               <h1>{sessionTitle}</h1>
               {sessionKind === "task" ? <span className="chat-session-kind">任务</span> : null}
               {sessionSource === "cli" ? <span className="chat-session-kind">CLI</span> : null}
+              {sessionSource === "feishu" ? <span className="chat-session-kind">飞书</span> : null}
               {isRenamingTitle ? (
                 <LoaderCircle
                   aria-hidden="true"
@@ -2901,11 +2907,17 @@ function ChatPage() {
           </div>
         ) : (
           <div className="chat-composer">
+            {isReadOnly ? (
+              <div className="px-3 py-2 text-[12px] text-muted-foreground" role="status">
+                飞书会话由飞书消息驱动，仅支持查看和回复。
+              </div>
+            ) : null}
             <input
               aria-hidden="true"
               className="chat-file-input"
               multiple
               onChange={(event) => {
+                if (isReadOnly) return;
                 if (event.target.files && event.target.files.length > 0) {
                   void addFiles(event.target.files);
                 }
@@ -2947,7 +2959,7 @@ function ChatPage() {
             <ChatComposerInput
               ariaControls={mentionPopupOpen ? "chat-path-suggestion-popup" : "chat-command-popup"}
               ariaExpanded={commandPopupOpen || mentionPopupOpen}
-              disabled={planTransition !== "idle" || followUpPending || stopPending}
+              disabled={isReadOnly || planTransition !== "idle" || followUpPending || stopPending}
               onBlur={() => setCommandDismissed(true)}
               onChange={(next) => {
                 setInput(next.markdown);
@@ -2968,7 +2980,7 @@ function ChatPage() {
                 <Button
                   aria-label="添加附件"
                   className="chat-tool-button !size-7"
-                  disabled={planTransition !== "idle"}
+                  disabled={isReadOnly || planTransition !== "idle"}
                   onClick={() => fileInputRef.current?.click()}
                   size="icon"
                   title="添加附件"
@@ -3007,6 +3019,7 @@ function ChatPage() {
                     <button
                       aria-label="Sandbox permissions"
                       className="chat-sandbox-picker !h-7 !gap-1.5 !px-2 !text-[11px]"
+                      disabled={isReadOnly}
                       title="Sandbox permissions"
                       type="button"
                     >
@@ -3053,7 +3066,7 @@ function ChatPage() {
                     <button
                       aria-label="选择模型"
                       className="chat-model-picker !h-7 !gap-1.5 !px-2 !text-[11px]"
-                      disabled={isModelsLoading || models.length === 0}
+                      disabled={isReadOnly || isModelsLoading || models.length === 0}
                       type="button"
                     >
                       <Settings2 className="size-3.5" />
@@ -3096,6 +3109,7 @@ function ChatPage() {
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <ChatToolsPicker
+                  disabled={isReadOnly}
                   open={toolsOpen}
                   settings={chatTools}
                   workspaceAvailable={Boolean(selectedCwd.trim())}
@@ -3106,6 +3120,7 @@ function ChatPage() {
                   onMcpSelectionChange={updateMcpSelection}
                 />
                 <ChatSkillsPicker
+                  disabled={isReadOnly}
                   open={skillsOpen}
                   onOpenChange={setSkillsOpen}
                   onSelectionChange={updateSkillSelection}
@@ -3127,19 +3142,22 @@ function ChatPage() {
                   isGenerating={isGenerating}
                   modelName={selectedModel?.name}
                 />
-                <Button
-                  aria-label="语音输入"
-                  className="chat-tool-button !size-7 hidden sm:inline-flex"
-                  size="icon"
-                  type="button"
-                  variant="ghost"
-                >
-                  <Mic className="size-4" />
-                </Button>
+                {!isReadOnly ? (
+                  <Button
+                    aria-label="语音输入"
+                    className="chat-tool-button !size-7 hidden sm:inline-flex"
+                    size="icon"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <Mic className="size-4" />
+                  </Button>
+                ) : null}
                 <Button
                   aria-label={stopPending ? "正在停止" : isGenerating ? "停止生成" : "发送消息"}
                   className="chat-send-button !size-9 !rounded-[10px]"
                   disabled={
+                    isReadOnly ||
                     stopPending ||
                     (((!input.trim() && !pendingAttachments.some((a) => a.status === "ready")) ||
                       (!selectedModel && !developerSettings.mockLongResponse) ||
