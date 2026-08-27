@@ -5,7 +5,7 @@ import path from "node:path";
 import { DEFAULT_WORKSPACE_ID } from "@chatdesk/shared";
 import { MockLanguageModelV4, simulateReadableStream } from "ai/test";
 import { afterEach, describe, it } from "vitest";
-import { runPrompt } from "./run-prompt.ts";
+import { CLI_DEFAULT_TOOL_NAMES, runPrompt } from "./run-prompt.ts";
 
 type MockStreamResult = Awaited<ReturnType<MockLanguageModelV4["doStream"]>>;
 
@@ -77,6 +77,20 @@ async function fixture() {
 }
 
 describe("runPrompt", () => {
+  it("enables workspace and web tools by default", () => {
+    assert.deepEqual(CLI_DEFAULT_TOOL_NAMES, [
+      "list_dir",
+      "search_files",
+      "read_file",
+      "write_file",
+      "edit_file",
+      "apply_patch",
+      "bash",
+      "web_search",
+      "web_fetch",
+    ]);
+  });
+
   it("prints the final assistant text and binds cwd as a real workspace", async () => {
     const { dataDir, cwd } = await fixture();
     const stdout: string[] = [];
@@ -107,6 +121,7 @@ describe("runPrompt", () => {
       assert.equal(sessions.length, 1);
       const session = await core.store.get(sessions[0]?.id ?? "");
       assert.ok(session);
+      assert.equal(session.source, "cli");
       assert.equal(session.cwd, cwd);
       assert.notEqual(session.workspaceId, DEFAULT_WORKSPACE_ID);
       const workspace = core.workspaces.get(session.workspaceId ?? "");

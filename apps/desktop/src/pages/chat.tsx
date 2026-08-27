@@ -434,6 +434,7 @@ function ChatPage() {
   const [sessionKind, setSessionKind] = useState<ChatSessionKind>("chat");
   const sessionKindRef = useRef(sessionKind);
   sessionKindRef.current = sessionKind;
+  const [sessionSource, setSessionSource] = useState<"cli" | undefined>();
   const lastSyncedIndexTitleRef = useRef<{ sessionId: string; title: string } | null>(null);
   const [workspaceKey, setWorkspaceKey] = useState(() =>
     chatRoute.kind === "new" ? chatRoute.workspaceId : "",
@@ -816,6 +817,7 @@ function ChatPage() {
       systemPromptRef.current = undefined;
       setSessionTitle("新对话");
       setSessionKind("chat");
+      setSessionSource(undefined);
       setSandboxMode(sandboxModeRef.current);
       savedFingerprintRef.current = "";
       extractedFingerprintRef.current = "";
@@ -1364,6 +1366,7 @@ function ChatPage() {
     suppressSaveRef.current = true;
     setSessionTitle(session.title);
     setSessionKind(session.kind === "task" ? "task" : "chat");
+    setSessionSource(session.source === "cli" ? "cli" : undefined);
     setIsRenamingTitle(false);
     setWorkspaceKey(session.workspaceId ?? (session.cwd ? "" : DEFAULT_WORKSPACE_ID));
     setSessionCwd(
@@ -2466,6 +2469,7 @@ function ChatPage() {
             <div className="chat-brand-title-row">
               <h1>{sessionTitle}</h1>
               {sessionKind === "task" ? <span className="chat-session-kind">任务</span> : null}
+              {sessionSource === "cli" ? <span className="chat-session-kind">CLI</span> : null}
               {isRenamingTitle ? (
                 <LoaderCircle
                   aria-hidden="true"

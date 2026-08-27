@@ -792,6 +792,7 @@ export async function createChatServerSession(
     workspaceId?: string;
     cwd?: string;
     kind?: "chat" | "task" | "ephemeral";
+    source?: "cli";
   },
   port = CHAT_SERVER_DEFAULT_PORT,
 ) {

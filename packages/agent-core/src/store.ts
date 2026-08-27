@@ -141,6 +141,7 @@ export class SessionStore {
           workspaceId: session.workspaceId,
           cwd: session.cwd,
           ...(session.kind ? { kind: session.kind } : {}),
+          ...(session.source ? { source: session.source } : {}),
           ...(session.parentSessionId ? { parentSessionId: session.parentSessionId } : {}),
           status: statuses.get(session.id) ?? "idle",
           lastRunSummary: latestRunSummary(session),

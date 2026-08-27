@@ -169,6 +169,7 @@ export function createTaskTool(context: CreateTaskToolContext) {
         createdAt: now,
         updatedAt: now,
         kind: "task",
+        source: parent?.source,
         parentSessionId: context.parentSessionId,
         modelId: parent?.modelId,
         workspaceId: context.parentInput.workspaceId ?? parent?.workspaceId,

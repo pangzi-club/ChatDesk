@@ -1222,6 +1222,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
           body.kind === "ephemeral" || body.kind === "task" || body.kind === "chat"
             ? body.kind
             : undefined,
+        source: body.source === "cli" ? "cli" : undefined,
         title:
           typeof body.title === "string" && body.title.trim() ? body.title.trim() : session.title,
         workspaceId: bound.workspaceId,

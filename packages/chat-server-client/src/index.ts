@@ -210,6 +210,7 @@ export class ChatServerClient {
     workspaceId?: string;
     cwd?: string;
     kind?: "chat" | "task" | "ephemeral";
+    source?: "cli";
   }) {
     return this.json<ChatSession>(
       "/v1/sessions",

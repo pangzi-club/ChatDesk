@@ -172,6 +172,8 @@ export type SystemPromptSnapshot = {
 
 export const CHAT_SESSION_KINDS = ["chat", "task", "ephemeral"] as const;
 export type ChatSessionKind = (typeof CHAT_SESSION_KINDS)[number];
+export const CHAT_SESSION_SOURCES = ["cli"] as const;
+export type ChatSessionSource = (typeof CHAT_SESSION_SOURCES)[number];
 
 export type ChatSession = {
   schemaVersion: typeof CHAT_SCHEMA_VERSION;
@@ -180,6 +182,7 @@ export type ChatSession = {
   createdAt: string;
   updatedAt: string;
   kind?: ChatSessionKind;
+  source?: ChatSessionSource;
   parentSessionId?: string;
   modelId?: string;
   workspaceId?: string;
@@ -197,7 +200,15 @@ export type ChatSession = {
 
 export type ChatIndexItem = Pick<
   ChatSession,
-  "id" | "title" | "createdAt" | "updatedAt" | "workspaceId" | "cwd" | "kind" | "parentSessionId"
+  | "source"
+  | "id"
+  | "title"
+  | "createdAt"
+  | "updatedAt"
+  | "workspaceId"
+  | "cwd"
+  | "kind"
+  | "parentSessionId"
 > & {
   messageCount: number;
   attachmentCount: number;

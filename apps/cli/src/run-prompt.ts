@@ -35,7 +35,13 @@ const CLI_WORKSPACE_TOOL_NAMES = [
   "edit_file",
   "apply_patch",
   "bash",
-];
+] as const;
+
+export const CLI_DEFAULT_TOOL_NAMES = [
+  ...CLI_WORKSPACE_TOOL_NAMES,
+  "web_search",
+  "web_fetch",
+] as const;
 
 export type RunPromptOptions = {
   prompt: string;
@@ -112,7 +118,7 @@ async function runPromptViaServer(
   try {
     const config = await client.getConfig();
     const model = resolveCliModel(config, modelId);
-    const session = await client.createSession({ cwd });
+    const session = await client.createSession({ cwd, source: "cli" });
     sessionId = session.id;
     const userMessage = {
       id: randomUUID(),
@@ -127,7 +133,7 @@ async function runPromptViaServer(
         workspaceId: session.workspaceId,
         cwd: session.cwd,
         sandboxMode: "auto",
-        toolNames: [...CLI_WORKSPACE_TOOL_NAMES],
+        toolNames: [...CLI_DEFAULT_TOOL_NAMES],
       },
       { signal },
     );
@@ -247,6 +253,7 @@ export async function runPrompt(options: RunPromptOptions) {
       title: deriveTitle([userMessage]),
       createdAt: now,
       updatedAt: now,
+      source: "cli",
       workspaceId: workspace.id,
       cwd: workspace.path,
       messages: [],
@@ -259,7 +266,7 @@ export async function runPrompt(options: RunPromptOptions) {
       workspaceId: workspace.id,
       cwd: workspace.path,
       sandboxMode: "auto",
-      toolNames: [...CLI_WORKSPACE_TOOL_NAMES],
+      toolNames: [...CLI_DEFAULT_TOOL_NAMES],
     });
     await core.runs.waitForRun(sessionId);
     const saved = await core.store.get(sessionId);

@@ -6,6 +6,7 @@ export const USAGE = `用法:
   --model <id>          指定模型 id 或名称（默认使用桌面里的默认模型）
   --cwd <path>          指定 workspace 目录（默认当前工作目录）
                         桌面端运行时自动复用桌面端 Chat Server 和配置
+                        默认启用 web_search 和 web_fetch；web_search 需要支持 Responses API 的模型
   -h, --help            显示帮助`;
 
 export type ParsedArgs =
