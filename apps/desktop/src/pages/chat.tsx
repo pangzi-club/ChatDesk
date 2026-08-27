@@ -237,6 +237,7 @@ import {
 import { openContextDetail, updateContextDetail } from "@/lib/context-detail-events";
 import { getDesktopBridge } from "@/lib/desktop-bridge";
 import { detectMissingDevelopmentTools } from "@/lib/developer-environment";
+import { DEFAULT_DEVELOPER_SETTINGS, loadDeveloperSettings } from "@/lib/developer-settings";
 import { openFileViewer } from "@/lib/file-viewer-events";
 import {
   loadGeneralSettings,
@@ -371,6 +372,10 @@ function ChatPage() {
   const developerEnvironmentQuery = useQuery({
     queryKey: ["developer-environment"],
     queryFn: () => loadDeveloperEnvironment(),
+  });
+  const { data: developerSettings = DEFAULT_DEVELOPER_SETTINGS } = useQuery({
+    queryKey: ["developer-settings"],
+    queryFn: loadDeveloperSettings,
   });
   const disabledSkillIds = disabledSkillsQuery.data ?? EMPTY_STRING_ARRAY;
   const allowedSkills = useMemo(
@@ -511,6 +516,8 @@ function ChatPage() {
   const selectedModel = models.find((model) => model.id === selectedModelId) ?? models[0];
   const selectedModelRef = useRef(selectedModel);
   selectedModelRef.current = selectedModel;
+  const mockLongResponseRef = useRef(developerSettings.mockLongResponse);
+  mockLongResponseRef.current = developerSettings.mockLongResponse;
   const activePlan = plans.find((plan) => plan.id === activePlanId);
 
   useEffect(() => {
@@ -594,6 +601,7 @@ function ChatPage() {
         () => planModeRef.current,
         () => activePlanIdRef.current,
         () => sessionTitleRef.current,
+        () => mockLongResponseRef.current,
         getPromptInput,
       ),
     [allowedSkillIds, getPromptInput, selectedMcpIds, selectedModel, selectedSkillIds, sessionId],
@@ -3130,7 +3138,7 @@ function ChatPage() {
                   disabled={
                     stopPending ||
                     (((!input.trim() && !pendingAttachments.some((a) => a.status === "ready")) ||
-                      !selectedModel ||
+                      (!selectedModel && !developerSettings.mockLongResponse) ||
                       pendingAttachments.some((a) => a.status === "uploading") ||
                       planTransition !== "idle") &&
                       !isGenerating)
@@ -3750,6 +3758,7 @@ function createModelTransport(
   getPlanMode: () => ChatPlanMode,
   getPlanId: () => string | undefined,
   getTitle: () => string,
+  getMockLongResponse: () => boolean,
   getPromptInput: () => Promise<
     Pick<RunStartInput, "system" | "memory" | "cwd" | "workspaceId" | "toolNames">
   >,
@@ -3763,7 +3772,8 @@ function createModelTransport(
     },
     prepareSendMessagesRequest: async ({ messages }) => {
       await initializeChatServer();
-      if (!model || model.baseUrl.startsWith("local://")) {
+      const mockLongResponse = getMockLongResponse();
+      if (!mockLongResponse && (!model || model.baseUrl.startsWith("local://"))) {
         throw new Error("请先在设置中配置一个真实的模型 API。");
       }
       const promptInput = await getPromptInput();
@@ -3777,22 +3787,26 @@ function createModelTransport(
         workspaceId: workspaceId || undefined,
       });
       const activeTools = { toolNames: promptInput.toolNames ?? [] };
-      const serverConfig = await loadChatServerConfig();
-      const models = [
-        ...serverConfig.models.filter(
-          (item) => !item || typeof item !== "object" || (item as { id?: unknown }).id !== model.id,
-        ),
-        { ...model, apiKey: undefined },
-      ];
-      await saveChatServerConfig({
-        models,
-        chatTools: getToolsSettings(),
-        apiKeys: { ...serverConfig.apiKeys, [model.id]: model.apiKey },
-      });
+      if (!mockLongResponse && model) {
+        const serverConfig = await loadChatServerConfig();
+        const models = [
+          ...serverConfig.models.filter(
+            (item) =>
+              !item || typeof item !== "object" || (item as { id?: unknown }).id !== model.id,
+          ),
+          { ...model, apiKey: undefined },
+        ];
+        await saveChatServerConfig({
+          models,
+          chatTools: getToolsSettings(),
+          apiKeys: { ...serverConfig.apiKeys, [model.id]: model.apiKey },
+        });
+      }
       return {
         body: {
           messages,
-          modelId: model.id,
+          modelId: model?.id,
+          mockLongResponse,
           ...promptInput,
           sandboxMode,
           planMode,

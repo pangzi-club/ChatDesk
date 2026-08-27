@@ -18,6 +18,7 @@ import {
   Clock3,
   CopyX,
   CornerDownLeft,
+  FlaskConical,
   FolderGit2,
   Globe2,
   Image,
@@ -291,6 +292,12 @@ const commandItems = [
     label: "环境",
     icon: SquareTerminal,
     keywords: ["设置", "环境", "environment", "path", "node", "pnpm", "python", "go"],
+  },
+  {
+    to: "/settings/development",
+    label: "开发",
+    icon: FlaskConical,
+    keywords: ["设置", "开发", "development", "mock", "长文本", "流式", "性能测试"],
   },
   {
     to: "/settings/memory",

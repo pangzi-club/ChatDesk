@@ -384,6 +384,7 @@ export type RunStartInput = {
   toolNames?: string[];
   planMode?: ChatPlanMode;
   planId?: string;
+  mockLongResponse?: boolean;
 };
 
 export const TODO_TOOL_NAME = "todo_write";

@@ -47,6 +47,7 @@ import { ArchiveStore } from "./archive-store.ts";
 import { AutomationScheduler, AutomationStore } from "./automation-store.ts";
 import type { ServerConfig } from "./config.ts";
 import { chatServerCorsOrigin } from "./cors.ts";
+import { createMockLongResponse } from "./mock-long-response.ts";
 import { withSseKeepAlive } from "./sse-keepalive.ts";
 
 const runInputSchema = z.object({
@@ -81,6 +82,7 @@ const runInputSchema = z.object({
     .string()
     .regex(/^[a-z0-9]{8}$/)
     .optional(),
+  mockLongResponse: z.boolean().optional(),
 });
 
 const modelTestSchema = z.object({
@@ -1469,6 +1471,35 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
         return jsonError("任务会话不可交互", 400);
       }
       const body = parseJson(await c.req.json(), runInputSchema) as RunStartInput;
+      if (body.mockLongResponse) {
+        if (!session) return jsonError("会话不存在", 404);
+        const messages = body.messages?.length
+          ? body.messages
+          : body.message
+            ? [...session.messages, body.message]
+            : session.messages;
+        const runId = randomUUID();
+        await activityLogs.append({
+          level: "info",
+          source: "开发测试",
+          message: `开始长文本 Mock 回复 ${c.req.param("id")}`,
+        });
+        return withSseKeepAlive(
+          createMockLongResponse({
+            messages,
+            messageId: runId,
+            signal: c.req.raw.signal,
+            onFinish: async (completedMessages) => {
+              await store.save({
+                ...session,
+                title: body.title ?? session.title,
+                updatedAt: new Date().toISOString(),
+                messages: completedMessages,
+              });
+            },
+          }),
+        );
+      }
       await activityLogs.append({
         level: "info",
         source: "模型调用",

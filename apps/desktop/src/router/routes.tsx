@@ -16,6 +16,7 @@ import { ImageGenerationPage } from "@/pages/image-generation";
 import {
   ApiKeysSettingsPage,
   ChatServerSettingsPage,
+  DevelopmentSettingsPage,
   EnvironmentSettingsPage,
   GeneralSettingsPage,
   McpSettingsPage,
@@ -76,6 +77,7 @@ const router = createHashRouter([
           { path: "tools", element: <ToolsSettingsPage /> },
           { path: "sandbox", element: <SandboxSettingsPage /> },
           { path: "environment", element: <EnvironmentSettingsPage /> },
+          { path: "development", element: <DevelopmentSettingsPage /> },
           { path: "memory", element: <MemorySettingsPage /> },
           { path: "history", element: <Navigate replace to="/settings/statistics" /> },
           { path: "history/analysis", element: <Navigate replace to="/settings/statistics" /> },

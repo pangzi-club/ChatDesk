@@ -12,6 +12,7 @@ import {
   Eye,
   EyeOff,
   FileText,
+  FlaskConical,
   FolderOpen,
   Keyboard,
   KeyRound,
@@ -108,6 +109,12 @@ import {
   loadChatToolsSettings,
   saveChatToolsSettings,
 } from "@/lib/chat-tools";
+import {
+  DEFAULT_DEVELOPER_SETTINGS,
+  type DeveloperSettings,
+  loadDeveloperSettings,
+  saveDeveloperSettings,
+} from "@/lib/developer-settings";
 import {
   DEFAULT_GENERAL_SETTINGS,
   type GeneralSettings,
@@ -368,6 +375,7 @@ function SettingsLayout() {
           <SettingsNavItem to="/settings/tools" icon={Wrench} label="Tools" />
           <SettingsNavItem to="/settings/sandbox" icon={ShieldCheck} label="沙箱" />
           <SettingsNavItem to="/settings/environment" icon={SquareTerminal} label="环境" />
+          <SettingsNavItem to="/settings/development" icon={FlaskConical} label="开发" />
           <SettingsNavItem to="/settings/memory" icon={Brain} label="长期记忆" />
           <SettingsNavItem to="/settings/keys" icon={KeyRound} label="API Keys" />
           <SettingsNavItem to="/settings/chat-server" icon={Server} label="Chat Server" />
@@ -831,6 +839,66 @@ function GeneralSettingsPage() {
         </label>
         {notice ? (
           <p className="border-border border-t px-5 py-3 text-muted-foreground text-xs">{notice}</p>
+        ) : null}
+      </section>
+    </>
+  );
+}
+
+function DevelopmentSettingsPage() {
+  const queryClient = useQueryClient();
+  const settingsQuery = useQuery({
+    queryKey: ["developer-settings"],
+    queryFn: loadDeveloperSettings,
+  });
+  const settings = settingsQuery.data ?? DEFAULT_DEVELOPER_SETTINGS;
+  const saveMutation = useMutation({
+    mutationFn: saveDeveloperSettings,
+    onSuccess: (_result, next: DeveloperSettings) => {
+      queryClient.setQueryData(["developer-settings"], next);
+    },
+  });
+
+  function updateMockLongResponse(enabled: boolean) {
+    saveMutation.mutate({ ...settings, mockLongResponse: enabled });
+  }
+
+  return (
+    <>
+      <SettingsHeading
+        eyebrow="Development"
+        title="开发"
+        description="管理仅用于本地开发和性能验证的实验能力。"
+      />
+      <section className="overflow-hidden rounded-lg border border-border bg-card">
+        <div className="border-border border-b px-5 py-4">
+          <h2 className="font-medium text-sm">响应测试</h2>
+          <p className="mt-1 text-muted-foreground text-xs">
+            使用本地生成的数据验证聊天渲染，不产生模型用量。
+          </p>
+        </div>
+        <label
+          className="flex cursor-pointer items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-accent/40"
+          htmlFor="mock-long-response"
+        >
+          <span className="min-w-0">
+            <span className="block font-medium text-sm">长文本 Mock 回复</span>
+            <span className="mt-1 block text-muted-foreground text-xs">
+              开启后，新回复会由 Chat Server 高频流式输出长 Markdown，不调用真实模型。
+            </span>
+          </span>
+          <Switch
+            aria-label="长文本 Mock 回复"
+            checked={settings.mockLongResponse}
+            disabled={settingsQuery.isPending || saveMutation.isPending}
+            id="mock-long-response"
+            onCheckedChange={(checked) => updateMockLongResponse(checked === true)}
+          />
+        </label>
+        {saveMutation.isError ? (
+          <p className="border-border border-t px-5 py-3 text-destructive text-xs">
+            保存开发设置失败，请重试。
+          </p>
         ) : null}
       </section>
     </>
@@ -3418,6 +3486,7 @@ function NumberField({
 export {
   ApiKeysSettingsPage,
   ChatServerSettingsPage,
+  DevelopmentSettingsPage,
   EnvironmentSettingsPage,
   GeneralSettingsPage,
   McpSettingsPage,

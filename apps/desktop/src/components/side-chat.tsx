@@ -15,6 +15,7 @@ import {
   chatServerUrl,
   initializeChatServer,
 } from "@/lib/chat-server";
+import { loadDeveloperSettings } from "@/lib/developer-settings";
 import { loadModels } from "@/lib/models";
 
 function textOf(message: UIMessage) {
@@ -40,7 +41,12 @@ export function SideChat({
   const [input, setInput] = useState("");
   const inputRef = useRef<ChatComposerInputHandle>(null);
   const modelsQuery = useQuery({ queryKey: ["models"], queryFn: loadModels });
+  const developerSettingsQuery = useQuery({
+    queryKey: ["developer-settings"],
+    queryFn: loadDeveloperSettings,
+  });
   const model = modelsQuery.data?.[0];
+  const mockLongResponse = developerSettingsQuery.data?.mockLongResponse ?? false;
   const transport = useMemo(
     () =>
       new DefaultChatTransport<UIMessage>({
@@ -51,14 +57,15 @@ export function SideChat({
           return chatServerHeaders();
         },
         prepareSendMessagesRequest: async ({ messages }) => {
-          if (!model) throw new Error("请先配置模型");
+          if (!mockLongResponse && !model) throw new Error("请先配置模型");
           await initializeChatServer();
           return {
             body: {
               messages,
               contextMessages,
-              modelId: model.id,
-              model: { ...model, apiKey: undefined },
+              modelId: model?.id,
+              model: model ? { ...model, apiKey: undefined } : undefined,
+              mockLongResponse,
               title: "侧边聊天",
             },
             api: `${chatServerUrl()}/v1/sessions/${sessionId}/runs`,
@@ -66,7 +73,7 @@ export function SideChat({
           };
         },
       }),
-    [contextMessages, model, sessionId],
+    [contextMessages, mockLongResponse, model, sessionId],
   );
   const { error, messages, sendMessage, status, stop } = useChat({
     id: sessionId,
@@ -161,7 +168,7 @@ export function SideChat({
               <Button
                 aria-label={busy ? "停止生成" : "发送消息"}
                 className="chat-send-button !size-9 !rounded-[10px]"
-                disabled={!busy && (!input.trim() || !model)}
+                disabled={!busy && (!input.trim() || (!model && !mockLongResponse))}
                 onClick={() => (busy ? void stop() : void submit())}
                 size="icon"
                 title={busy ? "停止生成" : "发送消息"}
