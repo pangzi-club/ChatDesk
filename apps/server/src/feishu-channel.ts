@@ -10,6 +10,7 @@ import { createLarkChannel, type LarkChannel } from "@larksuiteoapi/node-sdk";
 import type { ChannelStore } from "./channel-store.ts";
 
 export class FeishuChannelManager {
+  private readonly channelId: string;
   private readonly store: ChannelStore;
   private readonly events: EventHub;
   private channel?: LarkChannel;
@@ -17,30 +18,25 @@ export class FeishuChannelManager {
   private readonly onMessage?: (item: ChannelMessage) => Promise<void>;
   private readonly getAgent?: (id: string) => AgentConfig | undefined;
   private readonly onProfileLookupError?: (message: string) => Promise<void>;
-  private status: FeishuChannelStatus = {
-    provider: "feishu",
-    configured: false,
-    status: "unconfigured",
-  };
+  private status: FeishuChannelStatus;
   constructor(
+    channelId: string,
     store: ChannelStore,
     events: EventHub,
     onMessage?: (item: ChannelMessage) => Promise<void>,
     getAgent?: (id: string) => AgentConfig | undefined,
     onProfileLookupError?: (message: string) => Promise<void>,
   ) {
+    this.channelId = channelId;
     this.store = store;
     this.events = events;
     this.onMessage = onMessage;
     this.getAgent = getAgent;
     this.onProfileLookupError = onProfileLookupError;
+    this.status = { provider: "feishu", channelId, configured: false, status: "unconfigured" };
   }
   getStatus() {
     return this.status;
-  }
-  async start() {
-    const config = await this.store.getConfig();
-    if (config) await this.configure(config);
   }
   private statusFor(
     config: FeishuChannelConfig,
@@ -49,9 +45,10 @@ export class FeishuChannelManager {
     const agent = config.agentId ? this.getAgent?.(config.agentId) : undefined;
     return {
       provider: "feishu",
+      channelId: this.channelId,
       configured: true,
       status,
-      name: config.name || "飞书",
+      name: config.name,
       appId: config.appId,
       agentId: config.agentId,
       agentName: agent?.name,
@@ -89,14 +86,11 @@ export class FeishuChannelManager {
           path: { user_id: message.senderId },
           params: { user_id_type: "open_id" },
         });
-        if (response.code !== undefined && response.code !== 0) {
+        if (response.code !== undefined && response.code !== 0)
           throw new Error(`code=${response.code}, msg=${response.msg ?? "未知错误"}`);
-        }
         senderName = response.data?.user?.name || senderName;
         senderAvatarUrl = response.data?.user?.avatar?.avatar_72;
-        if (!response.data?.user?.name) {
-          throw new Error("响应中没有有效的 data.user.name");
-        }
+        if (!response.data?.user?.name) throw new Error("响应中没有有效的 data.user.name");
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
         await this.onProfileLookupError?.(
@@ -105,6 +99,7 @@ export class FeishuChannelManager {
       }
       const item: ChannelMessage = {
         id: message.messageId,
+        channelId: this.channelId,
         provider: "feishu",
         contactId: message.senderId,
         senderId: message.senderId,
@@ -121,25 +116,28 @@ export class FeishuChannelManager {
         type: "channel.message.received",
         sessionId: "",
         channelProvider: "feishu",
+        channelId: this.channelId,
         channelContactId: item.contactId,
         channelMessage: item,
         channelUnread: unread,
       });
       if (this.onMessage) {
-        const previous = this.queues.get(item.contactId) ?? Promise.resolve();
+        const key = `${this.channelId}:${item.contactId}`;
+        const previous = this.queues.get(key) ?? Promise.resolve();
         const next = previous
           .catch(() => undefined)
           .then(() => this.onMessage?.(item))
           .then(() => undefined);
-        this.queues.set(item.contactId, next);
+        this.queues.set(key, next);
         void next.finally(() => {
-          if (this.queues.get(item.contactId) === next) this.queues.delete(item.contactId);
+          if (this.queues.get(key) === next) this.queues.delete(key);
         });
       }
       this.events.publish({
         type: "channel.unread.updated",
         sessionId: "",
         channelProvider: "feishu",
+        channelId: this.channelId,
         channelUnread: unread,
       });
     });
@@ -167,35 +165,25 @@ export class FeishuChannelManager {
         botName: channel.botIdentity?.name,
         lastConnectedAt: new Date().toISOString(),
       };
-      this.publishStatus();
     } catch (error) {
       this.status = {
         ...this.status,
         status: "error",
         lastError: error instanceof Error ? error.message : String(error),
       };
-      this.publishStatus();
     }
+    this.publishStatus();
   }
   async stop() {
     if (this.channel) await this.channel.disconnect().catch(() => undefined);
     this.channel = undefined;
-  }
-  async saveConfig(config: FeishuChannelConfig) {
-    await this.store.setConfig(config);
-    await this.configure(config);
-  }
-  async clearConfig() {
-    await this.store.setConfig(undefined);
-    await this.stop();
-    this.status = { provider: "feishu", configured: false, status: "unconfigured" };
-    this.publishStatus();
   }
   async sendText(contactId: string, text: string) {
     if (!this.channel) throw new Error("飞书未连接");
     await this.channel.send(contactId, { text });
     const message: ChannelMessage = {
       id: `outbound-${randomUUID()}`,
+      channelId: this.channelId,
       provider: "feishu",
       contactId,
       senderId: this.channel.botIdentity?.openId ?? "self",
@@ -210,6 +198,7 @@ export class FeishuChannelManager {
       type: "channel.message.received",
       sessionId: "",
       channelProvider: "feishu",
+      channelId: this.channelId,
       channelContactId: contactId,
       channelMessage: message,
       channelUnread: await this.store.listUnread(),
@@ -221,6 +210,7 @@ export class FeishuChannelManager {
       type: "channel.connection.status",
       sessionId: "",
       channelProvider: "feishu",
+      channelId: this.channelId,
       channelStatus: this.status,
     });
   }

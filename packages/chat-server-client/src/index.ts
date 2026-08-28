@@ -208,21 +208,36 @@ export class ChatServerClient {
     );
   }
 
-  getFeishuConfig() {
-    return this.json<FeishuChannelStatus>("/v1/channels/feishu/config");
+  getFeishuConfigs() {
+    return this.json<FeishuChannelStatus[]>("/v1/channels/feishu/configs");
   }
-  saveFeishuConfig(input: { name: string; appId: string; appSecret?: string; agentId: string }) {
-    return this.json<FeishuChannelStatus>("/v1/channels/feishu/config", {
-      method: "PUT",
+  saveFeishuConfig(input: {
+    channelId?: string;
+    name: string;
+    appId: string;
+    appSecret?: string;
+    agentId: string;
+  }) {
+    const path = input.channelId
+      ? `/v1/channels/feishu/configs/${encodePath(input.channelId)}`
+      : "/v1/channels/feishu/configs";
+    const { channelId: _channelId, ...body } = input;
+    return this.json<FeishuChannelStatus>(path, {
+      method: input.channelId ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
+      body: JSON.stringify(body),
     });
   }
-  deleteFeishuConfig() {
-    return this.json<FeishuChannelStatus>("/v1/channels/feishu/config", { method: "DELETE" });
+  deleteFeishuConfig(channelId: string) {
+    return this.json<{ ok: true }>(`/v1/channels/feishu/configs/${encodePath(channelId)}`, {
+      method: "DELETE",
+    });
   }
-  testFeishuConnection() {
-    return this.json<FeishuChannelStatus>("/v1/channels/feishu/test", { method: "POST" });
+  testFeishuConnection(channelId: string) {
+    return this.json<FeishuChannelStatus>(
+      `/v1/channels/feishu/configs/${encodePath(channelId)}/test`,
+      { method: "POST" },
+    );
   }
   listFeishuContacts() {
     return this.json<ChannelContact[]>("/v1/channels/feishu/contacts");
@@ -230,15 +245,18 @@ export class ChatServerClient {
   listFeishuUnread() {
     return this.json<ChannelUnreadState[]>("/v1/channels/feishu/unread");
   }
-  listFeishuMessages(contactId: string) {
+  listFeishuMessages(channelId: string, contactId: string) {
     return this.json<ChannelMessage[]>(
-      `/v1/channels/feishu/contacts/${encodePath(contactId)}/messages`,
+      `/v1/channels/feishu/configs/${encodePath(channelId)}/contacts/${encodePath(contactId)}/messages`,
     );
   }
-  markFeishuRead(contactId: string) {
-    return this.json<{ ok: true }>(`/v1/channels/feishu/contacts/${encodePath(contactId)}/read`, {
-      method: "POST",
-    });
+  markFeishuRead(channelId: string, contactId: string) {
+    return this.json<{ ok: true }>(
+      `/v1/channels/feishu/configs/${encodePath(channelId)}/contacts/${encodePath(contactId)}/read`,
+      {
+        method: "POST",
+      },
+    );
   }
 
   createSession(options?: {

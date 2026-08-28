@@ -51,7 +51,10 @@ export function ChannelsPage() {
   }, [contacts.refetch, unread.refetch]);
   const messages = useQuery({
     queryKey: ["feishu-messages", selected],
-    queryFn: () => loadFeishuMessages(selected ?? ""),
+    queryFn: () => {
+      const [channelId, contactId] = (selected ?? "").split("::");
+      return loadFeishuMessages(channelId, contactId);
+    },
     enabled: Boolean(selected),
   });
   useLayoutEffect(() => {
@@ -67,7 +70,10 @@ export function ChannelsPage() {
         onChannelMessageReceived: (event) => {
           void client.invalidateQueries({ queryKey: ["feishu-contacts"] });
           void client.invalidateQueries({ queryKey: ["feishu-unread"] });
-          if (event.channelMessage?.contactId === selected) {
+          if (
+            event.channelMessage &&
+            `${event.channelMessage.channelId}::${event.channelMessage.contactId}` === selected
+          ) {
             void client.invalidateQueries({ queryKey: ["feishu-messages", selected] });
           }
         },
@@ -81,7 +87,7 @@ export function ChannelsPage() {
   const send = useMutation({
     mutationFn: async () => {
       const response = await chatServerRequest(
-        `/v1/channels/feishu/contacts/${encodeURIComponent(selected ?? "")}/messages`,
+        `/v1/channels/feishu/configs/${encodeURIComponent((selected ?? "").split("::")[0] ?? "")}/contacts/${encodeURIComponent((selected ?? "").split("::")[1] ?? "")}/messages`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -95,15 +101,17 @@ export function ChannelsPage() {
       await messages.refetch();
     },
   });
-  const contact = contacts.data?.find((item) => item.id === selected);
+  const contact = contacts.data?.find((item) => `${item.channelId}::${item.id}` === selected);
   const clearUnread = useCallback(async () => {
     if (!selected || clearingUnreadRef.current === selected) return;
     const unreadCount =
-      unread.data?.find((entry) => entry.contactId === selected)?.unreadCount ?? 0;
+      unread.data?.find((entry) => `${entry.channelId}::${entry.contactId}` === selected)
+        ?.unreadCount ?? 0;
     if (unreadCount <= 0) return;
     clearingUnreadRef.current = selected;
     try {
-      await markFeishuContactRead(selected);
+      const [channelId, contactId] = selected.split("::");
+      await markFeishuContactRead(channelId, contactId);
       window.dispatchEvent(new Event("chatdesk:feishu-unread-updated"));
       await Promise.all([
         client.invalidateQueries({ queryKey: ["feishu-unread"] }),
@@ -131,7 +139,8 @@ export function ChannelsPage() {
   const select = useCallback(
     async (id: string) => {
       setSelected(id);
-      await markFeishuContactRead(id);
+      const [channelId, contactId] = id.split("::");
+      await markFeishuContactRead(channelId, contactId);
       window.dispatchEvent(new Event("chatdesk:feishu-unread-updated"));
       await client.invalidateQueries({ queryKey: ["feishu-unread"] });
       await client.invalidateQueries({ queryKey: ["feishu-contacts"] });
@@ -139,10 +148,11 @@ export function ChannelsPage() {
     [client],
   );
   useEffect(() => {
-    if (!selected && contacts.data?.[0]) void select(contacts.data[0].id);
+    if (!selected && contacts.data?.[0])
+      void select(`${contacts.data[0].channelId}::${contacts.data[0].id}`);
   }, [contacts.data, select, selected]);
   return (
-    <div className="flex h-full min-h-0 w-full overflow-hidden bg-background">
+    <div className="flex h-full min-h-0 w-full overflow-hidden bg-background pt-8">
       <aside className="w-[260px] shrink-0 overflow-y-auto border-border border-r p-3">
         <div className="mb-3 flex items-center justify-between">
           <h1 className="font-semibold text-sm">Channel</h1>
@@ -166,8 +176,8 @@ export function ChannelsPage() {
             {contacts.data.map((item) => (
               <button
                 className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent ${selected === item.id ? "bg-accent" : ""}`}
-                key={item.id}
-                onClick={() => void select(item.id)}
+                key={`${item.channelId}::${item.id}`}
+                onClick={() => void select(`${item.channelId}::${item.id}`)}
                 type="button"
               >
                 <span className="relative">
@@ -175,16 +185,28 @@ export function ChannelsPage() {
                     {item.avatarUrl ? <AvatarImage alt="" src={item.avatarUrl} /> : null}
                     <AvatarFallback>{item.name.slice(0, 1)}</AvatarFallback>
                   </Avatar>
-                  {(unread.data?.find((entry) => entry.contactId === item.id)?.unreadCount ?? 0) >
-                  0 ? (
+                  {(unread.data?.find(
+                    (entry) => entry.channelId === item.channelId && entry.contactId === item.id,
+                  )?.unreadCount ?? 0) > 0 ? (
                     <span className="absolute -top-1 -right-1 size-3 rounded-full bg-primary" />
                   ) : null}
                 </span>
-                <span className="min-w-0 flex-1 truncate">{item.name}</span>
-                {(unread.data?.find((entry) => entry.contactId === item.id)?.unreadCount ?? 0) >
-                0 ? (
+                <span className="min-w-0 flex-1 truncate">
+                  <span className="block">{item.name}</span>
+                  <span className="block text-muted-foreground text-[11px]">
+                    {item.channelName}
+                  </span>
+                </span>
+                {(unread.data?.find(
+                  (entry) => entry.channelId === item.channelId && entry.contactId === item.id,
+                )?.unreadCount ?? 0) > 0 ? (
                   <span className="shrink-0 rounded-full bg-primary px-1.5 text-[10px] leading-4 text-primary-foreground">
-                    {unread.data?.find((entry) => entry.contactId === item.id)?.unreadCount}
+                    {
+                      unread.data?.find(
+                        (entry) =>
+                          entry.channelId === item.channelId && entry.contactId === item.id,
+                      )?.unreadCount
+                    }
                   </span>
                 ) : null}
               </button>

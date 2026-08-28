@@ -950,28 +950,46 @@ export async function chatServerFetch(input: RequestInfo | URL, init?: RequestIn
   return requestChatServerResponse(`${url.pathname}${url.search}`, init, selectedPort);
 }
 
+export async function loadFeishuChannelStatuses(port?: number) {
+  const response = await chatServerRequest("/v1/channels/feishu/configs", undefined, port);
+  return (await response.json()) as FeishuChannelStatus[];
+}
 export async function loadFeishuChannelStatus(port?: number) {
-  const response = await chatServerRequest("/v1/channels/feishu/config", undefined, port);
-  return (await response.json()) as FeishuChannelStatus;
+  const statuses = await loadFeishuChannelStatuses(port);
+  return statuses[0] ?? { provider: "feishu", configured: false, status: "unconfigured" };
 }
 export async function saveFeishuChannelConfig(
-  input: { name: string; appId: string; appSecret?: string; agentId: string },
+  input: { channelId?: string; name: string; appId: string; appSecret?: string; agentId: string },
   port?: number,
 ) {
   const response = await chatServerRequest(
-    "/v1/channels/feishu/config",
-    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) },
+    input.channelId
+      ? `/v1/channels/feishu/configs/${encodeURIComponent(input.channelId)}`
+      : "/v1/channels/feishu/configs",
+    {
+      method: input.channelId ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
     port,
   );
   return (await response.json()) as FeishuChannelStatus;
 }
-export async function testFeishuChannel(port?: number) {
-  const response = await chatServerRequest("/v1/channels/feishu/test", { method: "POST" }, port);
+export async function testFeishuChannel(channelId?: string, port?: number) {
+  if (!channelId) channelId = (await loadFeishuChannelStatuses(port))[0]?.channelId;
+  if (!channelId) throw new Error("尚未配置飞书 Channel");
+  const response = await chatServerRequest(
+    `/v1/channels/feishu/configs/${encodeURIComponent(channelId)}/test`,
+    { method: "POST" },
+    port,
+  );
   return (await response.json()) as FeishuChannelStatus;
 }
-export async function deleteFeishuChannelConfig(port?: number) {
+export async function deleteFeishuChannelConfig(channelId?: string, port?: number) {
+  if (!channelId) channelId = (await loadFeishuChannelStatuses(port))[0]?.channelId;
+  if (!channelId) throw new Error("尚未配置飞书 Channel");
   const response = await chatServerRequest(
-    "/v1/channels/feishu/config",
+    `/v1/channels/feishu/configs/${encodeURIComponent(channelId)}`,
     { method: "DELETE" },
     port,
   );
@@ -985,17 +1003,17 @@ export async function loadFeishuUnread(port?: number) {
   const response = await chatServerRequest("/v1/channels/feishu/unread", undefined, port);
   return (await response.json()) as ChannelUnreadState[];
 }
-export async function loadFeishuMessages(contactId: string, port?: number) {
+export async function loadFeishuMessages(channelId: string, contactId: string, port?: number) {
   const response = await chatServerRequest(
-    `/v1/channels/feishu/contacts/${encodeURIComponent(contactId)}/messages`,
+    `/v1/channels/feishu/configs/${encodeURIComponent(channelId)}/contacts/${encodeURIComponent(contactId)}/messages`,
     undefined,
     port,
   );
   return (await response.json()) as ChannelMessage[];
 }
-export async function markFeishuContactRead(contactId: string, port?: number) {
+export async function markFeishuContactRead(channelId: string, contactId: string, port?: number) {
   await chatServerRequest(
-    `/v1/channels/feishu/contacts/${encodeURIComponent(contactId)}/read`,
+    `/v1/channels/feishu/configs/${encodeURIComponent(channelId)}/contacts/${encodeURIComponent(contactId)}/read`,
     { method: "POST" },
     port,
   );

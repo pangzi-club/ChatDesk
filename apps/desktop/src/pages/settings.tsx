@@ -108,6 +108,7 @@ import {
   loadChatServerPort,
   loadDeveloperEnvironment,
   loadFeishuChannelStatus,
+  loadFeishuChannelStatuses,
   restartChatServer,
   saveChatServerConfig,
   saveFeishuChannelConfig,
@@ -895,23 +896,21 @@ function FeishuChannelSettingsPage() {
   const queryClient = useQueryClient();
   const statusQuery = useQuery({
     queryKey: ["feishu-status"],
-    queryFn: () => loadFeishuChannelStatus(),
+    queryFn: () => loadFeishuChannelStatuses(),
   });
   const agentsQuery = useQuery({ queryKey: ["agents"], queryFn: loadAgents });
-  const [editing, setEditing] = useState<NonNullable<typeof statusQuery.data> | null>(null);
+  const [editing, setEditing] = useState<NonNullable<typeof statusQuery.data>[number] | null>(null);
+  const [deletingChannel, setDeletingChannel] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const remove = useMutation({
-    mutationFn: () => deleteFeishuChannelConfig(),
+    mutationFn: (channelId: string) => deleteFeishuChannelConfig(channelId),
     onSuccess: () => {
-      queryClient.setQueryData(["feishu-status"], {
-        provider: "feishu",
-        configured: false,
-        status: "unconfigured",
-      });
+      void queryClient.invalidateQueries({ queryKey: ["feishu-status"] });
       setDeleting(false);
+      setDeletingChannel(null);
     },
   });
-  const status = statusQuery.data;
+  const statuses = statusQuery.data ?? [];
   return (
     <>
       <SettingsHeading
@@ -941,50 +940,57 @@ function FeishuChannelSettingsPage() {
             size="sm"
             type="button"
           >
-            <Plus className="size-3.5" /> {status?.configured ? "编辑 Channel" : "新建 Channel"}
+            <Plus className="size-3.5" /> 新建 Channel
           </Button>
         </div>
         {statusQuery.isPending ? (
           <div className="space-y-3 p-5">
             <div className="h-16 animate-pulse rounded-md bg-accent" />
           </div>
-        ) : status?.configured ? (
-          <div className="flex items-center gap-3 px-5 py-4">
-            <Avatar>
-              <AvatarFallback>{status.name?.slice(0, 1) || "飞"}</AvatarFallback>
-            </Avatar>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <h3 className="truncate font-medium text-sm">{status.name || "飞书"}</h3>
-                <Badge variant={status.status === "connected" ? "default" : "outline"}>
-                  {status.status}
-                </Badge>
+        ) : statuses.length ? (
+          <div className="divide-y divide-border">
+            {statuses.map((status) => (
+              <div className="flex items-center gap-3 px-5 py-4" key={status.channelId}>
+                <Avatar>
+                  <AvatarFallback>{status.name?.slice(0, 1) || "飞"}</AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="truncate font-medium text-sm">{status.name || "飞书"}</h3>
+                    <Badge variant={status.status === "connected" ? "default" : "outline"}>
+                      {status.status}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 truncate text-muted-foreground text-xs">
+                    飞书 · {status.appId || "未配置 App ID"} · Agent：{status.agentName || "待绑定"}
+                  </p>
+                  {status.lastError ? (
+                    <p className="mt-1 text-destructive text-xs">{status.lastError}</p>
+                  ) : null}
+                </div>
+                <Button
+                  aria-label="编辑 Channel"
+                  onClick={() => setEditing(status)}
+                  size="icon"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Pencil className="size-4" />
+                </Button>
+                <Button
+                  aria-label="删除 Channel"
+                  onClick={() => {
+                    setDeletingChannel(status.channelId ?? null);
+                    setDeleting(true);
+                  }}
+                  size="icon"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Trash2 className="size-4 text-destructive" />
+                </Button>
               </div>
-              <p className="mt-1 truncate text-muted-foreground text-xs">
-                飞书 · {status.appId || "未配置 App ID"} · Agent：{status.agentName || "待绑定"}
-              </p>
-              {status.lastError ? (
-                <p className="mt-1 text-destructive text-xs">{status.lastError}</p>
-              ) : null}
-            </div>
-            <Button
-              aria-label="编辑 Channel"
-              onClick={() => setEditing(status)}
-              size="icon"
-              type="button"
-              variant="ghost"
-            >
-              <Pencil className="size-4" />
-            </Button>
-            <Button
-              aria-label="删除 Channel"
-              onClick={() => setDeleting(true)}
-              size="icon"
-              type="button"
-              variant="ghost"
-            >
-              <Trash2 className="size-4 text-destructive" />
-            </Button>
+            ))}
           </div>
         ) : (
           <div className="px-5 py-14 text-center">
@@ -1007,7 +1013,13 @@ function FeishuChannelSettingsPage() {
           }}
         />
       ) : null}
-      <AlertDialog open={deleting} onOpenChange={setDeleting}>
+      <AlertDialog
+        open={deleting}
+        onOpenChange={(open) => {
+          setDeleting(open);
+          if (!open) setDeletingChannel(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>删除 Channel？</AlertDialogTitle>
@@ -1015,7 +1027,12 @@ function FeishuChannelSettingsPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={() => void remove.mutateAsync()}>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (deletingChannel) void remove.mutateAsync(deletingChannel);
+              }}
+            >
               删除
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -1060,6 +1077,7 @@ function ChannelDialog({
     setError("");
     try {
       await saveFeishuChannelConfig({
+        channelId: initialStatus.channelId,
         name: name.trim(),
         appId: appId.trim(),
         ...(appSecret.trim() ? { appSecret: appSecret.trim() } : {}),
@@ -1133,13 +1151,29 @@ function ChannelDialog({
           </label>
           <div className="flex gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-amber-800 text-xs dark:text-amber-200">
             <CircleAlert className="mt-0.5 size-4 shrink-0" />
-            <p className="leading-5">
-              请先在飞书开放平台为应用开通以下权限，否则无法显示联系人名称和头像：
-              <code className="mx-1 font-medium">contact:user.base:readonly</code>
-              （用户基本信息）和
-              <code className="mx-1 font-medium">contact:contact.base:readonly</code>
-              （通讯录基本信息）。
-            </p>
+            <div className="leading-5">
+              <p>请先在飞书开放平台为应用开通以下权限，否则可能无法正常识别联系人或收发消息：</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                <li>
+                  通讯录：
+                  <code className="mx-1 font-medium">contact:user.base:readonly</code>（获取用户基础
+                  信息，用于识别发送者身份与权限控制）和
+                  <code className="mx-1 font-medium">contact:contact.base:readonly</code>
+                  （获取通讯录基础信息）。
+                </li>
+                <li>
+                  消息与群组：
+                  <code className="mx-1 font-medium">im:message</code>、
+                  <code className="mx-1 font-medium">im:chat:read</code> /
+                  <code className="mx-1 font-medium">im:chat:update</code>
+                  （收发消息并读取、更新群组信息）。
+                </li>
+                <li>
+                  事件订阅：开通接收消息事件，例如
+                  <code className="mx-1 font-medium">im:message:receive_v1</code>。
+                </li>
+              </ul>
+            </div>
           </div>
           <div className="block text-sm font-medium">
             绑定 Agent

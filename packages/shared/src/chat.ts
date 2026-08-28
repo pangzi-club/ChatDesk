@@ -728,6 +728,7 @@ export type ServerEvent = {
   job?: ChatJobSummary;
   jobOutput?: ChatJobOutputPage;
   channelProvider?: ChannelProvider;
+  channelId?: string;
   channelContactId?: string;
   channelMessage?: ChannelMessage;
   channelUnread?: ChannelUnreadState[];
@@ -745,6 +746,8 @@ export type ChannelConnectionStatus =
   | "permission_denied";
 export type ChannelContact = {
   id: string;
+  channelId: string;
+  channelName: string;
   provider: ChannelProvider;
   name: string;
   avatarUrl?: string;
@@ -755,6 +758,7 @@ export type ChannelContact = {
 };
 export type ChannelMessage = {
   id: string;
+  channelId: string;
   provider: ChannelProvider;
   contactId: string;
   senderId: string;
@@ -766,12 +770,14 @@ export type ChannelMessage = {
   createdAt: string;
 };
 export type ChannelUnreadState = {
+  channelId: string;
   contactId: string;
   unreadCount: number;
   lastReadMessageId?: string;
   lastReceivedAt?: string;
 };
 export type FeishuChannelConfig = {
+  id: string;
   name: string;
   appId: string;
   appSecret: string;
@@ -779,6 +785,7 @@ export type FeishuChannelConfig = {
 };
 export type FeishuChannelStatus = {
   provider: ChannelProvider;
+  channelId?: string;
   configured: boolean;
   status: ChannelConnectionStatus;
   name?: string;

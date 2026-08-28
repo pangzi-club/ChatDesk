@@ -8,13 +8,13 @@ import type {
 } from "@chatdesk/shared";
 
 type Persisted = {
-  config?: FeishuChannelConfig;
+  configs: FeishuChannelConfig[];
   contacts: ChannelContact[];
   messages: ChannelMessage[];
   unread: ChannelUnreadState[];
 };
 
-const EMPTY: Persisted = { contacts: [], messages: [], unread: [] };
+const EMPTY: Persisted = { configs: [], contacts: [], messages: [], unread: [] };
 
 export class ChannelStore {
   private value: Persisted = EMPTY;
@@ -29,21 +29,23 @@ export class ChannelStore {
     if (this.loaded) return;
     try {
       const parsed = JSON.parse(await readFile(this.file, "utf8")) as Partial<Persisted>;
+      if (!Array.isArray(parsed.configs)) {
+        this.value = { ...EMPTY, contacts: [], messages: [], unread: [] };
+        this.loaded = true;
+        return;
+      }
       this.value = {
-        config:
-          parsed.config && typeof parsed.config === "object"
-            ? {
-                name: (() => {
-                  const name = (parsed.config as Partial<FeishuChannelConfig>).name;
-                  return typeof name === "string" && name.trim()
-                    ? name.trim().slice(0, 80)
-                    : "飞书";
-                })(),
-                appId: String((parsed.config as Partial<FeishuChannelConfig>).appId ?? ""),
-                appSecret: String((parsed.config as Partial<FeishuChannelConfig>).appSecret ?? ""),
-                agentId: String((parsed.config as Partial<FeishuChannelConfig>).agentId ?? ""),
-              }
-            : undefined,
+        configs: parsed.configs.filter((config): config is FeishuChannelConfig =>
+          Boolean(
+            config &&
+              typeof config === "object" &&
+              typeof config.id === "string" &&
+              typeof config.name === "string" &&
+              typeof config.appId === "string" &&
+              typeof config.appSecret === "string" &&
+              typeof config.agentId === "string",
+          ),
+        ),
         contacts: Array.isArray(parsed.contacts) ? parsed.contacts : [],
         messages: Array.isArray(parsed.messages) ? parsed.messages : [],
         unread: Array.isArray(parsed.unread) ? parsed.unread : [],
@@ -61,13 +63,24 @@ export class ChannelStore {
     await rename(temporary, this.file);
   }
 
-  async getConfig() {
+  async listConfigs() {
     await this.load();
-    return this.value.config;
+    return [...this.value.configs];
   }
-  async setConfig(config: FeishuChannelConfig | undefined) {
+  async getConfig(channelId: string) {
     await this.load();
-    this.value.config = config;
+    return this.value.configs.find((config) => config.id === channelId);
+  }
+  async setConfig(config: FeishuChannelConfig) {
+    await this.load();
+    const index = this.value.configs.findIndex((item) => item.id === config.id);
+    if (index >= 0) this.value.configs[index] = config;
+    else this.value.configs.push(config);
+    await this.save();
+  }
+  async deleteConfig(channelId: string) {
+    await this.load();
+    this.value.configs = this.value.configs.filter((config) => config.id !== channelId);
     await this.save();
   }
   async listContacts() {
@@ -76,31 +89,41 @@ export class ChannelStore {
       (b.lastMessageAt ?? "").localeCompare(a.lastMessageAt ?? ""),
     );
   }
-  async listMessages(contactId: string) {
+  async listMessages(channelId: string, contactId: string) {
     await this.load();
     return this.value.messages
-      .filter((message) => message.contactId === contactId)
+      .filter((message) => message.channelId === channelId && message.contactId === contactId)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
   async listUnread() {
     await this.load();
     return [...this.value.unread];
   }
-  async getSessionId(contactId: string) {
+  async getSessionId(channelId: string, contactId: string) {
     await this.load();
-    return this.value.contacts.find((item) => item.id === contactId)?.sessionId;
+    return this.value.contacts.find((item) => item.channelId === channelId && item.id === contactId)
+      ?.sessionId;
   }
-  async setSessionId(contactId: string, sessionId: string) {
+  async setSessionId(channelId: string, contactId: string, sessionId: string) {
     await this.load();
-    const contact = this.value.contacts.find((item) => item.id === contactId);
+    const contact = this.value.contacts.find(
+      (item) => item.channelId === channelId && item.id === contactId,
+    );
     if (contact) contact.sessionId = sessionId;
     await this.save();
   }
   async upsertMessage(message: ChannelMessage) {
     await this.load();
-    if (this.value.messages.some((item) => item.id === message.id)) return false;
+    if (
+      this.value.messages.some(
+        (item) => item.id === message.id && item.channelId === message.channelId,
+      )
+    )
+      return false;
     this.value.messages.push(message);
-    const contact = this.value.contacts.find((item) => item.id === message.contactId);
+    const contact = this.value.contacts.find(
+      (item) => item.channelId === message.channelId && item.id === message.contactId,
+    );
     if (contact) {
       Object.assign(contact, {
         ...(message.direction === "inbound"
@@ -115,6 +138,8 @@ export class ChannelStore {
     } else
       this.value.contacts.push({
         id: message.contactId,
+        channelId: message.channelId,
+        channelName: (await this.getConfig(message.channelId))?.name ?? "飞书",
         provider: message.provider,
         name:
           message.direction === "inbound"
@@ -128,32 +153,43 @@ export class ChannelStore {
         unreadCount: 0,
       });
     if (message.direction === "inbound") {
-      const unread = this.value.unread.find((item) => item.contactId === message.contactId);
+      const unread = this.value.unread.find(
+        (item) => item.channelId === message.channelId && item.contactId === message.contactId,
+      );
       if (unread) {
         unread.unreadCount += 1;
         unread.lastReceivedAt = message.createdAt;
       } else
         this.value.unread.push({
           contactId: message.contactId,
+          channelId: message.channelId,
           unreadCount: 1,
           lastReceivedAt: message.createdAt,
         });
-      const current = this.value.contacts.find((item) => item.id === message.contactId);
+      const current = this.value.contacts.find(
+        (item) => item.channelId === message.channelId && item.id === message.contactId,
+      );
       if (current)
         current.unreadCount =
-          this.value.unread.find((item) => item.contactId === message.contactId)?.unreadCount ?? 0;
+          this.value.unread.find(
+            (item) => item.channelId === message.channelId && item.contactId === message.contactId,
+          )?.unreadCount ?? 0;
     }
     await this.save();
     return true;
   }
-  async markRead(contactId: string, messageId?: string) {
+  async markRead(channelId: string, contactId: string, messageId?: string) {
     await this.load();
-    const unread = this.value.unread.find((item) => item.contactId === contactId);
+    const unread = this.value.unread.find(
+      (item) => item.channelId === channelId && item.contactId === contactId,
+    );
     if (unread) {
       unread.unreadCount = 0;
       unread.lastReadMessageId = messageId;
     }
-    const contact = this.value.contacts.find((item) => item.id === contactId);
+    const contact = this.value.contacts.find(
+      (item) => item.channelId === channelId && item.id === contactId,
+    );
     if (contact) contact.unreadCount = 0;
     await this.save();
   }
