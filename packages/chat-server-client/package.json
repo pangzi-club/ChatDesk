@@ -1,7 +1,7 @@
 {
   "name": "@chatdesk/chat-server-client",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Runtime-neutral Chat Server HTTP and SSE client",
   "license": "MIT",
   "packageManager": "pnpm@11.19.0",

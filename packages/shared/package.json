@@ -1,7 +1,7 @@
 {
   "name": "@chatdesk/shared",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Runtime-neutral contracts and algorithms shared by ChatDesk runtimes",
   "license": "MIT",
   "packageManager": "pnpm@11.19.0",

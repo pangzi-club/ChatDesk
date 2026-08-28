@@ -1,7 +1,7 @@
 {
   "name": "@chatdesk/agent-core",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Node agent harness shared by Chat Server and future TUI",
   "license": "MIT",
   "packageManager": "pnpm@11.19.0",
