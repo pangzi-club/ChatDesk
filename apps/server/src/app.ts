@@ -1165,19 +1165,25 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
       const body = await c.req.json();
       const current = chatConfig.get();
       const nextAgents =
-        body && typeof body === "object" && Array.isArray(body.agents)
-          ? body.agents
-          : current.agents;
-      const boundAgentIds = new Set((await channels.listConfigs()).map((config) => config.agentId));
-      if (
-        [...boundAgentIds].some((boundAgentId) =>
-          nextAgents.every(
-            (agent: unknown) =>
-              agent && typeof agent === "object" && (agent as { id?: unknown }).id !== boundAgentId,
-          ),
-        )
-      ) {
-        return jsonError("该 Agent 已被 Channel 绑定，请先更换 Channel 的 Agent", 400);
+        body && typeof body === "object" && Array.isArray(body.agents) ? body.agents : undefined;
+      if (nextAgents) {
+        const nextAgentIds = new Set(
+          nextAgents.flatMap((agent: unknown) => {
+            if (!agent || typeof agent !== "object") return [];
+            const id = (agent as { id?: unknown }).id;
+            return typeof id === "string" && id.trim() ? [id] : [];
+          }),
+        );
+        const boundAgentIds = new Set(
+          (await channels.listConfigs())
+            .map((config) => config.agentId)
+            .filter((agentId) => typeof agentId === "string" && agentId.trim()),
+        );
+        if (
+          current.agents.some((agent) => boundAgentIds.has(agent.id) && !nextAgentIds.has(agent.id))
+        ) {
+          return jsonError("该 Agent 已被 Channel 绑定，请先更换 Channel 的 Agent", 400);
+        }
       }
       return c.json(await chatConfig.update(body));
     } catch (error) {

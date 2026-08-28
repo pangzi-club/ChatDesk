@@ -29,9 +29,38 @@ afterEach(async () => {
   );
 });
 
-async function createTestServer() {
+async function createTestServer(seed?: {
+  agents?: Array<{
+    id: string;
+    name: string;
+    avatar: string;
+    modelId: string;
+    systemPrompt: string;
+    toolPackIds: string[];
+    mcpServerIds: string[];
+    skillIds: string[];
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  channels?: Array<{
+    id: string;
+    name: string;
+    appId: string;
+    appSecret: string;
+    agentId: string;
+  }>;
+}) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "chatdesk-chat-server-"));
   temporaryDirectories.push(dataDir);
+  if (seed?.agents) {
+    await writeFile(path.join(dataDir, "settings.json"), JSON.stringify({ agents: seed.agents }));
+  }
+  if (seed?.channels) {
+    await writeFile(
+      path.join(dataDir, "channels.json"),
+      JSON.stringify({ configs: seed.channels, contacts: [], messages: [], unread: [] }),
+    );
+  }
   const config: ServerConfig = {
     host: "127.0.0.1",
     port: 14317,
@@ -40,6 +69,31 @@ async function createTestServer() {
     version: "test",
   };
   return createChatServer(config);
+}
+
+function testAgent(id: string) {
+  return {
+    id,
+    name: id,
+    avatar: "",
+    modelId: "model-1",
+    systemPrompt: "",
+    toolPackIds: [],
+    mcpServerIds: [],
+    skillIds: [],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+}
+
+function testChannel(agentId: string) {
+  return {
+    id: "channel-1",
+    name: "飞书",
+    appId: "cli_test",
+    appSecret: "secret",
+    agentId,
+  };
 }
 
 function auth() {
@@ -894,6 +948,42 @@ describe("chat server", () => {
       body: JSON.stringify({ models: [] }),
     });
     assert.equal((await removed.json()).approvalReviewerModelId, undefined);
+  });
+
+  it("allows creating an agent when a channel has no bound agent", async () => {
+    const server = await createTestServer({ channels: [testChannel("")] });
+    const created = await server.app.request("http://localhost/v1/chat-config", {
+      method: "PATCH",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ agents: [testAgent("new-agent")] }),
+    });
+    assert.equal(created.status, 200);
+    assert.equal((await created.json()).agents[0]?.id, "new-agent");
+  });
+
+  it("rejects deleting an agent that is bound to a channel", async () => {
+    const server = await createTestServer({ channels: [testChannel("bound-agent")] });
+    const added = await server.app.request("http://localhost/v1/chat-config", {
+      method: "PATCH",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ agents: [testAgent("bound-agent")] }),
+    });
+    assert.equal(added.status, 200);
+
+    const extra = await server.app.request("http://localhost/v1/chat-config", {
+      method: "PATCH",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ agents: [testAgent("bound-agent"), testAgent("extra-agent")] }),
+    });
+    assert.equal(extra.status, 200);
+
+    const removed = await server.app.request("http://localhost/v1/chat-config", {
+      method: "PATCH",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ agents: [testAgent("extra-agent")] }),
+    });
+    assert.equal(removed.status, 400);
+    assert.match((await removed.json()).error, /已被 Channel 绑定/);
   });
 
   it("validates model test input before contacting the provider", async () => {
