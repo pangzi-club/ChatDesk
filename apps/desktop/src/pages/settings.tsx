@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Bell,
+  Bot,
   Brain,
   ChartColumn,
   Check,
@@ -59,6 +60,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -76,6 +78,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  type AgentConfig,
+  emptyAgent,
+  loadAgents,
+  prepareAgent,
+  saveAgents,
+  sortAgents,
+} from "@/lib/agents";
 import { getReturnPath } from "@/lib/app-return-path";
 import {
   type ChatMemoryStore,
@@ -108,6 +119,7 @@ import {
   saveChatDisplaySettings,
 } from "@/lib/chat-settings";
 import {
+  CHAT_TOOL_PACKS,
   type ChatToolsSettings as ChatToolsSettingsValue,
   DEFAULT_CHAT_TOOLS,
   loadChatToolsSettings,
@@ -375,6 +387,7 @@ function SettingsLayout() {
           <SettingsNavItem to="/settings/theme" icon={Palette} label="主题" />
           <SettingsNavItem to="/settings/shortcuts" icon={Keyboard} label="快捷键" />
           <SettingsNavItem to="/settings/models" icon={Package} label="模型" />
+          <SettingsNavItem to="/settings/agents" icon={Bot} label="Agents" />
           <SettingsNavItem to="/settings/mcp" icon={PlugZap} label="MCP" />
           <SettingsNavItem to="/settings/skills" icon={Sparkles} label="Skills" />
           <SettingsNavItem to="/settings/tools" icon={Wrench} label="Tools" />
@@ -2662,6 +2675,404 @@ function providerModelsCacheKey(baseUrl: string, apiKey: string) {
   return ["provider-models", baseUrl, (hash >>> 0).toString(16)] as const;
 }
 
+function AgentsSettingsPage() {
+  const queryClient = useQueryClient();
+  const agentsQuery = useQuery({ queryKey: ["agents"], queryFn: loadAgents });
+  const modelsQuery = useQuery({ queryKey: ["models"], queryFn: loadModels });
+  const mcpQuery = useQuery({ queryKey: ["mcp-servers"], queryFn: loadMcpServers });
+  const skillsQuery = useQuery({ queryKey: ["available-skills"], queryFn: loadAvailableSkills });
+  const [editing, setEditing] = useState<AgentConfig | null>(null);
+  const [deleting, setDeleting] = useState<AgentConfig | null>(null);
+  const [notice, setNotice] = useState("");
+  const agents = agentsQuery.data ?? [];
+  const models = modelsQuery.data ?? [];
+
+  async function save(agent: AgentConfig) {
+    if (!agent.name.trim() || !agent.modelId) throw new Error("请填写 Agent 名称并选择模型。");
+    const next = prepareAgent(
+      agent,
+      agents.some((item) => item.id === agent.id),
+    );
+    const all = agents.some((item) => item.id === next.id)
+      ? agents.map((item) => (item.id === next.id ? next : item))
+      : [...agents, next];
+    await saveAgents(all);
+    queryClient.setQueryData(["agents"], all);
+    setEditing(null);
+  }
+
+  async function remove() {
+    if (!deleting) return;
+    try {
+      const next = agents.filter((item) => item.id !== deleting.id);
+      await saveAgents(next);
+      queryClient.setQueryData(["agents"], next);
+      setDeleting(null);
+    } catch {
+      setNotice("删除失败，请重试。");
+    }
+  }
+
+  return (
+    <>
+      <SettingsHeading
+        eyebrow="Agents"
+        title="Agents"
+        description="管理可复用的模型、提示词和工具组合。"
+      />
+      <section className="rounded-lg border border-border bg-card">
+        <div className="flex items-center justify-between gap-4 border-border border-b px-5 py-4">
+          <div>
+            <h2 className="font-medium text-sm">Agent 配置</h2>
+            <p className="mt-1 text-muted-foreground text-xs">
+              配置将在后续 Channel 工作流中使用。
+            </p>
+          </div>
+          <Button
+            onClick={() => {
+              setNotice("");
+              setEditing(emptyAgent());
+            }}
+            size="sm"
+            type="button"
+          >
+            <Plus className="size-3.5" /> 添加 Agent
+          </Button>
+        </div>
+        {notice || agentsQuery.isError ? (
+          <p className="px-5 pt-4 text-destructive text-xs">
+            {notice || "读取 Agent 配置失败，请重试。"}
+          </p>
+        ) : null}
+        {agentsQuery.isLoading ? (
+          <div className="space-y-3 p-5">
+            <div className="h-16 animate-pulse rounded-md bg-accent" />
+            <div className="h-16 animate-pulse rounded-md bg-accent" />
+          </div>
+        ) : agents.length === 0 ? (
+          <div className="px-5 py-14 text-center">
+            <Bot className="mx-auto size-8 text-muted-foreground" />
+            <p className="mt-3 font-medium text-sm">还没有 Agent 配置</p>
+            <p className="mt-1 text-muted-foreground text-xs">
+              添加一个 Agent 开始整理你的工作流。
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3 p-5">
+            {sortAgents(agents).map((agent) => (
+              <div
+                className="flex items-center gap-3 rounded-md border border-border bg-background px-4 py-3"
+                key={agent.id}
+              >
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-accent text-lg">
+                  {agent.avatar || <Bot className="size-4 text-muted-foreground" />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="truncate font-medium text-sm">{agent.name}</h3>
+                  <p className="mt-1 truncate text-muted-foreground text-xs">
+                    {models.find((model) => model.id === agent.modelId)?.name || "模型已移除"} ·{" "}
+                    {agent.systemPrompt || "未设置系统提示词"}
+                  </p>
+                  <p className="mt-1 text-muted-foreground text-[11px]">
+                    Tools {agent.toolPackIds.length} · MCP {agent.mcpServerIds.length} · Skills{" "}
+                    {agent.skillIds.length}
+                  </p>
+                </div>
+                <Button
+                  aria-label={`编辑 ${agent.name}`}
+                  onClick={() => setEditing({ ...agent })}
+                  size="icon"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Pencil className="size-4" />
+                </Button>
+                <Button
+                  aria-label={`删除 ${agent.name}`}
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => setDeleting(agent)}
+                  size="icon"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+      {editing ? (
+        <AgentDialog
+          initialAgent={editing}
+          models={models}
+          mcpServers={mcpQuery.data ?? []}
+          skills={skillsQuery.data ?? []}
+          onClose={() => setEditing(null)}
+          onSave={save}
+        />
+      ) : null}
+      <AlertDialog
+        open={deleting !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除 Agent？</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除“{deleting?.name || "这个 Agent"}”吗？删除后无法恢复。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => void remove()}>
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+function AgentDialog({
+  initialAgent,
+  models,
+  mcpServers,
+  skills,
+  onClose,
+  onSave,
+}: {
+  initialAgent: AgentConfig;
+  models: ModelConfig[];
+  mcpServers: McpServerConfig[];
+  skills: SkillDefinition[];
+  onClose: () => void;
+  onSave: (agent: AgentConfig) => Promise<void>;
+}) {
+  const avatarPresets = ["🤖", "🧑‍💻", "🎨", "📊", "🔍", "✍️", "🛠️", "🌐", "🧠", "🚀"];
+  const [agent, setAgent] = useState(initialAgent);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const update = <K extends keyof AgentConfig>(key: K, value: AgentConfig[K]) => {
+    setError("");
+    setAgent((current) => ({ ...current, [key]: value }));
+  };
+  const toggle = (key: "toolPackIds" | "mcpServerIds" | "skillIds", id: string) =>
+    update(
+      key,
+      agent[key].includes(id as never)
+        ? agent[key].filter((item) => item !== id)
+        : ([...agent[key], id] as never),
+    );
+  const toggleAll = (key: "toolPackIds" | "mcpServerIds" | "skillIds", ids: string[]) =>
+    update(key, agent[key].length === ids.length ? ([] as never) : (ids as never));
+  const systemPromptPresets = [
+    {
+      label: "专业顾问",
+      prompt:
+        "你是一位专业、可靠的顾问。先理解目标和约束，再给出清晰、可执行的建议；不确定时明确说明。",
+    },
+    {
+      label: "简洁执行",
+      prompt: "你是一位高效的执行助手。优先完成任务，回答直接、简洁，必要时用步骤或清单组织结果。",
+    },
+    {
+      label: "教学引导",
+      prompt:
+        "你是一位耐心的导师。先给出结论，再用循序渐进的方式解释原因，并根据用户基础调整细节。",
+    },
+    {
+      label: "创意伙伴",
+      prompt:
+        "你是一位开放、富有创意的伙伴。提出多个有区别的方向，说明各自取舍，并帮助用户把想法落地。",
+    },
+    {
+      label: "严谨审查",
+      prompt: "你是一位严谨的审查者。主动检查假设、边界条件和潜在风险，指出问题并给出改进方案。",
+    },
+  ];
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!agent.name.trim() || !agent.modelId) {
+      setError("请填写 Agent 名称并选择模型。");
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(agent);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "保存失败，请重试。");
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <form
+        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-border bg-card shadow-xl"
+        onSubmit={submit}
+      >
+        <div className="flex items-center justify-between border-border border-b px-6 py-4">
+          <h2 className="font-semibold text-lg">
+            {initialAgent.name ? "编辑 Agent" : "添加 Agent"}
+          </h2>
+          <Button aria-label="关闭" onClick={onClose} size="icon" type="button" variant="ghost">
+            <X className="size-4" />
+          </Button>
+        </div>
+        <div className="space-y-4 px-6 py-5">
+          <div className="grid grid-cols-[120px_1fr] gap-3">
+            <div className="text-sm">
+              头像
+              <Select
+                value={agent.avatar || "__default__"}
+                onValueChange={(value) => update("avatar", value === "__default__" ? "" : value)}
+              >
+                <SelectTrigger className="mt-2 w-full text-lg">
+                  <SelectValue placeholder="选择头像" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__default__">默认</SelectItem>
+                  {avatarPresets.map((avatar) => (
+                    <SelectItem key={avatar} value={avatar}>
+                      {avatar}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <label className="text-sm" htmlFor="agent-name">
+              名称
+              <Input
+                id="agent-name"
+                className="mt-2"
+                value={agent.name}
+                onChange={(e) => update("name", e.target.value)}
+              />
+            </label>
+          </div>
+          <div className="block text-sm">
+            模型
+            <Select value={agent.modelId} onValueChange={(value) => update("modelId", value)}>
+              <SelectTrigger className="mt-2">
+                <SelectValue placeholder="选择模型" />
+              </SelectTrigger>
+              <SelectContent>
+                {models.map((model) => (
+                  <SelectItem key={model.id} value={model.id}>
+                    {formatModelLabel(model)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {models.length === 0 ? (
+              <span className="mt-1 block text-destructive text-xs">
+                请先在模型设置中配置模型。
+              </span>
+            ) : null}
+          </div>
+          <div className="block text-sm">
+            系统提示词
+            <Textarea
+              id="agent-system-prompt"
+              className="mt-2 min-h-28"
+              value={agent.systemPrompt}
+              onChange={(e) => update("systemPrompt", e.target.value)}
+            />
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {systemPromptPresets.map((preset) => (
+                <Button
+                  className="h-7 px-2.5 text-xs"
+                  key={preset.label}
+                  onClick={() => update("systemPrompt", preset.prompt)}
+                  type="button"
+                  variant="outline"
+                >
+                  {preset.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+          <div className="grid items-start gap-4 sm:grid-cols-3">
+            {(
+              [
+                [
+                  "toolPackIds",
+                  "Tools",
+                  CHAT_TOOL_PACKS.map((item) => ({ id: item.id, label: item.label })),
+                ],
+                [
+                  "mcpServerIds",
+                  "MCP",
+                  mcpServers.map((item) => ({ id: item.id, label: item.name })),
+                ],
+                ["skillIds", "Skills", skills.map((item) => ({ id: item.id, label: item.name }))],
+              ] as const
+            ).map(([key, title, items]) => (
+              <fieldset className="min-w-0 space-y-2" key={key}>
+                <legend className="sr-only">{title}</legend>
+                <div className="flex h-6 items-center justify-between gap-2">
+                  <span className="font-medium text-sm">{title}</span>
+                  {items.length > 0 ? (
+                    <Button
+                      className="h-6 px-1.5 text-[11px]"
+                      onClick={() =>
+                        toggleAll(
+                          key,
+                          items.map((item) => item.id),
+                        )
+                      }
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      {agent[key].length === items.length ? "反选" : "全选"}
+                    </Button>
+                  ) : null}
+                </div>
+                {items.length === 0 ? (
+                  <p className="text-muted-foreground text-xs">暂无可用项</p>
+                ) : (
+                  <div className="max-h-40 space-y-2 overflow-y-auto rounded-md border border-border bg-background p-2">
+                    {items.map((item) => (
+                      <div className="flex items-center gap-2 text-xs" key={item.id}>
+                        <Checkbox
+                          id={`agent-${key}-${item.id}`}
+                          checked={agent[key].includes(item.id as never)}
+                          onCheckedChange={() => toggle(key, item.id)}
+                        />
+                        <label className="truncate" htmlFor={`agent-${key}-${item.id}`}>
+                          {item.label}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </fieldset>
+            ))}
+          </div>
+          {error ? (
+            <p className="text-destructive text-xs" role="alert">
+              {error}
+            </p>
+          ) : null}
+        </div>
+        <div className="flex justify-end gap-2 border-border border-t px-6 py-4">
+          <Button onClick={onClose} type="button" variant="outline">
+            取消
+          </Button>
+          <Button disabled={saving || models.length === 0} type="submit">
+            {saving ? "保存中…" : "保存"}
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function ModelsSettingsPage() {
   const queryClient = useQueryClient();
   const modelsQuery = useQuery({ queryKey: ["models"], queryFn: loadModels });
@@ -3596,6 +4007,7 @@ function NumberField({
 }
 
 export {
+  AgentsSettingsPage,
   ApiKeysSettingsPage,
   ChatServerSettingsPage,
   DevelopmentSettingsPage,

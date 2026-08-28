@@ -1,12 +1,13 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { ChatServerConfigData } from "@chatdesk/shared";
+import type { AgentConfig, ChatServerConfigData, ChatToolPackId } from "@chatdesk/shared";
 import { isDeveloperToolDirectory } from "./developer-environment.ts";
 
 export type { ChatServerConfigData } from "@chatdesk/shared";
 
 const DEFAULT_CONFIG: ChatServerConfigData = {
   models: [],
+  agents: [],
   chatTools: {},
   sandboxMode: "ask",
   sandboxReadablePaths: [],
@@ -23,6 +24,7 @@ function normalize(value: unknown): ChatServerConfigData {
   if (!value || typeof value !== "object") return structuredClone(DEFAULT_CONFIG);
   const record = value as Record<string, unknown>;
   const models = Array.isArray(record.models) ? record.models : [];
+  const agents = normalizeAgents(record.agents);
   const configuredReviewerModelId =
     typeof record.approvalReviewerModelId === "string" && record.approvalReviewerModelId.trim()
       ? record.approvalReviewerModelId.trim()
@@ -37,6 +39,7 @@ function normalize(value: unknown): ChatServerConfigData {
     : false;
   return {
     models,
+    agents,
     chatTools:
       record.chatTools && typeof record.chatTools === "object"
         ? (record.chatTools as Record<string, boolean>)
@@ -88,6 +91,59 @@ function normalize(value: unknown): ChatServerConfigData {
           )
         : {},
   };
+}
+
+const AGENT_TOOL_IDS = new Set<ChatToolPackId>([
+  "list_dir",
+  "search_files",
+  "read_file",
+  "write_file",
+  "edit_file",
+  "terminal",
+  "web_search",
+  "image_generation",
+  "browser",
+  "conversation_history",
+]);
+
+function normalizeAgents(value: unknown): AgentConfig[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item): AgentConfig | null => {
+      if (!item || typeof item !== "object") return null;
+      const record = item as Record<string, unknown>;
+      const stringField = (key: string, max: number) =>
+        typeof record[key] === "string" ? record[key].trim().slice(0, max) : "";
+      const id = stringField("id", 128);
+      const name = stringField("name", 120);
+      const modelId = stringField("modelId", 128);
+      if (!id || !name || !modelId) return null;
+      const ids = (key: string, max: number) =>
+        Array.isArray(record[key])
+          ? [
+              ...new Set(
+                record[key]
+                  .filter((v): v is string => typeof v === "string" && Boolean(v.trim()))
+                  .map((v) => v.trim().slice(0, 128)),
+              ),
+            ].slice(0, max)
+          : [];
+      return {
+        id,
+        name,
+        avatar: stringField("avatar", 16),
+        modelId,
+        systemPrompt: stringField("systemPrompt", 20_000),
+        toolPackIds: ids("toolPackIds", 50).filter((v): v is ChatToolPackId =>
+          AGENT_TOOL_IDS.has(v as ChatToolPackId),
+        ),
+        mcpServerIds: ids("mcpServerIds", 100),
+        skillIds: ids("skillIds", 100),
+        createdAt: stringField("createdAt", 64),
+        updatedAt: stringField("updatedAt", 64),
+      };
+    })
+    .filter((item): item is AgentConfig => Boolean(item));
 }
 
 async function readJson(pathname: string, fallback: unknown) {

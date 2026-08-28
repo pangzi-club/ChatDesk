@@ -9,6 +9,7 @@ import {
   ArrowDown,
   ArrowUp,
   Bell,
+  Bot,
   Brain,
   ChartColumn,
   Check,
@@ -275,6 +276,12 @@ const commandItems = [
   },
   { to: "/settings/keys", label: "API Keys", icon: KeyRound, keywords: ["设置", "密钥", "api"] },
   { to: "/settings/models", label: "模型", icon: Package, keywords: ["设置", "models", "model"] },
+  {
+    to: "/settings/agents",
+    label: "Agents",
+    icon: Bot,
+    keywords: ["设置", "agents", "agent", "智能体", "助手"],
+  },
   {
     to: "/settings/mcp",
     label: "MCP",

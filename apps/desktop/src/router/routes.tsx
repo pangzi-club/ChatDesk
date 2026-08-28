@@ -15,6 +15,7 @@ import { ChatPage } from "@/pages/chat";
 import { HistoryDetailPage } from "@/pages/history";
 import { ImageGenerationPage } from "@/pages/image-generation";
 import {
+  AgentsSettingsPage,
   ApiKeysSettingsPage,
   ChatServerSettingsPage,
   DevelopmentSettingsPage,
@@ -79,6 +80,7 @@ const router = createHashRouter([
           { path: "shortcuts", element: <ShortcutsSettingsPage /> },
           { path: "keys", element: <ApiKeysSettingsPage /> },
           { path: "models", element: <ModelsSettingsPage /> },
+          { path: "agents", element: <AgentsSettingsPage /> },
           { path: "mcp", element: <McpSettingsPage /> },
           { path: "skills", element: <SkillsSettingsPage /> },
           { path: "tools", element: <ToolsSettingsPage /> },

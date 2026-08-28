@@ -788,6 +788,7 @@ export type HealthResponse = {
 
 export type ChatServerConfigData = {
   models: unknown[];
+  agents: AgentConfig[];
   chatTools: Record<string, boolean>;
   sandboxMode: SandboxMode;
   sandboxReadablePaths: string[];
@@ -798,6 +799,19 @@ export type ChatServerConfigData = {
   selectedSkillIds: string[];
   disabledSkillIds: string[];
   apiKeys: Record<string, string>;
+};
+
+export type AgentConfig = {
+  id: string;
+  name: string;
+  avatar: string;
+  modelId: string;
+  systemPrompt: string;
+  toolPackIds: ChatToolPackId[];
+  mcpServerIds: string[];
+  skillIds: string[];
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type ChatServerProviderModel = {
