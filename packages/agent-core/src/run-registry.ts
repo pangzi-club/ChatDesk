@@ -28,8 +28,8 @@ import {
   buildCheckpointPrompt,
   CHECKPOINT_OUTPUT_TOKENS,
   checkpointInstructions,
+  createContextCompactionStrategy,
   estimateAgentContextTokens,
-  retainRecentModelMessages,
 } from "./agent-context.ts";
 import { type AiUsageLogStore, normalizeAiUsage } from "./ai-usage-log.ts";
 import { createBusinessTools } from "./business-tools.ts";
@@ -196,7 +196,18 @@ export function resolveEffectiveWorkspace(
 export { createConfiguredLanguageModel, supportsRequiredToolChoice };
 
 function assistantMessage(id: string, text: string): UIMessage {
-  return { id, role: "assistant", parts: text ? [{ type: "text", text }] : [] };
+  return {
+    id,
+    role: "assistant",
+    parts: text ? [{ type: "text", text }] : [],
+    metadata: { createdAt: new Date().toISOString() },
+  };
+}
+
+function withMessageCreatedAt(message: UIMessage, fallback: string): UIMessage {
+  const metadata = isRecord(message.metadata) ? message.metadata : {};
+  const createdAt = typeof metadata.createdAt === "string" ? metadata.createdAt : fallback;
+  return { ...message, metadata: { ...metadata, createdAt } };
 }
 
 function messageText(message: UIMessage) {
@@ -631,6 +642,7 @@ export class RunRegistry {
         ? [...current.messages, input.message]
         : current.messages;
     const now = new Date().toISOString();
+    const timestampedMessages = messages.map((message) => withMessageCreatedAt(message, now));
     const effectiveCwd = resolveEffectiveWorkspace(current, input, this.resolveWorkspace);
     const defaultRoot = this.resolveWorkspace(DEFAULT_WORKSPACE_ID);
     if (effectiveCwd && defaultRoot && isPathInside(effectiveCwd, defaultRoot)) {
@@ -677,7 +689,7 @@ export class RunRegistry {
       mcpServerIds: input.mcpServerIds ?? current.mcpServerIds,
       skillIds: input.skillIds ?? current.skillIds,
       systemPrompt: prompt,
-      messages,
+      messages: timestampedMessages,
       planMode,
       activePlanId: planId,
     };
@@ -707,10 +719,19 @@ export class RunRegistry {
       const languageModel = this.createLanguageModel
         ? this.createLanguageModel(model)
         : createConfiguredLanguageModel(model);
-      const modelMessages = await convertToModelMessages([
-        ...(input.contextMessages ?? []),
-        ...messages,
-      ]);
+      const contextMessages = (input.contextMessages ?? []).map((message) =>
+        withMessageCreatedAt(message, now),
+      );
+      const sourceMessages = [...contextMessages, ...timestampedMessages];
+      const modelMessages = await convertToModelMessages(sourceMessages);
+      const modelMessageCreatedAt = new WeakMap<object, string>();
+      modelMessages.forEach((message, index) => {
+        const source = sourceMessages[index];
+        const metadata = source?.metadata;
+        if (isRecord(metadata) && typeof metadata.createdAt === "string") {
+          modelMessageCreatedAt.set(message, metadata.createdAt);
+        }
+      });
       const system = prompt.text;
       const metrics: RunMetrics = {
         stepCount: 0,
@@ -735,6 +756,7 @@ export class RunRegistry {
       let checkpoint = "";
       let currentPlanContent = activePlan?.content ?? "";
       const contextCompactionThreshold = resolveContextCompactionThreshold(model.inputContext);
+      const compactionStrategy = createContextCompactionStrategy(input.contextCompactionStrategy);
       const gitBaseline = await captureGitWorkspaceState(
         effectiveCwd,
         sandboxMode,
@@ -963,6 +985,11 @@ export class RunRegistry {
           });
           publishProgress(policy.phase);
           let preparedMessages = stepMessages;
+          const preparationTime = new Date().toISOString();
+          for (const message of preparedMessages) {
+            if (!modelMessageCreatedAt.has(message))
+              modelMessageCreatedAt.set(message, preparationTime);
+          }
           let bashWorkspaceInstruction = "";
           if (metrics.bashObserved) {
             bashWorkspaceInstruction = await buildBashWorkspaceInstruction({
@@ -1003,22 +1030,30 @@ export class RunRegistry {
               if (planMode === "plan" && planId) {
                 currentPlanContent = (await this.plans.read(sessionId, planId)).content;
               }
-              const checkpointResult = await generateText({
-                model: languageModel,
-                prompt: buildCheckpointPrompt({
-                  messages: preparedMessages,
-                  existingCheckpoint: checkpoint,
-                  planContent: planMode === "plan" ? currentPlanContent : undefined,
-                }),
-                maxOutputTokens: CHECKPOINT_OUTPUT_TOKENS,
-                maxRetries: MODEL_CALL_MAX_RETRIES,
-                abortSignal: controller.signal,
-                onLanguageModelCallStart: recordModelCallStart("context-checkpoint"),
-                onLanguageModelCallEnd: recordModelCall("context-checkpoint"),
+              const result = await compactionStrategy.compact({
+                messages: preparedMessages,
+                now: new Date(),
+                windowMinutes: input.contextCompactionWindowMinutes,
+                getMessageCreatedAt: (message) => modelMessageCreatedAt.get(message),
+                generateCheckpoint: async () => {
+                  const checkpointResult = await generateText({
+                    model: languageModel,
+                    prompt: buildCheckpointPrompt({
+                      messages: preparedMessages,
+                      existingCheckpoint: checkpoint,
+                      planContent: planMode === "plan" ? currentPlanContent : undefined,
+                    }),
+                    maxOutputTokens: CHECKPOINT_OUTPUT_TOKENS,
+                    maxRetries: MODEL_CALL_MAX_RETRIES,
+                    abortSignal: controller.signal,
+                    onLanguageModelCallStart: recordModelCallStart("context-checkpoint"),
+                    onLanguageModelCallEnd: recordModelCall("context-checkpoint"),
+                  });
+                  return checkpointResult.text;
+                },
               });
-              checkpoint = checkpointResult.text.trim();
-              if (!checkpoint) throw new Error("模型返回了空检查点");
-              preparedMessages = retainRecentModelMessages(preparedMessages);
+              checkpoint = result.checkpoint ?? checkpoint;
+              preparedMessages = result.messages;
               preparedInstructions = checkpointInstructions({
                 base: system,
                 checkpoint,
@@ -1038,6 +1073,11 @@ export class RunRegistry {
                 stepNumber,
                 estimatedTokensBefore: effectiveTokensBefore,
                 estimatedTokensAfter,
+                strategy: compactionStrategy.kind,
+                ...(result.cutoffAt ? { cutoffAt: result.cutoffAt } : {}),
+                ...(result.droppedMessageCount !== undefined
+                  ? { droppedMessageCount: result.droppedMessageCount }
+                  : {}),
               };
               this.events.publish({
                 type: "context.compacted",
@@ -1246,6 +1286,7 @@ export class RunRegistry {
         messageMetadata: ({ part }) => {
           if (part.type !== "finish") return undefined;
           return {
+            createdAt: new Date().toISOString(),
             usage: metrics.usage ?? part.totalUsage,
             ...(contextUsage ? { contextUsage } : {}),
             ...(contextCompaction ? { contextCompaction } : {}),

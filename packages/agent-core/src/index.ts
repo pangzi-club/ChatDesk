@@ -1,5 +1,9 @@
 export { type ActivityLog, type ActivityLogLevel, ActivityLogStore } from "./activity-log-store.ts";
 export {
+  createContextCompactionStrategy,
+  DEFAULT_CONTEXT_COMPACTION_WINDOW_MINUTES,
+} from "./agent-context.ts";
+export {
   createAiSdkWarningLogger,
   filterAiSdkWarnings,
   installAiSdkWarningFilter,

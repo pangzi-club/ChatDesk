@@ -85,6 +85,8 @@ const runInputSchema = z.object({
     .string()
     .regex(/^[a-z0-9]{8}$/)
     .optional(),
+  contextCompactionStrategy: z.enum(["semantic-checkpoint", "recent-time"]).optional(),
+  contextCompactionWindowMinutes: z.number().positive().max(10_080).optional(),
   mockLongResponse: z.boolean().optional(),
 });
 

@@ -288,7 +288,12 @@ export type ChatContextCompaction = {
   stepNumber: number;
   estimatedTokensBefore: number;
   estimatedTokensAfter: number;
+  strategy?: ContextCompactionStrategy;
+  cutoffAt?: string;
+  droppedMessageCount?: number;
 };
+
+export type ContextCompactionStrategy = "semantic-checkpoint" | "recent-time";
 
 export type ChatContextUsage = {
   inputTokens: number;
@@ -396,6 +401,8 @@ export type RunStartInput = {
   planMode?: ChatPlanMode;
   planId?: string;
   mockLongResponse?: boolean;
+  contextCompactionStrategy?: ContextCompactionStrategy;
+  contextCompactionWindowMinutes?: number;
 };
 
 export const TODO_TOOL_NAME = "todo_write";
