@@ -94,8 +94,8 @@ export class FeishuChannelManager {
         }
         senderName = response.data?.user?.name || senderName;
         senderAvatarUrl = response.data?.user?.avatar?.avatar_72;
-        if (!response.data?.user) {
-          throw new Error("响应中没有 data.user");
+        if (!response.data?.user?.name) {
+          throw new Error("响应中没有有效的 data.user.name");
         }
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);

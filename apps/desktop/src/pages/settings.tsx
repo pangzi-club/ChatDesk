@@ -1130,6 +1130,16 @@ function ChannelDialog({
               value={appSecret}
             />
           </label>
+          <div className="flex gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-amber-800 text-xs dark:text-amber-200">
+            <CircleAlert className="mt-0.5 size-4 shrink-0" />
+            <p className="leading-5">
+              请先在飞书开放平台为应用开通以下权限，否则无法显示联系人名称和头像：
+              <code className="mx-1 font-medium">contact:user.base:readonly</code>
+              （用户基本信息）和
+              <code className="mx-1 font-medium">contact:contact.base:readonly</code>
+              （通讯录基本信息）。
+            </p>
+          </div>
           <div className="block text-sm font-medium">
             绑定 Agent
             <Select value={agentId} onValueChange={setAgentId}>
