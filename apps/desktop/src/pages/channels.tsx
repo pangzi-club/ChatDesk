@@ -162,31 +162,34 @@ export function ChannelsPage() {
             <div className="h-12 animate-pulse rounded-md bg-accent" />
           </div>
         ) : contacts.data?.length ? (
-          contacts.data.map((item) => (
-            <button
-              className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent ${selected === item.id ? "bg-accent" : ""}`}
-              key={item.id}
-              onClick={() => void select(item.id)}
-              type="button"
-            >
-              <span className="relative">
-                <Avatar className="size-8">
-                  {item.avatarUrl ? <AvatarImage alt="" src={item.avatarUrl} /> : null}
-                  <AvatarFallback>{item.name.slice(0, 1)}</AvatarFallback>
-                </Avatar>
+          <div className="space-y-2">
+            {contacts.data.map((item) => (
+              <button
+                className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent ${selected === item.id ? "bg-accent" : ""}`}
+                key={item.id}
+                onClick={() => void select(item.id)}
+                type="button"
+              >
+                <span className="relative">
+                  <Avatar className="size-8">
+                    {item.avatarUrl ? <AvatarImage alt="" src={item.avatarUrl} /> : null}
+                    <AvatarFallback>{item.name.slice(0, 1)}</AvatarFallback>
+                  </Avatar>
+                  {(unread.data?.find((entry) => entry.contactId === item.id)?.unreadCount ?? 0) >
+                  0 ? (
+                    <span className="absolute -top-1 -right-1 size-3 rounded-full bg-primary" />
+                  ) : null}
+                </span>
+                <span className="min-w-0 flex-1 truncate">{item.name}</span>
                 {(unread.data?.find((entry) => entry.contactId === item.id)?.unreadCount ?? 0) >
                 0 ? (
-                  <span className="absolute -top-1 -right-1 size-3 rounded-full bg-primary" />
+                  <span className="shrink-0 rounded-full bg-primary px-1.5 text-[10px] leading-4 text-primary-foreground">
+                    {unread.data?.find((entry) => entry.contactId === item.id)?.unreadCount}
+                  </span>
                 ) : null}
-              </span>
-              <span className="min-w-0 flex-1 truncate">{item.name}</span>
-              {(unread.data?.find((entry) => entry.contactId === item.id)?.unreadCount ?? 0) > 0 ? (
-                <span className="shrink-0 rounded-full bg-primary px-1.5 text-[10px] leading-4 text-primary-foreground">
-                  {unread.data?.find((entry) => entry.contactId === item.id)?.unreadCount}
-                </span>
-              ) : null}
-            </button>
-          ))
+              </button>
+            ))}
+          </div>
         ) : (
           <p className="px-2 py-8 text-center text-muted-foreground text-xs">暂无飞书联系人</p>
         )}
