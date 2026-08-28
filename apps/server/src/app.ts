@@ -525,6 +525,10 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
       }
     },
     (id) => chatConfig.get().agents.find((item) => item.id === id),
+    (message) =>
+      activityLogs
+        .append({ level: "warning", source: "飞书联系人资料", message })
+        .then(() => undefined),
   );
   await feishu.start();
   await automations.init();

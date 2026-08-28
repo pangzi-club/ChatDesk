@@ -752,6 +752,7 @@ export type ChannelMessage = {
   contactId: string;
   senderId: string;
   senderName?: string;
+  senderAvatarUrl?: string;
   text: string;
   direction: "inbound" | "outbound";
   status: "received" | "sending" | "sent" | "failed";

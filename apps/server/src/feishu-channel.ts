@@ -16,6 +16,7 @@ export class FeishuChannelManager {
   private readonly queues = new Map<string, Promise<void>>();
   private readonly onMessage?: (item: ChannelMessage) => Promise<void>;
   private readonly getAgent?: (id: string) => AgentConfig | undefined;
+  private readonly onProfileLookupError?: (message: string) => Promise<void>;
   private status: FeishuChannelStatus = {
     provider: "feishu",
     configured: false,
@@ -26,11 +27,13 @@ export class FeishuChannelManager {
     events: EventHub,
     onMessage?: (item: ChannelMessage) => Promise<void>,
     getAgent?: (id: string) => AgentConfig | undefined,
+    onProfileLookupError?: (message: string) => Promise<void>,
   ) {
     this.store = store;
     this.events = events;
     this.onMessage = onMessage;
     this.getAgent = getAgent;
+    this.onProfileLookupError = onProfileLookupError;
   }
   getStatus() {
     return this.status;
@@ -80,16 +83,25 @@ export class FeishuChannelManager {
     channel.on("message", async (message) => {
       if (message.chatType !== "p2p" || message.rawContentType !== "text") return;
       let senderName = message.senderName;
-      if (!senderName) {
-        try {
-          const response = await channel.rawClient.contact.user.get({
-            path: { user_id: message.senderId },
-            params: { user_id_type: "open_id" },
-          });
-          senderName = response.data?.user?.name;
-        } catch {
-          // The message remains usable when the app lacks contact read permission.
+      let senderAvatarUrl: string | undefined;
+      try {
+        const response = await channel.rawClient.contact.user.get({
+          path: { user_id: message.senderId },
+          params: { user_id_type: "open_id" },
+        });
+        if (response.code !== undefined && response.code !== 0) {
+          throw new Error(`code=${response.code}, msg=${response.msg ?? "未知错误"}`);
         }
+        senderName = response.data?.user?.name || senderName;
+        senderAvatarUrl = response.data?.user?.avatar?.avatar_72;
+        if (!response.data?.user) {
+          throw new Error("响应中没有 data.user");
+        }
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        await this.onProfileLookupError?.(
+          `联系人资料查询失败，senderId=${message.senderId}，${detail}；已回退使用联系人 ID`,
+        );
       }
       const item: ChannelMessage = {
         id: message.messageId,
@@ -97,6 +109,7 @@ export class FeishuChannelManager {
         contactId: message.senderId,
         senderId: message.senderId,
         senderName,
+        senderAvatarUrl,
         text: message.content,
         direction: "inbound",
         status: "received",
@@ -193,6 +206,14 @@ export class FeishuChannelManager {
       createdAt: new Date().toISOString(),
     };
     await this.store.upsertMessage(message);
+    this.events.publish({
+      type: "channel.message.received",
+      sessionId: "",
+      channelProvider: "feishu",
+      channelContactId: contactId,
+      channelMessage: message,
+      channelUnread: await this.store.listUnread(),
+    });
     return message;
   }
   private publishStatus() {

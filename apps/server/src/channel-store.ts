@@ -101,17 +101,28 @@ export class ChannelStore {
     if (this.value.messages.some((item) => item.id === message.id)) return false;
     this.value.messages.push(message);
     const contact = this.value.contacts.find((item) => item.id === message.contactId);
-    if (contact)
+    if (contact) {
       Object.assign(contact, {
-        ...(message.senderName && contact.name === contact.id ? { name: message.senderName } : {}),
+        ...(message.direction === "inbound"
+          ? { name: message.senderName ?? message.contactId }
+          : {}),
+        ...(message.direction === "inbound" && message.senderAvatarUrl
+          ? { avatarUrl: message.senderAvatarUrl }
+          : {}),
         lastMessagePreview: message.text,
         lastMessageAt: message.createdAt,
       });
-    else
+    } else
       this.value.contacts.push({
         id: message.contactId,
         provider: message.provider,
-        name: message.senderName ?? message.contactId,
+        name:
+          message.direction === "inbound"
+            ? (message.senderName ?? message.contactId)
+            : message.contactId,
+        ...(message.direction === "inbound" && message.senderAvatarUrl
+          ? { avatarUrl: message.senderAvatarUrl }
+          : {}),
         lastMessagePreview: message.text,
         lastMessageAt: message.createdAt,
         unreadCount: 0,

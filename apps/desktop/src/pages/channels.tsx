@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bot, RefreshCw, Send } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { type UIEvent, useCallback, useEffect, useRef, useState } from "react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -28,6 +28,8 @@ export function ChannelsPage() {
   const client = useQueryClient();
   const [selected, setSelected] = useState<string>();
   const [text, setText] = useState("");
+  const messagesContainerRef = useRef<HTMLElement>(null);
+  const clearingUnreadRef = useRef<string | undefined>(undefined);
   const contacts = useQuery({ queryKey: ["feishu-contacts"], queryFn: () => loadFeishuContacts() });
   const unread = useQuery({ queryKey: ["feishu-unread"], queryFn: () => loadFeishuUnread() });
   const channelStatus = useQuery({
@@ -80,6 +82,38 @@ export function ChannelsPage() {
     },
   });
   const contact = contacts.data?.find((item) => item.id === selected);
+  const clearUnread = useCallback(async () => {
+    if (!selected || clearingUnreadRef.current === selected) return;
+    const unreadCount =
+      unread.data?.find((entry) => entry.contactId === selected)?.unreadCount ?? 0;
+    if (unreadCount <= 0) return;
+    clearingUnreadRef.current = selected;
+    try {
+      await markFeishuContactRead(selected);
+      window.dispatchEvent(new Event("chatdesk:feishu-unread-updated"));
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ["feishu-unread"] }),
+        client.invalidateQueries({ queryKey: ["feishu-contacts"] }),
+      ]);
+    } finally {
+      clearingUnreadRef.current = undefined;
+    }
+  }, [client, selected, unread.data]);
+  const handleMessagesScroll = useCallback(
+    (event: UIEvent<HTMLElement>) => {
+      const element = event.currentTarget;
+      if (element.scrollHeight - element.scrollTop - element.clientHeight <= 8) {
+        void clearUnread();
+      }
+    },
+    [clearUnread],
+  );
+  useEffect(() => {
+    const element = messagesContainerRef.current;
+    if (element && element.scrollHeight - element.scrollTop - element.clientHeight <= 8) {
+      void clearUnread();
+    }
+  }, [clearUnread]);
   const select = useCallback(
     async (id: string) => {
       setSelected(id);
@@ -123,6 +157,7 @@ export function ChannelsPage() {
             >
               <span className="relative">
                 <Avatar className="size-8">
+                  {item.avatarUrl ? <AvatarImage alt="" src={item.avatarUrl} /> : null}
                   <AvatarFallback>{item.name.slice(0, 1)}</AvatarFallback>
                 </Avatar>
                 {(unread.data?.find((entry) => entry.contactId === item.id)?.unreadCount ?? 0) >
@@ -146,17 +181,20 @@ export function ChannelsPage() {
         {contact ? (
           <>
             <header className="flex h-12 shrink-0 items-center gap-2 border-border border-b px-5">
-              <Avatar className="size-7" title={channelStatus.data?.agentName || "绑定 Agent"}>
-                <AvatarFallback className="text-[11px]">
-                  {channelStatus.data?.agentAvatar || <Bot className="size-3.5" />}
-                </AvatarFallback>
+              <Avatar aria-label={contact.name} className="size-7" title={contact.name}>
+                {contact.avatarUrl ? <AvatarImage alt="" src={contact.avatarUrl} /> : null}
+                <AvatarFallback className="text-[11px]">{contact.name.slice(0, 1)}</AvatarFallback>
               </Avatar>
               <div className="min-w-0">
                 <div className="truncate font-medium text-sm">{contact.name}</div>
                 <div className="text-muted-foreground text-xs">飞书单聊</div>
               </div>
             </header>
-            <section className="min-h-0 flex-1 overflow-y-auto">
+            <section
+              className="min-h-0 flex-1 overflow-y-auto"
+              onScroll={handleMessagesScroll}
+              ref={messagesContainerRef}
+            >
               <div className="mx-auto flex w-full max-w-[820px] flex-col gap-5 px-5 py-6">
                 {messages.isPending ? (
                   <div className="space-y-5">
@@ -188,6 +226,9 @@ export function ChannelsPage() {
                               className="size-7 shrink-0"
                               title={contact.name}
                             >
+                              {contact.avatarUrl ? (
+                                <AvatarImage alt="" src={contact.avatarUrl} />
+                              ) : null}
                               <AvatarFallback className="text-[11px]">
                                 {contact.name.slice(0, 1)}
                               </AvatarFallback>
