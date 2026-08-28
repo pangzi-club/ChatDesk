@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, RefreshCw, Send } from "lucide-react";
-import { type UIEvent, useCallback, useEffect, useRef, useState } from "react";
+import { Bot, Send, Settings } from "lucide-react";
+import { type UIEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { AgentAvatar } from "@/components/agent-avatar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,8 +26,16 @@ function formatMessageTime(value: string) {
   }).format(new Date(value));
 }
 
+function scrollMessagesToBottom(element: HTMLElement) {
+  const previousBehavior = element.style.scrollBehavior;
+  element.style.scrollBehavior = "auto";
+  element.scrollTop = element.scrollHeight;
+  element.style.scrollBehavior = previousBehavior;
+}
+
 export function ChannelsPage() {
   const client = useQueryClient();
+  const navigate = useNavigate();
   const [selected, setSelected] = useState<string>();
   const [text, setText] = useState("");
   const messagesContainerRef = useRef<HTMLElement>(null);
@@ -44,6 +54,10 @@ export function ChannelsPage() {
     queryFn: () => loadFeishuMessages(selected ?? ""),
     enabled: Boolean(selected),
   });
+  useLayoutEffect(() => {
+    const element = messagesContainerRef.current;
+    if (selected && messages.data && element) scrollMessagesToBottom(element);
+  }, [messages.data, selected]);
   useEffect(() => {
     let active = true;
     let cleanup: (() => void) | undefined;
@@ -133,13 +147,13 @@ export function ChannelsPage() {
         <div className="mb-3 flex items-center justify-between">
           <h1 className="font-semibold text-sm">Channel</h1>
           <Button
-            aria-label="刷新联系人"
-            disabled={contacts.isFetching}
-            onClick={() => void contacts.refetch()}
+            aria-label="Channel 设置"
+            onClick={() => navigate("/settings/channel")}
             size="icon"
+            title="Channel 设置"
             variant="ghost"
           >
-            <RefreshCw className="size-4" />
+            <Settings className="size-4" />
           </Button>
         </div>
         {contacts.isPending ? (
@@ -244,15 +258,13 @@ export function ChannelsPage() {
                             </div>
                           </div>
                           {outbound ? (
-                            <Avatar
+                            <AgentAvatar
                               aria-label={channelStatus.data?.agentName || "绑定 Agent"}
                               className="size-7 shrink-0"
+                              fallback={<Bot className="size-3.5" />}
                               title={channelStatus.data?.agentName || "绑定 Agent"}
-                            >
-                              <AvatarFallback className="text-[11px]">
-                                {channelStatus.data?.agentAvatar || <Bot className="size-3.5" />}
-                              </AvatarFallback>
-                            </Avatar>
+                              value={channelStatus.data?.agentAvatar}
+                            />
                           ) : null}
                         </div>
                       </div>

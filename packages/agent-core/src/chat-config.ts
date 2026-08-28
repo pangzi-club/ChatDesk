@@ -1,6 +1,11 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { AgentConfig, ChatServerConfigData, ChatToolPackId } from "@chatdesk/shared";
+import {
+  type AgentConfig,
+  type ChatServerConfigData,
+  type ChatToolPackId,
+  normalizeAgentAvatar,
+} from "@chatdesk/shared";
 import { isDeveloperToolDirectory } from "./developer-environment.ts";
 
 export type { ChatServerConfigData } from "@chatdesk/shared";
@@ -131,7 +136,7 @@ function normalizeAgents(value: unknown): AgentConfig[] {
       return {
         id,
         name,
-        avatar: stringField("avatar", 16),
+        avatar: normalizeAgentAvatar(record.avatar),
         modelId,
         systemPrompt: stringField("systemPrompt", 20_000),
         toolPackIds: ids("toolPackIds", 50).filter((v): v is ChatToolPackId =>

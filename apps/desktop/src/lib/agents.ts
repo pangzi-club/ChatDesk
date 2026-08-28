@@ -1,4 +1,4 @@
-import type { AgentConfig, ChatToolPackId } from "@chatdesk/shared";
+import { type AgentConfig, type ChatToolPackId, normalizeAgentAvatar } from "@chatdesk/shared";
 import { loadChatServerConfig, saveChatServerConfig } from "@/lib/chat-server";
 
 export type { AgentConfig } from "@chatdesk/shared";
@@ -38,7 +38,7 @@ export function prepareAgent(agent: AgentConfig, existing: boolean) {
     ...agent,
     id: agent.id || crypto.randomUUID(),
     name: agent.name.trim(),
-    avatar: agent.avatar.trim().slice(0, 16),
+    avatar: normalizeAgentAvatar(agent.avatar),
     modelId: agent.modelId.trim(),
     systemPrompt: agent.systemPrompt.trim(),
     toolPackIds: [...new Set(agent.toolPackIds)] as ChatToolPackId[],

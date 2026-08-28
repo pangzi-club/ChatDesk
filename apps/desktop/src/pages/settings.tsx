@@ -44,6 +44,7 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
+import { AgentAvatar, AgentAvatarPicker } from "@/components/agent-avatar";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { ChatMemorySettings } from "@/components/chat-memory-settings";
 import { ChatToolsSettings } from "@/components/chat-tools-settings";
@@ -2991,9 +2992,7 @@ function AgentsSettingsPage() {
             {sortAgents(agents).map((agent) => (
               <div key={agent.id}>
                 <div className="flex items-center gap-3 rounded-md border border-border bg-background px-4 py-3">
-                  <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-accent text-lg">
-                    {agent.avatar || <Bot className="size-4 text-muted-foreground" />}
-                  </div>
+                  <AgentAvatar className="size-9 shrink-0" value={agent.avatar} />
                   <div className="min-w-0 flex-1">
                     <h3 className="truncate font-medium text-sm">{agent.name}</h3>
                     <p className="mt-1 truncate text-muted-foreground text-xs">
@@ -3091,7 +3090,6 @@ function AgentDialog({
   onClose: () => void;
   onSave: (agent: AgentConfig) => Promise<void>;
 }) {
-  const avatarPresets = ["🤖", "🧑‍💻", "🎨", "📊", "🔍", "✍️", "🛠️", "🌐", "🧠", "🚀"];
   const [agent, setAgent] = useState(initialAgent);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -3163,25 +3161,15 @@ function AgentDialog({
           </Button>
         </div>
         <div className="space-y-4 px-6 py-5">
-          <div className="grid grid-cols-[120px_1fr] gap-3">
+          <div className="grid gap-4 sm:grid-cols-[minmax(220px,260px)_minmax(0,1fr)]">
             <div className="text-sm">
-              头像
-              <Select
-                value={agent.avatar || "__default__"}
-                onValueChange={(value) => update("avatar", value === "__default__" ? "" : value)}
-              >
-                <SelectTrigger className="mt-2 w-full text-lg">
-                  <SelectValue placeholder="选择头像" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__default__">默认</SelectItem>
-                  {avatarPresets.map((avatar) => (
-                    <SelectItem key={avatar} value={avatar}>
-                      {avatar}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <span>头像</span>
+              <div className="mt-2">
+                <AgentAvatarPicker
+                  value={agent.avatar}
+                  onChange={(value) => update("avatar", value)}
+                />
+              </div>
             </div>
             <label className="text-sm" htmlFor="agent-name">
               名称
