@@ -764,14 +764,22 @@ export type ChannelUnreadState = {
   lastReceivedAt?: string;
 };
 export type FeishuChannelConfig = {
+  name: string;
   appId: string;
   appSecret: string;
+  agentId: string;
 };
 export type FeishuChannelStatus = {
   provider: ChannelProvider;
   configured: boolean;
   status: ChannelConnectionStatus;
+  name?: string;
   appId?: string;
+  agentId?: string;
+  agentName?: string;
+  agentAvatar?: string;
+  agentValid?: boolean;
+  needsAgent?: boolean;
   botName?: string;
   lastConnectedAt?: string;
   lastReceivedAt?: string;

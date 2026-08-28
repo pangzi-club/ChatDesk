@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { MessageSquare, RefreshCw, Send } from "lucide-react";
+import { Bot, RefreshCw, Send } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import {
   chatServerRequest,
   loadChatServerPort,
+  loadFeishuChannelStatus,
   loadFeishuContacts,
   loadFeishuMessages,
   loadFeishuUnread,
@@ -29,6 +30,10 @@ export function ChannelsPage() {
   const [text, setText] = useState("");
   const contacts = useQuery({ queryKey: ["feishu-contacts"], queryFn: () => loadFeishuContacts() });
   const unread = useQuery({ queryKey: ["feishu-unread"], queryFn: () => loadFeishuUnread() });
+  const channelStatus = useQuery({
+    queryKey: ["feishu-status"],
+    queryFn: () => loadFeishuChannelStatus(),
+  });
   useEffect(() => {
     void Promise.all([contacts.refetch(), unread.refetch()]);
   }, [contacts.refetch, unread.refetch]);
@@ -141,7 +146,11 @@ export function ChannelsPage() {
         {contact ? (
           <>
             <header className="flex h-12 shrink-0 items-center gap-2 border-border border-b px-5">
-              <MessageSquare className="size-4 text-muted-foreground" />
+              <Avatar className="size-7" title={channelStatus.data?.agentName || "绑定 Agent"}>
+                <AvatarFallback className="text-[11px]">
+                  {channelStatus.data?.agentAvatar || <Bot className="size-3.5" />}
+                </AvatarFallback>
+              </Avatar>
               <div className="min-w-0">
                 <div className="truncate font-medium text-sm">{contact.name}</div>
                 <div className="text-muted-foreground text-xs">飞书单聊</div>
@@ -194,8 +203,14 @@ export function ChannelsPage() {
                             </div>
                           </div>
                           {outbound ? (
-                            <Avatar aria-label="你" className="size-7 shrink-0" title="你">
-                              <AvatarFallback className="text-[11px]">你</AvatarFallback>
+                            <Avatar
+                              aria-label={channelStatus.data?.agentName || "绑定 Agent"}
+                              className="size-7 shrink-0"
+                              title={channelStatus.data?.agentName || "绑定 Agent"}
+                            >
+                              <AvatarFallback className="text-[11px]">
+                                {channelStatus.data?.agentAvatar || <Bot className="size-3.5" />}
+                              </AvatarFallback>
                             </Avatar>
                           ) : null}
                         </div>

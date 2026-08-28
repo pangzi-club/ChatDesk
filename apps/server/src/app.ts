@@ -475,53 +475,57 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   const automations = new AutomationStore(config.dataDir);
   const channels = new ChannelStore(config.dataDir);
   let feishu!: FeishuChannelManager;
-  feishu = new FeishuChannelManager(channels, events, async (item) => {
-    let sessionId = await channels.getSessionId(item.contactId);
-    if (!sessionId || !(await store.get(sessionId))) {
-      const session = emptySession();
-      sessionId = session.id;
-      await store.save({ ...session, title: item.senderName || "飞书对话", source: "feishu" });
-      await channels.setSessionId(item.contactId, sessionId);
-    }
-    const userMessage = {
-      id: `feishu-${item.id}`,
-      role: "user" as const,
-      parts: [{ type: "text" as const, text: item.text }],
-    };
-    try {
-      const configured = chatConfig
-        .get()
-        .models.find((model) =>
-          Boolean(
-            model &&
-              typeof model === "object" &&
-              (model as { isDefault?: unknown }).isDefault === true,
-          ),
-        ) as { id?: string; name?: string } | undefined;
-      if (!configured) throw new Error("未配置默认模型");
-      const response = await runs.start(sessionId, {
-        message: userMessage,
-        modelId: configured.id || configured.name,
-        planMode: "apply",
-      });
-      if (response.body) await response.body.pipeTo(new WritableStream({ write() {} }));
-      await runs.waitForRun(sessionId);
-      const session = await store.get(sessionId);
-      const reply = session?.messages
-        .slice()
-        .reverse()
-        .find((message) => message.role === "assistant");
-      const text = reply ? textFromMessage(reply) : "";
-      await feishu.sendText(item.contactId, text || "暂时无法生成回复，请稍后重试。");
-    } catch (error) {
-      await activityLogs.append({
-        level: "error",
-        source: "飞书自动回复",
-        message: error instanceof Error ? error.message : String(error),
-      });
-      await feishu.sendText(item.contactId, "暂时无法回复，请稍后重试。").catch(() => undefined);
-    }
-  });
+  feishu = new FeishuChannelManager(
+    channels,
+    events,
+    async (item) => {
+      let sessionId = await channels.getSessionId(item.contactId);
+      if (!sessionId || !(await store.get(sessionId))) {
+        const session = emptySession();
+        sessionId = session.id;
+        await store.save({ ...session, title: item.senderName || "飞书对话", source: "feishu" });
+        await channels.setSessionId(item.contactId, sessionId);
+      }
+      const userMessage = {
+        id: `feishu-${item.id}`,
+        role: "user" as const,
+        parts: [{ type: "text" as const, text: item.text }],
+      };
+      try {
+        const channelConfig = await channels.getConfig();
+        const agent = channelConfig?.agentId
+          ? chatConfig.get().agents.find((item) => item.id === channelConfig.agentId)
+          : undefined;
+        if (!agent) throw new Error("Channel 未绑定有效的 Agent");
+        const response = await runs.start(sessionId, {
+          message: userMessage,
+          modelId: agent.modelId,
+          system: agent.systemPrompt || undefined,
+          mcpServerIds: agent.mcpServerIds,
+          skillIds: agent.skillIds,
+          toolNames: agent.toolPackIds,
+          planMode: "apply",
+        });
+        if (response.body) await response.body.pipeTo(new WritableStream({ write() {} }));
+        await runs.waitForRun(sessionId);
+        const session = await store.get(sessionId);
+        const reply = session?.messages
+          .slice()
+          .reverse()
+          .find((message) => message.role === "assistant");
+        const text = reply ? textFromMessage(reply) : "";
+        await feishu.sendText(item.contactId, text || "暂时无法生成回复，请稍后重试。");
+      } catch (error) {
+        await activityLogs.append({
+          level: "error",
+          source: "飞书自动回复",
+          message: error instanceof Error ? error.message : String(error),
+        });
+        await feishu.sendText(item.contactId, "暂时无法回复，请稍后重试。").catch(() => undefined);
+      }
+    },
+    (id) => chatConfig.get().agents.find((item) => item.id === id),
+  );
   await feishu.start();
   await automations.init();
   const automationScheduler = new AutomationScheduler(automations, (task, message) =>
@@ -575,23 +579,63 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
 
   app.get("/v1/channels/feishu/config", async (c) => {
     const value = await channels.getConfig();
+    const agent = value?.agentId
+      ? chatConfig.get().agents.find((item) => item.id === value.agentId)
+      : undefined;
     return c.json(
       feishu.getStatus().configured
-        ? feishu.getStatus()
-        : { ...feishu.getStatus(), configured: Boolean(value), appId: value?.appId },
+        ? {
+            ...feishu.getStatus(),
+            name: value?.name || "飞书",
+            appId: value?.appId,
+            agentId: value?.agentId,
+            agentName: agent?.name,
+            agentAvatar: agent?.avatar,
+            agentValid: Boolean(agent),
+            needsAgent: !agent,
+          }
+        : {
+            ...feishu.getStatus(),
+            configured: Boolean(value),
+            name: value?.name || "飞书",
+            appId: value?.appId,
+            agentId: value?.agentId,
+          },
     );
   });
   app.put("/v1/channels/feishu/config", async (c) => {
-    const body = (await c.req.json()) as { appId?: unknown; appSecret?: unknown };
+    const body = (await c.req.json()) as {
+      name?: unknown;
+      appId?: unknown;
+      appSecret?: unknown;
+      agentId?: unknown;
+    };
+    const existing = await channels.getConfig();
+    const agentId = typeof body.agentId === "string" ? body.agentId.trim() : "";
     if (
+      typeof body.name !== "string" ||
+      !body.name.trim() ||
+      body.name.trim().length > 80 ||
       typeof body.appId !== "string" ||
       !body.appId.trim() ||
-      typeof body.appSecret !== "string" ||
-      !body.appSecret.trim()
+      (typeof body.appSecret !== "string" && body.appSecret !== undefined) ||
+      (body.appSecret === undefined && !existing?.appSecret) ||
+      (typeof body.appSecret === "string" && !body.appSecret.trim() && !existing?.appSecret) ||
+      typeof body.agentId !== "string" ||
+      !agentId ||
+      !chatConfig.get().agents.some((agent) => agent.id === agentId)
     ) {
-      return jsonError("App ID 和 App Secret 不能为空", 400);
+      return jsonError("Channel 名称、App ID、App Secret 和有效 Agent 不能为空", 400);
     }
-    await feishu.saveConfig({ appId: body.appId.trim(), appSecret: body.appSecret.trim() });
+    await feishu.saveConfig({
+      name: body.name.trim(),
+      appId: body.appId.trim(),
+      appSecret:
+        typeof body.appSecret === "string" && body.appSecret.trim()
+          ? body.appSecret.trim()
+          : existing?.appSecret || "",
+      agentId,
+    });
     return c.json(feishu.getStatus());
   });
   app.delete("/v1/channels/feishu/config", async (c) => {
@@ -1065,7 +1109,23 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   app.get("/v1/sandbox-reviews", (c) => c.json(runs.reviewLogs(c.req.query("sessionId"))));
   app.patch("/v1/chat-config", async (c) => {
     try {
-      return c.json(await chatConfig.update(await c.req.json()));
+      const body = await c.req.json();
+      const current = chatConfig.get();
+      const nextAgents =
+        body && typeof body === "object" && Array.isArray(body.agents)
+          ? body.agents
+          : current.agents;
+      const boundAgentId = (await channels.getConfig())?.agentId;
+      if (
+        boundAgentId &&
+        nextAgents.every(
+          (agent: unknown) =>
+            agent && typeof agent === "object" && (agent as { id?: unknown }).id !== boundAgentId,
+        )
+      ) {
+        return jsonError("该 Agent 已被 Channel 绑定，请先更换 Channel 的 Agent", 400);
+      }
+      return c.json(await chatConfig.update(body));
     } catch (error) {
       return jsonError(error instanceof Error ? error.message : String(error));
     }

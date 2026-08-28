@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { EventHub } from "@chatdesk/agent-core";
-import type { ChannelMessage, FeishuChannelStatus } from "@chatdesk/shared";
+import type {
+  AgentConfig,
+  ChannelMessage,
+  FeishuChannelConfig,
+  FeishuChannelStatus,
+} from "@chatdesk/shared";
 import { createLarkChannel, type LarkChannel } from "@larksuiteoapi/node-sdk";
 import type { ChannelStore } from "./channel-store.ts";
 
@@ -10,6 +15,7 @@ export class FeishuChannelManager {
   private channel?: LarkChannel;
   private readonly queues = new Map<string, Promise<void>>();
   private readonly onMessage?: (item: ChannelMessage) => Promise<void>;
+  private readonly getAgent?: (id: string) => AgentConfig | undefined;
   private status: FeishuChannelStatus = {
     provider: "feishu",
     configured: false,
@@ -19,10 +25,12 @@ export class FeishuChannelManager {
     store: ChannelStore,
     events: EventHub,
     onMessage?: (item: ChannelMessage) => Promise<void>,
+    getAgent?: (id: string) => AgentConfig | undefined,
   ) {
     this.store = store;
     this.events = events;
     this.onMessage = onMessage;
+    this.getAgent = getAgent;
   }
   getStatus() {
     return this.status;
@@ -31,14 +39,36 @@ export class FeishuChannelManager {
     const config = await this.store.getConfig();
     if (config) await this.configure(config);
   }
-  async configure(config: { appId: string; appSecret: string }) {
-    await this.stop();
-    this.status = {
+  private statusFor(
+    config: FeishuChannelConfig,
+    status: FeishuChannelStatus["status"],
+  ): FeishuChannelStatus {
+    const agent = config.agentId ? this.getAgent?.(config.agentId) : undefined;
+    return {
       provider: "feishu",
       configured: true,
-      status: "connecting",
+      status,
+      name: config.name || "飞书",
       appId: config.appId,
+      agentId: config.agentId,
+      agentName: agent?.name,
+      agentAvatar: agent?.avatar,
+      agentValid: Boolean(agent),
+      needsAgent: !agent,
     };
+  }
+  async configure(config: FeishuChannelConfig) {
+    await this.stop();
+    const agent = config.agentId ? this.getAgent?.(config.agentId) : undefined;
+    if (!agent) {
+      this.status = {
+        ...this.statusFor(config, "error"),
+        lastError: "请为 Channel 绑定有效的 Agent",
+      };
+      this.publishStatus();
+      return;
+    }
+    this.status = this.statusFor(config, "connecting");
     this.publishStatus();
     const channel = createLarkChannel({
       appId: config.appId,
@@ -138,7 +168,7 @@ export class FeishuChannelManager {
     if (this.channel) await this.channel.disconnect().catch(() => undefined);
     this.channel = undefined;
   }
-  async saveConfig(config: { appId: string; appSecret: string }) {
+  async saveConfig(config: FeishuChannelConfig) {
     await this.store.setConfig(config);
     await this.configure(config);
   }

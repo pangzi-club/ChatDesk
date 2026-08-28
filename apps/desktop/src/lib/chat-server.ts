@@ -955,7 +955,7 @@ export async function loadFeishuChannelStatus(port?: number) {
   return (await response.json()) as FeishuChannelStatus;
 }
 export async function saveFeishuChannelConfig(
-  input: { appId: string; appSecret: string },
+  input: { name: string; appId: string; appSecret?: string; agentId: string },
   port?: number,
 ) {
   const response = await chatServerRequest(

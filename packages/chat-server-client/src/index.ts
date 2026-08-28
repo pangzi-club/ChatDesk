@@ -211,7 +211,7 @@ export class ChatServerClient {
   getFeishuConfig() {
     return this.json<FeishuChannelStatus>("/v1/channels/feishu/config");
   }
-  saveFeishuConfig(input: { appId: string; appSecret: string }) {
+  saveFeishuConfig(input: { name: string; appId: string; appSecret?: string; agentId: string }) {
     return this.json<FeishuChannelStatus>("/v1/channels/feishu/config", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },

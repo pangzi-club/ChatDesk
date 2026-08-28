@@ -30,7 +30,20 @@ export class ChannelStore {
     try {
       const parsed = JSON.parse(await readFile(this.file, "utf8")) as Partial<Persisted>;
       this.value = {
-        config: parsed.config,
+        config:
+          parsed.config && typeof parsed.config === "object"
+            ? {
+                name: (() => {
+                  const name = (parsed.config as Partial<FeishuChannelConfig>).name;
+                  return typeof name === "string" && name.trim()
+                    ? name.trim().slice(0, 80)
+                    : "飞书";
+                })(),
+                appId: String((parsed.config as Partial<FeishuChannelConfig>).appId ?? ""),
+                appSecret: String((parsed.config as Partial<FeishuChannelConfig>).appSecret ?? ""),
+                agentId: String((parsed.config as Partial<FeishuChannelConfig>).agentId ?? ""),
+              }
+            : undefined,
         contacts: Array.isArray(parsed.contacts) ? parsed.contacts : [],
         messages: Array.isArray(parsed.messages) ? parsed.messages : [],
         unread: Array.isArray(parsed.unread) ? parsed.unread : [],

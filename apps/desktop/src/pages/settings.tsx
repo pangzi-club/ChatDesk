@@ -58,6 +58,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -95,10 +96,11 @@ import {
   saveChatMemory,
 } from "@/lib/chat-memory";
 import { compactChatMemory } from "@/lib/chat-memory-ops";
-import type { ChatServerProviderModel } from "@/lib/chat-server";
+import type { ChatServerProviderModel, FeishuChannelStatus } from "@/lib/chat-server";
 import {
   canRestartChatServer,
   checkChatServer,
+  deleteFeishuChannelConfig,
   importDeveloperEnvironment,
   listChatServerModels,
   loadChatServerConfig,
@@ -889,74 +891,284 @@ function GeneralSettingsPage() {
 }
 
 function FeishuChannelSettingsPage() {
+  const queryClient = useQueryClient();
   const statusQuery = useQuery({
     queryKey: ["feishu-status"],
     queryFn: () => loadFeishuChannelStatus(),
   });
-  const [appId, setAppId] = useState("");
-  const [appSecret, setAppSecret] = useState("");
-  const save = useMutation({
-    mutationFn: () => saveFeishuChannelConfig({ appId, appSecret }),
-    onSuccess: () => void statusQuery.refetch(),
+  const agentsQuery = useQuery({ queryKey: ["agents"], queryFn: loadAgents });
+  const [editing, setEditing] = useState<NonNullable<typeof statusQuery.data> | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const remove = useMutation({
+    mutationFn: () => deleteFeishuChannelConfig(),
+    onSuccess: () => {
+      queryClient.setQueryData(["feishu-status"], {
+        provider: "feishu",
+        configured: false,
+        status: "unconfigured",
+      });
+      setDeleting(false);
+    },
   });
-  const test = useMutation({
-    mutationFn: () => testFeishuChannel(),
-    onSuccess: () => void statusQuery.refetch(),
-  });
+  const status = statusQuery.data;
   return (
     <>
       <SettingsHeading
         eyebrow="Channel"
-        title="飞书"
-        description="连接飞书机器人，接收单聊消息并在 ChatDesk 中回复。"
+        title="Channel"
+        description="管理外部消息渠道及其绑定的 Agent。"
       />
-      <section className="space-y-4 rounded-lg border border-border bg-card p-5">
-        <div className="grid gap-3">
-          <label className="text-sm" htmlFor="feishu-app-id">
+      <section className="rounded-lg border border-border bg-card">
+        <div className="flex items-center justify-between gap-4 border-border border-b px-5 py-4">
+          <div>
+            <h2 className="font-medium text-sm">Channel 配置</h2>
+            <p className="mt-1 text-muted-foreground text-xs">
+              配置飞书机器人并选择自动回复 Agent。
+            </p>
+          </div>
+          <Button
+            onClick={() =>
+              setEditing({
+                provider: "feishu",
+                configured: false,
+                status: "unconfigured",
+                name: "",
+                appId: "",
+                agentId: "",
+              })
+            }
+            size="sm"
+            type="button"
+          >
+            <Plus className="size-3.5" /> {status?.configured ? "编辑 Channel" : "新建 Channel"}
+          </Button>
+        </div>
+        {statusQuery.isPending ? (
+          <div className="space-y-3 p-5">
+            <div className="h-16 animate-pulse rounded-md bg-accent" />
+          </div>
+        ) : status?.configured ? (
+          <div className="flex items-center gap-3 px-5 py-4">
+            <Avatar>
+              <AvatarFallback>{status.name?.slice(0, 1) || "飞"}</AvatarFallback>
+            </Avatar>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <h3 className="truncate font-medium text-sm">{status.name || "飞书"}</h3>
+                <Badge variant={status.status === "connected" ? "default" : "outline"}>
+                  {status.status}
+                </Badge>
+              </div>
+              <p className="mt-1 truncate text-muted-foreground text-xs">
+                飞书 · {status.appId || "未配置 App ID"} · Agent：{status.agentName || "待绑定"}
+              </p>
+              {status.lastError ? (
+                <p className="mt-1 text-destructive text-xs">{status.lastError}</p>
+              ) : null}
+            </div>
+            <Button
+              aria-label="编辑 Channel"
+              onClick={() => setEditing(status)}
+              size="icon"
+              type="button"
+              variant="ghost"
+            >
+              <Pencil className="size-4" />
+            </Button>
+            <Button
+              aria-label="删除 Channel"
+              onClick={() => setDeleting(true)}
+              size="icon"
+              type="button"
+              variant="ghost"
+            >
+              <Trash2 className="size-4 text-destructive" />
+            </Button>
+          </div>
+        ) : (
+          <div className="px-5 py-14 text-center">
+            <MessageSquare className="mx-auto size-8 text-muted-foreground" />
+            <p className="mt-3 font-medium text-sm">还没有 Channel 配置</p>
+            <p className="mt-1 text-muted-foreground text-xs">
+              新建一个飞书 Channel 开始接收消息。
+            </p>
+          </div>
+        )}
+      </section>
+      {editing ? (
+        <ChannelDialog
+          initialStatus={editing}
+          agents={agentsQuery.data ?? []}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            void statusQuery.refetch();
+          }}
+        />
+      ) : null}
+      <AlertDialog open={deleting} onOpenChange={setDeleting}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除 Channel？</AlertDialogTitle>
+            <AlertDialogDescription>删除后将停止飞书连接并移除保存的凭证。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => void remove.mutateAsync()}>
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+function ChannelDialog({
+  initialStatus,
+  agents,
+  onClose,
+  onSaved,
+}: {
+  initialStatus: FeishuChannelStatus;
+  agents: AgentConfig[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(initialStatus.name || (initialStatus.configured ? "飞书" : ""));
+  const [appId, setAppId] = useState(initialStatus.appId || "");
+  const [appSecret, setAppSecret] = useState("");
+  const [agentId, setAgentId] = useState(initialStatus.agentId || "");
+  const [error, setError] = useState("");
+  const [testMessage, setTestMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (
+      !name.trim() ||
+      name.trim().length > 80 ||
+      !appId.trim() ||
+      !agentId ||
+      (!initialStatus.configured && !appSecret.trim())
+    ) {
+      setError("请填写 Channel 名称、App ID、App Secret 并选择 Agent。");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await saveFeishuChannelConfig({
+        name: name.trim(),
+        appId: appId.trim(),
+        ...(appSecret.trim() ? { appSecret: appSecret.trim() } : {}),
+        agentId,
+      });
+      onSaved();
+    } catch (cause) {
+      setError(describeError(cause));
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function testConnection() {
+    setTesting(true);
+    setError("");
+    setTestMessage("");
+    try {
+      const result = await testFeishuChannel();
+      setTestMessage(`连接状态：${result.status}`);
+    } catch (cause) {
+      setError(describeError(cause));
+    } finally {
+      setTesting(false);
+    }
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <form
+        className="w-full max-w-lg rounded-lg border border-border bg-card shadow-xl"
+        onSubmit={submit}
+      >
+        <div className="flex items-center justify-between border-border border-b px-6 py-4">
+          <h2 className="font-semibold text-lg">
+            {initialStatus.configured ? "编辑 Channel" : "新建 Channel"}
+          </h2>
+          <Button aria-label="关闭" onClick={onClose} size="icon" type="button" variant="ghost">
+            <X className="size-4" />
+          </Button>
+        </div>
+        <div className="space-y-4 px-6 py-5">
+          <label className="block text-sm font-medium" htmlFor="channel-name">
+            名称
+            <Input
+              className="mt-2"
+              id="channel-name"
+              maxLength={80}
+              onChange={(event) => setName(event.target.value)}
+              value={name}
+            />
+          </label>
+          <label className="block text-sm font-medium" htmlFor="channel-app-id">
             App ID
             <Input
-              id="feishu-app-id"
-              value={appId}
-              onChange={(event) => setAppId(event.target.value)}
+              className="mt-2"
+              id="channel-app-id"
               placeholder="cli_..."
+              onChange={(event) => setAppId(event.target.value)}
+              value={appId}
             />
           </label>
-          <label className="text-sm" htmlFor="feishu-app-secret">
+          <label className="block text-sm font-medium" htmlFor="channel-app-secret">
             App Secret
             <Input
-              id="feishu-app-secret"
+              className="mt-2"
+              id="channel-app-secret"
+              onChange={(event) => setAppSecret(event.target.value)}
+              placeholder={initialStatus.configured ? "留空保持不变" : "输入 App Secret"}
               type="password"
               value={appSecret}
-              onChange={(event) => setAppSecret(event.target.value)}
             />
           </label>
+          <div className="block text-sm font-medium">
+            绑定 Agent
+            <Select value={agentId} onValueChange={setAgentId}>
+              <SelectTrigger className="mt-2">
+                <SelectValue placeholder="选择 Agent" />
+              </SelectTrigger>
+              <SelectContent>
+                {agents.map((agent) => (
+                  <SelectItem key={agent.id} value={agent.id}>
+                    {agent.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {agents.length === 0 ? (
+            <p className="text-destructive text-xs">请先在 Agents 设置中创建 Agent。</p>
+          ) : null}
+          {error ? <p className="text-destructive text-xs">{error}</p> : null}
+          {testMessage ? <p className="text-muted-foreground text-xs">{testMessage}</p> : null}
         </div>
-        <div className="flex gap-2">
-          <Button
-            disabled={save.isPending || !appId.trim() || !appSecret.trim()}
-            onClick={() => void save.mutateAsync()}
-          >
-            保存
+        <div className="flex justify-end gap-2 border-border border-t px-6 py-4">
+          <Button onClick={onClose} type="button" variant="outline">
+            取消
           </Button>
           <Button
-            disabled={test.isPending || !statusQuery.data?.configured}
-            onClick={() => void test.mutateAsync()}
+            disabled={testing || !initialStatus.configured}
+            onClick={() => void testConnection()}
+            type="button"
             variant="outline"
           >
-            测试连接
+            {testing ? "测试中…" : "测试连接"}
+          </Button>
+          <Button disabled={saving} type="submit">
+            {saving ? "保存中…" : "保存"}
           </Button>
         </div>
-        <div className="border-border border-t pt-4 text-sm">
-          <p>连接状态：{statusQuery.data?.status ?? "未配置"}</p>
-          {statusQuery.data?.botName ? (
-            <p className="mt-1 text-muted-foreground text-xs">机器人：{statusQuery.data.botName}</p>
-          ) : null}
-          {statusQuery.data?.lastError ? (
-            <p className="mt-1 text-destructive text-xs">{statusQuery.data.lastError}</p>
-          ) : null}
-        </div>
-      </section>
-    </>
+      </form>
+    </div>
   );
 }
 
@@ -2681,11 +2893,16 @@ function AgentsSettingsPage() {
   const modelsQuery = useQuery({ queryKey: ["models"], queryFn: loadModels });
   const mcpQuery = useQuery({ queryKey: ["mcp-servers"], queryFn: loadMcpServers });
   const skillsQuery = useQuery({ queryKey: ["available-skills"], queryFn: loadAvailableSkills });
+  const channelQuery = useQuery({
+    queryKey: ["feishu-status"],
+    queryFn: () => loadFeishuChannelStatus(),
+  });
   const [editing, setEditing] = useState<AgentConfig | null>(null);
   const [deleting, setDeleting] = useState<AgentConfig | null>(null);
   const [notice, setNotice] = useState("");
   const agents = agentsQuery.data ?? [];
   const models = modelsQuery.data ?? [];
+  const boundAgentId = channelQuery.data?.configured ? channelQuery.data.agentId : undefined;
 
   async function save(agent: AgentConfig) {
     if (!agent.name.trim() || !agent.modelId) throw new Error("请填写 Agent 名称并选择模型。");
@@ -2698,6 +2915,7 @@ function AgentsSettingsPage() {
       : [...agents, next];
     await saveAgents(all);
     queryClient.setQueryData(["agents"], all);
+    await queryClient.invalidateQueries({ queryKey: ["feishu-status"] });
     setEditing(null);
   }
 
@@ -2707,6 +2925,7 @@ function AgentsSettingsPage() {
       const next = agents.filter((item) => item.id !== deleting.id);
       await saveAgents(next);
       queryClient.setQueryData(["agents"], next);
+      await queryClient.invalidateQueries({ queryKey: ["feishu-status"] });
       setDeleting(null);
     } catch {
       setNotice("删除失败，请重试。");
@@ -2760,43 +2979,53 @@ function AgentsSettingsPage() {
         ) : (
           <div className="space-y-3 p-5">
             {sortAgents(agents).map((agent) => (
-              <div
-                className="flex items-center gap-3 rounded-md border border-border bg-background px-4 py-3"
-                key={agent.id}
-              >
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-accent text-lg">
-                  {agent.avatar || <Bot className="size-4 text-muted-foreground" />}
+              <div key={agent.id}>
+                <div className="flex items-center gap-3 rounded-md border border-border bg-background px-4 py-3">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-accent text-lg">
+                    {agent.avatar || <Bot className="size-4 text-muted-foreground" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="truncate font-medium text-sm">{agent.name}</h3>
+                    <p className="mt-1 truncate text-muted-foreground text-xs">
+                      {models.find((model) => model.id === agent.modelId)?.name || "模型已移除"} ·{" "}
+                      {agent.systemPrompt || "未设置系统提示词"}
+                    </p>
+                    <p className="mt-1 text-muted-foreground text-[11px]">
+                      Tools {agent.toolPackIds.length} · MCP {agent.mcpServerIds.length} · Skills{" "}
+                      {agent.skillIds.length}
+                    </p>
+                  </div>
+                  <Button
+                    aria-label={`编辑 ${agent.name}`}
+                    onClick={() => setEditing({ ...agent })}
+                    size="icon"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <Pencil className="size-4" />
+                  </Button>
+                  <Button
+                    aria-label={`删除 ${agent.name}`}
+                    className="text-destructive hover:text-destructive disabled:opacity-40"
+                    disabled={agent.id === boundAgentId}
+                    onClick={() => setDeleting(agent)}
+                    size="icon"
+                    title={
+                      agent.id === boundAgentId
+                        ? `已被 Channel「${channelQuery.data?.name || "飞书"}」绑定，无法删除`
+                        : undefined
+                    }
+                    type="button"
+                    variant="ghost"
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <h3 className="truncate font-medium text-sm">{agent.name}</h3>
-                  <p className="mt-1 truncate text-muted-foreground text-xs">
-                    {models.find((model) => model.id === agent.modelId)?.name || "模型已移除"} ·{" "}
-                    {agent.systemPrompt || "未设置系统提示词"}
-                  </p>
-                  <p className="mt-1 text-muted-foreground text-[11px]">
-                    Tools {agent.toolPackIds.length} · MCP {agent.mcpServerIds.length} · Skills{" "}
-                    {agent.skillIds.length}
-                  </p>
-                </div>
-                <Button
-                  aria-label={`编辑 ${agent.name}`}
-                  onClick={() => setEditing({ ...agent })}
-                  size="icon"
-                  type="button"
-                  variant="ghost"
-                >
-                  <Pencil className="size-4" />
-                </Button>
-                <Button
-                  aria-label={`删除 ${agent.name}`}
-                  className="text-destructive hover:text-destructive"
-                  onClick={() => setDeleting(agent)}
-                  size="icon"
-                  type="button"
-                  variant="ghost"
-                >
-                  <Trash2 className="size-4" />
-                </Button>
+                <p className="mt-1 px-4 text-muted-foreground text-[11px]">
+                  {agent.id === boundAgentId
+                    ? `已绑定 Channel：${channelQuery.data?.name || "飞书"}`
+                    : "未绑定 Channel"}
+                </p>
               </div>
             ))}
           </div>
