@@ -274,7 +274,12 @@ const commandItems = [
     icon: Keyboard,
     keywords: ["设置", "快捷键", "shortcut", "hotkey", "键盘"],
   },
-  { to: "/settings/keys", label: "API Keys", icon: KeyRound, keywords: ["设置", "密钥", "api"] },
+  {
+    to: "/settings/keys",
+    label: "其他密钥",
+    icon: KeyRound,
+    keywords: ["设置", "密钥", "其他密钥", "API Keys", "api"],
+  },
   { to: "/settings/models", label: "模型", icon: Package, keywords: ["设置", "models", "model"] },
   {
     to: "/settings/agents",

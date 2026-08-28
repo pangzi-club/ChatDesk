@@ -104,7 +104,7 @@ export function ChatToolsSettings({
                           className="underline underline-offset-2"
                           to={pack.keysPath ?? "/settings/keys"}
                         >
-                          API Keys
+                          其他密钥
                         </Link>{" "}
                         配置。
                       </p>

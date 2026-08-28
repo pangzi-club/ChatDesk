@@ -383,19 +383,19 @@ function SettingsLayout() {
         </p>
         <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto" aria-label="设置导航">
           <SettingsNavItem to="/settings/general" icon={Bell} label="常规" />
-          <SettingsNavItem to="/settings/channel" icon={MessageSquare} label="Channel" />
           <SettingsNavItem to="/settings/theme" icon={Palette} label="主题" />
           <SettingsNavItem to="/settings/shortcuts" icon={Keyboard} label="快捷键" />
           <SettingsNavItem to="/settings/models" icon={Package} label="模型" />
           <SettingsNavItem to="/settings/agents" icon={Bot} label="Agents" />
+          <SettingsNavItem to="/settings/channel" icon={MessageSquare} label="Channel" />
           <SettingsNavItem to="/settings/mcp" icon={PlugZap} label="MCP" />
           <SettingsNavItem to="/settings/skills" icon={Sparkles} label="Skills" />
           <SettingsNavItem to="/settings/tools" icon={Wrench} label="Tools" />
           <SettingsNavItem to="/settings/sandbox" icon={ShieldCheck} label="沙箱" />
+          <SettingsNavItem to="/settings/memory" icon={Brain} label="长期记忆" />
           <SettingsNavItem to="/settings/environment" icon={SquareTerminal} label="环境" />
           <SettingsNavItem to="/settings/development" icon={FlaskConical} label="开发" />
-          <SettingsNavItem to="/settings/memory" icon={Brain} label="长期记忆" />
-          <SettingsNavItem to="/settings/keys" icon={KeyRound} label="API Keys" />
+          <SettingsNavItem to="/settings/keys" icon={KeyRound} label="其他密钥" />
           <SettingsNavItem to="/settings/chat-server" icon={Server} label="Chat Server" />
           <SettingsNavItem to="/settings/statistics" icon={ChartColumn} label="使用量" />
           <SettingsNavItem to="/settings/logs" icon={ScrollText} label="活动记录" />
@@ -2353,7 +2353,7 @@ function ApiKeysSettingsPage() {
     <>
       <SettingsHeading
         eyebrow="Connections"
-        title="API Keys"
+        title="其他密钥"
         description="密钥只保存在当前设备，不会回显。输入新的值即可覆盖已有配置。"
       />
       <div className="space-y-4">
