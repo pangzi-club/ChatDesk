@@ -3,6 +3,7 @@ import type { ChatIndexItem } from "./chat-store";
 import {
   adjacentConversationId,
   clusterConversations,
+  filterSidebarConversations,
   flattenConversationClusters,
   getWorkspaceSessionKey,
   groupConversationClustersByLocalDate,
@@ -36,6 +37,15 @@ function session(
 }
 
 describe("workspace conversation utilities", () => {
+  it("hides Feishu conversations from the sidebar", () => {
+    const visible = filterSidebarConversations([
+      session("local", { updatedAt: "2026-01-01" }),
+      { ...session("feishu", { updatedAt: "2026-01-02" }), source: "feishu" },
+    ]);
+
+    expect(visible.map((item) => item.id)).toEqual(["local"]);
+  });
+
   it("uses a registered cwd when a legacy session has no workspace id", () => {
     expect(
       getWorkspaceSessionKey(

@@ -27,6 +27,10 @@ export type NestedConversationItem<T = ChatIndexItem> = {
   nested: boolean;
 };
 
+export function filterSidebarConversations<T extends Pick<ChatIndexItem, "source">>(sessions: T[]) {
+  return sessions.filter((session) => session.source !== "feishu");
+}
+
 function conversationTime(value: string | undefined) {
   return typeof value === "string" ? value : "";
 }

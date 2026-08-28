@@ -195,6 +195,7 @@ import { terminalSessions } from "@/lib/terminal";
 import {
   adjacentConversationId,
   clusterConversations,
+  filterSidebarConversations,
   flattenConversationClusters,
   getWorkspaceSessionKey,
   groupConversationClustersByLocalDate,
@@ -1920,10 +1921,10 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
   const groups = useMemo(
     () =>
       groupChatsByWorkspace(
-        chatIndexQuery.data ?? [],
+        filterSidebarConversations(chatIndexQuery.data ?? []),
         sortWorkspaceProjects(
           workspaceProjectsQuery.data ?? [],
-          chatIndexQuery.data ?? [],
+          filterSidebarConversations(chatIndexQuery.data ?? []),
           workspaceSort,
         ),
         workspaceSort,
@@ -1932,7 +1933,7 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
   );
   const listDateGroups = useMemo(() => {
     const clusters = sortConversationClustersByCreatedAt(
-      clusterConversations(chatIndexQuery.data ?? []),
+      clusterConversations(filterSidebarConversations(chatIndexQuery.data ?? [])),
     );
     return groupConversationClustersByLocalDate(clusters);
   }, [chatIndexQuery.data]);
