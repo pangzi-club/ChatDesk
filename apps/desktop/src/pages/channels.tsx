@@ -2,20 +2,23 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bot, Send, Settings } from "lucide-react";
 import { type UIEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AgentAvatar } from "@/components/agent-avatar";
+import { AgentAvatarHoverCard } from "@/components/agent-avatar-hover-card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { loadAgents } from "@/lib/agents";
+import { resolveChannelAgent } from "@/lib/channel-agents";
 import {
   chatServerRequest,
   loadChatServerPort,
-  loadFeishuChannelStatus,
+  loadFeishuChannelStatuses,
   loadFeishuContacts,
   loadFeishuMessages,
   loadFeishuUnread,
   markFeishuContactRead,
   subscribeChatServerEvents,
 } from "@/lib/chat-server";
+import { loadModels } from "@/lib/models";
 
 function formatMessageTime(value: string) {
   return new Intl.DateTimeFormat(undefined, {
@@ -42,10 +45,12 @@ export function ChannelsPage() {
   const clearingUnreadRef = useRef<string | undefined>(undefined);
   const contacts = useQuery({ queryKey: ["feishu-contacts"], queryFn: () => loadFeishuContacts() });
   const unread = useQuery({ queryKey: ["feishu-unread"], queryFn: () => loadFeishuUnread() });
-  const channelStatus = useQuery({
-    queryKey: ["feishu-status"],
-    queryFn: () => loadFeishuChannelStatus(),
+  const channelStatuses = useQuery({
+    queryKey: ["feishu-status", "all"],
+    queryFn: () => loadFeishuChannelStatuses(),
   });
+  const agents = useQuery({ queryKey: ["agents"], queryFn: loadAgents });
+  const models = useQuery({ queryKey: ["models"], queryFn: loadModels });
   useEffect(() => {
     void Promise.all([contacts.refetch(), unread.refetch()]);
   }, [contacts.refetch, unread.refetch]);
@@ -102,6 +107,14 @@ export function ChannelsPage() {
     },
   });
   const contact = contacts.data?.find((item) => `${item.channelId}::${item.id}` === selected);
+  const selectedAgent = contact
+    ? resolveChannelAgent(
+        contact.channelId,
+        channelStatuses.data ?? [],
+        agents.data ?? [],
+        models.data ?? [],
+      )
+    : undefined;
   const clearUnread = useCallback(async () => {
     if (!selected || clearingUnreadRef.current === selected) return;
     const unreadCount =
@@ -181,10 +194,29 @@ export function ChannelsPage() {
                 type="button"
               >
                 <span className="relative">
-                  <Avatar className="size-8">
-                    {item.avatarUrl ? <AvatarImage alt="" src={item.avatarUrl} /> : null}
-                    <AvatarFallback>{item.name.slice(0, 1)}</AvatarFallback>
-                  </Avatar>
+                  {(() => {
+                    const context = resolveChannelAgent(
+                      item.channelId,
+                      channelStatuses.data ?? [],
+                      agents.data ?? [],
+                      models.data ?? [],
+                    );
+                    return (
+                      <AgentAvatarHoverCard
+                        agent={context.agent}
+                        agentId={context.status?.agentId}
+                        fallbackAvatar={context.status?.agentAvatar}
+                        fallbackName={context.status?.agentName}
+                        loading={channelStatuses.isPending || agents.isPending}
+                        model={context.model}
+                      >
+                        <Avatar aria-hidden="true" className="size-8">
+                          {item.avatarUrl ? <AvatarImage alt="" src={item.avatarUrl} /> : null}
+                          <AvatarFallback>{item.name.slice(0, 1)}</AvatarFallback>
+                        </Avatar>
+                      </AgentAvatarHoverCard>
+                    );
+                  })()}
                   {(unread.data?.find(
                     (entry) => entry.channelId === item.channelId && entry.contactId === item.id,
                   )?.unreadCount ?? 0) > 0 ? (
@@ -283,12 +315,15 @@ export function ChannelsPage() {
                             </div>
                           </div>
                           {outbound ? (
-                            <AgentAvatar
-                              aria-label={channelStatus.data?.agentName || "绑定 Agent"}
-                              className="size-7 shrink-0"
-                              fallback={<Bot className="size-3.5" />}
-                              title={channelStatus.data?.agentName || "绑定 Agent"}
-                              value={channelStatus.data?.agentAvatar}
+                            <AgentAvatarHoverCard
+                              agent={selectedAgent?.agent}
+                              agentId={selectedAgent?.status?.agentId}
+                              avatarClassName="size-7 shrink-0"
+                              avatarFallback={<Bot className="size-3.5" />}
+                              fallbackAvatar={selectedAgent?.status?.agentAvatar}
+                              fallbackName={selectedAgent?.status?.agentName}
+                              loading={channelStatuses.isPending || agents.isPending}
+                              model={selectedAgent?.model}
                             />
                           ) : null}
                         </div>

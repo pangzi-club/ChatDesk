@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -75,5 +75,33 @@ describe("ChannelStore", () => {
     expect((await store.listUnread()).find((item) => item.channelId === "bot-b")?.unreadCount).toBe(
       1,
     );
+  });
+
+  it("keeps legacy single-channel data visible until it is updated", async () => {
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), "chatdesk-channel-store-"));
+    await writeFile(
+      path.join(dataDir, "channels.json"),
+      JSON.stringify({
+        config: {
+          name: "旧飞书",
+          appId: "legacy-app",
+          appSecret: "legacy-secret",
+          agentId: "legacy-agent",
+        },
+        contacts: [],
+        messages: [],
+        unread: [],
+      }),
+    );
+    const store = new ChannelStore(dataDir);
+    expect(await store.listConfigs()).toEqual([
+      {
+        id: "legacy-feishu",
+        name: "旧飞书",
+        appId: "legacy-app",
+        appSecret: "legacy-secret",
+        agentId: "legacy-agent",
+      },
+    ]);
   });
 });

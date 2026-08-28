@@ -15,6 +15,7 @@ type Persisted = {
 };
 
 const EMPTY: Persisted = { configs: [], contacts: [], messages: [], unread: [] };
+const LEGACY_CHANNEL_ID = "legacy-feishu";
 
 export class ChannelStore {
   private value: Persisted = EMPTY;
@@ -28,14 +29,30 @@ export class ChannelStore {
   private async load() {
     if (this.loaded) return;
     try {
-      const parsed = JSON.parse(await readFile(this.file, "utf8")) as Partial<Persisted>;
-      if (!Array.isArray(parsed.configs)) {
-        this.value = { ...EMPTY, contacts: [], messages: [], unread: [] };
-        this.loaded = true;
-        return;
-      }
+      const parsed = JSON.parse(await readFile(this.file, "utf8")) as Partial<Persisted> & {
+        config?: unknown;
+      };
+      const legacyConfig =
+        parsed.config && typeof parsed.config === "object"
+          ? {
+              id: LEGACY_CHANNEL_ID,
+              name:
+                typeof (parsed.config as { name?: unknown }).name === "string" &&
+                (parsed.config as { name: string }).name.trim()
+                  ? (parsed.config as { name: string }).name.trim().slice(0, 80)
+                  : "飞书",
+              appId: String((parsed.config as { appId?: unknown }).appId ?? ""),
+              appSecret: String((parsed.config as { appSecret?: unknown }).appSecret ?? ""),
+              agentId: String((parsed.config as { agentId?: unknown }).agentId ?? ""),
+            }
+          : undefined;
+      const configs = Array.isArray(parsed.configs)
+        ? parsed.configs
+        : legacyConfig
+          ? [legacyConfig]
+          : [];
       this.value = {
-        configs: parsed.configs.filter((config): config is FeishuChannelConfig =>
+        configs: configs.filter((config): config is FeishuChannelConfig =>
           Boolean(
             config &&
               typeof config === "object" &&
@@ -46,9 +63,25 @@ export class ChannelStore {
               typeof config.agentId === "string",
           ),
         ),
-        contacts: Array.isArray(parsed.contacts) ? parsed.contacts : [],
-        messages: Array.isArray(parsed.messages) ? parsed.messages : [],
-        unread: Array.isArray(parsed.unread) ? parsed.unread : [],
+        contacts: Array.isArray(parsed.contacts)
+          ? parsed.contacts.map((contact) => ({
+              ...contact,
+              channelId: contact.channelId ?? (legacyConfig ? LEGACY_CHANNEL_ID : undefined),
+              channelName: contact.channelName ?? legacyConfig?.name ?? "飞书",
+            }))
+          : [],
+        messages: Array.isArray(parsed.messages)
+          ? parsed.messages.map((message) => ({
+              ...message,
+              channelId: message.channelId ?? (legacyConfig ? LEGACY_CHANNEL_ID : undefined),
+            }))
+          : [],
+        unread: Array.isArray(parsed.unread)
+          ? parsed.unread.map((item) => ({
+              ...item,
+              channelId: item.channelId ?? (legacyConfig ? LEGACY_CHANNEL_ID : undefined),
+            }))
+          : [],
       };
     } catch {
       this.value = { ...EMPTY, contacts: [], messages: [], unread: [] };
