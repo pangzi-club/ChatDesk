@@ -107,7 +107,6 @@ import {
   loadChatServerConfig,
   loadChatServerPort,
   loadDeveloperEnvironment,
-  loadFeishuChannelStatus,
   loadFeishuChannelStatuses,
   restartChatServer,
   saveChatServerConfig,
@@ -1095,7 +1094,8 @@ function ChannelDialog({
     setError("");
     setTestMessage("");
     try {
-      const result = await testFeishuChannel();
+      if (!initialStatus.channelId) throw new Error("尚未配置飞书 Channel");
+      const result = await testFeishuChannel(initialStatus.channelId);
       setTestMessage(`连接状态：${result.status}`);
     } catch (cause) {
       setError(describeError(cause));
@@ -2940,14 +2940,17 @@ function AgentsSettingsPage() {
   const skillsQuery = useQuery({ queryKey: ["available-skills"], queryFn: loadAvailableSkills });
   const channelQuery = useQuery({
     queryKey: ["feishu-status"],
-    queryFn: () => loadFeishuChannelStatus(),
+    queryFn: () => loadFeishuChannelStatuses(),
   });
   const [editing, setEditing] = useState<AgentConfig | null>(null);
   const [deleting, setDeleting] = useState<AgentConfig | null>(null);
   const [notice, setNotice] = useState("");
   const agents = agentsQuery.data ?? [];
   const models = modelsQuery.data ?? [];
-  const boundAgentId = channelQuery.data?.configured ? channelQuery.data.agentId : undefined;
+  const boundChannelNames = (agentId: string) =>
+    (channelQuery.data ?? [])
+      .filter((status) => status.agentId === agentId)
+      .map((status) => status.name?.trim() || "飞书");
 
   async function save(agent: AgentConfig) {
     if (!agent.name.trim() || !agent.modelId) throw new Error("请填写 Agent 名称并选择模型。");
@@ -3023,54 +3026,54 @@ function AgentsSettingsPage() {
           </div>
         ) : (
           <div className="space-y-3 p-5">
-            {sortAgents(agents).map((agent) => (
-              <div key={agent.id}>
-                <div className="flex items-center gap-3 rounded-md border border-border bg-background px-4 py-3">
-                  <AgentAvatar className="size-9 shrink-0" value={agent.avatar} />
-                  <div className="min-w-0 flex-1">
-                    <h3 className="truncate font-medium text-sm">{agent.name}</h3>
-                    <p className="mt-1 truncate text-muted-foreground text-xs">
-                      {models.find((model) => model.id === agent.modelId)?.name || "模型已移除"} ·{" "}
-                      {agent.systemPrompt || "未设置系统提示词"}
-                    </p>
-                    <p className="mt-1 text-muted-foreground text-[11px]">
-                      Tools {agent.toolPackIds.length} · MCP {agent.mcpServerIds.length} · Skills{" "}
-                      {agent.skillIds.length}
-                    </p>
+            {sortAgents(agents).map((agent) => {
+              const names = boundChannelNames(agent.id);
+              const bound = names.length > 0;
+              return (
+                <div key={agent.id}>
+                  <div className="flex items-center gap-3 rounded-md border border-border bg-background px-4 py-3">
+                    <AgentAvatar className="size-9 shrink-0" value={agent.avatar} />
+                    <div className="min-w-0 flex-1">
+                      <h3 className="truncate font-medium text-sm">{agent.name}</h3>
+                      <p className="mt-1 truncate text-muted-foreground text-xs">
+                        {models.find((model) => model.id === agent.modelId)?.name || "模型已移除"} ·{" "}
+                        {agent.systemPrompt || "未设置系统提示词"}
+                      </p>
+                      <p className="mt-1 text-muted-foreground text-[11px]">
+                        Tools {agent.toolPackIds.length} · MCP {agent.mcpServerIds.length} · Skills{" "}
+                        {agent.skillIds.length}
+                      </p>
+                    </div>
+                    <Button
+                      aria-label={`编辑 ${agent.name}`}
+                      onClick={() => setEditing({ ...agent })}
+                      size="icon"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <Pencil className="size-4" />
+                    </Button>
+                    <Button
+                      aria-label={`删除 ${agent.name}`}
+                      className="text-destructive hover:text-destructive disabled:opacity-40"
+                      disabled={bound}
+                      onClick={() => setDeleting(agent)}
+                      size="icon"
+                      title={
+                        bound ? `已被 Channel「${names.join("、")}」绑定，无法删除` : undefined
+                      }
+                      type="button"
+                      variant="ghost"
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
                   </div>
-                  <Button
-                    aria-label={`编辑 ${agent.name}`}
-                    onClick={() => setEditing({ ...agent })}
-                    size="icon"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <Pencil className="size-4" />
-                  </Button>
-                  <Button
-                    aria-label={`删除 ${agent.name}`}
-                    className="text-destructive hover:text-destructive disabled:opacity-40"
-                    disabled={agent.id === boundAgentId}
-                    onClick={() => setDeleting(agent)}
-                    size="icon"
-                    title={
-                      agent.id === boundAgentId
-                        ? `已被 Channel「${channelQuery.data?.name || "飞书"}」绑定，无法删除`
-                        : undefined
-                    }
-                    type="button"
-                    variant="ghost"
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
+                  <p className="mt-1 px-4 text-muted-foreground text-[11px]">
+                    {bound ? `已绑定 Channel：${names.join("、")}` : "未绑定 Channel"}
+                  </p>
                 </div>
-                <p className="mt-1 px-4 text-muted-foreground text-[11px]">
-                  {agent.id === boundAgentId
-                    ? `已绑定 Channel：${channelQuery.data?.name || "飞书"}`
-                    : "未绑定 Channel"}
-                </p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
