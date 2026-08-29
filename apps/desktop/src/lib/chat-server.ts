@@ -1000,6 +1000,23 @@ export async function loadFeishuContacts(port?: number) {
   const response = await chatServerRequest("/v1/channels/feishu/contacts", undefined, port);
   return (await response.json()) as ChannelContact[];
 }
+export async function updateFeishuContact(
+  channelId: string,
+  contactId: string,
+  update: { pinned?: boolean; completed?: boolean },
+  port?: number,
+) {
+  const response = await chatServerRequest(
+    `/v1/channels/feishu/configs/${encodeURIComponent(channelId)}/contacts/${encodeURIComponent(contactId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(update),
+    },
+    port,
+  );
+  return (await response.json()) as ChannelContact;
+}
 export async function loadFeishuUnread(port?: number) {
   const response = await chatServerRequest("/v1/channels/feishu/unread", undefined, port);
   return (await response.json()) as ChannelUnreadState[];

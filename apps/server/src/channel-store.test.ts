@@ -76,4 +76,33 @@ describe("ChannelStore", () => {
       1,
     );
   });
+
+  it("sorts pinned contacts, hides completed contacts, and restores them on inbound messages", async () => {
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), "chatdesk-channel-store-"));
+    const store = new ChannelStore(dataDir);
+    const message = (id: string, contactId: string, createdAt: string) =>
+      store.upsertMessage({
+        id,
+        channelId: "bot-a",
+        provider: "feishu",
+        contactId,
+        senderId: contactId,
+        senderName: contactId,
+        text: id,
+        direction: "inbound",
+        status: "received",
+        createdAt,
+      });
+    await message("a-1", "a", "2026-08-28T00:00:00.000Z");
+    await message("b-1", "b", "2026-08-29T00:00:00.000Z");
+    await store.updateContact("bot-a", "a", { pinned: true });
+    expect((await store.listContacts()).map((item) => item.id)).toEqual(["a", "b"]);
+    await store.updateContact("bot-a", "a", { completed: true });
+    expect((await store.listContacts()).map((item) => item.id)).toEqual(["b"]);
+    expect((await store.listUnread()).find((item) => item.contactId === "a")?.unreadCount).toBe(0);
+    await message("a-2", "a", "2026-08-30T00:00:00.000Z");
+    const restored = await store.listContacts();
+    expect(restored.map((item) => item.id)).toEqual(["a", "b"]);
+    expect(restored.find((item) => item.id === "a")?.pinned).toBe(false);
+  });
 });

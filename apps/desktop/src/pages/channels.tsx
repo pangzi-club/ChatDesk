@@ -1,11 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Send, Settings } from "lucide-react";
+import { Bot, Check, Pin, Send, Settings } from "lucide-react";
 import { type UIEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AgentAvatarHoverCard } from "@/components/agent-avatar-hover-card";
+import { ChatComposerInput } from "@/components/chat-composer-input";
+import { ChatMarkdown } from "@/components/chat-markdown";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { loadAgents } from "@/lib/agents";
 import { resolveChannelAgent } from "@/lib/channel-agents";
 import {
@@ -17,6 +24,7 @@ import {
   loadFeishuUnread,
   markFeishuContactRead,
   subscribeChatServerEvents,
+  updateFeishuContact,
 } from "@/lib/chat-server";
 import { loadModels } from "@/lib/models";
 
@@ -107,6 +115,29 @@ export function ChannelsPage() {
       await messages.refetch();
     },
   });
+  const contactState = useMutation({
+    mutationFn: ({
+      channelId,
+      contactId,
+      update,
+    }: {
+      channelId: string;
+      contactId: string;
+      update: { pinned?: boolean; completed?: boolean };
+    }) => updateFeishuContact(channelId, contactId, update),
+    onSuccess: async (_contact, variables) => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ["feishu-contacts"] }),
+        client.invalidateQueries({ queryKey: ["feishu-unread"] }),
+      ]);
+      if (
+        variables.update.completed &&
+        selected === `${variables.channelId}::${variables.contactId}`
+      ) {
+        setSelected(undefined);
+      }
+    },
+  });
   const contact = contacts.data?.find((item) => `${item.channelId}::${item.id}` === selected);
   const selectedAgent = contact
     ? resolveChannelAgent(
@@ -166,7 +197,7 @@ export function ChannelsPage() {
       void select(`${contacts.data[0].channelId}::${contacts.data[0].id}`);
   }, [contacts.data, select, selected]);
   return (
-    <div className="flex h-full min-h-0 w-full overflow-hidden bg-background">
+    <div className="chat-page channel-page flex h-full min-h-0 w-full overflow-hidden bg-background">
       <aside className="w-[260px] shrink-0 overflow-y-auto border-border border-r px-3 pt-11 pb-3">
         <div className="mb-3 flex items-center justify-between">
           <h1 className="font-semibold text-sm">Channel</h1>
@@ -180,6 +211,13 @@ export function ChannelsPage() {
             <Settings className="size-4" />
           </Button>
         </div>
+        {contactState.isError ? (
+          <p className="mb-2 px-2 text-destructive text-xs" role="alert">
+            {contactState.error instanceof Error
+              ? contactState.error.message
+              : "联系人状态更新失败"}
+          </p>
+        ) : null}
         {contacts.isPending ? (
           <div className="space-y-2">
             <div className="h-12 animate-pulse rounded-md bg-accent" />
@@ -187,73 +225,105 @@ export function ChannelsPage() {
           </div>
         ) : contacts.data?.length ? (
           <div className="space-y-2">
-            {contacts.data.map((item) => (
-              <button
-                aria-current={selected === `${item.channelId}::${item.id}` ? "true" : undefined}
-                className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent ${selected === `${item.channelId}::${item.id}` ? "bg-accent text-accent-foreground" : ""}`}
-                key={`${item.channelId}::${item.id}`}
-                onClick={() => void select(`${item.channelId}::${item.id}`)}
-                type="button"
-              >
-                <span className="relative">
-                  {(() => {
-                    const context = resolveChannelAgent(
-                      item.channelId,
-                      channelStatuses.data ?? [],
-                      agents.data ?? [],
-                      models.data ?? [],
-                    );
-                    return (
-                      <AgentAvatarHoverCard
-                        agent={context.agent}
-                        agentId={context.status?.agentId}
-                        fallbackAvatar={context.status?.agentAvatar}
-                        fallbackName={context.status?.agentName}
-                        loading={channelStatuses.isPending || agents.isPending}
-                        model={context.model}
-                      >
-                        <Avatar aria-hidden="true" className="size-8">
-                          {item.avatarUrl ? <AvatarImage alt="" src={item.avatarUrl} /> : null}
-                          <AvatarFallback>{item.name.slice(0, 1)}</AvatarFallback>
-                        </Avatar>
-                      </AgentAvatarHoverCard>
-                    );
-                  })()}
-                  {(unread.data?.find(
-                    (entry) => entry.channelId === item.channelId && entry.contactId === item.id,
-                  )?.unreadCount ?? 0) > 0 ? (
-                    <span className="absolute -top-1 -right-1 size-3 rounded-full bg-primary" />
-                  ) : null}
-                </span>
-                <span className="min-w-0 flex-1 truncate">
-                  <span className="block">{item.name}</span>
-                  <span className="block text-muted-foreground text-[11px]">
-                    {item.channelName}
-                  </span>
-                </span>
-                {(unread.data?.find(
+            {contacts.data.map((item) => {
+              const itemKey = `${item.channelId}::${item.id}`;
+              const itemUnread =
+                unread.data?.find(
                   (entry) => entry.channelId === item.channelId && entry.contactId === item.id,
-                )?.unreadCount ?? 0) > 0 ? (
-                  <span className="shrink-0 rounded-full bg-primary px-1.5 text-[10px] leading-4 text-primary-foreground">
-                    {
-                      unread.data?.find(
-                        (entry) =>
-                          entry.channelId === item.channelId && entry.contactId === item.id,
-                      )?.unreadCount
-                    }
-                  </span>
-                ) : null}
-              </button>
-            ))}
+                )?.unreadCount ?? 0;
+              return (
+                <ContextMenu key={itemKey}>
+                  <ContextMenuTrigger asChild>
+                    <button
+                      aria-current={selected === itemKey ? "true" : undefined}
+                      className={`group flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent ${selected === itemKey ? "bg-accent text-accent-foreground" : ""}`}
+                      onClick={() => void select(itemKey)}
+                      type="button"
+                    >
+                      <span className="relative">
+                        {(() => {
+                          const context = resolveChannelAgent(
+                            item.channelId,
+                            channelStatuses.data ?? [],
+                            agents.data ?? [],
+                            models.data ?? [],
+                          );
+                          return (
+                            <AgentAvatarHoverCard
+                              agent={context.agent}
+                              agentId={context.status?.agentId}
+                              fallbackAvatar={context.status?.agentAvatar}
+                              fallbackName={context.status?.agentName}
+                              loading={channelStatuses.isPending || agents.isPending}
+                              model={context.model}
+                            >
+                              <Avatar aria-hidden="true" className="size-8">
+                                {item.avatarUrl ? (
+                                  <AvatarImage alt="" src={item.avatarUrl} />
+                                ) : null}
+                                <AvatarFallback>{item.name.slice(0, 1)}</AvatarFallback>
+                              </Avatar>
+                            </AgentAvatarHoverCard>
+                          );
+                        })()}
+                        {itemUnread > 0 ? (
+                          <span className="absolute -top-1 -right-1 size-3 rounded-full bg-primary" />
+                        ) : null}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">
+                        <span className="block">{item.name}</span>
+                        <span className="block text-muted-foreground text-[11px]">
+                          {item.channelName}
+                        </span>
+                      </span>
+                      {itemUnread > 0 ? (
+                        <span className="shrink-0 rounded-full bg-primary px-1.5 text-[10px] leading-4 text-primary-foreground">
+                          {itemUnread}
+                        </span>
+                      ) : null}
+                      {item.pinned ? (
+                        <Pin aria-label="已置顶" className="size-3 text-primary" />
+                      ) : null}
+                    </button>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent>
+                    <ContextMenuItem
+                      onSelect={() =>
+                        contactState.mutate({
+                          channelId: item.channelId,
+                          contactId: item.id,
+                          update: { pinned: !item.pinned },
+                        })
+                      }
+                    >
+                      {item.pinned ? <Check className="size-4" /> : <Pin className="size-4" />}
+                      {item.pinned ? "取消置顶" : "置顶"}
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      onSelect={() =>
+                        contactState.mutate({
+                          channelId: item.channelId,
+                          contactId: item.id,
+                          update: { completed: true },
+                        })
+                      }
+                    >
+                      <Check className="size-4" />
+                      完成
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
+              );
+            })}
           </div>
         ) : (
           <p className="px-2 py-8 text-center text-muted-foreground text-xs">暂无飞书联系人</p>
         )}
       </aside>
-      <main className="flex min-w-0 flex-1 flex-col pt-8">
+      <main className="flex min-w-0 flex-1 flex-col">
         {contact ? (
           <>
-            <header className="flex h-12 shrink-0 items-center gap-2 border-border border-b px-5">
+            <header className="chat-header !h-12 !justify-start !gap-2 !px-5">
               <Avatar aria-label={contact.name} className="size-7" title={contact.name}>
                 {contact.avatarUrl ? <AvatarImage alt="" src={contact.avatarUrl} /> : null}
                 <AvatarFallback className="text-[11px]">{contact.name.slice(0, 1)}</AvatarFallback>
@@ -264,11 +334,11 @@ export function ChannelsPage() {
               </div>
             </header>
             <section
-              className="min-h-0 flex-1 overflow-y-auto"
+              className="chat-stage min-h-0 flex-1 overflow-y-auto"
               onScroll={handleMessagesScroll}
               ref={messagesContainerRef}
             >
-              <div className="mx-auto flex w-full max-w-[820px] flex-col gap-5 px-5 py-6">
+              <div className="chat-content mx-auto flex w-full max-w-[820px] flex-col gap-5 px-5 py-6">
                 {messages.isPending ? (
                   <div className="space-y-5">
                     <div className="h-16 animate-pulse rounded-md bg-accent/60" />
@@ -313,7 +383,7 @@ export function ChannelsPage() {
                             <div
                               className={`whitespace-pre-wrap break-words text-sm leading-6 ${outbound ? "rounded-lg bg-accent px-4 py-2.5 text-foreground" : "rounded-lg border border-border/70 bg-card px-4 py-2.5 text-foreground"}`}
                             >
-                              {item.text}
+                              <ChatMarkdown isAnimating={false}>{item.text}</ChatMarkdown>
                             </div>
                           </div>
                           {outbound ? (
@@ -340,23 +410,33 @@ export function ChannelsPage() {
               </div>
             </section>
             <form
-              className="px-5 py-4"
+              className="chat-composer-wrap channel-composer-wrap px-5 py-4"
               onSubmit={(event) => {
                 event.preventDefault();
                 if (text.trim() && !send.isPending) void send.mutateAsync();
               }}
             >
-              <div className="mx-auto flex w-full max-w-[820px] items-center gap-2">
-                <div className="relative flex-1">
-                  <Input
-                    className="h-10 bg-background pr-12"
-                    onChange={(event) => setText(event.target.value)}
+              <div className="mx-auto flex w-full max-w-[820px] items-end gap-2">
+                <div className="chat-composer relative flex-1">
+                  <ChatComposerInput
+                    ariaControls="channel-send"
+                    ariaExpanded={false}
+                    onChange={({ plain }) => setText(plain)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+                        event.preventDefault();
+                        if (text.trim() && !send.isPending) void send.mutateAsync();
+                        return true;
+                      }
+                      return false;
+                    }}
+                    onPasteFiles={() => undefined}
                     placeholder="发送消息"
                     value={text}
                   />
                   <Button
                     aria-label="发送消息"
-                    className="absolute top-1 right-1 size-8"
+                    className="absolute right-2 bottom-2 size-8"
                     disabled={!text.trim() || send.isPending}
                     size="icon"
                     type="submit"

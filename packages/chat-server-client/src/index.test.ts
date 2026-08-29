@@ -71,6 +71,34 @@ describe("ChatServerClient", () => {
     assert.deepEqual(JSON.parse(String(requestInit?.body)), { messageId: "assistant-1" });
   });
 
+  it("updates a Feishu contact state", async () => {
+    let requestUrl = "";
+    let requestInit: RequestInit | undefined;
+    const client = new ChatServerClient({
+      baseUrl: "http://localhost",
+      fetchImpl: async (input, init) => {
+        requestUrl = String(input);
+        requestInit = init;
+        return new Response(JSON.stringify({ id: "contact", pinned: true }), { status: 200 });
+      },
+    });
+
+    assert.deepEqual(await client.updateFeishuContact("bot/a", "contact/1", { pinned: true }), {
+      id: "contact",
+      pinned: true,
+    });
+    assert.equal(
+      requestUrl,
+      "http://localhost/v1/channels/feishu/configs/bot%2Fa/contacts/contact%2F1",
+    );
+    assert.equal(requestInit?.method, "PATCH");
+    assert.equal(
+      requestInit?.headers && new Headers(requestInit.headers).get("content-type"),
+      "application/json",
+    );
+    assert.deepEqual(JSON.parse(String(requestInit?.body)), { pinned: true });
+  });
+
   it("updates a session title with the title endpoint", async () => {
     let requestUrl = "";
     let requestInit: RequestInit | undefined;

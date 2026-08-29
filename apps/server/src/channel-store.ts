@@ -43,7 +43,13 @@ export class ChannelStore {
               ),
             )
           : [],
-        contacts: Array.isArray(parsed.contacts) ? parsed.contacts : [],
+        contacts: Array.isArray(parsed.contacts)
+          ? parsed.contacts.map((contact) => ({
+              ...contact,
+              pinned: Boolean(contact.pinned),
+              completed: Boolean(contact.completed),
+            }))
+          : [],
         messages: Array.isArray(parsed.messages) ? parsed.messages : [],
         unread: Array.isArray(parsed.unread) ? parsed.unread : [],
       };
@@ -82,9 +88,37 @@ export class ChannelStore {
   }
   async listContacts() {
     await this.load();
-    return [...this.value.contacts].sort((a, b) =>
-      (b.lastMessageAt ?? "").localeCompare(a.lastMessageAt ?? ""),
+    return [...this.value.contacts]
+      .filter((contact) => !contact.completed)
+      .sort((a, b) => {
+        if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1;
+        return (b.lastMessageAt ?? "").localeCompare(a.lastMessageAt ?? "");
+      });
+  }
+  async updateContact(
+    channelId: string,
+    contactId: string,
+    update: { pinned?: boolean; completed?: boolean },
+  ) {
+    await this.load();
+    const contact = this.value.contacts.find(
+      (item) => item.channelId === channelId && item.id === contactId,
     );
+    if (!contact) return undefined;
+    if (update.pinned !== undefined) contact.pinned = update.pinned;
+    if (update.completed !== undefined) {
+      contact.completed = update.completed;
+      if (update.completed) {
+        contact.pinned = false;
+        contact.unreadCount = 0;
+        const unread = this.value.unread.find(
+          (item) => item.channelId === channelId && item.contactId === contactId,
+        );
+        if (unread) unread.unreadCount = 0;
+      }
+    }
+    await this.save();
+    return { ...contact };
   }
   async listMessages(channelId: string, contactId: string) {
     await this.load();
@@ -123,6 +157,7 @@ export class ChannelStore {
     );
     if (contact) {
       Object.assign(contact, {
+        ...(message.direction === "inbound" ? { completed: false } : {}),
         ...(message.direction === "inbound"
           ? { name: message.senderName ?? message.contactId }
           : {}),
@@ -148,6 +183,8 @@ export class ChannelStore {
         lastMessagePreview: message.text,
         lastMessageAt: message.createdAt,
         unreadCount: 0,
+        pinned: false,
+        completed: false,
       });
     if (message.direction === "inbound") {
       const unread = this.value.unread.find(

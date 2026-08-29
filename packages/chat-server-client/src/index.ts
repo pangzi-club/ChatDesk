@@ -242,6 +242,20 @@ export class ChatServerClient {
   listFeishuContacts() {
     return this.json<ChannelContact[]>("/v1/channels/feishu/contacts");
   }
+  updateFeishuContact(
+    channelId: string,
+    contactId: string,
+    update: { pinned?: boolean; completed?: boolean },
+  ) {
+    return this.json<ChannelContact>(
+      `/v1/channels/feishu/configs/${encodePath(channelId)}/contacts/${encodePath(contactId)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(update),
+      },
+    );
+  }
   listFeishuUnread() {
     return this.json<ChannelUnreadState[]>("/v1/channels/feishu/unread");
   }

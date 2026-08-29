@@ -1106,6 +1106,24 @@
 .chat-page[data-chat-body-font="pingfang"] {
   --chat-body-font: "PingFang SC", "PingFang TC", sans-serif;
 }
+
+.channel-page {
+  flex-direction: row;
+}
+
+.channel-page :where(.chat-stage) {
+  scroll-behavior: smooth;
+}
+
+.channel-page :where(.chat-composer-wrap) {
+  width: 100%;
+  max-width: none;
+  padding-bottom: 16px;
+}
+
+.channel-page :where(.chat-composer) {
+  width: 100%;
+}
 .chat-page[data-chat-body-font="hiragino"] {
   --chat-body-font: "Hiragino Sans GB", "Hiragino Kaku Gothic ProN", sans-serif;
 }

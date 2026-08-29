@@ -808,6 +808,26 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     return c.json(manager.getStatus());
   });
   app.get("/v1/channels/feishu/contacts", async (c) => c.json(await channels.listContacts()));
+  app.patch("/v1/channels/feishu/configs/:channelId/contacts/:contactId", async (c) => {
+    const body = (await c.req.json()) as { pinned?: unknown; completed?: unknown };
+    if (
+      (body.pinned !== undefined && typeof body.pinned !== "boolean") ||
+      (body.completed !== undefined && typeof body.completed !== "boolean") ||
+      (body.pinned === undefined && body.completed === undefined)
+    ) {
+      return jsonError("联系人状态参数无效", 400);
+    }
+    const contact = await channels.updateContact(
+      c.req.param("channelId"),
+      c.req.param("contactId"),
+      {
+        ...(body.pinned !== undefined ? { pinned: body.pinned } : {}),
+        ...(body.completed !== undefined ? { completed: body.completed } : {}),
+      },
+    );
+    if (!contact) return jsonError("联系人不存在", 404);
+    return c.json(contact);
+  });
   app.get("/v1/channels/feishu/unread", async (c) => c.json(await channels.listUnread()));
   app.get("/v1/channels/feishu/configs/:channelId/contacts/:contactId/messages", async (c) =>
     c.json(await channels.listMessages(c.req.param("channelId"), c.req.param("contactId"))),

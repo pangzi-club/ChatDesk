@@ -755,6 +755,8 @@ export type ChannelContact = {
   lastMessageAt?: string;
   unreadCount: number;
   sessionId?: string;
+  pinned?: boolean;
+  completed?: boolean;
 };
 export type ChannelMessage = {
   id: string;
