@@ -2,10 +2,18 @@ import { describe, expect, it } from "vitest";
 import {
   CHANNEL_SESSION_IDLE_MS,
   isChannelSessionIdle,
+  parseChannelCommand,
   parseClearCommand,
 } from "./channel-session.ts";
 
 describe("channel session boundaries", () => {
+  it("parses local channel commands without matching normal text", () => {
+    expect(parseChannelCommand("/help")).toBe("help");
+    expect(parseChannelCommand("/status")).toBe("status");
+    expect(parseChannelCommand("/stauts")).toBe("status");
+    expect(parseChannelCommand("请查看 /status")).toBeUndefined();
+  });
+
   it("parses clear commands only at the beginning of a message", () => {
     expect(parseClearCommand(" /clear 新问题 ")).toEqual({ remainder: "新问题" });
     expect(parseClearCommand("/clear")).toEqual({ remainder: "" });

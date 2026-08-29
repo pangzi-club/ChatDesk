@@ -48,7 +48,7 @@ import { z } from "zod";
 import { ArchiveStore } from "./archive-store.ts";
 import { AutomationScheduler, AutomationStore } from "./automation-store.ts";
 import { createChannelAutomationTools } from "./automation-tools.ts";
-import { isChannelSessionIdle, parseClearCommand } from "./channel-session.ts";
+import { isChannelSessionIdle, parseChannelCommand, parseClearCommand } from "./channel-session.ts";
 import { ChannelStore } from "./channel-store.ts";
 import type { ServerConfig } from "./config.ts";
 import { chatServerCorsOrigin } from "./cors.ts";
@@ -482,6 +482,42 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   const feishu = new Map<string, FeishuChannelManager>();
   await automations.init();
   const handleFeishuMessage = async (item: ChannelMessage, previousLastMessageAt?: string) => {
+    const command = parseChannelCommand(item.text);
+    if (command === "help") {
+      await feishu
+        .get(item.channelId)
+        ?.sendText(
+          item.contactId,
+          ["可用命令：", "/clear  开启新会话", "/status  查看当前会话状态", "/help  查看帮助"].join(
+            "\n",
+          ),
+        );
+      return;
+    }
+    if (command === "status") {
+      const sessionId = await channels.getSessionId(item.channelId, item.contactId);
+      const session = sessionId ? await store.get(sessionId) : undefined;
+      const status = sessionId ? runs.statusOf(sessionId) : "idle";
+      const channelConfig = await channels.getConfig(item.channelId);
+      const agent = channelConfig?.agentId
+        ? chatConfig.get().agents.find((candidate) => candidate.id === channelConfig.agentId)
+        : undefined;
+      await feishu
+        .get(item.channelId)
+        ?.sendText(
+          item.contactId,
+          [
+            `会话状态：${status}`,
+            `Agent：${agent?.name ?? "未绑定"}`,
+            `模型：${agent?.modelId ?? "未知"}`,
+            `消息数：${session?.messages.length ?? 0}`,
+            session?.updatedAt ? `最近更新：${session.updatedAt}` : undefined,
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        );
+      return;
+    }
     const clearCommand = parseClearCommand(item.text);
     let sessionId = await channels.getSessionId(item.channelId, item.contactId);
     const shouldReset = Boolean(clearCommand) || isChannelSessionIdle(previousLastMessageAt);
