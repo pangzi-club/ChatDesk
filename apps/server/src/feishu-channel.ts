@@ -15,7 +15,10 @@ export class FeishuChannelManager {
   private readonly events: EventHub;
   private channel?: LarkChannel;
   private readonly queues = new Map<string, Promise<void>>();
-  private readonly onMessage?: (item: ChannelMessage) => Promise<void>;
+  private readonly onMessage?: (
+    item: ChannelMessage,
+    previousLastMessageAt?: string,
+  ) => Promise<void>;
   private readonly getAgent?: (id: string) => AgentConfig | undefined;
   private readonly onProfileLookupError?: (message: string) => Promise<void>;
   private status: FeishuChannelStatus;
@@ -23,7 +26,7 @@ export class FeishuChannelManager {
     channelId: string,
     store: ChannelStore,
     events: EventHub,
-    onMessage?: (item: ChannelMessage) => Promise<void>,
+    onMessage?: (item: ChannelMessage, previousLastMessageAt?: string) => Promise<void>,
     getAgent?: (id: string) => AgentConfig | undefined,
     onProfileLookupError?: (message: string) => Promise<void>,
   ) {
@@ -110,6 +113,9 @@ export class FeishuChannelManager {
         status: "received",
         createdAt: new Date(message.createTime).toISOString(),
       };
+      const previousLastMessageAt = (await this.store.listContacts()).find(
+        (contact) => contact.channelId === this.channelId && contact.id === item.contactId,
+      )?.lastMessageAt;
       if (!(await this.store.upsertMessage(item))) return;
       const unread = await this.store.listUnread();
       this.events.publish({
@@ -126,7 +132,7 @@ export class FeishuChannelManager {
         const previous = this.queues.get(key) ?? Promise.resolve();
         const next = previous
           .catch(() => undefined)
-          .then(() => this.onMessage?.(item))
+          .then(() => this.onMessage?.(item, previousLastMessageAt))
           .then(() => undefined);
         this.queues.set(key, next);
         void next.finally(() => {

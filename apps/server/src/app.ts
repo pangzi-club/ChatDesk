@@ -48,6 +48,7 @@ import { z } from "zod";
 import { ArchiveStore } from "./archive-store.ts";
 import { AutomationScheduler, AutomationStore } from "./automation-store.ts";
 import { createChannelAutomationTools } from "./automation-tools.ts";
+import { isChannelSessionIdle, parseClearCommand } from "./channel-session.ts";
 import { ChannelStore } from "./channel-store.ts";
 import type { ServerConfig } from "./config.ts";
 import { chatServerCorsOrigin } from "./cors.ts";
@@ -480,18 +481,37 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   const channels = new ChannelStore(config.dataDir);
   const feishu = new Map<string, FeishuChannelManager>();
   await automations.init();
-  const handleFeishuMessage = async (item: ChannelMessage) => {
+  const handleFeishuMessage = async (item: ChannelMessage, previousLastMessageAt?: string) => {
+    const clearCommand = parseClearCommand(item.text);
     let sessionId = await channels.getSessionId(item.channelId, item.contactId);
+    const shouldReset = Boolean(clearCommand) || isChannelSessionIdle(previousLastMessageAt);
+    const previousSessionId = sessionId;
+    if (shouldReset) {
+      const freshSession = emptySession();
+      sessionId = freshSession.id;
+      await store.save({
+        ...freshSession,
+        title: item.senderName || "飞书对话",
+        source: "feishu",
+        ...(previousSessionId ? { parentSessionId: previousSessionId } : {}),
+      });
+      await channels.setSessionId(item.channelId, item.contactId, sessionId);
+    }
     if (!sessionId || !(await store.get(sessionId))) {
       const session = emptySession();
       sessionId = session.id;
       await store.save({ ...session, title: item.senderName || "飞书对话", source: "feishu" });
       await channels.setSessionId(item.channelId, item.contactId, sessionId);
     }
+    if (clearCommand && !clearCommand.remainder) {
+      await feishu.get(item.channelId)?.sendText(item.contactId, "已开启新会话。");
+      return;
+    }
+    const messageText = clearCommand?.remainder || item.text;
     const userMessage = {
       id: `feishu-${item.id}`,
       role: "user" as const,
-      parts: [{ type: "text" as const, text: item.text }],
+      parts: [{ type: "text" as const, text: messageText }],
     };
     try {
       const channelConfig = await channels.getConfig(item.channelId);
@@ -519,7 +539,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
             defaultAgentId: agent.id,
             getAgent: (id) => chatConfig.get().agents.find((candidate) => candidate.id === id),
             sync: () => automationScheduler.sync(),
-            userText: item.text,
+            userText: messageText,
           }),
         },
       );
