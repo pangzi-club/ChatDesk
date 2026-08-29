@@ -14,6 +14,7 @@ export type AutomationTask = {
   notificationChannelId?: string;
   notificationContactId?: string;
   enabled: boolean;
+  completedAt?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -48,6 +49,8 @@ function isTask(value: unknown): value is AutomationTask {
     (item.notificationChannelId === undefined || typeof item.notificationChannelId === "string") &&
     (item.notificationContactId === undefined || typeof item.notificationContactId === "string") &&
     typeof item.enabled === "boolean" &&
+    (item.completedAt === undefined ||
+      (typeof item.completedAt === "string" && !Number.isNaN(Date.parse(item.completedAt)))) &&
     typeof item.createdAt === "string" &&
     typeof item.updatedAt === "string"
   );
@@ -94,7 +97,11 @@ export class AutomationStore {
   }
 
   list() {
-    return structuredClone(this.value);
+    return structuredClone(this.value.map((task) => this.withDerivedCompletion(task)));
+  }
+  get(id: string) {
+    const task = this.value.find((item) => item.id === id);
+    return task ? structuredClone(this.withDerivedCompletion(task)) : undefined;
   }
   listRuns(taskId: string) {
     return structuredClone(this.runs.filter((run) => run.taskId === taskId));
@@ -107,6 +114,15 @@ export class AutomationStore {
     return this.list();
   }
 
+  async createTask(task: AutomationTask) {
+    if (!isTask(task)) throw new Error("Automation 配置无效");
+    if (this.value.some((item) => item.id === task.id))
+      throw new Error("Automation 任务 ID 已存在");
+    this.value = [structuredClone(task), ...this.value];
+    await this.saveTasks();
+    return structuredClone(task);
+  }
+
   async remove(id: string) {
     this.value = this.value.filter((item) => item.id !== id);
     await this.saveTasks();
@@ -116,7 +132,9 @@ export class AutomationStore {
   async updateTask(id: string, patch: Partial<AutomationTask>) {
     const index = this.value.findIndex((task) => task.id === id);
     if (index < 0) return undefined;
-    this.value[index] = { ...this.value[index], ...patch, updatedAt: new Date().toISOString() };
+    const next = { ...this.value[index], ...patch, updatedAt: new Date().toISOString() };
+    if (!isTask(next)) throw new Error("Automation 配置无效");
+    this.value[index] = next;
     await this.saveTasks();
     return structuredClone(this.value[index]);
   }
@@ -126,6 +144,17 @@ export class AutomationStore {
     this.runs = [run, ...this.runs];
     await this.saveRuns();
     return structuredClone(run);
+  }
+
+  private withDerivedCompletion(task: AutomationTask) {
+    if (task.completedAt || task.scheduleMode !== "once" || task.enabled) return task;
+    const run = this.runs.find(
+      (item) =>
+        item.taskId === task.id &&
+        item.source === "scheduled" &&
+        ["success", "failed", "skipped"].includes(item.status),
+    );
+    return run ? { ...task, completedAt: run.finishedAt ?? run.startedAt } : task;
   }
 
   async updateRun(id: string, patch: Partial<AutomationRun>) {
@@ -255,7 +284,10 @@ export class AutomationScheduler {
         finishedAt: new Date().toISOString(),
       });
       if (source === "scheduled" && task.scheduleMode === "once") {
-        await this.store.updateTask(task.id, { enabled: false });
+        await this.store.updateTask(task.id, {
+          enabled: false,
+          completedAt: new Date().toISOString(),
+        });
         this.sync();
       }
     } catch (error) {
@@ -265,7 +297,10 @@ export class AutomationScheduler {
         finishedAt: new Date().toISOString(),
       });
       if (source === "scheduled" && task.scheduleMode === "once") {
-        await this.store.updateTask(task.id, { enabled: false });
+        await this.store.updateTask(task.id, {
+          enabled: false,
+          completedAt: new Date().toISOString(),
+        });
         this.sync();
       }
     }
@@ -282,6 +317,6 @@ export class AutomationScheduler {
       status: "skipped",
       error: "开始时间已过去，任务未执行",
     });
-    await this.store.updateTask(task.id, { enabled: false });
+    await this.store.updateTask(task.id, { enabled: false, completedAt: new Date().toISOString() });
   }
 }

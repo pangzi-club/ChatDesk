@@ -48,5 +48,6 @@ describe("AutomationScheduler", () => {
       ["success"],
     );
     assert.equal(store.list()[0]?.enabled, false);
+    assert.equal(typeof store.list()[0]?.completedAt, "string");
   });
 });

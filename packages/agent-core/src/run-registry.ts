@@ -131,6 +131,10 @@ export type ModelStreamTimeout = {
   chunkMs: number;
 };
 
+export type RunStartOptions = {
+  additionalTools?: ToolSet;
+};
+
 class RunFailure extends Error {
   readonly stopReason: ChatRunStopReason;
 
@@ -611,7 +615,7 @@ export class RunRegistry {
     this.events.publish({ type: "session.status", sessionId, runId, status });
   }
 
-  async start(sessionId: string, input: RunStartInput) {
+  async start(sessionId: string, input: RunStartInput, options: RunStartOptions = {}) {
     if (this.active.has(sessionId)) throw new Error("该会话已有正在运行的任务");
     const chatConfig = this.chatConfig.get();
     const model = resolveConfiguredModel(chatConfig, input);
@@ -950,6 +954,7 @@ export class RunRegistry {
             ...(planMode !== "plan" && input.toolNames?.includes("web_search") && model.responsive
               ? { web_search: openai.tools.webSearch({}) as unknown as ToolSet[string] }
               : {}),
+            ...(planMode !== "plan" ? (options.additionalTools ?? {}) : {}),
           }
         : undefined;
       const result = streamText({

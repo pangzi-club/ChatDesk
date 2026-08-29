@@ -17,6 +17,7 @@ export type AutomationTask = {
   notificationChannelId?: string;
   notificationContactId?: string;
   enabled: boolean;
+  completedAt?: string;
   createdAt: string;
   updatedAt: string;
 };

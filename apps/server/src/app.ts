@@ -47,6 +47,7 @@ import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { ArchiveStore } from "./archive-store.ts";
 import { AutomationScheduler, AutomationStore } from "./automation-store.ts";
+import { createChannelAutomationTools } from "./automation-tools.ts";
 import { ChannelStore } from "./channel-store.ts";
 import type { ServerConfig } from "./config.ts";
 import { chatServerCorsOrigin } from "./cors.ts";
@@ -478,6 +479,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   const automations = new AutomationStore(config.dataDir);
   const channels = new ChannelStore(config.dataDir);
   const feishu = new Map<string, FeishuChannelManager>();
+  await automations.init();
   const handleFeishuMessage = async (item: ChannelMessage) => {
     let sessionId = await channels.getSessionId(item.channelId, item.contactId);
     if (!sessionId || !(await store.get(sessionId))) {
@@ -497,16 +499,30 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
         ? chatConfig.get().agents.find((item) => item.id === channelConfig.agentId)
         : undefined;
       if (!agent) throw new Error("Channel 未绑定有效的 Agent");
-      const response = await runs.start(sessionId, {
-        message: userMessage,
-        modelId: agent.modelId,
-        system: agent.systemPrompt || undefined,
-        mcpServerIds: agent.mcpServerIds,
-        skillIds: agent.skillIds,
-        toolNames: agent.toolPackIds,
-        planMode: "apply",
-        contextCompactionStrategy: "recent-time",
-      });
+      const response = await runs.start(
+        sessionId,
+        {
+          message: userMessage,
+          modelId: agent.modelId,
+          system: agent.systemPrompt || undefined,
+          mcpServerIds: agent.mcpServerIds,
+          skillIds: agent.skillIds,
+          toolNames: agent.toolPackIds,
+          planMode: "apply",
+          contextCompactionStrategy: "recent-time",
+        },
+        {
+          additionalTools: createChannelAutomationTools({
+            store: automations,
+            channelId: item.channelId,
+            contactId: item.contactId,
+            defaultAgentId: agent.id,
+            getAgent: (id) => chatConfig.get().agents.find((candidate) => candidate.id === id),
+            sync: () => automationScheduler.sync(),
+            userText: item.text,
+          }),
+        },
+      );
       if (response.body) await response.body.pipeTo(new WritableStream({ write() {} }));
       await runs.waitForRun(sessionId);
       const session = await store.get(sessionId);
@@ -530,22 +546,6 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
         .catch(() => undefined);
     }
   };
-  for (const config of await channels.listConfigs()) {
-    const manager = new FeishuChannelManager(
-      config.id,
-      channels,
-      events,
-      handleFeishuMessage,
-      (id) => chatConfig.get().agents.find((item) => item.id === id),
-      (message) =>
-        activityLogs
-          .append({ level: "warning", source: "飞书联系人资料", message })
-          .then(() => undefined),
-    );
-    feishu.set(config.id, manager);
-    await manager.configure(config);
-  }
-  await automations.init();
   const automationScheduler = new AutomationScheduler(automations, async (task, source) => {
     const agent = chatConfig.get().agents.find((item) => item.id === task.agentId);
     if (!agent) throw new Error("Automation 任务绑定的 Agent 不存在");
@@ -593,6 +593,21 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     }
     return { output };
   });
+  for (const config of await channels.listConfigs()) {
+    const manager = new FeishuChannelManager(
+      config.id,
+      channels,
+      events,
+      handleFeishuMessage,
+      (id) => chatConfig.get().agents.find((item) => item.id === id),
+      (message) =>
+        activityLogs
+          .append({ level: "warning", source: "飞书联系人资料", message })
+          .then(() => undefined),
+    );
+    feishu.set(config.id, manager);
+    await manager.configure(config);
+  }
   automationScheduler.start();
   const app = new Hono();
 

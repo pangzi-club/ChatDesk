@@ -127,6 +127,11 @@ function AutomationsPage() {
   });
 
   const activeCount = useMemo(() => tasks.filter((task) => task.enabled).length, [tasks]);
+  const endedCount = useMemo(
+    () => tasks.filter((task) => task.scheduleMode === "once" && task.completedAt).length,
+    [tasks],
+  );
+  const pausedCount = tasks.length - activeCount - endedCount;
 
   function openCreate() {
     setEditingTask(null);
@@ -245,14 +250,11 @@ function AutomationsPage() {
           </Button>
         </header>
 
-        <section className="grid gap-3 py-6 sm:grid-cols-3" aria-label="自动化概览">
+        <section className="grid gap-3 py-6 sm:grid-cols-4" aria-label="自动化概览">
           <Stat label="全部任务" value={tasks.length} icon={<ListChecks className="size-4" />} />
           <Stat label="运行中" value={activeCount} icon={<Play className="size-4" />} />
-          <Stat
-            label="暂停"
-            value={tasks.length - activeCount}
-            icon={<Pause className="size-4" />}
-          />
+          <Stat label="暂停" value={pausedCount} icon={<Pause className="size-4" />} />
+          <Stat label="已结束" value={endedCount} icon={<Clock3 className="size-4" />} />
         </section>
 
         <section
@@ -575,6 +577,8 @@ function TaskRow({
   onToggle: () => void;
   task: AutomationTask;
 }) {
+  const ended = task.scheduleMode === "once" && Boolean(task.completedAt);
+
   return (
     <article className="flex flex-wrap items-center gap-4 px-5 py-4 transition-colors hover:bg-accent/25 sm:flex-nowrap">
       <span
@@ -584,7 +588,7 @@ function TaskRow({
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="truncate font-medium text-sm">{task.name}</h3>
           <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
-            {task.enabled ? "运行中" : "已暂停"}
+            {ended ? "已结束" : task.enabled ? "运行中" : "已暂停"}
           </span>
         </div>
         <p className="mt-1 text-muted-foreground text-xs">
@@ -603,15 +607,17 @@ function TaskRow({
         >
           <Eye className="size-4" />
         </Button>
-        <Button
-          aria-label={task.enabled ? `暂停${task.name}` : `启用${task.name}`}
-          onClick={onToggle}
-          size="icon"
-          type="button"
-          variant="ghost"
-        >
-          {task.enabled ? <Pause className="size-4" /> : <Play className="size-4" />}
-        </Button>
+        {!ended ? (
+          <Button
+            aria-label={task.enabled ? `暂停${task.name}` : `启用${task.name}`}
+            onClick={onToggle}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            {task.enabled ? <Pause className="size-4" /> : <Play className="size-4" />}
+          </Button>
+        ) : null}
         <Button
           aria-label={`编辑${task.name}`}
           onClick={onEdit}

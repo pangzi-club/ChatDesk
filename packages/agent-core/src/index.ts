@@ -55,6 +55,7 @@ export {
   type ModelStreamTimeout,
   mergeRunMessage,
   RunRegistry,
+  type RunStartOptions,
   resolveEffectiveWorkspace,
 } from "./run-registry.ts";
 export {
