@@ -166,8 +166,8 @@ export function ChannelsPage() {
       void select(`${contacts.data[0].channelId}::${contacts.data[0].id}`);
   }, [contacts.data, select, selected]);
   return (
-    <div className="flex h-full min-h-0 w-full overflow-hidden bg-background pt-8">
-      <aside className="w-[260px] shrink-0 overflow-y-auto border-border border-r p-3">
+    <div className="flex h-full min-h-0 w-full overflow-hidden bg-background">
+      <aside className="w-[260px] shrink-0 overflow-y-auto border-border border-r px-3 pt-11 pb-3">
         <div className="mb-3 flex items-center justify-between">
           <h1 className="font-semibold text-sm">Channel</h1>
           <Button
@@ -189,7 +189,8 @@ export function ChannelsPage() {
           <div className="space-y-2">
             {contacts.data.map((item) => (
               <button
-                className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent ${selected === item.id ? "bg-accent" : ""}`}
+                aria-current={selected === `${item.channelId}::${item.id}` ? "true" : undefined}
+                className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent ${selected === `${item.channelId}::${item.id}` ? "bg-accent text-accent-foreground" : ""}`}
                 key={`${item.channelId}::${item.id}`}
                 onClick={() => void select(`${item.channelId}::${item.id}`)}
                 type="button"
@@ -249,7 +250,7 @@ export function ChannelsPage() {
           <p className="px-2 py-8 text-center text-muted-foreground text-xs">暂无飞书联系人</p>
         )}
       </aside>
-      <main className="flex min-w-0 flex-1 flex-col">
+      <main className="flex min-w-0 flex-1 flex-col pt-8">
         {contact ? (
           <>
             <header className="flex h-12 shrink-0 items-center gap-2 border-border border-b px-5">
