@@ -185,6 +185,7 @@ export type ChatSession = {
   source?: ChatSessionSource;
   parentSessionId?: string;
   modelId?: string;
+  agentId?: string;
   workspaceId?: string;
   cwd?: string;
   sandboxMode?: SandboxMode;
@@ -389,6 +390,7 @@ export type RunStartInput = {
   message?: UIMessage;
   model?: ServerModelConfig;
   modelId?: string;
+  agentId?: string;
   system?: string;
   memory?: string;
   cwd?: string;

@@ -74,6 +74,7 @@ const runInputSchema = z.object({
     })
     .optional(),
   modelId: z.string().optional(),
+  agentId: z.string().min(1).optional(),
   system: z.string().optional(),
   memory: z.string().optional(),
   cwd: z.string().optional(),
@@ -1590,11 +1591,16 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
             ? body.kind
             : undefined,
         source: body.source === "cli" ? "cli" : undefined,
+        agentId:
+          typeof body.agentId === "string" && body.agentId.trim() ? body.agentId.trim() : undefined,
         title:
           typeof body.title === "string" && body.title.trim() ? body.title.trim() : session.title,
         workspaceId: bound.workspaceId,
         cwd: bound.cwd,
       };
+      if (next.agentId && !chatConfig.get().agents.some((agent) => agent.id === next.agentId)) {
+        return jsonError("Agent 不存在", 400);
+      }
       await store.save(next);
       events.publish({ type: "session.status", sessionId: next.id, status: "idle" });
       return c.json(next, 201);
@@ -1878,6 +1884,22 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
         source: "模型调用",
         message: `开始运行会话 ${c.req.param("id")}`,
       });
+      const agentId = session?.agentId ?? body.agentId;
+      if (session?.agentId && body.agentId && session.agentId !== body.agentId) {
+        return jsonError("会话已绑定其他 Agent", 409);
+      }
+      if (agentId) {
+        const agent = chatConfig.get().agents.find((candidate) => candidate.id === agentId);
+        if (!agent) return jsonError("Agent 不存在或已失效，请在设置中修复 Agent", 400);
+        Object.assign(body, {
+          agentId,
+          modelId: agent.modelId,
+          system: agent.systemPrompt || undefined,
+          mcpServerIds: agent.mcpServerIds,
+          skillIds: agent.skillIds,
+          toolNames: agent.toolPackIds,
+        });
+      }
       return withSseKeepAlive(await runs.start(c.req.param("id"), body));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

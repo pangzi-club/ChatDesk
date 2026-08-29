@@ -33,6 +33,7 @@ import {
 } from "ai";
 import {
   ArrowUp,
+  Bot,
   Brain,
   Bug,
   ChartColumn,
@@ -103,6 +104,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { ButtonGroup } from "@/components/ui/button-group";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -119,6 +121,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { loadAgents } from "@/lib/agents";
 import {
   createPendingAttachment,
   mergeChatAttachments,
@@ -346,6 +349,10 @@ function ChatPage() {
     queryKey: ["models"],
     queryFn: loadModels,
   });
+  const { data: configuredAgents = [], isLoading: isAgentsLoading } = useQuery({
+    queryKey: ["agents"],
+    queryFn: loadAgents,
+  });
   const { data: chatMemory = DEFAULT_CHAT_MEMORY } = useQuery({
     queryKey: ["chat-memory"],
     queryFn: loadChatMemory,
@@ -397,6 +404,8 @@ function ChatPage() {
   const models = configuredModels ?? [];
   const sortedModels = sortModelsByName(models);
   const [selectedModelId, setSelectedModelId] = useState("");
+  const [selectedAgentId, setSelectedAgentId] = useState("");
+  const modeSelectionRef = useRef(false);
   const [input, setInput] = useState("");
   const [selectionToolbar, setSelectionToolbar] = useState<{ left: number; top: number } | null>(
     null,
@@ -436,6 +445,7 @@ function ChatPage() {
   const sessionKindRef = useRef(sessionKind);
   sessionKindRef.current = sessionKind;
   const [sessionSource, setSessionSource] = useState<ChatSessionSource | undefined>();
+  const defaultAgentId = configuredAgents[0]?.id ?? "";
   const isReadOnly = sessionSource === "feishu";
   const lastSyncedIndexTitleRef = useRef<{ sessionId: string; title: string } | null>(null);
   const [workspaceKey, setWorkspaceKey] = useState(() =>
@@ -593,6 +603,7 @@ function ChatPage() {
     () =>
       createModelTransport(
         sessionId,
+        selectedAgentId,
         selectedModel,
         () => toolsRef.current,
         () => sandboxModeRef.current,
@@ -607,7 +618,15 @@ function ChatPage() {
         () => mockLongResponseRef.current,
         getPromptInput,
       ),
-    [allowedSkillIds, getPromptInput, selectedMcpIds, selectedModel, selectedSkillIds, sessionId],
+    [
+      allowedSkillIds,
+      getPromptInput,
+      selectedAgentId,
+      selectedMcpIds,
+      selectedModel,
+      selectedSkillIds,
+      sessionId,
+    ],
   );
   const {
     addToolApprovalResponse,
@@ -646,6 +665,19 @@ function ChatPage() {
       console.error("Chat request failed", chatError);
     },
   });
+  const agentLocked = Boolean(selectedAgentId && messages.length > 0);
+  useEffect(() => {
+    if (modeSelectionRef.current) return;
+    if (
+      chatRoute.kind === "new" &&
+      !isHydratingSession &&
+      messages.length === 0 &&
+      !selectedAgentId
+    ) {
+      modeSelectionRef.current = true;
+      setSelectedAgentId(defaultAgentId);
+    }
+  }, [chatRoute.kind, defaultAgentId, isHydratingSession, messages.length, selectedAgentId]);
   const liveDraftRenderBatcher = useMemo(
     () =>
       createLiveDraftRenderBatcher((eventSessionId) => {
@@ -774,6 +806,8 @@ function ChatPage() {
       loadingSessionIdRef.current = null;
       setIsHydratingSession(false);
       setSessionId(nextSessionId);
+      modeSelectionRef.current = false;
+      setSelectedAgentId("");
       if (!options?.skipNavigate) {
         const currentPath = `${location.pathname}${location.search}`;
         if (currentPath !== nextPath) {
@@ -1373,6 +1407,7 @@ function ChatPage() {
         ? session.source
         : undefined,
     );
+    setSelectedAgentId(session.agentId ?? "");
     setIsRenamingTitle(false);
     setWorkspaceKey(session.workspaceId ?? (session.cwd ? "" : DEFAULT_WORKSPACE_ID));
     setSessionCwd(
@@ -3019,6 +3054,90 @@ function ChatPage() {
                     ) : null}
                   </span>
                 ) : null}
+                {chatRoute.kind === "new" ? (
+                  <ButtonGroup className="chat-mode-group shrink-0">
+                    <button
+                      aria-pressed={Boolean(selectedAgentId)}
+                      className={`chat-model-picker !h-7 !shrink-0 !gap-1.5 !whitespace-nowrap !px-2 !text-[11px] ${
+                        selectedAgentId ? "bg-accent text-foreground" : ""
+                      }`}
+                      disabled={isReadOnly || isAgentsLoading || !defaultAgentId || agentLocked}
+                      onClick={() => {
+                        modeSelectionRef.current = true;
+                        setSelectedAgentId(defaultAgentId);
+                      }}
+                      title="使用 Agent 模式"
+                      type="button"
+                    >
+                      Agent模式
+                    </button>
+                    <button
+                      aria-pressed={!selectedAgentId}
+                      className={`chat-model-picker !h-7 !shrink-0 !gap-1.5 !whitespace-nowrap !px-2 !text-[11px] ${
+                        !selectedAgentId ? "bg-accent text-foreground" : ""
+                      }`}
+                      disabled={isReadOnly || agentLocked}
+                      onClick={() => {
+                        modeSelectionRef.current = true;
+                        setSelectedAgentId("");
+                      }}
+                      title="使用手动模式"
+                      type="button"
+                    >
+                      手动模式
+                    </button>
+                  </ButtonGroup>
+                ) : null}
+                {selectedAgentId ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        aria-label="选择 Agent"
+                        className="chat-model-picker !h-7 !gap-1.5 !px-2 !text-[11px]"
+                        disabled={isReadOnly || isAgentsLoading || agentLocked}
+                        title="选择 Agent"
+                        type="button"
+                      >
+                        <Bot className="size-3.5" />
+                        <span className="chat-picker-value !text-[11px]">
+                          {configuredAgents.find((agent) => agent.id === selectedAgentId)?.name ??
+                            "Agent 已失效"}
+                        </span>
+                        <ChevronDown className="size-3.5" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="start"
+                      className="chat-select-menu !text-[11px]"
+                      side="top"
+                      sideOffset={8}
+                    >
+                      <DropdownMenuRadioGroup
+                        value={selectedAgentId}
+                        onValueChange={(value) => {
+                          const agent = configuredAgents.find((item) => item.id === value);
+                          if (agent?.modelId) setSelectedModelId(agent.modelId);
+                          modeSelectionRef.current = true;
+                          setSelectedAgentId(value);
+                        }}
+                      >
+                        {configuredAgents.map((agent) => (
+                          <DropdownMenuRadioItem
+                            className="!py-1 !text-[11px]"
+                            key={agent.id}
+                            value={agent.id}
+                          >
+                            {agent.name || "未命名 Agent"}
+                          </DropdownMenuRadioItem>
+                        ))}
+                      </DropdownMenuRadioGroup>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem asChild className="!py-1 !text-[11px]">
+                        <Link to="/settings/agents">前往 Agent 设置</Link>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : null}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
@@ -3066,72 +3185,83 @@ function ChatPage() {
                     </DropdownMenuRadioGroup>
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      aria-label="选择模型"
-                      className="chat-model-picker !h-7 !gap-1.5 !px-2 !text-[11px]"
-                      disabled={isReadOnly || isModelsLoading || models.length === 0}
-                      type="button"
+                {!selectedAgentId ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        aria-label="选择模型"
+                        className="chat-model-picker !h-7 !gap-1.5 !px-2 !text-[11px]"
+                        disabled={
+                          isReadOnly ||
+                          isModelsLoading ||
+                          models.length === 0 ||
+                          Boolean(selectedAgentId)
+                        }
+                        type="button"
+                      >
+                        <Settings2 className="size-3.5" />
+                        <span className="chat-picker-value !text-[11px]">
+                          {selectedModel ? formatModelLabel(selectedModel) : "未配置模型"}
+                        </span>
+                        <ChevronDown className="size-3.5" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="start"
+                      className="chat-select-menu !text-[11px]"
+                      side="top"
+                      sideOffset={8}
                     >
-                      <Settings2 className="size-3.5" />
-                      <span className="chat-picker-value !text-[11px]">
-                        {selectedModel ? formatModelLabel(selectedModel) : "未配置模型"}
-                      </span>
-                      <ChevronDown className="size-3.5" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="start"
-                    className="chat-select-menu !text-[11px]"
-                    side="top"
-                    sideOffset={8}
-                  >
-                    <DropdownMenuRadioGroup
-                      value={selectedModel?.id ?? ""}
-                      onValueChange={setSelectedModelId}
-                    >
-                      {models.length === 0 ? (
-                        <DropdownMenuItem className="!py-1 !text-[11px]" disabled>
-                          未配置模型
-                        </DropdownMenuItem>
-                      ) : (
-                        sortedModels.map((model) => (
-                          <DropdownMenuRadioItem
-                            className="!py-1 !text-[11px]"
-                            key={model.id}
-                            value={model.id}
-                          >
-                            {formatModelLabel(model)}
-                          </DropdownMenuRadioItem>
-                        ))
-                      )}
-                    </DropdownMenuRadioGroup>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem asChild className="!py-1 !text-[11px]">
-                      <Link to="/settings/models">前往模型设置</Link>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <ChatToolsPicker
-                  disabled={isReadOnly}
-                  open={toolsOpen}
-                  settings={chatTools}
-                  workspaceAvailable={Boolean(selectedCwd.trim())}
-                  onOpenChange={setToolsOpen}
-                  onSettingsChange={updateChatTools}
-                  mcpServers={mcpServers}
-                  selectedMcpIds={selectedMcpIds}
-                  onMcpSelectionChange={updateMcpSelection}
-                />
-                <ChatSkillsPicker
-                  disabled={isReadOnly}
-                  open={skillsOpen}
-                  onOpenChange={setSkillsOpen}
-                  onSelectionChange={updateSkillSelection}
-                  selectedSkillIds={selectedSkillIds}
-                  skills={allowedSkills}
-                />
+                      <DropdownMenuRadioGroup
+                        value={selectedModel?.id ?? ""}
+                        onValueChange={setSelectedModelId}
+                      >
+                        {models.length === 0 ? (
+                          <DropdownMenuItem className="!py-1 !text-[11px]" disabled>
+                            未配置模型
+                          </DropdownMenuItem>
+                        ) : (
+                          sortedModels.map((model) => (
+                            <DropdownMenuRadioItem
+                              className="!py-1 !text-[11px]"
+                              key={model.id}
+                              value={model.id}
+                            >
+                              {formatModelLabel(model)}
+                            </DropdownMenuRadioItem>
+                          ))
+                        )}
+                      </DropdownMenuRadioGroup>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem asChild className="!py-1 !text-[11px]">
+                        <Link to="/settings/models">前往模型设置</Link>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : null}
+                {!selectedAgentId ? (
+                  <ChatToolsPicker
+                    disabled={isReadOnly}
+                    open={toolsOpen}
+                    settings={chatTools}
+                    workspaceAvailable={Boolean(selectedCwd.trim())}
+                    onOpenChange={setToolsOpen}
+                    onSettingsChange={updateChatTools}
+                    mcpServers={mcpServers}
+                    selectedMcpIds={selectedMcpIds}
+                    onMcpSelectionChange={updateMcpSelection}
+                  />
+                ) : null}
+                {!selectedAgentId ? (
+                  <ChatSkillsPicker
+                    disabled={isReadOnly}
+                    open={skillsOpen}
+                    onOpenChange={setSkillsOpen}
+                    onSelectionChange={updateSkillSelection}
+                    selectedSkillIds={selectedSkillIds}
+                    skills={allowedSkills}
+                  />
+                ) : null}
                 {configuredModels?.length === 0 && (
                   <Link className="chat-settings-link" to="/settings/models">
                     配置模型
@@ -3777,6 +3907,7 @@ async function waitForCanonicalSession(sessionId: string, expectedAssistantText:
 
 function createModelTransport(
   sessionId: string,
+  agentId: string,
   model: ModelConfig | undefined,
   getToolsSettings: () => ChatToolsSettings,
   getSandboxMode: () => ChatSandboxMode,
@@ -3812,6 +3943,7 @@ function createModelTransport(
       await ensureChatServerSession(sessionId, {
         cwd: cwd || undefined,
         workspaceId: workspaceId || undefined,
+        agentId: agentId || undefined,
       });
       const activeTools = { toolNames: promptInput.toolNames ?? [] };
       if (!mockLongResponse && model) {
@@ -3833,6 +3965,7 @@ function createModelTransport(
         body: {
           messages,
           modelId: model?.id,
+          agentId: agentId || undefined,
           mockLongResponse,
           ...promptInput,
           sandboxMode,

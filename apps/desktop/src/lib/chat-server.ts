@@ -794,7 +794,7 @@ export async function downloadChatServerAttachment(
 
 export async function ensureChatServerSession(
   sessionId: string,
-  options?: { title?: string; workspaceId?: string; cwd?: string },
+  options?: { title?: string; workspaceId?: string; cwd?: string; agentId?: string },
   port = CHAT_SERVER_DEFAULT_PORT,
 ) {
   await createClient(port).ensureSession(sessionId, options);
@@ -808,6 +808,7 @@ export async function createChatServerSession(
     cwd?: string;
     kind?: "chat" | "task" | "ephemeral";
     source?: "cli";
+    agentId?: string;
   },
   port = CHAT_SERVER_DEFAULT_PORT,
 ) {

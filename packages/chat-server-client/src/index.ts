@@ -280,6 +280,7 @@ export class ChatServerClient {
     cwd?: string;
     kind?: "chat" | "task" | "ephemeral";
     source?: "cli";
+    agentId?: string;
   }) {
     return this.json<ChatSession>(
       "/v1/sessions",
@@ -603,7 +604,7 @@ export class ChatServerClient {
 
   async ensureSession(
     sessionId: string,
-    options?: { title?: string; workspaceId?: string; cwd?: string },
+    options?: { title?: string; workspaceId?: string; cwd?: string; agentId?: string },
   ) {
     const existing = await this.request(`/v1/sessions/${encodePath(sessionId)}`);
     if (existing.ok) return;

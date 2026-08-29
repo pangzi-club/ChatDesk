@@ -192,6 +192,24 @@ describe("chat server", () => {
     assert.equal(await server.store.get("session-test"), null);
   });
 
+  it("binds sessions to an existing Agent and rejects unknown Agents", async () => {
+    const server = await createTestServer({ agents: [testAgent("agent-direct")] });
+    const created = await server.app.request("http://localhost/v1/sessions", {
+      method: "POST",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "agent-session", agentId: "agent-direct" }),
+    });
+    assert.equal(created.status, 201);
+    assert.equal((await created.json()).agentId, "agent-direct");
+
+    const invalid = await server.app.request("http://localhost/v1/sessions", {
+      method: "POST",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "invalid-agent-session", agentId: "missing-agent" }),
+    });
+    assert.equal(invalid.status, 400);
+  });
+
   it("forks an assistant message with independent resources", async () => {
     const server = await createTestServer();
     const source = {
