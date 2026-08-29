@@ -18,8 +18,9 @@
     "@chatdesk/agent-core": "workspace:*",
     "@chatdesk/shared": "workspace:*",
     "@hono/node-server": "^1.19.11",
-    "ai": "^7.0.51",
     "@larksuiteoapi/node-sdk": "^1.50.0",
+    "ai": "^7.0.51",
+    "croner": "^10.0.1",
     "hono": "^4.10.8",
     "zod": "^4.4.3"
   },

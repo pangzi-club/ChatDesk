@@ -1,5 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Clock3, Edit3, ListChecks, MoreHorizontal, Pause, Play, Plus, Trash2 } from "lucide-react";
+import {
+  Clock3,
+  Edit3,
+  Eye,
+  ListChecks,
+  MoreHorizontal,
+  Pause,
+  Play,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { type FormEvent, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,33 +29,83 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { loadAgents } from "@/lib/agents";
 import {
   type AutomationTask,
-  type AutomationTaskType,
-  automationTaskTypeLabels,
+  loadAutomationRuns,
   loadAutomationTasks,
   saveAutomationTasks,
 } from "@/lib/automation";
+import {
+  type ChannelContact,
+  type FeishuChannelStatus,
+  loadFeishuChannelStatuses,
+  loadFeishuContacts,
+} from "@/lib/chat-server";
 
 const AUTOMATION_QUERY_KEY = ["automation-tasks"];
 
+function toLocalDateTimeInput(value: Date | string) {
+  const date = typeof value === "string" ? new Date(value) : value;
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function runStatusLabel(status: string) {
+  return (
+    (
+      {
+        queued: "排队中",
+        running: "执行中",
+        success: "成功",
+        failed: "失败",
+        skipped: "已跳过",
+      } as Record<string, string>
+    )[status] ?? status
+  );
+}
+
 type TaskDraft = {
   name: string;
-  type: AutomationTaskType;
+  description: string;
+  scheduleMode: "once" | "interval";
   intervalMinutes: string;
+  startAt: string;
+  agentId: string;
+  notificationChannelId: string;
+  notificationContactId: string;
   enabled: boolean;
 };
 
 const emptyDraft: TaskDraft = {
   name: "",
-  type: "log-current-time",
-  intervalMinutes: "5",
+  description: "",
+  scheduleMode: "interval",
+  intervalMinutes: "60",
+  startAt: toLocalDateTimeInput(new Date(Date.now() + 60_000)),
+  agentId: "",
+  notificationChannelId: "",
+  notificationContactId: "",
   enabled: true,
 };
 
 function AutomationsPage() {
   const queryClient = useQueryClient();
-  const tasksQuery = useQuery({ queryKey: AUTOMATION_QUERY_KEY, queryFn: loadAutomationTasks });
+  const tasksQuery = useQuery({
+    queryKey: AUTOMATION_QUERY_KEY,
+    queryFn: loadAutomationTasks,
+    refetchInterval: 3000,
+  });
+  const agentsQuery = useQuery({ queryKey: ["agents"], queryFn: loadAgents });
+  const channelsQuery = useQuery<FeishuChannelStatus[]>({
+    queryKey: ["feishu-status", "all"],
+    queryFn: () => loadFeishuChannelStatuses(),
+  });
+  const contactsQuery = useQuery<ChannelContact[]>({
+    queryKey: ["feishu-contacts"],
+    queryFn: () => loadFeishuContacts(),
+  });
   const saveMutation = useMutation({
     mutationFn: saveAutomationTasks,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: AUTOMATION_QUERY_KEY }),
@@ -54,7 +114,17 @@ function AutomationsPage() {
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<AutomationTask | null>(null);
   const [pendingDeleteTask, setPendingDeleteTask] = useState<AutomationTask | null>(null);
+  const [viewingTask, setViewingTask] = useState<AutomationTask | null>(null);
   const [draft, setDraft] = useState<TaskDraft>(emptyDraft);
+  const runsQuery = useQuery({
+    queryKey: ["automation-runs", viewingTask?.id],
+    queryFn: () => loadAutomationRuns(viewingTask?.id ?? ""),
+    enabled: Boolean(viewingTask),
+    refetchInterval: (query) =>
+      query.state.data?.some((run) => run.status === "running" || run.status === "queued")
+        ? 3000
+        : false,
+  });
 
   const activeCount = useMemo(() => tasks.filter((task) => task.enabled).length, [tasks]);
 
@@ -68,8 +138,13 @@ function AutomationsPage() {
     setEditingTask(task);
     setDraft({
       name: task.name,
-      type: task.type,
+      description: task.description,
+      scheduleMode: task.scheduleMode,
       intervalMinutes: String(task.intervalMinutes),
+      startAt: toLocalDateTimeInput(task.startAt),
+      agentId: task.agentId,
+      notificationChannelId: task.notificationChannelId ?? "",
+      notificationContactId: task.notificationContactId ?? "",
       enabled: task.enabled,
     });
     setIsEditorOpen(true);
@@ -84,23 +159,41 @@ function AutomationsPage() {
     event.preventDefault();
     const name = draft.name.trim();
     const intervalMinutes = Number(draft.intervalMinutes);
-    if (!name || !Number.isFinite(intervalMinutes) || intervalMinutes < 1) return;
+    const description = draft.description.trim();
+    if (
+      !name ||
+      !description ||
+      !draft.agentId ||
+      !Number.isFinite(intervalMinutes) ||
+      intervalMinutes < 1
+    )
+      return;
 
     const now = new Date().toISOString();
     const nextTask: AutomationTask = editingTask
       ? {
           ...editingTask,
           name,
-          type: draft.type,
+          description,
+          scheduleMode: draft.scheduleMode,
           intervalMinutes,
+          startAt: new Date(draft.startAt).toISOString(),
+          agentId: draft.agentId,
+          notificationChannelId: draft.notificationChannelId || undefined,
+          notificationContactId: draft.notificationContactId || undefined,
           enabled: draft.enabled,
           updatedAt: now,
         }
       : {
           id: crypto.randomUUID(),
           name,
-          type: draft.type,
+          description,
+          scheduleMode: draft.scheduleMode,
           intervalMinutes,
+          startAt: new Date(draft.startAt).toISOString(),
+          agentId: draft.agentId,
+          notificationChannelId: draft.notificationChannelId || undefined,
+          notificationContactId: draft.notificationContactId || undefined,
           enabled: draft.enabled,
           createdAt: now,
           updatedAt: now,
@@ -199,6 +292,7 @@ function AutomationsPage() {
                 <TaskRow
                   key={task.id}
                   onDelete={() => setPendingDeleteTask(task)}
+                  onDetails={() => setViewingTask(task)}
                   onEdit={() => openEdit(task)}
                   onToggle={() => void toggleTask(task)}
                   task={task}
@@ -210,10 +304,12 @@ function AutomationsPage() {
       </div>
 
       <Dialog onOpenChange={(open) => !open && closeEditor()} open={isEditorOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[calc(100vh-2rem)] max-w-xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingTask ? "编辑自动任务" : "新增自动任务"}</DialogTitle>
-            <DialogDescription>设置任务类型和执行间隔，保存后立即生效。</DialogDescription>
+            <DialogDescription>
+              描述任务目标，选择 Agent 和执行间隔，保存后立即生效。
+            </DialogDescription>
           </DialogHeader>
           <form className="space-y-5" onSubmit={(event) => void submitTask(event)}>
             <div className="space-y-2">
@@ -226,18 +322,46 @@ function AutomationsPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="automation-type">任务类型</Label>
+              <Label htmlFor="automation-description">任务描述</Label>
+              <Textarea
+                id="automation-description"
+                onChange={(event) => setDraft({ ...draft, description: event.target.value })}
+                placeholder="例如：整理今天的项目进展并给出明天的计划"
+                value={draft.description}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="automation-agent">执行 Agent</Label>
               <Select
-                onValueChange={(value) => setDraft({ ...draft, type: value as AutomationTaskType })}
-                value={draft.type}
+                onValueChange={(value) => setDraft({ ...draft, agentId: value })}
+                value={draft.agentId}
               >
-                <SelectTrigger id="automation-type" className="w-full">
+                <SelectTrigger id="automation-agent" className="w-full">
+                  <SelectValue placeholder="选择 Agent" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(agentsQuery.data ?? []).map((agent) => (
+                    <SelectItem key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="automation-schedule-mode">执行方式</Label>
+              <Select
+                onValueChange={(value) =>
+                  setDraft({ ...draft, scheduleMode: value as TaskDraft["scheduleMode"] })
+                }
+                value={draft.scheduleMode}
+              >
+                <SelectTrigger id="automation-schedule-mode" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="log-current-time">
-                    {automationTaskTypeLabels["log-current-time"]}
-                  </SelectItem>
+                  <SelectItem value="interval">重复执行</SelectItem>
+                  <SelectItem value="once">单次执行</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -249,18 +373,94 @@ function AutomationsPage() {
                 onChange={(event) => setDraft({ ...draft, intervalMinutes: event.target.value })}
                 type="number"
                 value={draft.intervalMinutes}
+                disabled={draft.scheduleMode === "once"}
               />
+              <div
+                className={`flex flex-wrap gap-2 ${draft.scheduleMode === "once" ? "pointer-events-none opacity-50" : ""}`}
+              >
+                {[60, 1440, 10080].map((minutes) => (
+                  <Button
+                    key={minutes}
+                    onClick={() => setDraft({ ...draft, intervalMinutes: String(minutes) })}
+                    type="button"
+                    variant="outline"
+                  >
+                    {minutes === 60 ? "60 分钟" : minutes === 1440 ? "1 天" : "7 天"}
+                  </Button>
+                ))}
+              </div>
               <p className="text-muted-foreground text-xs">最短 1 分钟，任务运行期间可随时编辑。</p>
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="automation-start">开始时间</Label>
+              <Input
+                id="automation-start"
+                onChange={(event) => setDraft({ ...draft, startAt: event.target.value })}
+                type="datetime-local"
+                value={draft.startAt}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="automation-channel">通知 Channel（可选）</Label>
+              <Select
+                onValueChange={(value) => {
+                  const channel = (channelsQuery.data ?? []).find(
+                    (item) => item.channelId === value,
+                  );
+                  setDraft({
+                    ...draft,
+                    notificationChannelId: value,
+                    notificationContactId: "",
+                    agentId: channel?.agentId ?? draft.agentId,
+                  });
+                }}
+                value={draft.notificationChannelId}
+              >
+                <SelectTrigger id="automation-channel" className="w-full">
+                  <SelectValue placeholder="不发送通知" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(channelsQuery.data ?? [])
+                    .filter((item) => item.channelId)
+                    .map((channel) => (
+                      <SelectItem key={channel.channelId} value={channel.channelId ?? ""}>
+                        {channel.name ?? channel.channelId}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {draft.notificationChannelId ? (
+              <div className="space-y-2">
+                <Label htmlFor="automation-contact">通知联系人</Label>
+                <Select
+                  onValueChange={(value) => setDraft({ ...draft, notificationContactId: value })}
+                  value={draft.notificationContactId}
+                >
+                  <SelectTrigger id="automation-contact" className="w-full">
+                    <SelectValue placeholder="选择联系人" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(contactsQuery.data ?? [])
+                      .filter((contact) => contact.channelId === draft.notificationChannelId)
+                      .map((contact) => (
+                        <SelectItem key={contact.id} value={contact.id}>
+                          {contact.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
             <label className="flex cursor-pointer items-center justify-between rounded-md border border-border bg-muted/30 px-3 py-3">
               <span>
-                <span className="block font-medium text-sm">创建后启用</span>
+                <span className="block font-medium text-sm">启用任务</span>
                 <span className="mt-1 block text-muted-foreground text-xs">
                   关闭后任务不会自动执行
                 </span>
               </span>
               <input
-                aria-label="创建后启用"
+                aria-label="启用任务"
                 checked={draft.enabled}
                 className="size-4 accent-foreground"
                 onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })}
@@ -271,7 +471,15 @@ function AutomationsPage() {
               <Button onClick={closeEditor} type="button" variant="outline">
                 取消
               </Button>
-              <Button disabled={saveMutation.isPending || !draft.name.trim()} type="submit">
+              <Button
+                disabled={
+                  saveMutation.isPending ||
+                  !draft.name.trim() ||
+                  !draft.description.trim() ||
+                  !draft.agentId
+                }
+                type="submit"
+              >
                 {editingTask ? "保存更改" : "创建任务"}
               </Button>
             </DialogFooter>
@@ -304,6 +512,38 @@ function AutomationsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <Dialog onOpenChange={(open) => !open && setViewingTask(null)} open={viewingTask !== null}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>执行详情 · {viewingTask?.name}</DialogTitle>
+            <DialogDescription>查看执行状态、输出和错误。</DialogDescription>
+          </DialogHeader>
+          {runsQuery.isPending ? (
+            <div className="h-24 animate-pulse rounded-md bg-accent" />
+          ) : runsQuery.data?.length ? (
+            <div className="max-h-[min(60vh,520px)] space-y-3 overflow-y-auto">
+              {runsQuery.data.map((run) => (
+                <div className="rounded-md border border-border p-3" key={run.id}>
+                  <div className="flex items-center justify-between text-xs">
+                    <span>
+                      {run.source === "manual" ? "手动" : "定时"} · {runStatusLabel(run.status)}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {new Date(run.startedAt).toLocaleString()}
+                    </span>
+                  </div>
+                  {run.output ? (
+                    <p className="mt-2 whitespace-pre-wrap text-sm">{run.output}</p>
+                  ) : null}
+                  {run.error ? <p className="mt-2 text-destructive text-sm">{run.error}</p> : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="py-8 text-center text-muted-foreground text-sm">暂无执行记录</p>
+          )}
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }
@@ -324,11 +564,13 @@ function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; va
 
 function TaskRow({
   onDelete,
+  onDetails,
   onEdit,
   onToggle,
   task,
 }: {
   onDelete: () => void;
+  onDetails: () => void;
   onEdit: () => void;
   onToggle: () => void;
   task: AutomationTask;
@@ -346,10 +588,21 @@ function TaskRow({
           </span>
         </div>
         <p className="mt-1 text-muted-foreground text-xs">
-          {automationTaskTypeLabels[task.type]} · 每 {task.intervalMinutes} 分钟执行
+          {task.description} ·{" "}
+          {task.scheduleMode === "once" ? "单次执行" : `每 ${task.intervalMinutes} 分钟执行`} ·{" "}
+          {new Date(task.startAt).toLocaleString()}
         </p>
       </div>
       <div className="flex items-center gap-1">
+        <Button
+          aria-label={`查看${task.name}执行详情`}
+          onClick={onDetails}
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          <Eye className="size-4" />
+        </Button>
         <Button
           aria-label={task.enabled ? `暂停${task.name}` : `启用${task.name}`}
           onClick={onToggle}

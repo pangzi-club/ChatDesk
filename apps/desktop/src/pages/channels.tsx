@@ -61,6 +61,7 @@ export function ChannelsPage() {
       return loadFeishuMessages(channelId, contactId);
     },
     enabled: Boolean(selected),
+    refetchInterval: 3000,
   });
   useLayoutEffect(() => {
     const element = messagesContainerRef.current;

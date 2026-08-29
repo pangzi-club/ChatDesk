@@ -607,6 +607,15 @@ export async function saveServerAutomations(value: unknown, port = CHAT_SERVER_D
   return response.json();
 }
 
+export async function loadServerAutomationRuns(id: string, port = CHAT_SERVER_DEFAULT_PORT) {
+  const response = await chatServerRequest(
+    `/v1/automations/${encodeURIComponent(id)}/runs`,
+    undefined,
+    port,
+  );
+  return response.json();
+}
+
 export async function loadServerActivityLogs(port = CHAT_SERVER_DEFAULT_PORT) {
   const response = await chatServerRequest("/v1/activity-logs", undefined, port);
   return response.json();

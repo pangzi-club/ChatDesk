@@ -899,12 +899,15 @@ describe("chat server", () => {
   });
 
   it("persists automation tasks and executes them on demand", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer({ agents: [testAgent("agent-1")] });
     const task = {
       id: "automation-test",
       name: "测试任务",
-      type: "log-current-time",
+      description: "输出当前时间",
+      scheduleMode: "interval",
       intervalMinutes: 5,
+      startAt: "2026-01-01T00:00:00.000Z",
+      agentId: "agent-1",
       enabled: true,
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
@@ -920,8 +923,13 @@ describe("chat server", () => {
       headers: auth(),
     });
     assert.equal(run.status, 204);
-    const logs = await server.app.request("http://localhost/v1/activity-logs", { headers: auth() });
-    assert.equal((await logs.json()).length, 2);
+    const history = await server.app.request(
+      "http://localhost/v1/automations/automation-test/runs",
+      {
+        headers: auth(),
+      },
+    );
+    assert.equal((await history.json()).length, 1);
   });
 
   it("persists a reviewer model only while that model is configured", async () => {

@@ -546,15 +546,53 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     await manager.configure(config);
   }
   await automations.init();
-  const automationScheduler = new AutomationScheduler(automations, (task, message) =>
-    activityLogs
-      .append({
-        level: "info",
-        source: `自动化 · ${task.name}`,
-        message,
-      })
-      .then(() => undefined),
-  );
+  const automationScheduler = new AutomationScheduler(automations, async (task, source) => {
+    const agent = chatConfig.get().agents.find((item) => item.id === task.agentId);
+    if (!agent) throw new Error("Automation 任务绑定的 Agent 不存在");
+    const session = emptySession();
+    await store.save({ ...session, title: `自动化 · ${task.name}` });
+    const response = await runs.start(session.id, {
+      message: {
+        id: `automation-${randomUUID()}`,
+        role: "user",
+        parts: [{ type: "text", text: task.description }],
+      },
+      modelId: agent.modelId,
+      system: agent.systemPrompt || undefined,
+      mcpServerIds: agent.mcpServerIds,
+      skillIds: agent.skillIds,
+      toolNames: agent.toolPackIds,
+      planMode: "apply",
+      contextCompactionStrategy: "recent-time",
+    });
+    if (response.body) await response.body.pipeTo(new WritableStream({ write() {} }));
+    await runs.waitForRun(session.id);
+    const current = await store.get(session.id);
+    const reply = current?.messages
+      .slice()
+      .reverse()
+      .find((message) => message.role === "assistant");
+    const output = reply ? textFromMessage(reply) : "";
+    await activityLogs.append({
+      level: "success",
+      source: `自动化 · ${task.name}`,
+      message: `${source === "manual" ? "手动" : "定时"}执行完成${output ? `：${output.slice(0, 200)}` : ""}`,
+    });
+    if (task.notificationChannelId && task.notificationContactId) {
+      const contact = (await channels.listContacts()).find(
+        (item) =>
+          item.channelId === task.notificationChannelId && item.id === task.notificationContactId,
+      );
+      if (!contact) throw new Error("Automation 通知联系人不存在");
+      const manager = feishu.get(task.notificationChannelId);
+      if (!manager) throw new Error("Automation 通知 Channel 未连接");
+      await manager.sendText(
+        task.notificationContactId,
+        output || "自动化任务已完成，但没有文本输出。 ",
+      );
+    }
+    return { output };
+  });
   automationScheduler.start();
   const app = new Hono();
 
@@ -1034,9 +1072,22 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   });
 
   app.get("/v1/automations", (c) => c.json(automations.list()));
+  app.get("/v1/automations/:id/runs", (c) => c.json(automations.listRuns(c.req.param("id"))));
+  app.post("/v1/automations", async (c) => {
+    try {
+      const task = (await c.req.json()) as { id?: string } & Record<string, unknown>;
+      const next = [...automations.list(), task];
+      const saved = await automations.replace(next);
+      automationScheduler.sync();
+      return c.json(saved.find((item) => item.id === task.id) ?? task, 201);
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
   app.put("/v1/automations", async (c) => {
     try {
       const next = await automations.replace(await c.req.json());
+      automationScheduler.sync();
       return c.json(next);
     } catch (error) {
       return jsonError(error instanceof Error ? error.message : String(error));
@@ -1051,7 +1102,9 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     }
   });
   app.delete("/v1/automations/:id", async (c) => {
-    return c.json(await automations.remove(c.req.param("id")));
+    const next = await automations.remove(c.req.param("id"));
+    automationScheduler.sync();
+    return c.json(next);
   });
 
   app.get("/v1/activity-logs", (c) => c.json(activityLogs.list()));
