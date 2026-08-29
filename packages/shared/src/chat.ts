@@ -172,7 +172,7 @@ export type SystemPromptSnapshot = {
 
 export const CHAT_SESSION_KINDS = ["chat", "task", "ephemeral"] as const;
 export type ChatSessionKind = (typeof CHAT_SESSION_KINDS)[number];
-export const CHAT_SESSION_SOURCES = ["cli", "feishu"] as const;
+export const CHAT_SESSION_SOURCES = ["cli", "feishu", "automation"] as const;
 export type ChatSessionSource = (typeof CHAT_SESSION_SOURCES)[number];
 
 export type ChatSession = {

@@ -100,7 +100,10 @@ function normalizeChatSession(value: unknown): ChatSession | null {
       : undefined,
     planMode: value.planMode === "plan" ? "plan" : "apply",
     kind: value.kind === "task" ? "task" : "chat",
-    source: value.source === "cli" || value.source === "feishu" ? value.source : undefined,
+    source:
+      value.source === "cli" || value.source === "feishu" || value.source === "automation"
+        ? value.source
+        : undefined,
     parentSessionId: typeof value.parentSessionId === "string" ? value.parentSessionId : undefined,
     activePlanId: typeof value.activePlanId === "string" ? value.activePlanId : undefined,
     plans: Array.isArray(value.plans)

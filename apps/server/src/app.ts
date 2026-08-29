@@ -550,7 +550,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     const agent = chatConfig.get().agents.find((item) => item.id === task.agentId);
     if (!agent) throw new Error("Automation 任务绑定的 Agent 不存在");
     const session = emptySession();
-    await store.save({ ...session, title: `自动化 · ${task.name}` });
+    await store.save({ ...session, title: `自动化 · ${task.name}`, source: "automation" });
     const response = await runs.start(session.id, {
       message: {
         id: `automation-${randomUUID()}`,

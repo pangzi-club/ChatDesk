@@ -1369,7 +1369,9 @@ function ChatPage() {
     setSessionTitle(session.title);
     setSessionKind(session.kind === "task" ? "task" : "chat");
     setSessionSource(
-      session.source === "cli" || session.source === "feishu" ? session.source : undefined,
+      session.source === "cli" || session.source === "feishu" || session.source === "automation"
+        ? session.source
+        : undefined,
     );
     setIsRenamingTitle(false);
     setWorkspaceKey(session.workspaceId ?? (session.cwd ? "" : DEFAULT_WORKSPACE_ID));
@@ -2476,6 +2478,9 @@ function ChatPage() {
               {sessionKind === "task" ? <span className="chat-session-kind">任务</span> : null}
               {sessionSource === "cli" ? <span className="chat-session-kind">CLI</span> : null}
               {sessionSource === "feishu" ? <span className="chat-session-kind">飞书</span> : null}
+              {sessionSource === "automation" || sessionTitle.startsWith("自动化 ·") ? (
+                <span className="chat-session-kind">自动化</span>
+              ) : null}
               {isRenamingTitle ? (
                 <LoaderCircle
                   aria-hidden="true"
