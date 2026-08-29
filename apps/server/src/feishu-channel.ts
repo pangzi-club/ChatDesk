@@ -179,15 +179,25 @@ export class FeishuChannelManager {
     this.channel = undefined;
   }
   async sendText(contactId: string, text: string) {
-    if (!this.channel) throw new Error("飞书未连接");
-    await this.channel.send(contactId, { text });
+    const channel = this.channel;
+    if (!channel) throw new Error("飞书未连接");
+    await channel.send(contactId, { text });
+    return this.persistOutboundMessage(channel, contactId, text);
+  }
+  async sendMarkdown(contactId: string, markdown: string) {
+    const channel = this.channel;
+    if (!channel) throw new Error("飞书未连接");
+    await channel.send(contactId, { markdown });
+    return this.persistOutboundMessage(channel, contactId, markdown);
+  }
+  private async persistOutboundMessage(channel: LarkChannel, contactId: string, text: string) {
     const message: ChannelMessage = {
       id: `outbound-${randomUUID()}`,
       channelId: this.channelId,
       provider: "feishu",
       contactId,
-      senderId: this.channel.botIdentity?.openId ?? "self",
-      senderName: this.channel.botIdentity?.name,
+      senderId: channel.botIdentity?.openId ?? "self",
+      senderName: channel.botIdentity?.name,
       text,
       direction: "outbound",
       status: "sent",

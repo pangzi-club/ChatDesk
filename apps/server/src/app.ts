@@ -533,7 +533,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
       const text = reply ? textFromMessage(reply) : "";
       await feishu
         .get(item.channelId)
-        ?.sendText(item.contactId, text || "暂时无法生成回复，请稍后重试。");
+        ?.sendMarkdown(item.contactId, text || "暂时无法生成回复，请稍后重试。");
     } catch (error) {
       await activityLogs.append({
         level: "error",
@@ -586,7 +586,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
       if (!contact) throw new Error("Automation 通知联系人不存在");
       const manager = feishu.get(task.notificationChannelId);
       if (!manager) throw new Error("Automation 通知 Channel 未连接");
-      await manager.sendText(
+      await manager.sendMarkdown(
         task.notificationContactId,
         output || "自动化任务已完成，但没有文本输出。 ",
       );
