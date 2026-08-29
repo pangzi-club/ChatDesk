@@ -141,12 +141,8 @@ export class ChatServerSupervisor {
     this.startedAt = Date.now();
     // Always drain child pipes. An unconsumed pipe can fill and block the
     // Chat Server process, which otherwise looks like a random crash.
-    child.stdout?.on("data", (chunk: unknown) => {
-      if (chunk) console.log(`[Chat Server] ${String(chunk).trimEnd()}`);
-    });
-    child.stderr?.on("data", (chunk: unknown) => {
-      if (chunk) console.error(`[Chat Server] ${String(chunk).trimEnd()}`);
-    });
+    child.stdout?.on("data", () => undefined);
+    child.stderr?.on("data", () => undefined);
     child.once("exit", (code: number | null, signal: NodeJS.Signals | null) =>
       this.handleExit(child, code, signal),
     );
