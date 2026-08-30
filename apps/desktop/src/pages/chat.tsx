@@ -666,6 +666,9 @@ function ChatPage() {
     },
   });
   const agentLocked = Boolean(selectedAgentId && messages.length > 0);
+  const agentModeSelected =
+    Boolean(selectedAgentId) ||
+    (chatRoute.kind === "new" && !isHydratingSession && !modeSelectionRef.current);
   useEffect(() => {
     if (modeSelectionRef.current) return;
     if (
@@ -2924,6 +2927,14 @@ function ChatPage() {
             <GitBranch aria-hidden="true" className="size-3.5" />
             main
           </span>
+          <span className="chat-mode-label">
+            {agentModeSelected ? (
+              <Bot aria-hidden="true" className="size-3.5" />
+            ) : (
+              <Settings2 aria-hidden="true" className="size-3.5" />
+            )}
+            {agentModeSelected ? "Agent模式" : "手动模式"}
+          </span>
         </div>
         {sessionKind === "task" ? (
           <div className="chat-task-status" role="status">
@@ -3057,10 +3068,8 @@ function ChatPage() {
                 {chatRoute.kind === "new" ? (
                   <ButtonGroup className="chat-mode-group shrink-0">
                     <button
-                      aria-pressed={Boolean(selectedAgentId)}
-                      className={`chat-model-picker !h-7 !shrink-0 !gap-1.5 !whitespace-nowrap !px-2 !text-[11px] ${
-                        selectedAgentId ? "bg-accent text-foreground" : ""
-                      }`}
+                      aria-pressed={agentModeSelected}
+                      className={`chat-model-picker !h-7 !shrink-0 !gap-1.5 !whitespace-nowrap !px-2 !text-[11px] ${agentModeSelected ? "is-selected" : ""}`}
                       disabled={isReadOnly || isAgentsLoading || !defaultAgentId || agentLocked}
                       onClick={() => {
                         modeSelectionRef.current = true;
@@ -3072,10 +3081,8 @@ function ChatPage() {
                       Agent模式
                     </button>
                     <button
-                      aria-pressed={!selectedAgentId}
-                      className={`chat-model-picker !h-7 !shrink-0 !gap-1.5 !whitespace-nowrap !px-2 !text-[11px] ${
-                        !selectedAgentId ? "bg-accent text-foreground" : ""
-                      }`}
+                      aria-pressed={!agentModeSelected}
+                      className={`chat-model-picker !h-7 !shrink-0 !gap-1.5 !whitespace-nowrap !px-2 !text-[11px] ${!agentModeSelected ? "is-selected" : ""}`}
                       disabled={isReadOnly || agentLocked}
                       onClick={() => {
                         modeSelectionRef.current = true;

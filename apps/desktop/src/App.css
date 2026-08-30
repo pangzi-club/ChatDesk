@@ -4201,7 +4201,6 @@ button.chat-task-item-summary:focus-visible .chat-task-item-chevron,
 }
 .chat-mode-group {
   gap: 0;
-  border: 1px solid var(--border);
   border-radius: 7px;
   background: var(--muted);
   padding: 2px;
@@ -4212,10 +4211,21 @@ button.chat-task-item-summary:focus-visible .chat-task-item-chevron,
   border-radius: 5px;
   background: transparent;
 }
+:where(.chat-mode-group) .chat-model-picker:first-child {
+  border-radius: 5px 0 0 5px;
+}
+:where(.chat-mode-group) .chat-model-picker:last-child {
+  border-radius: 0 5px 5px 0;
+}
 :where(.chat-mode-group) .chat-model-picker:hover,
 :where(.chat-mode-group) .chat-model-picker:focus-visible {
   border-color: transparent;
   background: var(--card);
+}
+:where(.chat-mode-group) .chat-model-picker.is-selected {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-foreground);
 }
 .chat-model-picker,
 .chat-sandbox-picker {
@@ -5400,6 +5410,11 @@ button.chat-task-item-summary:focus-visible .chat-task-item-chevron,
   align-items: center;
   gap: 7px;
   white-space: nowrap;
+}
+
+.chat-mode-label {
+  color: inherit;
+  font-weight: inherit;
 }
 
 .chat-workspace-picker {
