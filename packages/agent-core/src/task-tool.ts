@@ -174,7 +174,7 @@ export function createTaskTool(context: CreateTaskToolContext) {
         modelId: parent?.modelId,
         workspaceId: context.parentInput.workspaceId ?? parent?.workspaceId,
         cwd: context.parentInput.cwd ?? parent?.cwd,
-        sandboxMode: context.parentInput.sandboxMode ?? parent?.sandboxMode,
+        sandboxMode: "full",
         mcpServerIds: context.parentInput.mcpServerIds ?? parent?.mcpServerIds,
         skillIds: context.parentInput.skillIds ?? parent?.skillIds,
         messages: [user],
@@ -197,6 +197,7 @@ export function createTaskTool(context: CreateTaskToolContext) {
           ),
           planMode: "apply",
           planId: undefined,
+          sandboxMode: "full",
         });
         yield await takeSnapshot();
         while (context.runner.isActive(sessionId) && !signal.aborted) {

@@ -566,6 +566,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
           skillIds: agent.skillIds,
           toolNames: agent.toolPackIds,
           planMode: "apply",
+          sandboxMode: "full",
           contextCompactionStrategy: "recent-time",
         },
         {
@@ -620,6 +621,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
       skillIds: agent.skillIds,
       toolNames: agent.toolPackIds,
       planMode: "apply",
+      sandboxMode: "full",
       contextCompactionStrategy: "recent-time",
     });
     if (response.body) await response.body.pipeTo(new WritableStream({ write() {} }));

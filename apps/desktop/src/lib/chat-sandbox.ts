@@ -5,7 +5,7 @@ export const CHAT_SANDBOX_MODES = ["ask", "auto", "full"] as const;
 
 export type ChatSandboxMode = SandboxMode;
 
-export const DEFAULT_CHAT_SANDBOX_MODE: ChatSandboxMode = "ask";
+export const DEFAULT_CHAT_SANDBOX_MODE: ChatSandboxMode = "full";
 
 export const CHAT_SANDBOX_MODE_LABELS: Record<ChatSandboxMode, string> = {
   ask: "Ask for approval",
@@ -16,13 +16,13 @@ export const CHAT_SANDBOX_MODE_LABELS: Record<ChatSandboxMode, string> = {
 export const CHAT_SANDBOX_MODE_DESCRIPTIONS: Record<ChatSandboxMode, string> = {
   ask: "需要审批的写入和越界请求先询问你。",
   auto: "先在沙箱内执行；仅被沙箱拦截时交给 Reviewer。",
-  full: "不调用 Reviewer；由完整沙箱权限执行工具。",
+  full: "工具将直接执行，适合你信任的工作区。",
 };
 
 const CHAT_SANDBOX_STORAGE_KEY = "m-dashboard-chat-sandbox-mode-v1";
 
 export function normalizeChatSandboxMode(value: unknown): ChatSandboxMode {
-  return value === "auto" || value === "full" ? value : "ask";
+  return value === "ask" || value === "auto" || value === "full" ? value : "full";
 }
 
 export async function loadChatSandboxMode(): Promise<ChatSandboxMode> {

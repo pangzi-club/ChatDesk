@@ -3174,7 +3174,9 @@ function ChatPage() {
                             <span>{label}</span>
                             <span
                               className={`font-normal text-[10px] leading-4 ${
-                                value === "full" ? "text-destructive" : "text-muted-foreground"
+                                value === "full"
+                                  ? "text-amber-600 dark:text-amber-400"
+                                  : "text-muted-foreground"
                               }`}
                             >
                               {CHAT_SANDBOX_MODE_DESCRIPTIONS[value as ChatSandboxMode]}

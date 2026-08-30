@@ -14,7 +14,7 @@ const DEFAULT_CONFIG: ChatServerConfigData = {
   models: [],
   agents: [],
   chatTools: {},
-  sandboxMode: "ask",
+  sandboxMode: "full",
   sandboxReadablePaths: [],
   developerToolPaths: [],
   approvalReviewerModelId: undefined,
@@ -50,7 +50,9 @@ function normalize(value: unknown): ChatServerConfigData {
         ? (record.chatTools as Record<string, boolean>)
         : {},
     sandboxMode:
-      record.sandboxMode === "auto" || record.sandboxMode === "full" ? record.sandboxMode : "ask",
+      record.sandboxMode === "ask" || record.sandboxMode === "auto" || record.sandboxMode === "full"
+        ? record.sandboxMode
+        : "full",
     sandboxReadablePaths: Array.isArray(record.sandboxReadablePaths)
       ? [
           ...new Set(
