@@ -7,8 +7,6 @@ files:
   - package.json
 asarUnpack:
   - node_modules/node-pty/**/*
-  - node_modules/@huggingface/transformers/**/*
-  - node_modules/onnxruntime-node/**/*
   - node_modules/sharp/**/*
   - node_modules/@img/**/*
   - "**/*.node"

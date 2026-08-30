@@ -27,17 +27,6 @@ export type DesktopTerminalSpawnResult = {
   unsubscribe?: () => void;
 };
 
-export type WhisperModelId = "tiny" | "tiny.en" | "base" | "small" | "medium" | "large-v3-turbo";
-export type WhisperModelStatus = {
-  id: WhisperModelId;
-  installed: boolean;
-  downloading: boolean;
-  bytesDownloaded: number;
-  totalBytes?: number;
-  error?: string;
-};
-export type WhisperTranscriptionResult = { text: string; modelId: WhisperModelId };
-
 export type DesktopBridge = {
   runtime: DesktopRuntime;
   call<T>(command: string, args?: Record<string, unknown>): Promise<T>;
@@ -60,14 +49,4 @@ export type DesktopBridge = {
     args: { cwd: string; cols: number; rows: number },
     onEvent: (event: DesktopTerminalEvent) => void,
   ): Promise<DesktopTerminalSpawnResult>;
-  whisperListModels?(): Promise<{ directory: string; models: WhisperModelStatus[] }>;
-  whisperDownloadModel?(modelId: WhisperModelId): Promise<WhisperModelStatus>;
-  whisperCancelDownload?(modelId: WhisperModelId): Promise<void>;
-  whisperDeleteModel?(modelId: WhisperModelId): Promise<void>;
-  whisperTranscribe?(input: {
-    modelId: WhisperModelId;
-    language: string;
-    samples: number[];
-    sampleRate: number;
-  }): Promise<WhisperTranscriptionResult>;
 };

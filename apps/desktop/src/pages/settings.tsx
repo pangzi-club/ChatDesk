@@ -405,7 +405,7 @@ function SettingsLayout() {
             ["/settings/tools", Wrench, "Tools"],
             ["/settings/sandbox", ShieldCheck, "沙箱"],
             ["/settings/memory", Brain, "长期记忆"],
-            ["/settings/voice", Mic, "语音 Whisper 语音输入"],
+            ["/settings/voice", Mic, "语音 语音输入"],
             ["/settings/environment", SquareTerminal, "环境"],
             ["/settings/development", FlaskConical, "开发"],
             ["/settings/keys", KeyRound, "其他密钥"],

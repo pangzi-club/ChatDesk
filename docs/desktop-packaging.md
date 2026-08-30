@@ -1,6 +1,6 @@
 # Desktop Packaging
 
-The desktop release ships one shared Node.js runtime with the Electron package. The Chat Server, sandbox worker, and browser worker are normal JavaScript resources executed by that runtime. End users do not need a system Node.js installation or pnpm. Whisper/ONNX model files are downloaded on demand into `~/.chatdesk/whisper` and are never bundled into the installer.
+The desktop release ships one shared Node.js runtime with the Electron package. The Chat Server, sandbox worker, and browser worker are normal JavaScript resources executed by that runtime. End users do not need a system Node.js installation or pnpm.
 
 ## Local build
 

@@ -5,7 +5,6 @@ const IPC_CHANNEL = "chatdesk:invoke";
 const IPC_EVENT_PREFIX = "chatdesk:event:";
 
 type DesktopUserStoreFile = "settings.json" | "bookmarks.json";
-type WhisperModelId = "tiny" | "tiny.en" | "base" | "small" | "medium" | "large-v3-turbo";
 
 type DesktopBridge = {
   runtime: "electron";
@@ -39,11 +38,6 @@ type DesktopBridge = {
     args: { cwd: string; cols: number; rows: number },
     onEvent: (event: unknown) => void,
   ): Promise<{ id: string; shell: string; unsubscribe: () => void }>;
-  whisperListModels(): Promise<unknown>;
-  whisperDownloadModel(modelId: WhisperModelId): Promise<unknown>;
-  whisperCancelDownload(modelId: WhisperModelId): Promise<void>;
-  whisperDeleteModel(modelId: WhisperModelId): Promise<void>;
-  whisperTranscribe(input: { modelId: WhisperModelId; language: string; samples: number[]; sampleRate: number }): Promise<unknown>;
 };
 
 const bridge: DesktopBridge = {
@@ -96,15 +90,6 @@ const bridge: DesktopBridge = {
       throw error;
     }
   },
-  whisperListModels: () => ipcRenderer.invoke(IPC_CHANNEL, { command: "whisper_list_models", args: {} }),
-  whisperDownloadModel: (modelId: WhisperModelId) =>
-    ipcRenderer.invoke(IPC_CHANNEL, { command: "whisper_download_model", args: { modelId } }),
-  whisperCancelDownload: (modelId: WhisperModelId) =>
-    ipcRenderer.invoke(IPC_CHANNEL, { command: "whisper_cancel_download", args: { modelId } }),
-  whisperDeleteModel: (modelId: WhisperModelId) =>
-    ipcRenderer.invoke(IPC_CHANNEL, { command: "whisper_delete_model", args: { modelId } }),
-  whisperTranscribe: (input) =>
-    ipcRenderer.invoke(IPC_CHANNEL, { command: "whisper_transcribe", args: input }),
 };
 
 contextBridge.exposeInMainWorld("__CHATDESK_DESKTOP_BRIDGE__", bridge);
