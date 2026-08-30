@@ -10,6 +10,7 @@ import {
   Notification,
   protocol,
   screen,
+  session,
   shell,
   Tray,
   webFrameMain,
@@ -686,6 +687,14 @@ function setupAssetProtocol() {
   });
 }
 
+async function setupSystemProxy() {
+  try {
+    await session.defaultSession.setProxy({ mode: "system" });
+  } catch (error) {
+    console.error("System proxy configuration failed", error);
+  }
+}
+
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
@@ -694,6 +703,7 @@ if (!gotSingleInstanceLock) {
     showMainWindow();
   });
   void app.whenReady().then(async () => {
+    await setupSystemProxy();
     setupRendererProtocol();
     setupAssetProtocol();
     setupIpc();
