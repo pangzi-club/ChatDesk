@@ -41,6 +41,7 @@ export type ChatServerSupervisorOptions = {
   startupTimeoutMs?: number;
   monitorIntervalMs?: number;
   restartDelayMs?: number;
+  onOutput?: (stream: "stdout" | "stderr", text: string) => void;
   env?: NodeJS.ProcessEnv;
   fetchImpl?: typeof fetch;
   spawnImpl?: SpawnProcess;
@@ -141,8 +142,12 @@ export class ChatServerSupervisor {
     this.startedAt = Date.now();
     // Always drain child pipes. An unconsumed pipe can fill and block the
     // Chat Server process, which otherwise looks like a random crash.
-    child.stdout?.on("data", () => undefined);
-    child.stderr?.on("data", () => undefined);
+    child.stdout?.on("data", (data: unknown) => {
+      this.options.onOutput?.("stdout", Buffer.from(data as Uint8Array).toString("utf8"));
+    });
+    child.stderr?.on("data", (data: unknown) => {
+      this.options.onOutput?.("stderr", Buffer.from(data as Uint8Array).toString("utf8"));
+    });
     child.once("exit", (code: number | null, signal: NodeJS.Signals | null) =>
       this.handleExit(child, code, signal),
     );

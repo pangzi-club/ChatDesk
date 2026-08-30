@@ -34,6 +34,7 @@ import {
   ToolsSettingsPage,
 } from "@/pages/settings";
 import { StatisticsSettingsPage } from "@/pages/statistics";
+import { VoiceSettingsPage } from "@/pages/voice-settings";
 
 const router = createHashRouter([
   {
@@ -88,6 +89,7 @@ const router = createHashRouter([
           { path: "environment", element: <EnvironmentSettingsPage /> },
           { path: "development", element: <DevelopmentSettingsPage /> },
           { path: "memory", element: <MemorySettingsPage /> },
+          { path: "voice", element: <VoiceSettingsPage /> },
           { path: "history", element: <Navigate replace to="/settings/statistics" /> },
           { path: "history/analysis", element: <Navigate replace to="/settings/statistics" /> },
           { path: "history/:source/:id", element: <HistoryDetailPage /> },

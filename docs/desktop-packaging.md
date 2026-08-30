@@ -1,6 +1,6 @@
 # Desktop Packaging
 
-The desktop release ships one shared Node.js runtime with the Electron package. The Chat Server, sandbox worker, and browser worker are normal JavaScript resources executed by that runtime. End users do not need a system Node.js installation or pnpm.
+The desktop release ships one shared Node.js runtime with the Electron package. The Chat Server, sandbox worker, and browser worker are normal JavaScript resources executed by that runtime. End users do not need a system Node.js installation or pnpm. Whisper/ONNX model files are downloaded on demand into `~/.chatdesk/whisper` and are never bundled into the installer.
 
 ## Local build
 
@@ -45,9 +45,7 @@ git push origin v0.4.0
 ```
 
 `pnpm version:set` rewrites every workspace `package.json`.
-The tag starts the two architecture builds. The release job runs only after
-both builds finish successfully. Keep the tag version aligned with the updated
-workspace packages.
+The tag starts the two architecture builds (Intel x64 and Apple Silicon arm64). The release job runs only after both builds finish successfully. Keep the tag version aligned with the updated workspace packages.
 
 `pnpm desktop:sidecars` requires Node.js 22.20.0. It copies the current Node executable to `apps/desktop/assets/binaries/node-runtime-<target-triple>`, bundles the TypeScript Chat Server and sandbox worker into CommonJS, and copies `packages/agent-core/workers/browser-worker.mjs` as an ordinary ES module. These scripts live under `apps/desktop/assets/resources/node-runtime/workers` and are all executed by the same Node binary. Builtin skills from `packages/agent-core/skills` are copied to `workers/skills` next to `chat-server.cjs`.
 
@@ -70,6 +68,8 @@ Window geometry is stored in Electron `userData` as `window-state.json`; this sm
 The server enforces token validation on every request except `/health` and CORS preflight (`OPTIONS`). The frontend obtains the per-launch token through the desktop bridge and sends it as a `Bearer` Authorization header. The packaged app does not scan legacy directories at startup. Use `pnpm migrate chatdesk -- --apply` before launching the new app to migrate data from older layouts. See [data-migration.md](data-migration.md) for the full command list.
 
 The app bundles only Chromium's headless shell. Updating Playwright requires rebuilding the browser resource and retesting the packaged browser tools.
+
+Electron native modules, including ONNX Runtime and Sharp, are unpacked from asar so their `.node` binaries can be loaded by the Electron main process. Each macOS artifact must be built on a runner matching its target architecture; do not cross-build the native runtime from Rosetta.
 
 This layout assumes direct DMG or website distribution without macOS App Sandbox. A future App Store build would need a container-backed data location.
 

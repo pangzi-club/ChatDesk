@@ -50,6 +50,13 @@ import {
 } from "./renderer-protocol.js";
 import { TerminalManager } from "./terminal-manager.js";
 import { createTrayIconBuffer, padTrayMenuLabel } from "./tray-icon.js";
+import {
+  deleteWhisperModel,
+  downloadWhisperModel,
+  cancelWhisperDownload,
+  listWhisperModels,
+  transcribeWhisper,
+} from "./whisper-service.js";
 
 type DesktopUserStoreFile = "settings.json" | "bookmarks.json";
 const CHAT_SERVER_RUNTIME_PROTOCOL_VERSION = 1;
@@ -466,6 +473,10 @@ async function setupSupervisor() {
     dataDir,
     env: chatServerRuntimeEnvironment(worker, usingElectronRuntime),
     production: !watch,
+    onOutput: (stream, text) => {
+      const write = stream === "stderr" ? console.error : console.log;
+      write(`[Chat Server] ${text.trimEnd()}`);
+    },
     ...(supervisorPort() ? { port: supervisorPort() } : {}),
     ...(supervisorToken() ? { token: supervisorToken() } : {}),
   });
@@ -555,6 +566,48 @@ function setupIpc() {
         writeUserStore(fileName, args.contents);
         return undefined;
       }
+      case "whisper_list_models":
+        return listWhisperModels();
+      case "whisper_download_model":
+        if (typeof args.modelId !== "string") throw new Error("模型参数无效");
+        return downloadWhisperModel(args.modelId as Parameters<typeof downloadWhisperModel>[0], (status) =>
+          emit("whisper-download-progress", status),
+        );
+      case "whisper_cancel_download":
+        if (typeof args.modelId !== "string") throw new Error("模型参数无效");
+        await cancelWhisperDownload(args.modelId as Parameters<typeof cancelWhisperDownload>[0]);
+        return undefined;
+      case "whisper_delete_model":
+        if (typeof args.modelId !== "string") throw new Error("模型参数无效");
+        await deleteWhisperModel(args.modelId as Parameters<typeof deleteWhisperModel>[0]);
+        return undefined;
+      case "whisper_transcribe":
+        if (
+          typeof args.modelId !== "string" ||
+          typeof args.language !== "string" ||
+          !Array.isArray(args.samples) ||
+          typeof args.sampleRate !== "number"
+        ) {
+          throw new Error("转写参数无效");
+        }
+        emit("whisper-status", { status: "busy", modelId: args.modelId });
+        try {
+          const result = await transcribeWhisper({
+            modelId: args.modelId as Parameters<typeof transcribeWhisper>[0]["modelId"],
+            language: args.language,
+            samples: args.samples.map(Number),
+            sampleRate: args.sampleRate,
+          });
+          emit("whisper-status", { status: "complete", modelId: args.modelId });
+          return result;
+        } catch (error) {
+          emit("whisper-status", {
+            status: "error",
+            modelId: args.modelId,
+            message: error instanceof Error ? error.message : "转写失败",
+          });
+          throw error;
+        }
       case "select_workspace_directory": {
         const result = await dialog.showOpenDialog({ properties: ["openDirectory"] });
         return result.canceled ? null : (result.filePaths[0] ?? null);

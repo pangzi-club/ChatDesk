@@ -265,6 +265,7 @@ import {
   loadDisabledSkillIds,
   type SkillDefinition,
 } from "@/lib/skills";
+import { getVoiceBridge, loadVoiceSettings, type VoiceSettings } from "@/lib/voice-settings";
 import {
   defaultTaskCwd,
   isDefaultWorkspaceId,
@@ -385,6 +386,10 @@ function ChatPage() {
     queryKey: ["developer-settings"],
     queryFn: loadDeveloperSettings,
   });
+  const { data: voiceSettings } = useQuery({
+    queryKey: ["voice-settings"],
+    queryFn: loadVoiceSettings,
+  });
   const disabledSkillIds = disabledSkillsQuery.data ?? EMPTY_STRING_ARRAY;
   const allowedSkills = useMemo(
     () => filterAllowedSkills(availableSkills, disabledSkillIds),
@@ -407,6 +412,9 @@ function ChatPage() {
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const modeSelectionRef = useRef(false);
   const [input, setInput] = useState("");
+  const [voiceState, setVoiceState] = useState<"idle" | "recording" | "transcribing">("idle");
+  const voiceRecorderRef = useRef<MediaRecorder | null>(null);
+  const voiceChunksRef = useRef<Blob[]>([]);
   const [selectionToolbar, setSelectionToolbar] = useState<{ left: number; top: number } | null>(
     null,
   );
@@ -427,6 +435,62 @@ function ChatPage() {
   const [forkingMessageId, setForkingMessageId] = useState<string | null>(null);
   const [isRenamingTitle, setIsRenamingTitle] = useState(false);
   const inputRef = useRef<ChatComposerInputHandle>(null);
+
+  const transcribeVoice = useCallback(async (audio: Blob, settings: VoiceSettings) => {
+    const bridge = getVoiceBridge();
+    if (!bridge?.whisperTranscribe || !settings.modelId)
+      throw new Error("请先在语音设置中下载并选择模型");
+    const context = new AudioContext();
+    try {
+      const decoded = await context.decodeAudioData(await audio.arrayBuffer());
+      const channel = decoded.getChannelData(0);
+      const samples = Array.from(channel);
+      const result = await bridge.whisperTranscribe({
+        modelId: settings.modelId,
+        language: settings.language,
+        samples,
+        sampleRate: decoded.sampleRate,
+      });
+      if (result.text)
+        setInput((current) => (current ? `${current}\n${result.text}` : result.text));
+    } finally {
+      await context.close();
+    }
+  }, []);
+
+  const toggleVoiceInput = useCallback(async () => {
+    if (voiceState === "recording") {
+      voiceRecorderRef.current?.stop();
+      return;
+    }
+    if (voiceState !== "idle" || !voiceSettings?.enabled || !voiceSettings.modelId) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      voiceChunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size) voiceChunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((track) => {
+          track.stop();
+        });
+        setVoiceState("transcribing");
+        void transcribeVoice(
+          new Blob(voiceChunksRef.current, { type: recorder.mimeType }),
+          voiceSettings,
+        )
+          .catch((error) => console.error("Voice transcription failed", error))
+          .finally(() => setVoiceState("idle"));
+      };
+      voiceRecorderRef.current = recorder;
+      recorder.start();
+      setVoiceState("recording");
+    } catch (error) {
+      console.error("Microphone permission failed", error);
+      setVoiceState("idle");
+    }
+  }, [transcribeVoice, voiceSettings, voiceState]);
   const selectedSnippetRef = useRef("");
   const selectionToolbarTimerRef = useRef<number | null>(null);
   const [composerPlain, setComposerPlain] = useState("");
@@ -3288,13 +3352,38 @@ function ChatPage() {
                 />
                 {!isReadOnly ? (
                   <Button
-                    aria-label="语音输入"
+                    aria-label={
+                      voiceState === "recording"
+                        ? "停止录音"
+                        : voiceState === "transcribing"
+                          ? "正在转写"
+                          : "语音输入"
+                    }
                     className="chat-tool-button !size-7 hidden sm:inline-flex"
+                    disabled={
+                      voiceState === "transcribing" ||
+                      !voiceSettings?.enabled ||
+                      !voiceSettings.modelId
+                    }
+                    onClick={() => void toggleVoiceInput()}
                     size="icon"
+                    title={
+                      !voiceSettings?.enabled
+                        ? "请先在语音设置中启用并选择模型"
+                        : voiceState === "recording"
+                          ? "停止录音"
+                          : "语音输入"
+                    }
                     type="button"
                     variant="ghost"
                   >
-                    <Mic className="size-4" />
+                    {voiceState === "transcribing" ? (
+                      <LoaderCircle className="size-4 animate-spin" />
+                    ) : (
+                      <Mic
+                        className={`size-4 ${voiceState === "recording" ? "text-destructive" : ""}`}
+                      />
+                    )}
                   </Button>
                 ) : null}
                 <Button

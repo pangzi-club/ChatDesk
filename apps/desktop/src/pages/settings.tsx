@@ -19,6 +19,7 @@ import {
   KeyRound,
   LoaderCircle,
   MessageSquare,
+  Mic,
   Package,
   Palette,
   Pencil,
@@ -356,6 +357,7 @@ const themeColors: Array<{
 function SettingsLayout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [search, setSearch] = useState("");
   const isHistoryRoute = location.pathname.startsWith("/settings/history");
 
   return (
@@ -377,31 +379,53 @@ function SettingsLayout() {
           <ArrowLeft className="size-4" />
           <span className="max-sm:hidden">返回应用</span>
         </Button>
-        <div className="mb-4 flex h-8 items-center gap-2 rounded-md border border-border bg-background px-3 text-[13px] text-muted-foreground shadow-xs">
+        <label className="mb-4 flex h-8 items-center gap-2 rounded-md border border-border bg-background px-3 text-[13px] text-muted-foreground shadow-xs">
           <Search className="size-4 shrink-0" />
-          <span className="max-sm:hidden">搜索设置...</span>
-        </div>
+          <input
+            aria-label="搜索设置"
+            className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground max-sm:hidden"
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="搜索设置..."
+            value={search}
+          />
+        </label>
         <p className="px-2 pb-1 font-medium text-[11px] text-muted-foreground uppercase tracking-wider max-sm:hidden">
           工作区
         </p>
         <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto" aria-label="设置导航">
-          <SettingsNavItem to="/settings/general" icon={Bell} label="常规" />
-          <SettingsNavItem to="/settings/theme" icon={Palette} label="主题" />
-          <SettingsNavItem to="/settings/shortcuts" icon={Keyboard} label="快捷键" />
-          <SettingsNavItem to="/settings/models" icon={Package} label="模型" />
-          <SettingsNavItem to="/settings/agents" icon={Bot} label="Agents" />
-          <SettingsNavItem to="/settings/channel" icon={MessageSquare} label="Channel" />
-          <SettingsNavItem to="/settings/mcp" icon={PlugZap} label="MCP" />
-          <SettingsNavItem to="/settings/skills" icon={Sparkles} label="Skills" />
-          <SettingsNavItem to="/settings/tools" icon={Wrench} label="Tools" />
-          <SettingsNavItem to="/settings/sandbox" icon={ShieldCheck} label="沙箱" />
-          <SettingsNavItem to="/settings/memory" icon={Brain} label="长期记忆" />
-          <SettingsNavItem to="/settings/environment" icon={SquareTerminal} label="环境" />
-          <SettingsNavItem to="/settings/development" icon={FlaskConical} label="开发" />
-          <SettingsNavItem to="/settings/keys" icon={KeyRound} label="其他密钥" />
-          <SettingsNavItem to="/settings/chat-server" icon={Server} label="Chat Server" />
-          <SettingsNavItem to="/settings/statistics" icon={ChartColumn} label="使用量" />
-          <SettingsNavItem to="/settings/logs" icon={ScrollText} label="活动记录" />
+          {[
+            ["/settings/general", Bell, "常规 通知"],
+            ["/settings/theme", Palette, "主题 外观"],
+            ["/settings/shortcuts", Keyboard, "快捷键"],
+            ["/settings/models", Package, "模型"],
+            ["/settings/agents", Bot, "Agents"],
+            ["/settings/channel", MessageSquare, "Channel 飞书"],
+            ["/settings/mcp", PlugZap, "MCP"],
+            ["/settings/skills", Sparkles, "Skills"],
+            ["/settings/tools", Wrench, "Tools"],
+            ["/settings/sandbox", ShieldCheck, "沙箱"],
+            ["/settings/memory", Brain, "长期记忆"],
+            ["/settings/voice", Mic, "语音 Whisper 语音输入"],
+            ["/settings/environment", SquareTerminal, "环境"],
+            ["/settings/development", FlaskConical, "开发"],
+            ["/settings/keys", KeyRound, "其他密钥"],
+            ["/settings/chat-server", Server, "Chat Server"],
+            ["/settings/statistics", ChartColumn, "使用量"],
+            ["/settings/logs", ScrollText, "活动记录"],
+          ]
+            .filter(
+              ([, , keywords]) =>
+                !search.trim() ||
+                String(keywords).toLowerCase().includes(search.trim().toLowerCase()),
+            )
+            .map(([to, icon, keywords]) => (
+              <SettingsNavItem
+                key={String(to)}
+                to={String(to)}
+                icon={icon as typeof Palette}
+                label={String(keywords).split(" ")[0]}
+              />
+            ))}
         </nav>
         <div className="mt-3 border-border border-t py-3 text-[11px] text-muted-foreground max-sm:hidden">
           ChatDesk
