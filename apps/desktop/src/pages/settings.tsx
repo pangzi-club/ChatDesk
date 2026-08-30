@@ -1235,6 +1235,10 @@ function DevelopmentSettingsPage() {
     saveMutation.mutate({ ...settings, mockLongResponse: enabled });
   }
 
+  function updateShowAllTasks(enabled: boolean) {
+    saveMutation.mutate({ ...settings, showAllTasks: enabled });
+  }
+
   return (
     <>
       <SettingsHeading
@@ -1267,12 +1271,36 @@ function DevelopmentSettingsPage() {
             onCheckedChange={(checked) => updateMockLongResponse(checked === true)}
           />
         </label>
-        {saveMutation.isError ? (
-          <p className="border-border border-t px-5 py-3 text-destructive text-xs">
-            保存开发设置失败，请重试。
-          </p>
-        ) : null}
       </section>
+      <section className="mt-6 overflow-hidden rounded-lg border border-border bg-card">
+        <div className="border-border border-b px-5 py-4">
+          <h2 className="font-medium text-sm">Sidebar</h2>
+          <p className="mt-1 text-muted-foreground text-xs">
+            控制左侧会话列表中开发任务的显示范围。
+          </p>
+        </div>
+        <label
+          className="flex cursor-pointer items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-accent/40"
+          htmlFor="show-all-tasks"
+        >
+          <span className="min-w-0">
+            <span className="block font-medium text-sm">显示所有task</span>
+            <span className="mt-1 block text-muted-foreground text-xs">
+              开启后，Sidebar 会显示 Channel、自动化等默认隐藏的任务会话。
+            </span>
+          </span>
+          <Switch
+            aria-label="显示所有task"
+            checked={settings.showAllTasks}
+            disabled={settingsQuery.isPending || saveMutation.isPending}
+            id="show-all-tasks"
+            onCheckedChange={(checked) => updateShowAllTasks(checked === true)}
+          />
+        </label>
+      </section>
+      {saveMutation.isError ? (
+        <p className="mt-4 text-destructive text-xs">保存开发设置失败，请重试。</p>
+      ) : null}
     </>
   );
 }

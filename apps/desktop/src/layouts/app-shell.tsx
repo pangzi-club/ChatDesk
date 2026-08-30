@@ -171,6 +171,7 @@ import {
   subscribeContextDetailUpdated,
 } from "@/lib/context-detail-events";
 import { getDesktopBridge, isDesktop } from "@/lib/desktop-bridge";
+import { DEFAULT_DEVELOPER_SETTINGS, loadDeveloperSettings } from "@/lib/developer-settings";
 import { explorerFileIconKind } from "@/lib/explorer-file-icon";
 import { subscribeFileViewerOpen } from "@/lib/file-viewer-events";
 import { loadGeneralSettings, notifyFeishuMessage } from "@/lib/general-settings";
@@ -322,7 +323,19 @@ const commandItems = [
     to: "/settings/development",
     label: "开发",
     icon: FlaskConical,
-    keywords: ["设置", "开发", "development", "mock", "长文本", "流式", "性能测试"],
+    keywords: [
+      "设置",
+      "开发",
+      "development",
+      "mock",
+      "长文本",
+      "流式",
+      "性能测试",
+      "显示所有task",
+      "sidebar",
+      "channel",
+      "自动化",
+    ],
   },
   {
     to: "/settings/memory",
@@ -1913,6 +1926,10 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
     queryKey: ["chat-index"],
     queryFn: loadChatIndex,
   });
+  const developerSettingsQuery = useQuery({
+    queryKey: ["developer-settings"],
+    queryFn: loadDeveloperSettings,
+  });
   const workspaceProjectsQuery = useQuery({
     queryKey: ["workspace-projects"],
     queryFn: loadWorkspaceProjects,
@@ -1921,25 +1938,25 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
   const activeSessionId = chatRoute.kind === "session" ? chatRoute.sessionId : null;
   const activeSessionIdRef = useRef(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
+  const showAllTasks =
+    developerSettingsQuery.data?.showAllTasks ?? DEFAULT_DEVELOPER_SETTINGS.showAllTasks;
+  const sidebarSessions = useMemo(
+    () => filterSidebarConversations(chatIndexQuery.data ?? [], showAllTasks),
+    [chatIndexQuery.data, showAllTasks],
+  );
   const groups = useMemo(
     () =>
       groupChatsByWorkspace(
-        filterSidebarConversations(chatIndexQuery.data ?? []),
-        sortWorkspaceProjects(
-          workspaceProjectsQuery.data ?? [],
-          filterSidebarConversations(chatIndexQuery.data ?? []),
-          workspaceSort,
-        ),
+        sidebarSessions,
+        sortWorkspaceProjects(workspaceProjectsQuery.data ?? [], sidebarSessions, workspaceSort),
         workspaceSort,
       ),
-    [chatIndexQuery.data, workspaceProjectsQuery.data, workspaceSort],
+    [sidebarSessions, workspaceProjectsQuery.data, workspaceSort],
   );
   const listDateGroups = useMemo(() => {
-    const clusters = sortConversationClustersByCreatedAt(
-      clusterConversations(filterSidebarConversations(chatIndexQuery.data ?? [])),
-    );
+    const clusters = sortConversationClustersByCreatedAt(clusterConversations(sidebarSessions));
     return groupConversationClustersByLocalDate(clusters);
-  }, [chatIndexQuery.data]);
+  }, [sidebarSessions]);
   const isPending = chatIndexQuery.isPending || workspaceProjectsQuery.isPending;
   const isError = chatIndexQuery.isError || workspaceProjectsQuery.isError;
   // 首屏列表渲染与桌面状态恢复完成前，跳过 Sidebar 菜单的入场动画，保留展开/收起动画。

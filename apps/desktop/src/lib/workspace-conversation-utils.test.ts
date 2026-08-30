@@ -37,13 +37,33 @@ function session(
 }
 
 describe("workspace conversation utilities", () => {
-  it("hides Feishu conversations from the sidebar", () => {
+  it("hides Feishu and automation conversations from the sidebar by default", () => {
     const visible = filterSidebarConversations([
       session("local", { updatedAt: "2026-01-01" }),
       { ...session("feishu", { updatedAt: "2026-01-02" }), source: "feishu" },
+      {
+        ...session("automation", { updatedAt: "2026-01-03" }),
+        source: "automation",
+      },
     ]);
 
     expect(visible.map((item) => item.id)).toEqual(["local"]);
+  });
+
+  it("shows every conversation when all tasks are enabled", () => {
+    const visible = filterSidebarConversations(
+      [
+        session("local", { updatedAt: "2026-01-01" }),
+        { ...session("feishu", { updatedAt: "2026-01-02" }), source: "feishu" },
+        {
+          ...session("automation", { updatedAt: "2026-01-03" }),
+          source: "automation",
+        },
+      ],
+      true,
+    );
+
+    expect(visible.map((item) => item.id)).toEqual(["local", "feishu", "automation"]);
   });
 
   it("uses a registered cwd when a legacy session has no workspace id", () => {

@@ -3,19 +3,22 @@ import { settingsStore } from "@/lib/settings-store";
 
 export type DeveloperSettings = {
   mockLongResponse: boolean;
+  showAllTasks: boolean;
 };
 
 export const DEFAULT_DEVELOPER_SETTINGS: DeveloperSettings = {
   mockLongResponse: false,
+  showAllTasks: false,
 };
 
 const DEVELOPER_SETTINGS_STORE_KEY = "developer";
 const DEVELOPER_SETTINGS_STORAGE_KEY = "chatdesk-developer-settings-v1";
 
-function normalizeDeveloperSettings(value: unknown): DeveloperSettings {
+export function normalizeDeveloperSettings(value: unknown): DeveloperSettings {
   if (!value || typeof value !== "object") return DEFAULT_DEVELOPER_SETTINGS;
   return {
     mockLongResponse: (value as Record<string, unknown>).mockLongResponse === true,
+    showAllTasks: (value as Record<string, unknown>).showAllTasks === true,
   };
 }
 
