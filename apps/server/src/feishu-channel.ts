@@ -81,7 +81,8 @@ export class FeishuChannelManager {
     });
     this.channel = channel;
     channel.on("message", async (message) => {
-      if (message.chatType !== "p2p" || message.rawContentType !== "text") return;
+      const isAudio = message.rawContentType === "audio";
+      if (message.chatType !== "p2p" || (!isAudio && message.rawContentType !== "text")) return;
       let senderName = message.senderName;
       let senderAvatarUrl: string | undefined;
       try {
@@ -108,7 +109,7 @@ export class FeishuChannelManager {
         senderId: message.senderId,
         senderName,
         senderAvatarUrl,
-        text: message.content,
+        text: isAudio ? "语音消息" : message.content,
         direction: "inbound",
         status: "received",
         createdAt: new Date(message.createTime).toISOString(),
@@ -127,12 +128,16 @@ export class FeishuChannelManager {
         channelMessage: item,
         channelUnread: unread,
       });
-      if (this.onMessage) {
+      if (this.onMessage || isAudio) {
         const key = `${this.channelId}:${item.contactId}`;
         const previous = this.queues.get(key) ?? Promise.resolve();
         const next = previous
           .catch(() => undefined)
-          .then(() => this.onMessage?.(item, previousLastMessageAt))
+          .then(() =>
+            isAudio
+              ? this.sendText(item.contactId, "当前环境暂不支持语音输入").then(() => undefined)
+              : this.onMessage?.(item, previousLastMessageAt),
+          )
           .then(() => undefined);
         this.queues.set(key, next);
         void next.finally(() => {

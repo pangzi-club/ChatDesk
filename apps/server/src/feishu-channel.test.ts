@@ -114,4 +114,65 @@ describe("FeishuChannelManager outbound messages", () => {
 
     assert.deepEqual(send.mock.calls, [["contact-1", { text: "**仍是纯文本**" }]]);
   });
+
+  it("replies with the unsupported-input notice for inbound audio", async () => {
+    let onMessage: ((message: unknown) => Promise<void>) | undefined;
+    const send = vi.fn().mockResolvedValue({ messageId: "message-1" });
+    createLarkChannelMock.mockReturnValue({
+      botIdentity: { openId: "bot-1", name: "Bot" },
+      on: vi.fn((event: string, handler: (message: unknown) => Promise<void>) => {
+        if (event === "message") onMessage = handler;
+      }),
+      rawClient: {
+        contact: {
+          user: {
+            get: vi.fn().mockResolvedValue({
+              code: 0,
+              data: { user: { name: "Alice", avatar: { avatar_72: "" } } },
+            }),
+          },
+        },
+      },
+      connect: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+      send,
+    });
+    const saved: ChannelMessage[] = [];
+    const store = {
+      listContacts: vi.fn().mockResolvedValue([]),
+      upsertMessage: vi.fn(async (message: ChannelMessage) => {
+        saved.push(message);
+        return true;
+      }),
+      listUnread: vi.fn().mockResolvedValue([]),
+    };
+    const manager = new FeishuChannelManager(
+      "channel-1",
+      store as never,
+      { publish: vi.fn() } as never,
+      undefined,
+      () => testAgent(),
+    );
+
+    await manager.configure({
+      id: "channel-1",
+      name: "Test",
+      appId: "app-1",
+      appSecret: "secret",
+      agentId: "agent-1",
+    });
+    await onMessage?.({
+      messageId: "audio-1",
+      chatType: "p2p",
+      rawContentType: "audio",
+      senderId: "contact-1",
+      senderName: "Alice",
+      content: '{"file_key":"file-1","duration":1000}',
+      createTime: Date.now(),
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    assert.equal(saved[0]?.text, "语音消息");
+    assert.deepEqual(send.mock.calls, [["contact-1", { text: "当前环境暂不支持语音输入" }]]);
+  });
 });
