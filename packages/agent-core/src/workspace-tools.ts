@@ -12,6 +12,11 @@ import {
 } from "./file-read.ts";
 import { type FileSearchResult, MAX_SEARCH_RESULTS, searchWorkspaceFiles } from "./file-search.ts";
 import type { JobRegistry } from "./job-registry.ts";
+import {
+  ProtectedPathError,
+  type ProtectedPathOperation,
+  protectedPathPolicy,
+} from "./protected-paths.ts";
 import type { SandboxMode } from "./protocol.ts";
 import { classifySandboxBoundary } from "./sandbox-boundary-reviewer.ts";
 import {
@@ -217,6 +222,24 @@ function rootPath(cwd: string) {
   }
 }
 
+function sandboxFileResult<T>(
+  result: Awaited<ReturnType<typeof runSandboxedFile>>,
+  operation: ProtectedPathOperation,
+) {
+  if (result.sandboxBlocked) throw new SandboxBlockedError(result.error);
+  if (result.result !== undefined) return result.result as T;
+  if (result.errorCode === "protected_path") {
+    throw new ProtectedPathError(
+      result.errorOperation === "read" || result.errorOperation === "write"
+        ? result.errorOperation
+        : operation,
+      result.errorRule || "受保护路径",
+      result.error,
+    );
+  }
+  throw new Error(result.error);
+}
+
 function canonicalizeTarget(target: string) {
   const missingParts: string[] = [];
   let existing = target;
@@ -249,6 +272,17 @@ function resolveTarget(root: string, candidate: string, mode: SandboxMode, allow
   return withinRoot(root, trimmed);
 }
 
+function resolveWritableTarget(
+  root: string,
+  candidate: string,
+  mode: SandboxMode,
+  allowOutside = false,
+) {
+  const lexicalTarget = path.resolve(root, candidate.trim());
+  protectedPathPolicy.assertWritable(lexicalTarget);
+  return resolveTarget(root, candidate, mode, allowOutside);
+}
+
 function isWithinWorkspace(root: string, target: string) {
   return target === root || target.startsWith(`${root}${path.sep}`);
 }
@@ -260,7 +294,6 @@ function resolveReadableTarget(
   allowOutside: boolean,
   readablePaths: string[],
 ) {
-  if (mode === "full" || allowOutside) return resolveTarget(root, candidate, mode, true);
   const trimmed = candidate.trim();
   const lexicalTarget = path.resolve(
     path.isAbsolute(trimmed) ? trimmed : path.resolve(root, trimmed),
@@ -268,6 +301,9 @@ function resolveReadableTarget(
   const target = canonicalizeTarget(
     path.isAbsolute(trimmed) ? trimmed : path.resolve(root, trimmed),
   );
+  protectedPathPolicy.assertReadable(lexicalTarget);
+  protectedPathPolicy.assertReadable(target);
+  if (mode === "full" || allowOutside) return target;
   if (lexicalTarget === root || lexicalTarget.startsWith(`${root}${path.sep}`)) return target;
   if (target === root || target.startsWith(`${root}${path.sep}`)) return target;
   const readableRoots = resolveReadableRoots(readablePaths);
@@ -328,18 +364,17 @@ async function listDirectory(
       { operation: "list_dir", workspace: root, path: target, offset, limit, readablePaths },
       { mode, abortSignal },
     );
-    if (result.sandboxBlocked) throw new SandboxBlockedError(result.error);
-    if (!result.result) throw new Error(result.error);
-    return result.result as DirectoryResult;
+    return sandboxFileResult<DirectoryResult>(result, "read");
   }
   const entries = await readdir(target, { withFileTypes: true });
   const normalizedOffset = Math.max(0, offset);
   const normalizedLimit = Math.min(MAX_LIST_LIMIT, Math.max(1, limit));
   const visibleEntries = entries
     .filter((entry) => {
+      const entryPath = path.resolve(target, entry.name);
+      if (!protectedPathPolicy.isReadable(entryPath)) return false;
       if (!SKIPPED_DIRECTORIES.has(entry.name)) return true;
       const readableRoots = resolveReadableRoots(readablePaths);
-      const entryPath = path.resolve(target, entry.name);
       return readableRoots.some(
         (directory) => entryPath === directory || entryPath.startsWith(`${directory}${path.sep}`),
       );
@@ -380,9 +415,7 @@ async function readTextFile(
       { operation: "read_file", workspace: root, path: target, readablePaths, ...options },
       { mode, abortSignal },
     );
-    if (result.sandboxBlocked) throw new SandboxBlockedError(result.error);
-    if (!result.result) throw new Error(result.error);
-    return result.result as ReadFileResult;
+    return sandboxFileResult<ReadFileResult>(result, "read");
   }
   return readTextFileRange(target, displayPath(root, target), options);
 }
@@ -410,11 +443,9 @@ async function searchFiles(
       },
       { mode, abortSignal },
     );
-    if (result.sandboxBlocked) throw new SandboxBlockedError(result.error);
-    if (!result.result) throw new Error(result.error);
-    return result.result as FileSearchResult;
+    return sandboxFileResult<FileSearchResult>(result, "read");
   }
-  return searchWorkspaceFiles(root, start, options);
+  return searchWorkspaceFiles(root, start, options, protectedPathPolicy);
 }
 
 export function createWorkspaceTools(
@@ -436,9 +467,11 @@ export function createWorkspaceTools(
       : readablePaths.length > 0
         ? "受限模式下路径必须位于当前 workspace 或沙箱读取白名单内；白名单目录只读。"
         : "受限模式下路径必须位于当前 workspace 内。";
+  const protectedPathScope =
+    "内置凭据路径始终禁止文件工具读取或修改，.git、.agents、.codex 始终禁止文件工具修改。";
   const tools: ToolSet = {
     list_dir: tool({
-      description: `列出文件与子目录。${pathScope}`,
+      description: `列出文件与子目录。${pathScope}${protectedPathScope}`,
       inputSchema: z.object({
         path: z.string().optional(),
         offset: z.number().int().min(0).optional(),
@@ -485,7 +518,7 @@ export function createWorkspaceTools(
       },
     }),
     read_file: tool({
-      description: `读取 UTF-8 文本文件。支持 path/file_path、startLine/endLine、offset/limit 和 view_range；单次最多返回 64 KiB，结果截断时继续分段读取。${pathScope}`,
+      description: `读取 UTF-8 文本文件。支持 path/file_path、startLine/endLine、offset/limit 和 view_range；单次最多返回 64 KiB，结果截断时继续分段读取。${pathScope}${protectedPathScope}`,
       inputSchema: z.object({
         path: z.string().min(1).optional(),
         file_path: z.string().min(1).optional(),
@@ -528,7 +561,7 @@ export function createWorkspaceTools(
       },
     }),
     search_files: tool({
-      description: `按文件 glob 或内容关键词/正则搜索文件。pattern 对应 glob；query 对应 grep 内容模式；include 可限制文件类型，regex=true 时 query 使用 ripgrep 正则。不要用 Bash 的 find/grep/rg 替代本工具。${pathScope}`,
+      description: `按文件 glob 或内容关键词/正则搜索文件。pattern 对应 glob；query 对应 grep 内容模式；include 可限制文件类型，regex=true 时 query 使用 ripgrep 正则。不要用 Bash 的 find/grep/rg 替代本工具。${pathScope}${protectedPathScope}`,
       inputSchema: z.object({
         path: z.string().optional(),
         pattern: z.string().optional().describe("文件 glob，例如 **/*.ts 或 package*.json"),
@@ -567,7 +600,7 @@ export function createWorkspaceTools(
       },
     }),
     write_file: tool({
-      description: `创建或覆盖 UTF-8 文本文件。支持 path/file_path 和 content/file_text；已有文件的定向修改优先使用 edit_file。${pathScope}`,
+      description: `创建或覆盖 UTF-8 文本文件。支持 path/file_path 和 content/file_text；已有文件的定向修改优先使用 edit_file。${pathScope}${protectedPathScope}`,
       inputSchema: z.object({
         path: z.string().min(1).optional(),
         file_path: z.string().min(1).optional(),
@@ -581,7 +614,7 @@ export function createWorkspaceTools(
         const input = { path: relativePath, content };
         const write = async (allowOutside: boolean) => {
           const root = rootPath(cwd);
-          const target = resolveTarget(root, relativePath, mode, allowOutside);
+          const target = resolveWritableTarget(root, relativePath, mode, allowOutside);
           if (mode !== "full") {
             const outsideWorkspace = !isWithinWorkspace(root, target);
             const result = await runSandboxedFile(
@@ -599,9 +632,7 @@ export function createWorkspaceTools(
                 abortSignal,
               },
             );
-            if (result.sandboxBlocked) throw new SandboxBlockedError(result.error);
-            if (!result.result) throw new Error(result.error);
-            return result.result as { path: string; bytes: number };
+            return sandboxFileResult<{ path: string; bytes: number }>(result, "write");
           }
           await writeFile(target, content, "utf8");
           return { path: path.relative(root, target), bytes: Buffer.byteLength(content) };
@@ -619,7 +650,7 @@ export function createWorkspaceTools(
       },
     }),
     edit_file: tool({
-      description: `对现有文本文件做精确替换或按行插入。支持 path/file_path、oldText/old_string、newText/new_string/new_str、replace_all 和 insert_line；默认要求唯一匹配。${pathScope}`,
+      description: `对现有文本文件做精确替换或按行插入。支持 path/file_path、oldText/old_string、newText/new_string/new_str、replace_all 和 insert_line；默认要求唯一匹配。${pathScope}${protectedPathScope}`,
       inputSchema: z.object({
         path: z.string().min(1).optional(),
         file_path: z.string().min(1).optional(),
@@ -648,7 +679,7 @@ export function createWorkspaceTools(
         };
         const edit = async (allowOutside: boolean) => {
           const root = rootPath(cwd);
-          const target = resolveTarget(root, relativePath, mode, allowOutside);
+          const target = resolveWritableTarget(root, relativePath, mode, allowOutside);
           if (mode !== "full") {
             const outsideWorkspace = !isWithinWorkspace(root, target);
             const result = await runSandboxedFile(
@@ -669,9 +700,7 @@ export function createWorkspaceTools(
                 abortSignal,
               },
             );
-            if (result.sandboxBlocked) throw new SandboxBlockedError(result.error);
-            if (!result.result) throw new Error(result.error);
-            return result.result as { path: string; changed: boolean };
+            return sandboxFileResult<{ path: string; changed: boolean }>(result, "write");
           }
           const content = await readFile(target, "utf8");
           if (rawInput.insert_line !== undefined) {
@@ -706,7 +735,7 @@ export function createWorkspaceTools(
       },
     }),
     apply_patch: tool({
-      description: `应用 unified diff，可原子修改多个 workspace 文件。最大 256 KiB；不支持绝对路径、..、.git 或 binary patch。${pathScope}`,
+      description: `应用 unified diff，可原子修改多个 workspace 文件。最大 256 KiB；不支持绝对路径、..、受保护路径或 binary patch。${pathScope}${protectedPathScope}`,
       inputSchema: z.object({
         patch: z
           .string()
@@ -721,9 +750,7 @@ export function createWorkspaceTools(
           { operation: "apply_patch", workspace: root, patch },
           { mode, abortSignal },
         );
-        if (result.sandboxBlocked) throw new SandboxBlockedError(result.error);
-        if (!result.result) throw new Error(result.error);
-        return result.result as ApplyPatchResult;
+        return sandboxFileResult<ApplyPatchResult>(result, "write");
       },
     }),
     bash: tool({

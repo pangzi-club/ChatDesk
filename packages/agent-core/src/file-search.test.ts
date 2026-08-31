@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -84,5 +84,26 @@ describe("workspace file search", () => {
     expect(single.contentMatches?.[0]).toMatchObject({ path: "README.md", line: 1, column: 1 });
     expect(truncated.matches).toHaveLength(1);
     expect(truncated.truncated).toBe(true);
+  });
+
+  it("does not invoke ripgrep across protected descendants or open protected files", async () => {
+    const root = await createGitWorkspace();
+    const protectedDirectory = path.join(root, "credentials");
+    await mkdir(protectedDirectory);
+    await writeFile(path.join(protectedDirectory, "token.txt"), "SearchNeedle secret\n", "utf8");
+    const canonicalProtectedDirectory = await realpath(protectedDirectory);
+    const guard = {
+      isReadable: (target: string) =>
+        target !== canonicalProtectedDirectory &&
+        !target.startsWith(`${canonicalProtectedDirectory}${path.sep}`),
+      hasProtectedReadDescendant: () => true,
+    };
+
+    const result = await searchWorkspaceFiles(root, root, { query: "searchneedle" }, guard);
+
+    expect(result.engine).toBe("builtin");
+    expect(result.matches).toEqual(["README.md", "src/main.ts", "src/nested/other.ts"]);
+    expect(result.matches).not.toContain("credentials/token.txt");
+    expect(result.contentMatches?.some((item) => item.preview.includes("secret"))).toBe(false);
   });
 });

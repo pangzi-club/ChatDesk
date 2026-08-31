@@ -128,7 +128,7 @@ Reviewer 的决定默认不写入 `permission.json`。只有用户主动选择�
 
 ### 4.3 Full access (`full`)
 
-`full` 保留当前完整访问模式语义，不触发 Session 权限审批，也不根据工具调用自动新增规则。界面必须继续明确提示该模式会取消受限沙箱，避免用户把它误解为普通 `allow`。
+`full` 保留当前取消 Seatbelt 和 Session 权限审批的语义，也不根据工具调用自动新增规则。结构化文件工具仍受 AgentCore 固定敏感路径基线约束：用户主目录凭据不可读写，任意 workspace 下的 `.git`、`.agents`、`.codex` 不可修改。该基线不是 Session 规则，不能由 `allow`、Reviewer 或 Full access 覆盖；Bash 保留原有 Full access 能力。界面必须继续明确提示 Full access 会取消受限沙箱，避免用户把它误解为普通 `allow`。
 
 ## 5. 权限拒绝与命令失败
 
@@ -192,6 +192,7 @@ git push 执行失败，退出码 1
 - 修改 Seatbelt profile 中未放行的路径；
 - 把普通命令失败重新解释为提权请求；
 - 绕过工具输入 Schema、路径规范化或符号链接检查。
+- 绕过结构化文件工具的固定敏感路径基线。
 
 ## 7. 后续实现契约
 

@@ -163,6 +163,29 @@ describe("sandbox execution errors", () => {
     expect(result.error).toBe("operation not permitted");
   });
 
+  it("preserves structured protected-path errors without classifying them as sandbox denials", () => {
+    const result = resolveSandboxFileProcessOutput(
+      JSON.stringify({
+        ok: false,
+        blocked: false,
+        error: "文件工具禁止读取受保护路径：~/.ssh",
+        errorCode: "protected_path",
+        errorOperation: "read",
+        errorRule: "~/.ssh",
+      }),
+      "",
+      1,
+      true,
+    );
+
+    expect(result).toMatchObject({
+      sandboxBlocked: false,
+      errorCode: "protected_path",
+      errorOperation: "read",
+      errorRule: "~/.ssh",
+    });
+  });
+
   it("still classifies unstructured Seatbelt stderr as sandbox blocked", () => {
     const result = resolveSandboxFileProcessOutput(
       "",

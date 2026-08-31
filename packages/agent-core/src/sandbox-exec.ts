@@ -308,6 +308,9 @@ type SandboxFileResponse = {
   ok?: boolean;
   result?: unknown;
   error?: string;
+  errorCode?: string;
+  errorOperation?: string;
+  errorRule?: string;
   blocked?: boolean;
 };
 
@@ -327,6 +330,9 @@ export function resolveSandboxFileProcessOutput(
   return {
     code,
     result: response?.result,
+    errorCode: response?.errorCode,
+    errorOperation: response?.errorOperation,
+    errorRule: response?.errorRule,
     error:
       response?.error ||
       (response?.result === undefined ? stderr || "文件 helper 执行失败" : undefined),
@@ -406,6 +412,9 @@ export async function runSandboxedFile(
     code: number;
     result?: unknown;
     error?: string;
+    errorCode?: string;
+    errorOperation?: string;
+    errorRule?: string;
     sandboxBlocked: boolean;
   }>((resolve, reject) => {
     const child = spawn(executable, args, {

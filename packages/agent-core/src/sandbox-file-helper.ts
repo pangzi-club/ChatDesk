@@ -5,6 +5,7 @@ import path from "node:path";
 import { buildEditFailureMessage } from "./file-edit.ts";
 import { readTextFileRange, resolveReadRange } from "./file-read.ts";
 import { searchWorkspaceFiles } from "./file-search.ts";
+import { protectedPathPolicy } from "./protected-paths.ts";
 
 const SKIPPED_DIRECTORIES = new Set([".git", "node_modules", "target", "dist"]);
 const DEFAULT_LIST_LIMIT = 200;
@@ -81,7 +82,8 @@ function canonicalize(target: string) {
 function targetPath(request: Exclude<Request, { operation: "apply_patch" }>) {
   const root = realpathSync(request.workspace);
   const value = request.path?.trim() || ".";
-  return { root, target: canonicalize(path.isAbsolute(value) ? value : path.resolve(root, value)) };
+  const lexicalTarget = path.isAbsolute(value) ? path.resolve(value) : path.resolve(root, value);
+  return { root, lexicalTarget, target: canonicalize(lexicalTarget) };
 }
 
 function displayPath(root: string, target: string) {
@@ -90,7 +92,9 @@ function displayPath(root: string, target: string) {
 }
 
 function writeTargetPath(request: Extract<Request, { operation: "write_file" | "edit_file" }>) {
-  const { root, target } = targetPath(request);
+  const { root, lexicalTarget, target } = targetPath(request);
+  protectedPathPolicy.assertWritable(lexicalTarget);
+  protectedPathPolicy.assertWritable(target);
   if (!request.allowOutside && target !== root && !target.startsWith(`${root}${path.sep}`)) {
     throw new Error("写入路径必须位于 workspace 内");
   }
@@ -98,7 +102,9 @@ function writeTargetPath(request: Extract<Request, { operation: "write_file" | "
 }
 
 async function listDirectory(request: Extract<Request, { operation: "list_dir" }>) {
-  const { root, target } = targetPath(request);
+  const { root, lexicalTarget, target } = targetPath(request);
+  protectedPathPolicy.assertReadable(lexicalTarget);
+  protectedPathPolicy.assertReadable(target);
   const entries = await readdir(target, { withFileTypes: true });
   const readableRoots = (request.readablePaths ?? []).flatMap((value) => {
     if (!value.trim()) return [];
@@ -112,8 +118,9 @@ async function listDirectory(request: Extract<Request, { operation: "list_dir" }
   const limit = Math.min(MAX_LIST_LIMIT, Math.max(1, request.limit ?? DEFAULT_LIST_LIMIT));
   const visibleEntries = entries
     .filter((entry) => {
-      if (!SKIPPED_DIRECTORIES.has(entry.name)) return true;
       const entryPath = path.resolve(target, entry.name);
+      if (!protectedPathPolicy.isReadable(entryPath)) return false;
+      if (!SKIPPED_DIRECTORIES.has(entry.name)) return true;
       return readableRoots.some(
         (directory) => entryPath === directory || entryPath.startsWith(`${directory}${path.sep}`),
       );
@@ -136,13 +143,17 @@ async function listDirectory(request: Extract<Request, { operation: "list_dir" }
 }
 
 async function readTextFile(request: Extract<Request, { operation: "read_file" }>) {
-  const { root, target } = targetPath(request);
+  const { root, lexicalTarget, target } = targetPath(request);
+  protectedPathPolicy.assertReadable(lexicalTarget);
+  protectedPathPolicy.assertReadable(target);
   return readTextFileRange(target, displayPath(root, target), resolveReadRange(request));
 }
 
 async function searchFiles(request: Extract<Request, { operation: "search_files" }>) {
-  const { root, target: start } = targetPath(request);
-  return searchWorkspaceFiles(root, start, request);
+  const { root, lexicalTarget, target: start } = targetPath(request);
+  protectedPathPolicy.assertReadable(lexicalTarget);
+  protectedPathPolicy.assertReadable(start);
+  return searchWorkspaceFiles(root, start, request, protectedPathPolicy);
 }
 
 async function writeTextFile(request: Extract<Request, { operation: "write_file" }>) {
@@ -177,7 +188,7 @@ async function editTextFile(request: Extract<Request, { operation: "edit_file" }
   return { path: displayPath(root, target), changed: true };
 }
 
-function validatePatch(patch: string) {
+function validatePatch(workspace: string, patch: string) {
   if (Buffer.byteLength(patch) > MAX_PATCH_BYTES) throw new Error("patch 不能超过 256 KiB");
   if (/^GIT binary patch$/m.test(patch) || /^Binary files .* differ$/m.test(patch)) {
     throw new Error("不支持 binary patch");
@@ -200,7 +211,7 @@ function validatePatch(patch: string) {
     if (path.isAbsolute(value) || value.split(/[\\/]/).includes("..")) {
       throw new Error("patch 路径必须位于 workspace 内");
     }
-    if (value.split(/[\\/]/).includes(".git")) throw new Error("patch 不允许修改 .git");
+    protectedPathPolicy.assertWritable(path.resolve(workspace, value));
   }
 }
 
@@ -238,8 +249,8 @@ function parseNumstat(output: string) {
 }
 
 async function applyPatch(request: Extract<Request, { operation: "apply_patch" }>) {
-  validatePatch(request.patch);
   const root = realpathSync(request.workspace);
+  validatePatch(root, request.patch);
   const check = await runGitApply(root, ["--check", "--whitespace=nowarn"], request.patch);
   if (check.code !== 0) throw new Error(check.stderr.trim() || "patch 检查失败");
   const numstat = await runGitApply(root, ["--numstat"], request.patch);

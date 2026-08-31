@@ -3,6 +3,7 @@ import { mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, it } from "vitest";
+import { ProtectedPathError } from "./protected-paths.ts";
 import { SandboxBlockedError } from "./sandbox-exec.ts";
 import {
   createWorkspaceTools,
@@ -250,5 +251,124 @@ describe("DeepSeek-compatible workspace tool inputs", () => {
     )) as { code: number; out: string };
     assert.equal(bashResult.code, 0);
     assert.equal(bashResult.out.trim(), await realpath(root));
+  });
+});
+
+describe("workspace file-tool protected paths", () => {
+  it("cannot approve or whitelist protected reads in any sandbox mode", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-tools-protected-read-"));
+    const protectedTarget = path.join(
+      os.homedir(),
+      ".ssh",
+      "__chatdesk_missing_test_path__",
+      "id_ed25519",
+    );
+
+    for (const mode of ["ask", "auto", "full"] as const) {
+      let reviewed = false;
+      const tools = createWorkspaceTools(
+        root,
+        mode,
+        new Set(["approved-call"]),
+        async () => {
+          reviewed = true;
+          return { approved: true };
+        },
+        [path.join(os.homedir(), ".ssh")],
+      );
+      const read = tools.read_file.execute;
+      if (typeof read !== "function") throw new Error("read_file execute missing");
+
+      await assert.rejects(
+        () =>
+          read({ path: protectedTarget }, { toolCallId: "approved-call" } as Parameters<
+            typeof read
+          >[1]),
+        (caught: unknown) => {
+          assert.equal(caught instanceof ProtectedPathError, true);
+          assert.equal((caught as ProtectedPathError).code, "protected_path");
+          return true;
+        },
+      );
+      assert.equal(reviewed, false);
+    }
+  });
+
+  it("blocks control-directory writes without partially applying a patch", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-tools-protected-write-"));
+    await writeFile(path.join(root, "safe.txt"), "before\n", "utf8");
+    const tools = createWorkspaceTools(root, "full");
+    const write = tools.write_file.execute;
+    const edit = tools.edit_file.execute;
+    const applyPatch = tools.apply_patch.execute;
+    if (
+      typeof write !== "function" ||
+      typeof edit !== "function" ||
+      typeof applyPatch !== "function"
+    ) {
+      throw new Error("file tool execute missing");
+    }
+
+    await assert.rejects(
+      () => write({ path: ".git/config", content: "blocked" }, {} as Parameters<typeof write>[1]),
+      ProtectedPathError,
+    );
+    await assert.rejects(
+      () =>
+        edit(
+          { path: ".agents/config", oldText: "before", newText: "after" },
+          {} as Parameters<typeof edit>[1],
+        ),
+      ProtectedPathError,
+    );
+
+    const patch = [
+      "diff --git a/safe.txt b/safe.txt",
+      "--- a/safe.txt",
+      "+++ b/safe.txt",
+      "@@ -1 +1 @@",
+      "-before",
+      "+after",
+      "diff --git a/.codex/config b/.codex/config",
+      "new file mode 100644",
+      "--- /dev/null",
+      "+++ b/.codex/config",
+      "@@ -0,0 +1 @@",
+      "+blocked",
+      "",
+    ].join("\n");
+    await assert.rejects(
+      () => applyPatch({ patch }, {} as Parameters<typeof applyPatch>[1]),
+      (caught: unknown) => {
+        assert.equal(caught instanceof ProtectedPathError, true);
+        assert.equal((caught as ProtectedPathError).code, "protected_path");
+        return true;
+      },
+    );
+    assert.equal(await readFile(path.join(root, "safe.txt"), "utf8"), "before\n");
+  });
+
+  it("allows repository-local credential lookalikes", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "chatdesk-tools-local-lookalike-"));
+    await writeFile(path.join(root, ".npmrc"), "registry=https://example.test\n", "utf8");
+    const tools = createWorkspaceTools(root, "full");
+    const read = tools.read_file.execute;
+    const write = tools.write_file.execute;
+    if (typeof read !== "function" || typeof write !== "function") {
+      throw new Error("file tool execute missing");
+    }
+
+    const output = (await read({ path: ".npmrc" }, {} as Parameters<typeof read>[1])) as {
+      content: string;
+    };
+    assert.equal(output.content, "registry=https://example.test\n");
+    await write(
+      { path: ".npmrc", content: "registry=https://registry.example.test\n" },
+      {} as Parameters<typeof write>[1],
+    );
+    assert.equal(
+      await readFile(path.join(root, ".npmrc"), "utf8"),
+      "registry=https://registry.example.test\n",
+    );
   });
 });

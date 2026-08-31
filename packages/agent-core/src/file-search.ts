@@ -19,6 +19,11 @@ export type FileSearchOptions = {
   maxResults?: number;
 };
 
+export type FileSearchPathGuard = {
+  isReadable(target: string): boolean;
+  hasProtectedReadDescendant(target: string): boolean;
+};
+
 export type FileSearchResult = {
   query?: string;
   pattern?: string;
@@ -238,10 +243,16 @@ async function listGitFiles(root: string, start: string): Promise<string[] | nul
   }
 }
 
-async function builtinSearch(root: string, start: string, options: FileSearchOptions) {
+async function builtinSearch(
+  root: string,
+  start: string,
+  options: FileSearchOptions,
+  pathGuard?: FileSearchPathGuard,
+) {
   const query = options.query?.trim().toLowerCase();
   const contentMatches: NonNullable<FileSearchResult["contentMatches"]> = [];
   const candidates: string[] = [];
+  if (pathGuard && !pathGuard.isReadable(start)) return { matches: [], contentMatches };
   const startMetadata = await stat(start);
   if (startMetadata.isFile()) {
     candidates.push(start);
@@ -251,6 +262,7 @@ async function builtinSearch(root: string, start: string, options: FileSearchOpt
       candidates.push(...gitFiles);
     } else {
       const visit = async (directory: string): Promise<void> => {
+        if (pathGuard && !pathGuard.isReadable(directory)) return;
         let entries: Dirent[];
         try {
           entries = await readdir(directory, { withFileTypes: true });
@@ -260,8 +272,13 @@ async function builtinSearch(root: string, start: string, options: FileSearchOpt
         for (const entry of entries) {
           const target = path.join(directory, entry.name);
           if (entry.isDirectory()) {
-            if (!SKIPPED_DIRECTORIES.has(entry.name)) await visit(target);
-          } else if (entry.isFile()) {
+            if (
+              !SKIPPED_DIRECTORIES.has(entry.name) &&
+              (!pathGuard || pathGuard.isReadable(target))
+            ) {
+              await visit(target);
+            }
+          } else if (entry.isFile() && (!pathGuard || pathGuard.isReadable(target))) {
             candidates.push(target);
           }
         }
@@ -272,6 +289,7 @@ async function builtinSearch(root: string, start: string, options: FileSearchOpt
 
   const matches: string[] = [];
   for (const target of candidates) {
+    if (pathGuard && !pathGuard.isReadable(target)) continue;
     if (!matchesAnyPattern(root, target, [options.pattern?.trim(), options.include?.trim()]))
       continue;
     try {
@@ -306,12 +324,15 @@ export async function searchWorkspaceFiles(
   root: string,
   start: string,
   options: FileSearchOptions,
+  pathGuard?: FileSearchPathGuard,
 ): Promise<FileSearchResult> {
   const canonicalRoot = realpathSync(root);
   const canonicalStart = realpathSync(start);
   const limit = Math.min(Math.max(options.maxResults ?? 100, 1), MAX_SEARCH_RESULTS);
   const hasQuery = Boolean(options.query?.trim());
-  const ripgrep = await runRipgrep(canonicalRoot, canonicalStart, options);
+  const ripgrep = pathGuard?.hasProtectedReadDescendant(canonicalStart)
+    ? undefined
+    : await runRipgrep(canonicalRoot, canonicalStart, options);
   if (ripgrep) {
     const contentMatches = hasQuery
       ? (ripgrep as NonNullable<FileSearchResult["contentMatches"]>)
@@ -333,7 +354,7 @@ export async function searchWorkspaceFiles(
     });
   }
 
-  const fallback = await builtinSearch(canonicalRoot, canonicalStart, options);
+  const fallback = await builtinSearch(canonicalRoot, canonicalStart, options, pathGuard);
   fallback.matches.sort((left, right) => left.localeCompare(right));
   fallback.contentMatches.sort(
     (left, right) =>

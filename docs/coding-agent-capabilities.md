@@ -73,12 +73,12 @@
 | `create_task` | 派生不可交互的后台 task 会话并等待完成后返回摘要 | Apply 模式、当前会话不是 task、模型支持工具 | 新建 `kind: "task"` 会话并 `startDetached`；同一轮可并行多次；ask 沙箱在 task 中按 auto 处理 |
 | `read_skill` | 读取内置 skill 的 `SKILL.md` 或目录内相对文件 | 模型支持工具 | 只读应用内置 skill，不走沙箱审批 |
 | `plan_write` | 写入当前 session 的计划内容 | Plan 模式且存在 active plan | 服务端写入计划存储，不开放普通写文件工具 |
-| `list_dir` | 列出 `path` 下的文件和目录，支持 `offset` / `limit` | 已选择 workspace，并启用对应工具包 | 默认 200、最大 500；返回总数、截断与下一页 offset |
-| `search_files` | 用 `pattern` glob 搜文件名，或用 `query` 搜内容；返回路径及首个命中行 | 已选择 workspace，并启用对应工具包 | 优先 ripgrep，内置实现回退；遵循 Git ignore，结果上限 500 |
-| `read_file` | 读取 `path` 文本内容 | 已选择 workspace，并启用对应工具包 | 结构化文件 helper；单次输出上限 64 KiB |
-| `write_file` | 创建或完整覆盖 `path` | Apply 模式、已选择 workspace，并启用对应工具包 | 写操作进入沙箱审批路径 |
-| `edit_file` | 对 `path` 做唯一 `oldText` → `newText` 替换 | Apply 模式、已选择 workspace，并启用对应工具包 | 写操作进入沙箱审批路径；拒绝 0 次或多次匹配 |
-| `apply_patch` | 应用最大 256 KiB 的 unified diff | 启用“编辑文件”工具包 | stdin 传给 helper；拒绝绝对路径、`..`、`.git`、binary patch；全部 hunk 检查通过后应用 |
+| `list_dir` | 列出 `path` 下的文件和目录，支持 `offset` / `limit` | 已选择 workspace，并启用对应工具包 | 默认 200、最大 500；隐藏内置保护的凭据路径 |
+| `search_files` | 用 `pattern` glob 搜文件名，或用 `query` 搜内容；返回路径及首个命中行 | 已选择 workspace，并启用对应工具包 | 优先 ripgrep，保护路径位于搜索根下时改用带守卫的内置遍历；遵循 Git ignore |
+| `read_file` | 读取 `path` 文本内容 | 已选择 workspace，并启用对应工具包 | 结构化文件 helper；单次输出上限 64 KiB；拒绝内置保护的凭据路径 |
+| `write_file` | 创建或完整覆盖 `path` | Apply 模式、已选择 workspace，并启用对应工具包 | 写操作进入沙箱审批路径；敏感凭据和控制目录不可审批 |
+| `edit_file` | 对 `path` 做唯一 `oldText` → `newText` 替换 | Apply 模式、已选择 workspace，并启用对应工具包 | 写操作进入沙箱审批路径；敏感凭据和控制目录不可审批 |
+| `apply_patch` | 应用最大 256 KiB 的 unified diff | 启用“编辑文件”工具包 | 拒绝绝对路径、`..`、敏感凭据、`.git`、`.agents`、`.codex` 和 binary patch；全部 hunk 检查通过后应用 |
 | `bash` | 在 workspace 中执行 `command` | 已选择 workspace，并启用“终端” | 默认 120 秒、128 KiB 头尾输出；返回 success/timedOut/truncated/totalOutputBytes；权限由 ask/auto/full 模式决定。同步阻塞，超时杀进程，无后台托管 |
 | `browser_open` | 打开 URL，创建或复用 browser session | 启用 Browser，且已配置 browser worker | 隔离 Headless Chromium，不继承用户登录态 |
 | `browser_screenshot` | 截取 browser session 页面，压缩后落入当前聊天 session 的 attachments | 启用 Browser，已有 session | Headless Chromium；内部写入 `sessions/<id>/attachments/`，可能是 WebP |
@@ -102,6 +102,7 @@
 - **边界 Reviewer**：`sandbox-boundary-reviewer.ts` 对越界操作做 AI 辅助判断，`auto` 模式下可自动批准或拒绝沙箱拦截后的重试。
 - **审批日志**：`sandbox-review-log.ts` 记录每次审批决策（approver/reviewer/user-approval）、原因和错误信息。
 - **结构化文件沙箱 worker**：`runSandboxedFile` 通过独立子进程执行 `list_dir`/`read_file`/`search_files`/`write_file`/`edit_file`/`apply_patch`，打包后解析 `chat-server-sandbox` 二进制；成功解析结构化响应后仅依据 `blocked` 字段判断沙箱拒绝，避免把文件内容中的安全关键词误判为控制信号。
+- **结构化文件敏感路径**：用户主目录中的 SSH、GPG、云平台、Kubernetes、容器、CLI 凭据和 Keychain 路径固定禁止结构化文件工具读取或修改；任意 workspace 下的 `.git`、`.agents`、`.codex` 固定禁止修改。词法路径与真实路径同时校验，`full`、读取白名单和审批均不能覆盖；Bash 仍使用原有沙箱模式。
 - **运行摘要**：`planWritten` 只表示“正式计划已写入”，`duplicateToolCallCount` 只统计“重复只读调用”；摘要还可保存失败工具数、截断结果数、任务状态和结构化写工具触达的路径。
 - **额外读取目录白名单**：Settings > 沙箱页面可配置 `sandboxReadablePaths`，加入 Seatbelt 只读范围。
 

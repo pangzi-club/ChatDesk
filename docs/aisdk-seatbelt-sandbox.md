@@ -182,9 +182,11 @@ Seatbelt 依赖 macOS 提供的系统能力。应用启动时应检测沙箱是�
 
 需要注意，Seatbelt 只约束**由 `sandbox-exec` 启动的子进程**。当前受限模式下，Shell 与 `list_dir`、`read_file`、`search_files`、`write_file`、`edit_file`、`apply_patch` 都通过受限 helper 或子进程执行；结构化文件操作使用独立的轻量 worker，不加载完整 Chat Server 或其依赖。宿主进程仍负责路径归一化、参数校验和审批。明确切换到 Full access 时不使用 Seatbelt；明确批准工作区外的单次结构化写入时，helper profile 只额外放行该目标文件。工具边界、审批策略与进程沙箱仍是互补的防线。
 
+结构化文件工具还有一层固定的敏感路径基线。当前用户主目录中的 SSH、GPG、云平台、Kubernetes、容器、CLI 凭据和系统 Keychain 路径禁止 `list_dir`、`search_files`、`read_file`、`write_file`、`edit_file`、`apply_patch` 访问；任意 workspace 下的 `.git`、`.agents`、`.codex` 禁止这些工具修改。规则同时检查词法路径和真实路径，不能被符号链接、读取白名单、审批或 Full access 覆盖。它不约束 Bash、MCP、`read_skill` 和非 Agent 文件接口，因此 Full access Bash 仍具有原有能力。
+
 ### 4.1 结构化 helper 的输出协议也是安全边界
 
-结构化文件 worker 使用标准输出返回 JSON，形如 `{ ok, result, error, blocked }`；标准错误保留给进程启动失败、Seatbelt 诊断等无法形成结构化响应的异常。宿主进程必须按协议层级判断结果：
+结构化文件 worker 使用标准输出返回 JSON，形如 `{ ok, result, error, errorCode, blocked }`；标准错误保留给进程启动失败、Seatbelt 诊断等无法形成结构化响应的异常。`protected_path` 是不可审批的应用策略错误，不属于 `blocked` 沙箱拒绝。宿主进程必须按协议层级判断结果：
 
 1. 先解析标准输出中的 JSON。
 2. 解析成功时，只根据结构化的 `blocked` 字段判断是否被沙箱拒绝；`result` 和 `error` 按普通工具数据处理。
