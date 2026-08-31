@@ -550,12 +550,24 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
       role: "user" as const,
       parts: [{ type: "text" as const, text: messageText }],
     };
+    const manager = feishu.get(item.channelId);
+    let stopTyping: (() => Promise<void>) | undefined;
     try {
       const channelConfig = await channels.getConfig(item.channelId);
       const agent = channelConfig?.agentId
         ? chatConfig.get().agents.find((item) => item.id === channelConfig.agentId)
         : undefined;
       if (!agent) throw new Error("Channel 未绑定有效的 Agent");
+      stopTyping = await manager?.startTyping(item.id).catch(async (error) => {
+        await activityLogs
+          .append({
+            level: "warning",
+            source: "飞书正在输入",
+            message: `开启失败：${error instanceof Error ? error.message : String(error)}`,
+          })
+          .catch(() => undefined);
+        return undefined;
+      });
       const response = await runs.start(
         sessionId,
         {
@@ -589,19 +601,24 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
         .reverse()
         .find((message) => message.role === "assistant");
       const text = reply ? textFromMessage(reply) : "";
-      await feishu
-        .get(item.channelId)
-        ?.sendMarkdown(item.contactId, text || "暂时无法生成回复，请稍后重试。");
+      await manager?.sendMarkdown(item.contactId, text || "暂时无法生成回复，请稍后重试。");
     } catch (error) {
       await activityLogs.append({
         level: "error",
         source: "飞书自动回复",
         message: error instanceof Error ? error.message : String(error),
       });
-      await feishu
-        .get(item.channelId)
-        ?.sendText(item.contactId, "暂时无法回复，请稍后重试。")
-        .catch(() => undefined);
+      await manager?.sendText(item.contactId, "暂时无法回复，请稍后重试。").catch(() => undefined);
+    } finally {
+      await stopTyping?.().catch(async (error) => {
+        await activityLogs
+          .append({
+            level: "warning",
+            source: "飞书正在输入",
+            message: `取消失败：${error instanceof Error ? error.message : String(error)}`,
+          })
+          .catch(() => undefined);
+      });
     }
   };
   const automationScheduler = new AutomationScheduler(automations, async (task, source) => {

@@ -201,6 +201,12 @@ export class FeishuChannelManager {
     await channel.send(contactId, { markdown });
     return this.persistOutboundMessage(channel, contactId, markdown);
   }
+  async startTyping(messageId: string) {
+    const channel = this.channel;
+    if (!channel) throw new Error("飞书未连接");
+    const reactionId = await channel.addReaction(messageId, "Typing");
+    return () => channel.removeReaction(messageId, reactionId);
+  }
   private async persistOutboundMessage(channel: LarkChannel, contactId: string, text: string) {
     const message: ChannelMessage = {
       id: `outbound-${randomUUID()}`,

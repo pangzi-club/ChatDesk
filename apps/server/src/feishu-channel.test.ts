@@ -115,6 +115,39 @@ describe("FeishuChannelManager outbound messages", () => {
     assert.deepEqual(send.mock.calls, [["contact-1", { text: "**仍是纯文本**" }]]);
   });
 
+  it("adds and removes the typing reaction on the inbound message", async () => {
+    const addReaction = vi.fn().mockResolvedValue("reaction-1");
+    const removeReaction = vi.fn().mockResolvedValue(undefined);
+    createLarkChannelMock.mockReturnValue({
+      botIdentity: { openId: "bot-1", name: "Bot" },
+      on: vi.fn(),
+      connect: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+      addReaction,
+      removeReaction,
+    });
+    const manager = new FeishuChannelManager(
+      "channel-1",
+      {} as never,
+      { publish: vi.fn() } as never,
+      undefined,
+      () => testAgent(),
+    );
+    await manager.configure({
+      id: "channel-1",
+      name: "Test",
+      appId: "app-1",
+      appSecret: "secret",
+      agentId: "agent-1",
+    });
+
+    const stopTyping = await manager.startTyping("message-1");
+    await stopTyping();
+
+    assert.deepEqual(addReaction.mock.calls, [["message-1", "Typing"]]);
+    assert.deepEqual(removeReaction.mock.calls, [["message-1", "reaction-1"]]);
+  });
+
   it("replies with the unsupported-input notice for inbound audio", async () => {
     let onMessage: ((message: unknown) => Promise<void>) | undefined;
     const send = vi.fn().mockResolvedValue({ messageId: "message-1" });
