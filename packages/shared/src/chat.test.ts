@@ -15,6 +15,7 @@ import {
   sessionMatchesQuery,
   sessionSearchRelevance,
   sortPlanUserInputOptions,
+  textFromMessage,
 } from "./chat.ts";
 
 describe("shared chat contracts", () => {
@@ -96,6 +97,27 @@ describe("shared chat contracts", () => {
   it("validates known session statuses", () => {
     assert.equal(isSessionStatus("streaming"), true);
     assert.equal(isSessionStatus("unknown"), false);
+  });
+
+  it("joins text parts with a configurable separator and ignores tool parts", () => {
+    const message = {
+      id: "assistant-1",
+      role: "assistant" as const,
+      parts: [
+        { type: "text" as const, text: "先检查配置。" },
+        {
+          type: "tool-read_file" as const,
+          toolCallId: "read-1",
+          state: "output-available" as const,
+          input: { path: "config.json" },
+          output: { content: "{}" },
+        },
+        { type: "text" as const, text: "配置没有问题。" },
+      ],
+    };
+
+    assert.equal(textFromMessage(message), "先检查配置。 配置没有问题。");
+    assert.equal(textFromMessage(message, "\n"), "先检查配置。\n配置没有问题。");
   });
 
   it("resolves model context windows and compaction thresholds", () => {

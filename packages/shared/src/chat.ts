@@ -1027,11 +1027,11 @@ export function isSessionStatus(value: unknown): value is SessionStatus {
   return typeof value === "string" && SESSION_STATUSES.includes(value as SessionStatus);
 }
 
-export function textFromMessage(message: UIMessage) {
+export function textFromMessage(message: UIMessage, separator = " ") {
   return message.parts
     .filter((part) => part.type === "text")
     .map((part) => part.text)
-    .join(" ");
+    .join(separator);
 }
 
 function normalizeSearchText(value: string) {
@@ -1078,7 +1078,7 @@ export function sessionMatchesQuery(
 export function deriveTitle(messages: UIMessage[]) {
   const text = messages
     .filter((message) => message.role === "user")
-    .map(textFromMessage)
+    .map((message) => textFromMessage(message))
     .find((value) => value.trim());
   if (!text) return "新对话";
   const normalized = text.replace(/\s+/g, " ").trim();

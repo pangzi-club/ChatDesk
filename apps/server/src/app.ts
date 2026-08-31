@@ -600,7 +600,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
         .slice()
         .reverse()
         .find((message) => message.role === "assistant");
-      const text = reply ? textFromMessage(reply) : "";
+      const text = reply ? textFromMessage(reply, "\n") : "";
       await manager?.sendMarkdown(item.contactId, text || "暂时无法生成回复，请稍后重试。");
     } catch (error) {
       await activityLogs.append({
@@ -649,6 +649,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
       .reverse()
       .find((message) => message.role === "assistant");
     const output = reply ? textFromMessage(reply) : "";
+    const notificationOutput = reply ? textFromMessage(reply, "\n") : "";
     await activityLogs.append({
       level: "success",
       source: `自动化 · ${task.name}`,
@@ -664,7 +665,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
       if (!manager) throw new Error("Automation 通知 Channel 未连接");
       await manager.sendMarkdown(
         task.notificationContactId,
-        output || "自动化任务已完成，但没有文本输出。 ",
+        notificationOutput || "自动化任务已完成，但没有文本输出。 ",
       );
     }
     return { output };
