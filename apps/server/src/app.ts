@@ -50,6 +50,7 @@ import { AutomationScheduler, AutomationStore } from "./automation-store.ts";
 import { createChannelAutomationTools } from "./automation-tools.ts";
 import { isChannelSessionIdle, parseChannelCommand, parseClearCommand } from "./channel-session.ts";
 import { ChannelStore } from "./channel-store.ts";
+import { CHANNEL_TASK_SYSTEM_INSTRUCTIONS, createChannelTaskTools } from "./channel-task-tool.ts";
 import type { ServerConfig } from "./config.ts";
 import { chatServerCorsOrigin } from "./cors.ts";
 import { FeishuChannelManager } from "./feishu-channel.ts";
@@ -568,21 +569,21 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
           .catch(() => undefined);
         return undefined;
       });
-      const response = await runs.start(
-        sessionId,
-        {
-          message: userMessage,
-          modelId: agent.modelId,
-          system: agent.systemPrompt || undefined,
-          mcpServerIds: agent.mcpServerIds,
-          skillIds: agent.skillIds,
-          toolNames: agent.toolPackIds,
-          planMode: "apply",
-          sandboxMode: "full",
-          contextCompactionStrategy: "recent-time",
-        },
-        {
-          additionalTools: createChannelAutomationTools({
+      const channelRunInput: RunStartInput = {
+        message: userMessage,
+        agentId: agent.id,
+        modelId: agent.modelId,
+        system: [agent.systemPrompt, CHANNEL_TASK_SYSTEM_INSTRUCTIONS].filter(Boolean).join("\n\n"),
+        mcpServerIds: agent.mcpServerIds,
+        skillIds: agent.skillIds,
+        toolNames: agent.toolPackIds,
+        planMode: "apply",
+        sandboxMode: "full",
+        contextCompactionStrategy: "recent-time",
+      };
+      const response = await runs.start(sessionId, channelRunInput, {
+        additionalTools: {
+          ...createChannelAutomationTools({
             store: automations,
             channelId: item.channelId,
             contactId: item.contactId,
@@ -591,8 +592,20 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
             sync: () => automationScheduler.sync(),
             userText: messageText,
           }),
+          ...createChannelTaskTools({
+            store,
+            events,
+            runner: runs,
+            parentSessionId: sessionId,
+            parentInput: channelRunInput,
+            defaultAgentId: agent.id,
+            getAgent: (id) => chatConfig.get().agents.find((candidate) => candidate.id === id),
+            listAgents: () => chatConfig.get().agents,
+            getWorkspace: (id) => workspaces.get(id),
+            listWorkspaces: () => workspaces.list(),
+          }),
         },
-      );
+      });
       if (response.body) await response.body.pipeTo(new WritableStream({ write() {} }));
       await runs.waitForRun(sessionId);
       const session = await store.get(sessionId);

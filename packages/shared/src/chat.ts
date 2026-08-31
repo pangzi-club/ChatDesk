@@ -411,6 +411,7 @@ export const TODO_TOOL_NAME = "todo_write";
 export const CREATE_TASK_TOOL_NAME = "create_task";
 export const CREATE_TASK_STATUSES = ["running", "completed", "error", "stopped"] as const;
 export type CreateTaskStatus = (typeof CREATE_TASK_STATUSES)[number];
+export const CREATE_TASK_RESULT_MAX_CHARS = 12_000;
 
 export type CreateTaskPreviewMessage = {
   role: "user" | "assistant";
@@ -433,6 +434,7 @@ export type CreateTaskOutput = {
   title: string;
   status: CreateTaskStatus;
   preview: string;
+  result?: string;
   headings?: string[];
   tools?: CreateTaskToolGlance[];
   outcome?: ChatRunOutcome;
@@ -468,6 +470,8 @@ export function parseCreateTaskOutput(value: unknown): CreateTaskOutput | null {
     status: record.status,
     preview,
   };
+  const result = boundedString(record.result, CREATE_TASK_RESULT_MAX_CHARS);
+  if (result) parsed.result = result;
   if (isChatRunOutcome(record.outcome)) parsed.outcome = record.outcome;
   if (typeof record.error === "string" && record.error.trim()) parsed.error = record.error.trim();
   const headings = parseCreateTaskHeadings(record.headings);

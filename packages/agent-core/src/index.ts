@@ -70,7 +70,14 @@ export { createReadSkillTool, loadBuiltinSkillsCatalog } from "./skill-tool.ts";
 export { resolveBuiltinSkillsRoot, scanBuiltinSkills, scanSkills } from "./skills-store.ts";
 export { SessionStore } from "./store.ts";
 export { buildSystemPrompt } from "./system-prompt.ts";
-export { CREATE_TASK_TOOL_INSTRUCTIONS, createTaskTool } from "./task-tool.ts";
+export {
+  CREATE_TASK_TOOL_INSTRUCTIONS,
+  type CreateTaskTargetInput,
+  type CreateTaskTargeting,
+  type CreateTaskTargetResolution,
+  type CreateTaskToolContext,
+  createTaskTool,
+} from "./task-tool.ts";
 export { createTodoTool, TODO_TOOL_INSTRUCTIONS } from "./todo-tool.ts";
 export { workspaceSearchInstructions } from "./tool-selection.ts";
 export {

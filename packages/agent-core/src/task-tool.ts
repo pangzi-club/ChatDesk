@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   type ChatRunOutcome,
   type ChatSession,
+  CREATE_TASK_RESULT_MAX_CHARS,
   CREATE_TASK_TOOL_NAME,
   type CreateTaskOutput,
   type CreateTaskPreviewMessage,
@@ -26,6 +27,24 @@ export const CREATE_TASK_TOOL_INSTRUCTIONS = [
 
 const PREVIEW_MAX_CHARS = 240;
 const PREVIEW_MESSAGE_LIMIT = 4;
+const RESULT_TRUNCATION_MARKER = "\n\n[结果已截断]";
+
+export type CreateTaskTargetInput = {
+  agentId?: string;
+  workspaceId?: string;
+};
+
+export type CreateTaskTargetResolution = {
+  agentId?: string;
+  runInput: Partial<RunStartInput>;
+};
+
+export type CreateTaskTargeting = {
+  description: string;
+  resolve: (
+    input: CreateTaskTargetInput,
+  ) => CreateTaskTargetResolution | Promise<CreateTaskTargetResolution>;
+};
 
 export type CreateTaskRunner = {
   startDetached(sessionId: string, input: RunStartInput): Promise<string>;
@@ -42,6 +61,8 @@ export type CreateTaskToolContext = {
   runner: CreateTaskRunner;
   parentSessionId: string;
   parentInput: RunStartInput;
+  targeting?: CreateTaskTargeting;
+  resultMaxChars?: number;
 };
 
 function truncatePreview(text: string) {
@@ -82,6 +103,19 @@ function previewFromSession(session: ChatSession) {
   return "";
 }
 
+function resultFromSession(session: ChatSession, maxChars: number) {
+  for (let index = session.messages.length - 1; index >= 0; index -= 1) {
+    const message = session.messages[index];
+    if (message?.role !== "assistant") continue;
+    const text = textFromMessage(message).trim();
+    if (!text) continue;
+    if (text.length <= maxChars) return text;
+    const contentMaxChars = Math.max(0, maxChars - RESULT_TRUNCATION_MARKER.length);
+    return `${text.slice(0, contentMaxChars).trimEnd()}${RESULT_TRUNCATION_MARKER}`;
+  }
+  return "";
+}
+
 function resolveCreateTaskStatus(input: {
   session: ChatSession | null;
   active: boolean;
@@ -101,7 +135,7 @@ async function snapshotCreateTask(
   runner: CreateTaskRunner,
   sessionId: string,
   title: string,
-  options: { aborted?: boolean; error?: string } = {},
+  options: { aborted?: boolean; error?: string; resultMaxChars?: number } = {},
 ): Promise<CreateTaskOutput> {
   const session = await store.get(sessionId);
   const aborted = options.aborted === true;
@@ -115,6 +149,10 @@ async function snapshotCreateTask(
   if (options.error && !aborted && !active) status = "error";
   const outcome = session ? latestRunSummary(session)?.outcome : undefined;
   const messages = session ? previewMessages(session) : [];
+  const result =
+    session && options.resultMaxChars
+      ? resultFromSession(session, Math.min(options.resultMaxChars, CREATE_TASK_RESULT_MAX_CHARS))
+      : "";
   const progress = session
     ? extractCreateTaskProgress(session.messages)
     : { headings: [], tools: [] };
@@ -123,6 +161,7 @@ async function snapshotCreateTask(
     title: session?.title || title,
     status,
     preview: session ? previewFromSession(session) : "",
+    ...(result ? { result } : {}),
     ...(progress.headings.length > 0 ? { headings: progress.headings } : {}),
     ...(progress.tools.length > 0 ? { tools: progress.tools } : {}),
     ...(outcome ? { outcome } : {}),
@@ -140,22 +179,40 @@ function userMessage(prompt: string): UIMessage {
 }
 
 export function createTaskTool(context: CreateTaskToolContext) {
+  const baseInputSchema = z.object({
+    prompt: z.string().min(1).max(20_000).describe("交给后台会话的完整任务说明"),
+    title: z.string().min(1).max(80).optional().describe("侧栏显示的短标题；缺省时从任务说明生成"),
+  });
+  const inputSchema = context.targeting
+    ? baseInputSchema.extend({
+        agentId: z.string().min(1).optional().describe("执行任务的 Agent ID；省略时继承当前 Agent"),
+        workspaceId: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("执行任务的 Workspace ID；省略时使用独立的 Default Workspace 目录"),
+      })
+    : baseInputSchema;
   return tool({
     description: [
       "把独立子任务交给一个不可交互的后台会话执行，并等待它完成后返回摘要。",
       "适合互不依赖、可并行的调研、搜索或改动；不要用于需要用户中途决策的工作。",
       "同一轮可以多次调用以并行启动多个 task。",
+      context.targeting?.description,
     ].join(""),
-    inputSchema: z.object({
-      prompt: z.string().min(1).max(20_000).describe("交给后台会话的完整任务说明"),
-      title: z
-        .string()
-        .min(1)
-        .max(80)
-        .optional()
-        .describe("侧栏显示的短标题；缺省时从任务说明生成"),
-    }),
-    execute: async function* ({ prompt, title }, { abortSignal }) {
+    inputSchema,
+    execute: async function* (rawInput, { abortSignal }) {
+      const input = rawInput as z.infer<typeof baseInputSchema> & CreateTaskTargetInput;
+      const { prompt, title } = input;
+      const target = context.targeting
+        ? await context.targeting.resolve({
+            agentId: input.agentId,
+            workspaceId: input.workspaceId,
+          })
+        : undefined;
+      const taskInput = target
+        ? { ...context.parentInput, ...target.runInput }
+        : context.parentInput;
       const signal = abortSignal ?? new AbortController().signal;
       const now = new Date().toISOString();
       const sessionId = randomUUID();
@@ -171,12 +228,15 @@ export function createTaskTool(context: CreateTaskToolContext) {
         kind: "task",
         source: parent?.source,
         parentSessionId: context.parentSessionId,
-        modelId: parent?.modelId,
-        workspaceId: context.parentInput.workspaceId ?? parent?.workspaceId,
-        cwd: context.parentInput.cwd ?? parent?.cwd,
+        ...(target?.agentId ? { agentId: target.agentId } : {}),
+        modelId: taskInput.modelId ?? parent?.modelId,
+        workspaceId: target
+          ? taskInput.workspaceId
+          : (context.parentInput.workspaceId ?? parent?.workspaceId),
+        cwd: target ? taskInput.cwd : (context.parentInput.cwd ?? parent?.cwd),
         sandboxMode: "full",
-        mcpServerIds: context.parentInput.mcpServerIds ?? parent?.mcpServerIds,
-        skillIds: context.parentInput.skillIds ?? parent?.skillIds,
+        mcpServerIds: taskInput.mcpServerIds ?? parent?.mcpServerIds,
+        skillIds: taskInput.skillIds ?? parent?.skillIds,
         messages: [user],
         attachments: [],
         planMode: "apply",
@@ -184,17 +244,18 @@ export function createTaskTool(context: CreateTaskToolContext) {
       await context.store.save(session);
       context.runner.trackSpawnedTask(context.parentSessionId, sessionId);
       const subscription = context.events.subscribe(sessionId);
-      const takeSnapshot = (options?: { aborted?: boolean; error?: string }) =>
-        snapshotCreateTask(context.store, context.runner, sessionId, resolvedTitle, options);
+      const takeSnapshot = (options?: {
+        aborted?: boolean;
+        error?: string;
+        resultMaxChars?: number;
+      }) => snapshotCreateTask(context.store, context.runner, sessionId, resolvedTitle, options);
 
       try {
         await context.runner.startDetached(sessionId, {
-          ...context.parentInput,
+          ...taskInput,
           messages: [user],
           title: resolvedTitle,
-          toolNames: (context.parentInput.toolNames ?? []).filter(
-            (name) => name !== CREATE_TASK_TOOL_NAME,
-          ),
+          toolNames: (taskInput.toolNames ?? []).filter((name) => name !== CREATE_TASK_TOOL_NAME),
           planMode: "apply",
           planId: undefined,
           sandboxMode: "full",
@@ -209,23 +270,33 @@ export function createTaskTool(context: CreateTaskToolContext) {
         }
         if (signal.aborted) {
           await context.runner.stop(sessionId);
-          const stopped = await takeSnapshot({ aborted: true });
+          const stopped = await takeSnapshot({
+            aborted: true,
+            resultMaxChars: context.resultMaxChars,
+          });
           yield stopped;
           return stopped;
         }
         await context.runner.waitForRun(sessionId);
-        const completed = await takeSnapshot();
+        const completed = await takeSnapshot({ resultMaxChars: context.resultMaxChars });
         yield completed;
         return completed;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (signal.aborted) {
           await context.runner.stop(sessionId);
-          const stopped = await takeSnapshot({ aborted: true, error: message });
+          const stopped = await takeSnapshot({
+            aborted: true,
+            error: message,
+            resultMaxChars: context.resultMaxChars,
+          });
           yield stopped;
           return stopped;
         }
-        const failed = await takeSnapshot({ error: message || "任务启动失败" });
+        const failed = await takeSnapshot({
+          error: message || "任务启动失败",
+          resultMaxChars: context.resultMaxChars,
+        });
         yield failed;
         return failed;
       } finally {
