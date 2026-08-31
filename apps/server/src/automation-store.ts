@@ -3,6 +3,8 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Cron } from "croner";
 
+const INTERVAL_POLL_PATTERN = "0 * * * * *";
+
 export type AutomationTask = {
   id: string;
   name: string;
@@ -193,6 +195,14 @@ export type AutomationExecutor = (
   source: "manual" | "scheduled",
 ) => Promise<{ output?: string }>;
 
+function latestIntervalSchedule(task: AutomationTask, now = Date.now()) {
+  const startAt = Date.parse(task.startAt);
+  if (now < startAt) return undefined;
+  const intervalMs = task.intervalMinutes * 60_000;
+  const elapsedIntervals = Math.floor((now - startAt) / intervalMs);
+  return new Date(startAt + elapsedIntervals * intervalMs).toISOString();
+}
+
 export class AutomationScheduler {
   private readonly jobs = new Map<string, Cron>();
   private readonly queues = new Map<string, Promise<void>>();
@@ -230,19 +240,16 @@ export class AutomationScheduler {
       }
       const job =
         task.scheduleMode === "once"
-          ? new Cron(
-              new Date(task.startAt),
-              { maxRuns: 1, catch: true },
-              () => void this.enqueue(task, "scheduled"),
+          ? new Cron(new Date(task.startAt), { maxRuns: 1, catch: true }, () =>
+              this.enqueue(task, "scheduled", task.startAt),
             )
           : new Cron(
-              "* * * * * *",
+              INTERVAL_POLL_PATTERN,
               {
-                startAt: new Date(task.startAt),
-                interval: task.intervalMinutes * 60,
                 catch: true,
+                protect: true,
               },
-              () => void this.enqueue(task, "scheduled"),
+              () => this.enqueueLatestInterval(task),
             );
       this.jobs.set(task.id, job);
     }
@@ -254,10 +261,25 @@ export class AutomationScheduler {
     await this.enqueue(task, "manual");
   }
 
-  private enqueue(task: AutomationTask, source: "manual" | "scheduled") {
+  private enqueueLatestInterval(task: AutomationTask) {
+    const scheduledFor = latestIntervalSchedule(task);
+    if (!scheduledFor) return;
+    const scheduledAt = Date.parse(scheduledFor);
+    const nextScheduledAt = scheduledAt + task.intervalMinutes * 60_000;
+    const alreadyRecorded = this.store.listRuns(task.id).some((run) => {
+      if (run.source !== "scheduled") return false;
+      if (run.scheduledFor) return run.scheduledFor === scheduledFor;
+      const startedAt = Date.parse(run.startedAt);
+      return startedAt >= scheduledAt && startedAt < nextScheduledAt;
+    });
+    if (alreadyRecorded) return;
+    return this.enqueue(task, "scheduled", scheduledFor);
+  }
+
+  private enqueue(task: AutomationTask, source: "manual" | "scheduled", scheduledFor?: string) {
     const previous = this.queues.get(task.id) ?? Promise.resolve();
     const next = previous
-      .then(() => this.run(task, source))
+      .then(() => this.run(task, source, scheduledFor))
       .finally(() => {
         if (this.queues.get(task.id) === next) this.queues.delete(task.id);
       });
@@ -265,13 +287,11 @@ export class AutomationScheduler {
     return next;
   }
 
-  private async run(task: AutomationTask, source: "manual" | "scheduled") {
+  private async run(task: AutomationTask, source: "manual" | "scheduled", scheduledFor?: string) {
     const run = await this.store.createRun({
       taskId: task.id,
       source,
-      ...(source === "scheduled" && task.scheduleMode === "once"
-        ? { scheduledFor: task.startAt }
-        : {}),
+      ...(scheduledFor ? { scheduledFor } : {}),
       startedAt: new Date().toISOString(),
       status: "queued",
     });
