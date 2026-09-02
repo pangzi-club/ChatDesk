@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ChatLayoutThemeLayer } from "@/components/chat-layout-theme-layer";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ChatLayoutProvider, type ChatLayoutRuntime } from "@/lib/chat-layout";
 import { AppRouter } from "@/router/routes";
@@ -21,6 +22,7 @@ function App({ chatLayoutRuntime }: { chatLayoutRuntime: ChatLayoutRuntime }) {
       <ThemeProvider>
         <ChatLayoutProvider service={chatLayoutRuntime.service}>
           <AppRouter />
+          <ChatLayoutThemeLayer />
         </ChatLayoutProvider>
       </ThemeProvider>
     </QueryClientProvider>

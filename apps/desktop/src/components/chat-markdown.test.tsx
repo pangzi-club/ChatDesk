@@ -48,3 +48,30 @@ describe("ChatMarkdown streaming", () => {
     expect(markup).toContain("在 Browser 中打开 http://localhost:3000");
   });
 });
+
+describe("ChatMarkdown layout variants", () => {
+  it("renders cute headings and blockquotes with the cute variant", () => {
+    const markup = renderToStaticMarkup(
+      <ChatMarkdown isAnimating={false} variant="cute">
+        {"# 小鱼\n\n> 柔和提示"}
+      </ChatMarkdown>,
+    );
+
+    expect(markup).toContain('data-chat-markdown-style="cute"');
+    expect(markup).toContain('data-chat-markdown-heading="cute"');
+    expect(markup).toContain('data-chat-markdown-blockquote="cute"');
+    expect(markup).toContain("chat-markdown-heading-icon");
+  });
+
+  it("renders geek headings with the geek variant", () => {
+    const markup = renderToStaticMarkup(
+      <ChatMarkdown isAnimating={false} variant="geek">
+        {"## terminal"}
+      </ChatMarkdown>,
+    );
+
+    expect(markup).toContain('data-chat-markdown-style="geek"');
+    expect(markup).toContain('data-chat-markdown-heading="geek"');
+    expect(markup).toContain("chat-markdown-heading-icon");
+  });
+});
