@@ -7,24 +7,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import type { ChatDisplaySettings, ChatFontSize, ChatSpacing } from "@/lib/chat-settings";
-
-const fontSizeOptions: Array<{ value: ChatFontSize; label: string }> = [
-  { value: "large", label: "大" },
-  { value: "default", label: "默认" },
-  { value: "small", label: "小" },
-];
-
-const spacingOptions: Array<{ value: ChatSpacing; label: string }> = [
-  { value: "loose", label: "宽松" },
-  { value: "default", label: "默认" },
-  { value: "compact", label: "紧密" },
-];
-
-const tokenUsageOptions: Array<{ value: "on" | "off"; label: string }> = [
-  { value: "on", label: "显示" },
-  { value: "off", label: "隐藏" },
-];
+import type { ChatDisplaySettings, ChatLayout } from "@/lib/chat-settings";
 
 type ChatSettingsDialogProps = {
   open: boolean;
@@ -32,6 +15,12 @@ type ChatSettingsDialogProps = {
   onOpenChange: (open: boolean) => void;
   onSettingsChange: (settings: ChatDisplaySettings) => void;
 };
+
+const layouts: Array<{ value: ChatLayout; label: string; description: string }> = [
+  { value: "standard", label: "标准工作台", description: "平衡的消息阅读与工具操作。" },
+  { value: "cute", label: "可爱模式", description: "柔和、圆润、轻量的聊天体验。" },
+  { value: "geek", label: "Geek 文本", description: "等宽字体和高密度文本工作流。" },
+];
 
 export function ChatSettingsDialog({
   open,
@@ -43,91 +32,29 @@ export function ChatSettingsDialog({
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Chat 显示设置</DialogTitle>
-          <DialogDescription>
-            调整消息字体大小、页面间距与 token 显示，设置会自动保存。
-          </DialogDescription>
+          <DialogTitle>Chat 布局</DialogTitle>
+          <DialogDescription>切换 Chat 主界面的组合方式，设置会自动保存。</DialogDescription>
         </DialogHeader>
-        <div className="space-y-6">
-          <section className="space-y-3">
-            <Label className="font-medium text-sm">字体大小</Label>
-            <RadioGroup
-              className="grid grid-cols-3 gap-2"
-              onValueChange={(value) =>
-                onSettingsChange({ ...settings, fontSize: value as ChatFontSize })
-              }
-              value={settings.fontSize}
-            >
-              {fontSizeOptions.map((option) => (
-                <div key={option.value}>
-                  <RadioGroupItem
-                    className="peer sr-only"
-                    id={`chat-font-size-${option.value}`}
-                    value={option.value}
-                  />
-                  <Label
-                    className="flex cursor-pointer items-center justify-center rounded-md border border-border px-3 py-2 text-sm transition-colors peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/10 peer-data-[state=checked]:text-primary"
-                    htmlFor={`chat-font-size-${option.value}`}
-                  >
-                    {option.label}
-                  </Label>
-                </div>
-              ))}
-            </RadioGroup>
-          </section>
-          <section className="space-y-3">
-            <Label className="font-medium text-sm">间距</Label>
-            <RadioGroup
-              className="grid grid-cols-3 gap-2"
-              onValueChange={(value) =>
-                onSettingsChange({ ...settings, spacing: value as ChatSpacing })
-              }
-              value={settings.spacing}
-            >
-              {spacingOptions.map((option) => (
-                <div key={option.value}>
-                  <RadioGroupItem
-                    className="peer sr-only"
-                    id={`chat-spacing-${option.value}`}
-                    value={option.value}
-                  />
-                  <Label
-                    className="flex cursor-pointer items-center justify-center rounded-md border border-border px-3 py-2 text-sm transition-colors peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/10 peer-data-[state=checked]:text-primary"
-                    htmlFor={`chat-spacing-${option.value}`}
-                  >
-                    {option.label}
-                  </Label>
-                </div>
-              ))}
-            </RadioGroup>
-          </section>
-          <section className="space-y-3">
-            <Label className="font-medium text-sm">Token 消耗</Label>
-            <RadioGroup
-              className="grid grid-cols-2 gap-2"
-              onValueChange={(value) =>
-                onSettingsChange({ ...settings, showTokenUsage: value === "on" })
-              }
-              value={settings.showTokenUsage ? "on" : "off"}
-            >
-              {tokenUsageOptions.map((option) => (
-                <div key={option.value}>
-                  <RadioGroupItem
-                    className="peer sr-only"
-                    id={`chat-token-usage-${option.value}`}
-                    value={option.value}
-                  />
-                  <Label
-                    className="flex cursor-pointer items-center justify-center rounded-md border border-border px-3 py-2 text-sm transition-colors peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/10 peer-data-[state=checked]:text-primary"
-                    htmlFor={`chat-token-usage-${option.value}`}
-                  >
-                    {option.label}
-                  </Label>
-                </div>
-              ))}
-            </RadioGroup>
-          </section>
-        </div>
+        <RadioGroup
+          className="divide-y divide-border rounded-md border border-border"
+          onValueChange={(value) => onSettingsChange({ layout: value as ChatLayout })}
+          value={settings.layout}
+        >
+          {layouts.map((item) => (
+            <div className="flex items-center gap-3 px-3 py-3" key={item.value}>
+              <RadioGroupItem id={`chat-layout-dialog-${item.value}`} value={item.value} />
+              <Label
+                className="min-w-0 cursor-pointer"
+                htmlFor={`chat-layout-dialog-${item.value}`}
+              >
+                <span className="block font-medium text-sm">{item.label}</span>
+                <span className="mt-0.5 block text-muted-foreground text-xs">
+                  {item.description}
+                </span>
+              </Label>
+            </div>
+          ))}
+        </RadioGroup>
       </DialogContent>
     </Dialog>
   );

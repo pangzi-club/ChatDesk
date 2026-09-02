@@ -41,6 +41,7 @@
     "ai": "^7.0.51",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "cordis": "4.0.0-rc.9",
     "katex": "^0.16.47",
     "lucide-react": "^1.28.0",
     "monaco-editor": "^0.52.2",

@@ -84,6 +84,7 @@ import { ChatMarkdown } from "@/components/chat-markdown";
 import { ChatMessageNav } from "@/components/chat-message-nav";
 import { ChatPathSuggestionPopup } from "@/components/chat-path-suggestion-popup";
 import { ChatPlanQuestionnaire } from "@/components/chat-plan-questionnaire";
+import { ChatSettingsDialog } from "@/components/chat-settings-dialog";
 import { ChatSkillsPicker } from "@/components/chat-skills-picker";
 import { ChatTaskList } from "@/components/chat-task-call";
 import { ChatTitleDialog } from "@/components/chat-title-dialog";
@@ -142,6 +143,7 @@ import {
   copyChatConversationMarkdown,
 } from "@/lib/chat-conversation-markdown";
 import { materializeGeneratedImages } from "@/lib/chat-image-generation";
+import { type ChatLayout, useChatLayout } from "@/lib/chat-layout";
 import {
   appendLiveDraftText,
   CHAT_STREAM_UPDATE_THROTTLE_MS,
@@ -204,11 +206,7 @@ import {
   updateChatPlanMode,
   updateChatSessionTitle,
 } from "@/lib/chat-server";
-import {
-  type ChatDisplaySettings,
-  DEFAULT_CHAT_DISPLAY,
-  loadChatDisplaySettings,
-} from "@/lib/chat-settings";
+import { saveChatDisplaySettings } from "@/lib/chat-settings";
 import {
   type ChatAttachment,
   type ChatSession,
@@ -495,13 +493,18 @@ function ChatPage() {
   const [gitCommitOpen, setGitCommitOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   const [toolLogOpen, setToolLogOpen] = useState(false);
+  const [chatLayoutDialogOpen, setChatLayoutDialogOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [environmentImportOpen, setEnvironmentImportOpen] = useState(false);
   const [dismissedEnvironmentGuide, setDismissedEnvironmentGuide] = useState("");
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [sandboxMode, setSandboxMode] = useState<ChatSandboxMode>(DEFAULT_CHAT_SANDBOX_MODE);
-  const [chatDisplay, setChatDisplay] = useState<ChatDisplaySettings>(DEFAULT_CHAT_DISPLAY);
+  const {
+    id: chatLayout,
+    component: ChatLayoutComponent,
+    activate: activateChatLayout,
+  } = useChatLayout();
   const workspaceRef = useRef("");
   const sandboxModeRef = useRef<ChatSandboxMode>(DEFAULT_CHAT_SANDBOX_MODE);
   const planModeRef = useRef<ChatPlanMode>("apply");
@@ -1079,18 +1082,24 @@ function ChatPage() {
   }, [liveDraftRenderBatcher, setMessages]);
 
   useEffect(() => {
-    void loadChatDisplaySettings().then(setChatDisplay);
-  }, []);
-
-  useEffect(() => {
     const handleDisplaySettingsChange = (event: Event) => {
-      const settings = (event as CustomEvent<ChatDisplaySettings>).detail;
-      if (settings) setChatDisplay(settings);
+      const settings = (event as CustomEvent<{ layout?: ChatLayout }>).detail;
+      if (settings?.layout && settings.layout !== chatLayout) activateChatLayout(settings.layout);
     };
     window.addEventListener("chat-display-settings-change", handleDisplaySettingsChange);
     return () =>
       window.removeEventListener("chat-display-settings-change", handleDisplaySettingsChange);
-  }, []);
+  }, [activateChatLayout, chatLayout]);
+
+  const changeChatLayout = useCallback(
+    (layout: ChatLayout) => {
+      activateChatLayout(layout);
+      void saveChatDisplaySettings({ layout }).catch((error) =>
+        console.error("Failed to save chat layout", error),
+      );
+    },
+    [activateChatLayout],
+  );
 
   const updateChatTools = (next: ChatToolsSettings) => {
     queryClient.setQueryData(["chat-tools"], next);
@@ -2481,919 +2490,943 @@ function ChatPage() {
     shouldFollowScrollRef.current = false;
   }, []);
 
+  if (!ChatLayoutComponent) return null;
+
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: drag-and-drop file upload zone; keyboard users use the attach button
-    <div
-      className="chat-page"
-      data-chat-empty={showEmptyState ? "true" : "false"}
-      data-chat-font-size={chatDisplay.fontSize}
-      data-chat-spacing={chatDisplay.spacing}
-      data-chat-body-font={chatDisplay.bodyFont}
-      data-chat-code-font={chatDisplay.codeFont}
-      data-chat-math-font={chatDisplay.mathFont}
-      onDragEnter={handleDragEnter}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      {isDragOver && (
-        <div className="chat-drag-overlay">
-          <div className="chat-drag-overlay-card">
-            <Upload className="size-7" />
-            <p>松开以上传文件</p>
-          </div>
-        </div>
-      )}
-      <header className="chat-header">
-        <div className="chat-brand">
-          <div className="chat-brand-mark">
-            <Sparkles className="size-4" />
-          </div>
-          <div className="chat-brand-title">
-            <p className="chat-kicker">Workspace assistant</p>
-            <div className="chat-brand-title-row">
-              <h1>{sessionTitle}</h1>
-              {sessionKind === "task" ? <span className="chat-session-kind">任务</span> : null}
-              {sessionSource === "cli" ? <span className="chat-session-kind">CLI</span> : null}
-              {sessionSource === "feishu" ? <span className="chat-session-kind">飞书</span> : null}
-              {sessionSource === "automation" || sessionTitle.startsWith("自动化 ·") ? (
-                <span className="chat-session-kind">自动化</span>
-              ) : null}
-              {isRenamingTitle ? (
-                <LoaderCircle
-                  aria-hidden="true"
-                  className="ml-1 size-3.5 shrink-0 animate-spin text-muted-foreground"
-                />
-              ) : null}
-              <DropdownMenu
-                modal={false}
-                open={conversationMenuOpen}
-                onOpenChange={(open) => {
-                  if (open) keepConversationMenuOpen();
-                  else scheduleConversationMenuClose();
-                }}
-              >
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    aria-label="对话操作"
-                    className="chat-title-action ml-1"
-                    size="icon"
-                    title="对话操作"
-                    type="button"
-                    variant="ghost"
-                    onPointerEnter={keepConversationMenuOpen}
-                    onPointerLeave={scheduleConversationMenuClose}
-                  >
-                    <MoreHorizontal className="size-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="start"
-                  onPointerEnter={keepConversationMenuOpen}
-                  onPointerLeave={scheduleConversationMenuClose}
-                  sideOffset={6}
-                >
-                  <ChatConversationMenuItems
-                    Item={DropdownMenuItem}
-                    canCopyAsMarkdown={canCopyConversationMarkdown}
-                    canRegenerateTitle={canEditConversationTitle}
-                    conversationIdCopied={conversationCopiedKind === "id"}
-                    conversationMarkdownCopied={conversationCopiedKind === "markdown"}
-                    onCopyAsMarkdown={() => void copyConversationMarkdown()}
-                    onCopyConversationId={() => void copyConversationId()}
-                    onRegenerateTitle={openTitleDialog}
-                  />
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </div>
-        </div>
-        <div className="chat-header-actions">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                aria-label="打开 Chat 工具菜单"
-                className="chat-header-action-secondary chat-icon-button"
-                size="icon"
-                title="打开 Chat 工具菜单"
-                type="button"
-                variant="ghost"
-              >
-                <List className="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="chat-select-menu" sideOffset={8}>
-              <DropdownMenuItem onSelect={() => setContextOpen(true)}>
-                <FileText className="size-3.5" />
-                查看 System Prompt
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => void openContextDetailPanel()}>
-                <ChartColumn className="size-3.5" />
-                上下文详情
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setToolLogOpen(true)}>
-                <Wrench className="size-3.5" />
-                Tool 记录
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={
-                  !workspaceKey ||
-                  !(
-                    (workspaceGitQuery.data?.summary?.filesChanged ?? 0) > 0 ||
-                    (workspaceGitQuery.data?.summary?.ahead ?? 0) > 0
-                  )
-                }
-                onSelect={() => setGitCommitOpen(true)}
-              >
-                <Upload className="size-3.5" />
-                提交或推送
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </header>
-
-      {selectionToolbar ? (
-        <div
-          className="chat-selection-toolbar"
-          style={{ left: selectionToolbar.left, top: selectionToolbar.top }}
-        >
-          <Button
-            aria-label="添加选中文本到对话"
-            onClick={addSelectionToComposer}
-            onMouseDown={(event) => event.preventDefault()}
-            size="sm"
-            type="button"
-            variant="ghost"
-          >
-            <MessageSquarePlus className="size-3.5" />
-            添加到对话
-          </Button>
-          <Button
-            aria-label="添加选中文本到侧边聊天"
-            onClick={addSelectionToSideChat}
-            onMouseDown={(event) => event.preventDefault()}
-            size="sm"
-            type="button"
-            variant="ghost"
-          >
-            <PanelRight className="size-3.5" />
-            添加到侧边聊天
-          </Button>
-        </div>
-      ) : null}
-      <div className="chat-stage-shell">
-        <ContextMenu>
-          <ContextMenuTrigger asChild onContextMenu={captureTranscriptSelection}>
-            <div className="chat-stage" ref={scrollRef}>
-              <div className="chat-content">
-                {showHydrateSkeleton ? (
-                  <div aria-busy="true" className="chat-transcript-skeleton" role="status">
-                    <span className="sr-only">正在加载对话</span>
-                    <div className="chat-transcript-skeleton-line is-wide" />
-                    <div className="chat-transcript-skeleton-line" />
-                    <div className="chat-transcript-skeleton-line is-wide" />
-                    <div className="chat-transcript-skeleton-line is-short" />
-                    <div className="chat-transcript-skeleton-line" />
-                    <div className="chat-transcript-skeleton-line is-short" />
-                  </div>
-                ) : null}
-                {!showHydrateSkeleton && showEmptyState ? (
-                  <div className="chat-empty-state">
-                    <div aria-hidden="true" className="chat-empty-mark">
-                      <Sparkles className="size-8" strokeWidth={1.6} />
-                    </div>
-                    <h2>要在 {workspaceLabel} 内开发什么？</h2>
-                    <div className="chat-suggestion-grid">
-                      {EMPTY_CHAT_ACTIONS.map((action) => {
-                        const Icon = action.icon;
-                        return (
-                          <button
-                            className={`chat-suggestion-card is-${action.accent}`}
-                            key={action.label}
-                            onClick={() => {
-                              setInput(action.prompt);
-                              requestAnimationFrame(() => inputRef.current?.focus());
-                            }}
-                            type="button"
-                          >
-                            <Icon aria-hidden="true" className="size-[18px]" strokeWidth={1.8} />
-                            <span>{action.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : null}
-                {showHydrateSkeleton
-                  ? null
-                  : messages.map((message) => (
-                      <MessageBubble
-                        key={message.id}
-                        message={message}
-                        approvalsEnabled={sessionKind !== "task"}
-                        onApprovalResponse={respondToApproval}
-                        onFork={sessionKind === "chat" ? forkConversation : undefined}
-                        forkDisabled={isGenerating || Boolean(forkingMessageId)}
-                        forkInFlight={forkingMessageId === message.id}
-                        onPlanUserInputResponse={respondToPlanUserInput}
-                        planInputEnabled={planMode === "plan" && planTransition === "idle"}
-                        planAttachment={
-                          showPlanAttachment &&
-                          activePlan &&
-                          latestPlanWriteAnchor?.messageId === message.id
-                            ? {
-                                fileName: activePlan.fileName,
-                                isGenerating: isGenerating && planMode === "plan",
-                                onOpen: openActivePlan,
-                                toolCallId: latestPlanWriteAnchor.toolCallId,
-                              }
-                            : undefined
-                        }
-                        generationStatus={
-                          isGenerating &&
-                          message.role === "assistant" &&
-                          message.id === lastMessage?.id
-                            ? {
-                                detail: generationDetail,
-                                elapsedLabel: generationElapsedLabel,
-                                phase: generationPhase,
-                              }
-                            : undefined
-                        }
-                        isStreaming={
-                          effectiveStatus === "streaming" && message.id === lastMessage?.id
-                        }
-                        showTokenUsage={chatDisplay.showTokenUsage}
-                        cwd={selectedCwd}
-                        workspaceId={workspaceKey || undefined}
-                      />
-                    ))}
-                {developerEnvironmentQuery.data &&
-                unavailableDetectedTools.length > 0 &&
-                environmentGuideKey !== dismissedEnvironmentGuide ? (
-                  <div
-                    aria-live="polite"
-                    className="flex flex-col gap-3 border-border border-y bg-muted/35 px-4 py-3 sm:flex-row sm:items-center"
-                  >
-                    <CircleAlert className="size-4 shrink-0 text-primary" />
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium text-sm">本地开发工具尚未接入</p>
-                      <p className="mt-0.5 text-muted-foreground text-xs">
-                        终端找不到 {unavailableDetectedTools.join("、")}。导入后可重新运行当前任务。
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <Button
-                        onClick={() => setEnvironmentImportOpen(true)}
-                        size="sm"
-                        type="button"
-                      >
-                        <Download className="size-3.5" /> 导入本机工具
-                      </Button>
-                      <Button asChild size="sm" type="button" variant="ghost">
-                        <Link to="/settings/environment">
-                          <Settings className="size-3.5" /> 环境设置
-                        </Link>
-                      </Button>
-                      <Button
-                        aria-label="关闭环境提示"
-                        onClick={() => setDismissedEnvironmentGuide(environmentGuideKey)}
-                        size="icon"
-                        title="关闭"
-                        type="button"
-                        variant="ghost"
-                      >
-                        <X className="size-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
-                {isGenerating && !hasAssistantMessage && (
-                  <div className="chat-message assistant-message">
-                    <div className="chat-message-body">
-                      <div className="chat-message-meta">
-                        <ChatGenerationStatus
-                          detail={generationDetail}
-                          elapsedLabel={generationElapsedLabel}
-                          phase={generationPhase}
-                        />
-                      </div>
-                      <div className="chat-thinking">
-                        <span />
-                        <span />
-                        <span />
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </ContextMenuTrigger>
-          <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
-            <ContextMenuItem onSelect={() => void copySelection()}>
-              <Copy className="size-4" />
-              复制
-            </ContextMenuItem>
-          </ContextMenuContent>
-        </ContextMenu>
-        {userMessageNavItems.length > 0 ? (
-          <ChatMessageNav
-            items={userMessageNavItems}
-            onJump={jumpToUserMessage}
-            scrollRef={scrollRef}
-          />
-        ) : null}
-      </div>
-
-      <div className="chat-composer-wrap">
-        <div className="chat-composer-float-stack">
-          {queuedMessages.length > 0 ? (
-            <div aria-live="polite" className="chat-queue-float" role="status">
-              {queuedMessages.map((message, index) => (
-                <div className="chat-queue-float-row" key={message.id}>
-                  <span className="chat-queue-float-index">{index + 1}</span>
-                  <Clock3 aria-hidden="true" className="size-3.5" />
-                  <span className="chat-queue-float-text">
-                    {message.text || `${message.pending.length} 个附件`}
-                  </span>
-                  <button
-                    aria-label={`取消排队消息 ${index + 1}`}
-                    className="chat-queue-float-cancel"
-                    onClick={() => cancelQueuedMessage(message.id)}
-                    title="取消排队消息"
-                    type="button"
-                  >
-                    <X className="size-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : null}
-          <div className="chat-composer-floats">
-            {workspaceGitQuery.data?.summary &&
-            workspaceGitQuery.data.isRepository &&
-            workspaceGitQuery.data.summary.filesChanged > 0 ? (
-              <ChatGitSummary
-                summary={workspaceGitQuery.data.summary}
-                onOpenDiff={async () => {
-                  const result = await workspaceGitQuery.refetch();
-                  const firstFile = result.data?.summary?.files[0];
-                  if (firstFile) {
-                    openFileViewer({
-                      mode: "diff",
-                      path: firstFile.path,
-                      workspaceId: workspaceKey,
-                      cwd: selectedCwd,
-                    });
-                  }
-                }}
-              />
-            ) : null}
-            <ChatTodoPanel messages={messages} />
-            {showPlanStartAction ? (
-              <Button
-                aria-label="执行计划"
-                className="chat-plan-start-float"
-                onClick={confirmPlanExecution}
-                title="执行当前计划"
-                type="button"
-              >
-                <Play aria-hidden="true" className="size-3.5 fill-current" />
-                执行计划
-              </Button>
-            ) : null}
-          </div>
-        </div>
-        {error || planModeError || attachmentError || forkError ? (
-          <p className="chat-error" role="alert">
-            {planModeError ||
-              attachmentError ||
-              forkError ||
-              (recoverableTransportError
-                ? serverRunActive
-                  ? "响应连接已中断，正在从后台任务恢复…"
-                  : "与 Chat Server 的连接已中断，请稍后重试。"
-                : error?.message)}
-          </p>
-        ) : null}
-        <div className="chat-workspace-bar">
-          {showEmptyState ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  aria-label="选择工作区"
-                  className="chat-workspace-picker"
-                  title="选择工作区"
-                  type="button"
-                >
-                  <Folder aria-hidden="true" className="size-3.5" />
-                  <span>{workspaceLabel}</span>
-                  <ChevronDown aria-hidden="true" className="size-3.5" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="start"
-                className="chat-select-menu chat-workspace-select-menu"
-                side="top"
-                sideOffset={8}
-              >
-                <DropdownMenuLabel>工作区</DropdownMenuLabel>
-                <DropdownMenuRadioGroup
-                  value={workspaceKey || "default"}
-                  onValueChange={selectWorkspace}
-                >
-                  <DropdownMenuRadioItem value="default">
-                    <span className="chat-workspace-option-label">{DEFAULT_WORKSPACE_NAME}</span>
-                  </DropdownMenuRadioItem>
-                  {workspaceProjects
-                    .filter((project) => project.id !== DEFAULT_WORKSPACE_ID)
-                    .map((project) => (
-                      <DropdownMenuRadioItem key={project.id} value={project.id}>
-                        <span className="chat-workspace-option-label">
-                          {pathBasename(project.path)}
-                        </span>
-                      </DropdownMenuRadioItem>
-                    ))}
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : null}
-          <span>
-            <Laptop aria-hidden="true" className="size-3.5" />
-            本地
-          </span>
-          <span>
-            <GitBranch aria-hidden="true" className="size-3.5" />
-            main
-          </span>
-          <span className="chat-mode-label">
-            {agentModeSelected ? (
-              <Bot aria-hidden="true" className="size-3.5" />
-            ) : (
-              <Settings2 aria-hidden="true" className="size-3.5" />
-            )}
-            {agentModeSelected ? "Agent模式" : "手动模式"}
-          </span>
-        </div>
-        {sessionKind === "task" ? (
-          <div className="chat-task-status" role="status">
-            <p>后台任务，仅可查看进度</p>
-            {isGenerating ? (
-              <Button
-                disabled={stopPending}
-                onClick={stopCurrentRunFromButton}
-                size="sm"
-                type="button"
-                variant="ghost"
-              >
-                {stopPending ? (
-                  <LoaderCircle className="size-3.5 animate-spin" />
-                ) : (
-                  <Square className="size-3.5 fill-current" />
-                )}
-                停止
-              </Button>
-            ) : null}
-          </div>
-        ) : (
-          <div className="chat-composer">
-            {isReadOnly ? (
-              <div className="px-3 py-2 text-[12px] text-muted-foreground" role="status">
-                飞书会话由飞书消息驱动，仅支持查看和回复。
-              </div>
-            ) : null}
-            <input
-              aria-hidden="true"
-              className="chat-file-input"
-              multiple
-              onChange={(event) => {
-                if (isReadOnly) return;
-                if (event.target.files && event.target.files.length > 0) {
-                  void addFiles(event.target.files);
-                }
-                event.target.value = "";
-              }}
-              ref={fileInputRef}
-              tabIndex={-1}
-              type="file"
-            />
-            <ChatAttachmentChips
-              attachments={pendingAttachments}
-              onPreview={(attachment) => {
-                if (!attachment.previewUrl) return;
-                openImagePreview({
-                  url: attachment.previewUrl,
-                  filename: attachment.fileName,
-                  mediaType: attachment.mediaType,
-                });
-              }}
-              onRemove={removePendingAttachment}
-            />
-            {commandPopupOpen && (
-              <ChatCommandPopup
-                activeIndex={Math.min(commandIndex, commandMatches.length - 1)}
-                commands={commandMatches}
-                onHover={setCommandIndex}
-                onSelect={applyChatCommand}
-              />
-            )}
-            {mentionPopupOpen && (
-              <ChatPathSuggestionPopup
-                activeIndex={Math.min(mentionIndex, Math.max(mentionSuggestions.length - 1, 0))}
-                isLoading={mentionQueryResult.isPending}
-                onHover={setMentionIndex}
-                onSelect={applyChatMention}
-                suggestions={mentionSuggestions}
-              />
-            )}
-            <ChatComposerInput
-              ariaControls={mentionPopupOpen ? "chat-path-suggestion-popup" : "chat-command-popup"}
-              ariaExpanded={commandPopupOpen || mentionPopupOpen}
-              disabled={isReadOnly || planTransition !== "idle" || followUpPending || stopPending}
-              onBlur={() => setCommandDismissed(true)}
-              onChange={(next) => {
-                setInput(next.markdown);
-                setComposerPlain(next.plain);
-                setCommandCaret(next.caret);
-                if (next.fromEdit) setMentionDismissed(false);
-              }}
-              onKeyDown={handleComposerKeyDown}
-              onPasteFiles={(files) => {
-                void addFiles(files);
-              }}
-              placeholder="问问你的工作空间..."
-              ref={inputRef}
-              value={input}
-            />
-            <div className="chat-composer-footer">
-              <div className="chat-composer-tools">
-                <Button
-                  aria-label="添加附件"
-                  className="chat-tool-button !size-7"
-                  disabled={isReadOnly || planTransition !== "idle"}
-                  onClick={() => fileInputRef.current?.click()}
-                  size="icon"
-                  title="添加附件"
-                  type="button"
-                  variant="ghost"
-                >
-                  <Paperclip className="size-4" />
-                </Button>
-                {planTransition === "entering" ? (
-                  <span aria-label="正在进入计划模式" className="chat-plan-mode-chip" role="status">
-                    <LoaderCircle aria-hidden="true" className="size-3 animate-spin" />
-                    <span>正在进入计划模式</span>
-                  </span>
-                ) : planMode === "plan" ? (
-                  <span aria-label="计划模式" className="chat-plan-mode-chip" role="status">
-                    {planTransition === "exiting" ? (
-                      <LoaderCircle aria-hidden="true" className="size-3 animate-spin" />
-                    ) : null}
-                    <span>{planTransition === "exiting" ? "正在退出计划模式" : "计划模式"}</span>
-                    {planTransition === "idle" ? (
-                      <button
-                        aria-label={isGenerating ? "请先停止生成再退出计划模式" : "退出计划模式"}
-                        className="chat-plan-mode-exit"
-                        disabled={isGenerating}
-                        onClick={() => void exitPlanMode()}
-                        title={isGenerating ? "请先停止生成" : "退出计划模式"}
-                        type="button"
-                      >
-                        <X className="size-3" />
-                      </button>
-                    ) : null}
-                  </span>
-                ) : null}
-                {chatRoute.kind === "new" ? (
-                  <ButtonGroup className="chat-mode-group shrink-0">
-                    <button
-                      aria-pressed={agentModeSelected}
-                      className={`chat-model-picker !h-7 !shrink-0 !gap-1.5 !whitespace-nowrap !px-2 !text-[11px] ${agentModeSelected ? "is-selected" : ""}`}
-                      disabled={isReadOnly || isAgentsLoading || !defaultAgentId || agentLocked}
-                      onClick={() => {
-                        modeSelectionRef.current = true;
-                        setSelectedAgentId(defaultAgentId);
-                      }}
-                      title="使用 Agent 模式"
-                      type="button"
-                    >
-                      Agent模式
-                    </button>
-                    <button
-                      aria-pressed={!agentModeSelected}
-                      className={`chat-model-picker !h-7 !shrink-0 !gap-1.5 !whitespace-nowrap !px-2 !text-[11px] ${!agentModeSelected ? "is-selected" : ""}`}
-                      disabled={isReadOnly || agentLocked}
-                      onClick={() => {
-                        modeSelectionRef.current = true;
-                        setSelectedAgentId("");
-                      }}
-                      title="使用手动模式"
-                      type="button"
-                    >
-                      手动模式
-                    </button>
-                  </ButtonGroup>
-                ) : null}
-                {selectedAgentId ? (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        aria-label="选择 Agent"
-                        className="chat-model-picker !h-7 !gap-1.5 !px-2 !text-[11px]"
-                        disabled={isReadOnly || isAgentsLoading || agentLocked}
-                        title="选择 Agent"
-                        type="button"
-                      >
-                        <Bot className="size-3.5" />
-                        <span className="chat-picker-value !text-[11px]">
-                          {configuredAgents.find((agent) => agent.id === selectedAgentId)?.name ??
-                            "Agent 已失效"}
-                        </span>
-                        <ChevronDown className="size-3.5" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                      align="start"
-                      className="chat-select-menu !text-[11px]"
-                      side="top"
-                      sideOffset={8}
-                    >
-                      <DropdownMenuRadioGroup
-                        value={selectedAgentId}
-                        onValueChange={(value) => {
-                          const agent = configuredAgents.find((item) => item.id === value);
-                          if (agent?.modelId) setSelectedModelId(agent.modelId);
-                          modeSelectionRef.current = true;
-                          setSelectedAgentId(value);
-                        }}
-                      >
-                        {configuredAgents.map((agent) => (
-                          <DropdownMenuRadioItem
-                            className="!py-1 !text-[11px]"
-                            key={agent.id}
-                            value={agent.id}
-                          >
-                            {agent.name || "未命名 Agent"}
-                          </DropdownMenuRadioItem>
-                        ))}
-                      </DropdownMenuRadioGroup>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem asChild className="!py-1 !text-[11px]">
-                        <Link to="/settings/agents">前往 Agent 设置</Link>
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                ) : null}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      aria-label="Sandbox permissions"
-                      className="chat-sandbox-picker !h-7 !gap-1.5 !px-2 !text-[11px]"
-                      disabled={isReadOnly}
-                      title="Sandbox permissions"
-                      type="button"
-                    >
-                      <ShieldCheck className="size-3.5" />
-                      <span className="chat-picker-value !text-[11px]">
-                        {CHAT_SANDBOX_MODE_LABELS[sandboxMode]}
-                      </span>
-                      <ChevronDown className="size-3.5" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="start"
-                    className="chat-select-menu !text-[11px]"
-                    side="top"
-                    sideOffset={8}
-                  >
-                    <DropdownMenuRadioGroup
-                      value={sandboxMode}
-                      onValueChange={(value) => updateSandboxMode(normalizeChatSandboxMode(value))}
-                    >
-                      {Object.entries(CHAT_SANDBOX_MODE_LABELS).map(([value, label]) => (
-                        <DropdownMenuRadioItem
-                          className="!py-1 !text-[11px]"
-                          key={value}
-                          value={value}
-                        >
-                          <span className="flex min-w-0 flex-col gap-0.5">
-                            <span>{label}</span>
-                            <span
-                              className={`font-normal text-[10px] leading-4 ${
-                                value === "full"
-                                  ? "text-amber-600 dark:text-amber-400"
-                                  : "text-muted-foreground"
-                              }`}
-                            >
-                              {CHAT_SANDBOX_MODE_DESCRIPTIONS[value as ChatSandboxMode]}
-                            </span>
-                          </span>
-                        </DropdownMenuRadioItem>
-                      ))}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                {!selectedAgentId ? (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        aria-label="选择模型"
-                        className="chat-model-picker !h-7 !gap-1.5 !px-2 !text-[11px]"
-                        disabled={
-                          isReadOnly ||
-                          isModelsLoading ||
-                          models.length === 0 ||
-                          Boolean(selectedAgentId)
-                        }
-                        type="button"
-                      >
-                        <Settings2 className="size-3.5" />
-                        <span className="chat-picker-value !text-[11px]">
-                          {selectedModel ? formatModelLabel(selectedModel) : "未配置模型"}
-                        </span>
-                        <ChevronDown className="size-3.5" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                      align="start"
-                      className="chat-select-menu !text-[11px]"
-                      side="top"
-                      sideOffset={8}
-                    >
-                      <DropdownMenuRadioGroup
-                        value={selectedModel?.id ?? ""}
-                        onValueChange={setSelectedModelId}
-                      >
-                        {models.length === 0 ? (
-                          <DropdownMenuItem className="!py-1 !text-[11px]" disabled>
-                            未配置模型
-                          </DropdownMenuItem>
-                        ) : (
-                          sortedModels.map((model) => (
-                            <DropdownMenuRadioItem
-                              className="!py-1 !text-[11px]"
-                              key={model.id}
-                              value={model.id}
-                            >
-                              {formatModelLabel(model)}
-                            </DropdownMenuRadioItem>
-                          ))
-                        )}
-                      </DropdownMenuRadioGroup>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem asChild className="!py-1 !text-[11px]">
-                        <Link to="/settings/models">前往模型设置</Link>
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                ) : null}
-                {!selectedAgentId ? (
-                  <ChatToolsPicker
-                    disabled={isReadOnly}
-                    open={toolsOpen}
-                    settings={chatTools}
-                    workspaceAvailable={Boolean(selectedCwd.trim())}
-                    onOpenChange={setToolsOpen}
-                    onSettingsChange={updateChatTools}
-                    mcpServers={mcpServers}
-                    selectedMcpIds={selectedMcpIds}
-                    onMcpSelectionChange={updateMcpSelection}
-                  />
-                ) : null}
-                {!selectedAgentId ? (
-                  <ChatSkillsPicker
-                    disabled={isReadOnly}
-                    open={skillsOpen}
-                    onOpenChange={setSkillsOpen}
-                    onSelectionChange={updateSkillSelection}
-                    selectedSkillIds={selectedSkillIds}
-                    skills={allowedSkills}
-                  />
-                ) : null}
-                {configuredModels?.length === 0 && (
-                  <Link className="chat-settings-link" to="/settings/models">
-                    配置模型
-                  </Link>
-                )}
-              </div>
-              <div className="chat-composer-actions">
-                <ChatContextPopover
-                  cacheReadTokens={currentContextUsage?.cacheReadTokens}
-                  inputContext={selectedModel?.inputContext}
-                  inputTokens={currentContextUsage?.inputTokens}
-                  isEstimated={currentContextUsage?.source === "estimate"}
-                  isGenerating={isGenerating}
-                  modelName={selectedModel?.name}
-                />
-                <Button
-                  aria-label={stopPending ? "正在停止" : isGenerating ? "停止生成" : "发送消息"}
-                  className="chat-send-button !size-9 !rounded-[10px]"
-                  disabled={
-                    isReadOnly ||
-                    stopPending ||
-                    (((!input.trim() && !pendingAttachments.some((a) => a.status === "ready")) ||
-                      (!selectedModel && !developerSettings.mockLongResponse) ||
-                      pendingAttachments.some((a) => a.status === "uploading") ||
-                      planTransition !== "idle") &&
-                      !isGenerating)
-                  }
-                  onClick={isGenerating ? stopCurrentRunFromButton : submitMessage}
-                  size="icon"
-                  title={stopPending ? "正在停止" : isGenerating ? "停止生成" : "发送消息"}
-                  type="button"
-                >
-                  {stopPending ? (
-                    <LoaderCircle className="size-4 animate-spin" />
-                  ) : isGenerating ? (
-                    <Square className="size-4 fill-current" />
-                  ) : (
-                    <ArrowUp className="size-4" />
-                  )}
-                </Button>
-              </div>
+    <ChatLayoutComponent>
+      <section
+        aria-label="Chat 对话区域"
+        className="chat-page"
+        data-chat-empty={showEmptyState ? "true" : "false"}
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {isDragOver && (
+          <div className="chat-drag-overlay">
+            <div className="chat-drag-overlay-card">
+              <Upload className="size-7" />
+              <p>松开以上传文件</p>
             </div>
           </div>
         )}
-      </div>
-      <GitCommitDialog
-        branch={workspaceGitQuery.data?.summary?.branch}
-        hasChanges={Boolean(workspaceGitQuery.data?.summary?.filesChanged)}
-        canPush={Boolean(workspaceGitQuery.data?.summary?.ahead)}
-        insertions={workspaceGitQuery.data?.summary?.insertions ?? 0}
-        deletions={workspaceGitQuery.data?.summary?.deletions ?? 0}
-        filesChanged={workspaceGitQuery.data?.summary?.filesChanged ?? 0}
-        onOpenChange={setGitCommitOpen}
-        onSuccess={() => void workspaceGitQuery.refetch()}
-        open={gitCommitOpen}
-        workspaceId={workspaceKey}
-        cwd={selectedCwd}
-      />
-      <ChatContextDialog
-        promptKey={promptKey}
-        loadPrompt={async () =>
-          systemPromptRef.current ??
-          (await loadChatServerSystemPromptPreview(sessionId, await getPromptInput()))
-        }
-        sessionId={sessionId}
-        onOpenChange={setContextOpen}
-        open={contextOpen}
-      />
-      <ChatToolLogDialog messages={messages} onOpenChange={setToolLogOpen} open={toolLogOpen} />
-      <ChatTitleDialog
-        canGenerate={canRegenerateConversationTitle}
-        onGenerate={regenerateConversationTitle}
-        onOpenChange={setTitleDialogOpen}
-        onSave={saveConversationTitle}
-        open={titleDialogOpen}
-        title={sessionTitle}
-      />
-      <AlertDialog
-        onOpenChange={(open) => {
-          if (open) environmentImportMutation.reset();
-          setEnvironmentImportOpen(open);
-        }}
-        open={environmentImportOpen}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>导入本机开发工具？</AlertDialogTitle>
-            <AlertDialogDescription>
-              ChatDesk 会启动一次当前登录
-              Shell，并执行其启动配置。只解析白名单内开发工具的绝对路径；不会保存其他环境变量、Token
-              或 API Key。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {environmentImportMutation.isError ? (
-            <p className="text-destructive text-sm" role="alert">
-              {environmentImportMutation.error instanceof Error
-                ? environmentImportMutation.error.message
-                : "开发工具导入失败。"}
+        <header className="chat-header">
+          <div className="chat-brand">
+            <div className="chat-brand-mark">
+              <Sparkles className="size-4" />
+            </div>
+            <div className="chat-brand-title">
+              <p className="chat-kicker">Workspace assistant</p>
+              <div className="chat-brand-title-row">
+                <h1>{sessionTitle}</h1>
+                {sessionKind === "task" ? <span className="chat-session-kind">任务</span> : null}
+                {sessionSource === "cli" ? <span className="chat-session-kind">CLI</span> : null}
+                {sessionSource === "feishu" ? (
+                  <span className="chat-session-kind">飞书</span>
+                ) : null}
+                {sessionSource === "automation" || sessionTitle.startsWith("自动化 ·") ? (
+                  <span className="chat-session-kind">自动化</span>
+                ) : null}
+                {isRenamingTitle ? (
+                  <LoaderCircle
+                    aria-hidden="true"
+                    className="ml-1 size-3.5 shrink-0 animate-spin text-muted-foreground"
+                  />
+                ) : null}
+                <DropdownMenu
+                  modal={false}
+                  open={conversationMenuOpen}
+                  onOpenChange={(open) => {
+                    if (open) keepConversationMenuOpen();
+                    else scheduleConversationMenuClose();
+                  }}
+                >
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      aria-label="对话操作"
+                      className="chat-title-action ml-1"
+                      size="icon"
+                      title="对话操作"
+                      type="button"
+                      variant="ghost"
+                      onPointerEnter={keepConversationMenuOpen}
+                      onPointerLeave={scheduleConversationMenuClose}
+                    >
+                      <MoreHorizontal className="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="start"
+                    onPointerEnter={keepConversationMenuOpen}
+                    onPointerLeave={scheduleConversationMenuClose}
+                    sideOffset={6}
+                  >
+                    <ChatConversationMenuItems
+                      Item={DropdownMenuItem}
+                      canCopyAsMarkdown={canCopyConversationMarkdown}
+                      canRegenerateTitle={canEditConversationTitle}
+                      conversationIdCopied={conversationCopiedKind === "id"}
+                      conversationMarkdownCopied={conversationCopiedKind === "markdown"}
+                      onCopyAsMarkdown={() => void copyConversationMarkdown()}
+                      onCopyConversationId={() => void copyConversationId()}
+                      onRegenerateTitle={openTitleDialog}
+                    />
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+          </div>
+          <div className="chat-header-actions">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  aria-label="打开 Chat 工具菜单"
+                  className="chat-header-action-secondary chat-icon-button"
+                  size="icon"
+                  title="打开 Chat 工具菜单"
+                  type="button"
+                  variant="ghost"
+                >
+                  <List className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="chat-select-menu" sideOffset={8}>
+                <DropdownMenuItem onSelect={() => setContextOpen(true)}>
+                  <FileText className="size-3.5" />
+                  查看 System Prompt
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void openContextDetailPanel()}>
+                  <ChartColumn className="size-3.5" />
+                  上下文详情
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setToolLogOpen(true)}>
+                  <Wrench className="size-3.5" />
+                  Tool 记录
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => setChatLayoutDialogOpen(true)}>
+                  <Sparkles className="size-3.5" />
+                  Chat 布局
+                  <span className="ml-auto text-muted-foreground text-xs">
+                    {chatLayout === "standard" ? "标准" : chatLayout === "cute" ? "可爱" : "Geek"}
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={
+                    !workspaceKey ||
+                    !(
+                      (workspaceGitQuery.data?.summary?.filesChanged ?? 0) > 0 ||
+                      (workspaceGitQuery.data?.summary?.ahead ?? 0) > 0
+                    )
+                  }
+                  onSelect={() => setGitCommitOpen(true)}
+                >
+                  <Upload className="size-3.5" />
+                  提交或推送
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </header>
+
+        {selectionToolbar ? (
+          <div
+            className="chat-selection-toolbar"
+            style={{ left: selectionToolbar.left, top: selectionToolbar.top }}
+          >
+            <Button
+              aria-label="添加选中文本到对话"
+              onClick={addSelectionToComposer}
+              onMouseDown={(event) => event.preventDefault()}
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              <MessageSquarePlus className="size-3.5" />
+              添加到对话
+            </Button>
+            <Button
+              aria-label="添加选中文本到侧边聊天"
+              onClick={addSelectionToSideChat}
+              onMouseDown={(event) => event.preventDefault()}
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              <PanelRight className="size-3.5" />
+              添加到侧边聊天
+            </Button>
+          </div>
+        ) : null}
+        <div className="chat-stage-shell">
+          <ContextMenu>
+            <ContextMenuTrigger asChild onContextMenu={captureTranscriptSelection}>
+              <div className="chat-stage" ref={scrollRef}>
+                <div className="chat-content">
+                  {showHydrateSkeleton ? (
+                    <div aria-busy="true" className="chat-transcript-skeleton" role="status">
+                      <span className="sr-only">正在加载对话</span>
+                      <div className="chat-transcript-skeleton-line is-wide" />
+                      <div className="chat-transcript-skeleton-line" />
+                      <div className="chat-transcript-skeleton-line is-wide" />
+                      <div className="chat-transcript-skeleton-line is-short" />
+                      <div className="chat-transcript-skeleton-line" />
+                      <div className="chat-transcript-skeleton-line is-short" />
+                    </div>
+                  ) : null}
+                  {!showHydrateSkeleton && showEmptyState ? (
+                    <div className="chat-empty-state">
+                      <div aria-hidden="true" className="chat-empty-mark">
+                        <Sparkles className="size-8" strokeWidth={1.6} />
+                      </div>
+                      <h2>要在 {workspaceLabel} 内开发什么？</h2>
+                      <div className="chat-suggestion-grid">
+                        {EMPTY_CHAT_ACTIONS.map((action) => {
+                          const Icon = action.icon;
+                          return (
+                            <button
+                              className={`chat-suggestion-card is-${action.accent}`}
+                              key={action.label}
+                              onClick={() => {
+                                setInput(action.prompt);
+                                requestAnimationFrame(() => inputRef.current?.focus());
+                              }}
+                              type="button"
+                            >
+                              <Icon aria-hidden="true" className="size-[18px]" strokeWidth={1.8} />
+                              <span>{action.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                  {showHydrateSkeleton
+                    ? null
+                    : messages.map((message) => (
+                        <MessageBubble
+                          key={message.id}
+                          message={message}
+                          approvalsEnabled={sessionKind !== "task"}
+                          onApprovalResponse={respondToApproval}
+                          onFork={sessionKind === "chat" ? forkConversation : undefined}
+                          forkDisabled={isGenerating || Boolean(forkingMessageId)}
+                          forkInFlight={forkingMessageId === message.id}
+                          onPlanUserInputResponse={respondToPlanUserInput}
+                          planInputEnabled={planMode === "plan" && planTransition === "idle"}
+                          planAttachment={
+                            showPlanAttachment &&
+                            activePlan &&
+                            latestPlanWriteAnchor?.messageId === message.id
+                              ? {
+                                  fileName: activePlan.fileName,
+                                  isGenerating: isGenerating && planMode === "plan",
+                                  onOpen: openActivePlan,
+                                  toolCallId: latestPlanWriteAnchor.toolCallId,
+                                }
+                              : undefined
+                          }
+                          generationStatus={
+                            isGenerating &&
+                            message.role === "assistant" &&
+                            message.id === lastMessage?.id
+                              ? {
+                                  detail: generationDetail,
+                                  elapsedLabel: generationElapsedLabel,
+                                  phase: generationPhase,
+                                }
+                              : undefined
+                          }
+                          isStreaming={
+                            effectiveStatus === "streaming" && message.id === lastMessage?.id
+                          }
+                          showTokenUsage
+                          cwd={selectedCwd}
+                          workspaceId={workspaceKey || undefined}
+                        />
+                      ))}
+                  {developerEnvironmentQuery.data &&
+                  unavailableDetectedTools.length > 0 &&
+                  environmentGuideKey !== dismissedEnvironmentGuide ? (
+                    <div
+                      aria-live="polite"
+                      className="flex flex-col gap-3 border-border border-y bg-muted/35 px-4 py-3 sm:flex-row sm:items-center"
+                    >
+                      <CircleAlert className="size-4 shrink-0 text-primary" />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-sm">本地开发工具尚未接入</p>
+                        <p className="mt-0.5 text-muted-foreground text-xs">
+                          终端找不到 {unavailableDetectedTools.join("、")}
+                          。导入后可重新运行当前任务。
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Button
+                          onClick={() => setEnvironmentImportOpen(true)}
+                          size="sm"
+                          type="button"
+                        >
+                          <Download className="size-3.5" /> 导入本机工具
+                        </Button>
+                        <Button asChild size="sm" type="button" variant="ghost">
+                          <Link to="/settings/environment">
+                            <Settings className="size-3.5" /> 环境设置
+                          </Link>
+                        </Button>
+                        <Button
+                          aria-label="关闭环境提示"
+                          onClick={() => setDismissedEnvironmentGuide(environmentGuideKey)}
+                          size="icon"
+                          title="关闭"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <X className="size-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
+                  {isGenerating && !hasAssistantMessage && (
+                    <div className="chat-message assistant-message">
+                      <div className="chat-message-body">
+                        <div className="chat-message-meta">
+                          <ChatGenerationStatus
+                            detail={generationDetail}
+                            elapsedLabel={generationElapsedLabel}
+                            phase={generationPhase}
+                          />
+                        </div>
+                        <div className="chat-thinking">
+                          <span />
+                          <span />
+                          <span />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </ContextMenuTrigger>
+            <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
+              <ContextMenuItem onSelect={() => void copySelection()}>
+                <Copy className="size-4" />
+                复制
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
+          {userMessageNavItems.length > 0 ? (
+            <ChatMessageNav
+              items={userMessageNavItems}
+              onJump={jumpToUserMessage}
+              scrollRef={scrollRef}
+            />
+          ) : null}
+        </div>
+
+        <div className="chat-composer-wrap">
+          <div className="chat-composer-float-stack">
+            {queuedMessages.length > 0 ? (
+              <div aria-live="polite" className="chat-queue-float" role="status">
+                {queuedMessages.map((message, index) => (
+                  <div className="chat-queue-float-row" key={message.id}>
+                    <span className="chat-queue-float-index">{index + 1}</span>
+                    <Clock3 aria-hidden="true" className="size-3.5" />
+                    <span className="chat-queue-float-text">
+                      {message.text || `${message.pending.length} 个附件`}
+                    </span>
+                    <button
+                      aria-label={`取消排队消息 ${index + 1}`}
+                      className="chat-queue-float-cancel"
+                      onClick={() => cancelQueuedMessage(message.id)}
+                      title="取消排队消息"
+                      type="button"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            <div className="chat-composer-floats">
+              {workspaceGitQuery.data?.summary &&
+              workspaceGitQuery.data.isRepository &&
+              workspaceGitQuery.data.summary.filesChanged > 0 ? (
+                <ChatGitSummary
+                  summary={workspaceGitQuery.data.summary}
+                  onOpenDiff={async () => {
+                    const result = await workspaceGitQuery.refetch();
+                    const firstFile = result.data?.summary?.files[0];
+                    if (firstFile) {
+                      openFileViewer({
+                        mode: "diff",
+                        path: firstFile.path,
+                        workspaceId: workspaceKey,
+                        cwd: selectedCwd,
+                      });
+                    }
+                  }}
+                />
+              ) : null}
+              <ChatTodoPanel messages={messages} />
+              {showPlanStartAction ? (
+                <Button
+                  aria-label="执行计划"
+                  className="chat-plan-start-float"
+                  onClick={confirmPlanExecution}
+                  title="执行当前计划"
+                  type="button"
+                >
+                  <Play aria-hidden="true" className="size-3.5 fill-current" />
+                  执行计划
+                </Button>
+              ) : null}
+            </div>
+          </div>
+          {error || planModeError || attachmentError || forkError ? (
+            <p className="chat-error" role="alert">
+              {planModeError ||
+                attachmentError ||
+                forkError ||
+                (recoverableTransportError
+                  ? serverRunActive
+                    ? "响应连接已中断，正在从后台任务恢复…"
+                    : "与 Chat Server 的连接已中断，请稍后重试。"
+                  : error?.message)}
             </p>
           ) : null}
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={environmentImportMutation.isPending}>
-              取消
-            </AlertDialogCancel>
-            <AlertDialogAction
-              disabled={environmentImportMutation.isPending}
-              onClick={(event) => {
-                event.preventDefault();
-                environmentImportMutation.mutate();
-              }}
-            >
-              {environmentImportMutation.isPending ? (
-                <LoaderCircle className="size-4 animate-spin" />
+          <div className="chat-workspace-bar">
+            {showEmptyState ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    aria-label="选择工作区"
+                    className="chat-workspace-picker"
+                    title="选择工作区"
+                    type="button"
+                  >
+                    <Folder aria-hidden="true" className="size-3.5" />
+                    <span>{workspaceLabel}</span>
+                    <ChevronDown aria-hidden="true" className="size-3.5" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="start"
+                  className="chat-select-menu chat-workspace-select-menu"
+                  side="top"
+                  sideOffset={8}
+                >
+                  <DropdownMenuLabel>工作区</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={workspaceKey || "default"}
+                    onValueChange={selectWorkspace}
+                  >
+                    <DropdownMenuRadioItem value="default">
+                      <span className="chat-workspace-option-label">{DEFAULT_WORKSPACE_NAME}</span>
+                    </DropdownMenuRadioItem>
+                    {workspaceProjects
+                      .filter((project) => project.id !== DEFAULT_WORKSPACE_ID)
+                      .map((project) => (
+                        <DropdownMenuRadioItem key={project.id} value={project.id}>
+                          <span className="chat-workspace-option-label">
+                            {pathBasename(project.path)}
+                          </span>
+                        </DropdownMenuRadioItem>
+                      ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
+            <span>
+              <Laptop aria-hidden="true" className="size-3.5" />
+              本地
+            </span>
+            <span>
+              <GitBranch aria-hidden="true" className="size-3.5" />
+              main
+            </span>
+            <span className="chat-mode-label">
+              {agentModeSelected ? (
+                <Bot aria-hidden="true" className="size-3.5" />
               ) : (
-                <Download className="size-4" />
+                <Settings2 aria-hidden="true" className="size-3.5" />
               )}
-              确认导入
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      <Outlet />
-    </div>
+              {agentModeSelected ? "Agent模式" : "手动模式"}
+            </span>
+          </div>
+          {sessionKind === "task" ? (
+            <div className="chat-task-status" role="status">
+              <p>后台任务，仅可查看进度</p>
+              {isGenerating ? (
+                <Button
+                  disabled={stopPending}
+                  onClick={stopCurrentRunFromButton}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  {stopPending ? (
+                    <LoaderCircle className="size-3.5 animate-spin" />
+                  ) : (
+                    <Square className="size-3.5 fill-current" />
+                  )}
+                  停止
+                </Button>
+              ) : null}
+            </div>
+          ) : (
+            <div className="chat-composer">
+              {isReadOnly ? (
+                <div className="px-3 py-2 text-[12px] text-muted-foreground" role="status">
+                  飞书会话由飞书消息驱动，仅支持查看和回复。
+                </div>
+              ) : null}
+              <input
+                aria-hidden="true"
+                className="chat-file-input"
+                multiple
+                onChange={(event) => {
+                  if (isReadOnly) return;
+                  if (event.target.files && event.target.files.length > 0) {
+                    void addFiles(event.target.files);
+                  }
+                  event.target.value = "";
+                }}
+                ref={fileInputRef}
+                tabIndex={-1}
+                type="file"
+              />
+              <ChatAttachmentChips
+                attachments={pendingAttachments}
+                onPreview={(attachment) => {
+                  if (!attachment.previewUrl) return;
+                  openImagePreview({
+                    url: attachment.previewUrl,
+                    filename: attachment.fileName,
+                    mediaType: attachment.mediaType,
+                  });
+                }}
+                onRemove={removePendingAttachment}
+              />
+              {commandPopupOpen && (
+                <ChatCommandPopup
+                  activeIndex={Math.min(commandIndex, commandMatches.length - 1)}
+                  commands={commandMatches}
+                  onHover={setCommandIndex}
+                  onSelect={applyChatCommand}
+                />
+              )}
+              {mentionPopupOpen && (
+                <ChatPathSuggestionPopup
+                  activeIndex={Math.min(mentionIndex, Math.max(mentionSuggestions.length - 1, 0))}
+                  isLoading={mentionQueryResult.isPending}
+                  onHover={setMentionIndex}
+                  onSelect={applyChatMention}
+                  suggestions={mentionSuggestions}
+                />
+              )}
+              <ChatComposerInput
+                ariaControls={
+                  mentionPopupOpen ? "chat-path-suggestion-popup" : "chat-command-popup"
+                }
+                ariaExpanded={commandPopupOpen || mentionPopupOpen}
+                disabled={isReadOnly || planTransition !== "idle" || followUpPending || stopPending}
+                onBlur={() => setCommandDismissed(true)}
+                onChange={(next) => {
+                  setInput(next.markdown);
+                  setComposerPlain(next.plain);
+                  setCommandCaret(next.caret);
+                  if (next.fromEdit) setMentionDismissed(false);
+                }}
+                onKeyDown={handleComposerKeyDown}
+                onPasteFiles={(files) => {
+                  void addFiles(files);
+                }}
+                placeholder="问问你的工作空间..."
+                ref={inputRef}
+                value={input}
+              />
+              <div className="chat-composer-footer">
+                <div className="chat-composer-tools">
+                  <Button
+                    aria-label="添加附件"
+                    className="chat-tool-button !size-7"
+                    disabled={isReadOnly || planTransition !== "idle"}
+                    onClick={() => fileInputRef.current?.click()}
+                    size="icon"
+                    title="添加附件"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <Paperclip className="size-4" />
+                  </Button>
+                  {planTransition === "entering" ? (
+                    <span
+                      aria-label="正在进入计划模式"
+                      className="chat-plan-mode-chip"
+                      role="status"
+                    >
+                      <LoaderCircle aria-hidden="true" className="size-3 animate-spin" />
+                      <span>正在进入计划模式</span>
+                    </span>
+                  ) : planMode === "plan" ? (
+                    <span aria-label="计划模式" className="chat-plan-mode-chip" role="status">
+                      {planTransition === "exiting" ? (
+                        <LoaderCircle aria-hidden="true" className="size-3 animate-spin" />
+                      ) : null}
+                      <span>{planTransition === "exiting" ? "正在退出计划模式" : "计划模式"}</span>
+                      {planTransition === "idle" ? (
+                        <button
+                          aria-label={isGenerating ? "请先停止生成再退出计划模式" : "退出计划模式"}
+                          className="chat-plan-mode-exit"
+                          disabled={isGenerating}
+                          onClick={() => void exitPlanMode()}
+                          title={isGenerating ? "请先停止生成" : "退出计划模式"}
+                          type="button"
+                        >
+                          <X className="size-3" />
+                        </button>
+                      ) : null}
+                    </span>
+                  ) : null}
+                  {chatRoute.kind === "new" ? (
+                    <ButtonGroup className="chat-mode-group shrink-0">
+                      <button
+                        aria-pressed={agentModeSelected}
+                        className={`chat-model-picker !h-7 !shrink-0 !gap-1.5 !whitespace-nowrap !px-2 !text-[11px] ${agentModeSelected ? "is-selected" : ""}`}
+                        disabled={isReadOnly || isAgentsLoading || !defaultAgentId || agentLocked}
+                        onClick={() => {
+                          modeSelectionRef.current = true;
+                          setSelectedAgentId(defaultAgentId);
+                        }}
+                        title="使用 Agent 模式"
+                        type="button"
+                      >
+                        Agent模式
+                      </button>
+                      <button
+                        aria-pressed={!agentModeSelected}
+                        className={`chat-model-picker !h-7 !shrink-0 !gap-1.5 !whitespace-nowrap !px-2 !text-[11px] ${!agentModeSelected ? "is-selected" : ""}`}
+                        disabled={isReadOnly || agentLocked}
+                        onClick={() => {
+                          modeSelectionRef.current = true;
+                          setSelectedAgentId("");
+                        }}
+                        title="使用手动模式"
+                        type="button"
+                      >
+                        手动模式
+                      </button>
+                    </ButtonGroup>
+                  ) : null}
+                  {selectedAgentId ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          aria-label="选择 Agent"
+                          className="chat-model-picker !h-7 !gap-1.5 !px-2 !text-[11px]"
+                          disabled={isReadOnly || isAgentsLoading || agentLocked}
+                          title="选择 Agent"
+                          type="button"
+                        >
+                          <Bot className="size-3.5" />
+                          <span className="chat-picker-value !text-[11px]">
+                            {configuredAgents.find((agent) => agent.id === selectedAgentId)?.name ??
+                              "Agent 已失效"}
+                          </span>
+                          <ChevronDown className="size-3.5" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="start"
+                        className="chat-select-menu !text-[11px]"
+                        side="top"
+                        sideOffset={8}
+                      >
+                        <DropdownMenuRadioGroup
+                          value={selectedAgentId}
+                          onValueChange={(value) => {
+                            const agent = configuredAgents.find((item) => item.id === value);
+                            if (agent?.modelId) setSelectedModelId(agent.modelId);
+                            modeSelectionRef.current = true;
+                            setSelectedAgentId(value);
+                          }}
+                        >
+                          {configuredAgents.map((agent) => (
+                            <DropdownMenuRadioItem
+                              className="!py-1 !text-[11px]"
+                              key={agent.id}
+                              value={agent.id}
+                            >
+                              {agent.name || "未命名 Agent"}
+                            </DropdownMenuRadioItem>
+                          ))}
+                        </DropdownMenuRadioGroup>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem asChild className="!py-1 !text-[11px]">
+                          <Link to="/settings/agents">前往 Agent 设置</Link>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : null}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        aria-label="Sandbox permissions"
+                        className="chat-sandbox-picker !h-7 !gap-1.5 !px-2 !text-[11px]"
+                        disabled={isReadOnly}
+                        title="Sandbox permissions"
+                        type="button"
+                      >
+                        <ShieldCheck className="size-3.5" />
+                        <span className="chat-picker-value !text-[11px]">
+                          {CHAT_SANDBOX_MODE_LABELS[sandboxMode]}
+                        </span>
+                        <ChevronDown className="size-3.5" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="start"
+                      className="chat-select-menu !text-[11px]"
+                      side="top"
+                      sideOffset={8}
+                    >
+                      <DropdownMenuRadioGroup
+                        value={sandboxMode}
+                        onValueChange={(value) =>
+                          updateSandboxMode(normalizeChatSandboxMode(value))
+                        }
+                      >
+                        {Object.entries(CHAT_SANDBOX_MODE_LABELS).map(([value, label]) => (
+                          <DropdownMenuRadioItem
+                            className="!py-1 !text-[11px]"
+                            key={value}
+                            value={value}
+                          >
+                            <span className="flex min-w-0 flex-col gap-0.5">
+                              <span>{label}</span>
+                              <span
+                                className={`font-normal text-[10px] leading-4 ${
+                                  value === "full"
+                                    ? "text-amber-600 dark:text-amber-400"
+                                    : "text-muted-foreground"
+                                }`}
+                              >
+                                {CHAT_SANDBOX_MODE_DESCRIPTIONS[value as ChatSandboxMode]}
+                              </span>
+                            </span>
+                          </DropdownMenuRadioItem>
+                        ))}
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  {!selectedAgentId ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          aria-label="选择模型"
+                          className="chat-model-picker !h-7 !gap-1.5 !px-2 !text-[11px]"
+                          disabled={
+                            isReadOnly ||
+                            isModelsLoading ||
+                            models.length === 0 ||
+                            Boolean(selectedAgentId)
+                          }
+                          type="button"
+                        >
+                          <Settings2 className="size-3.5" />
+                          <span className="chat-picker-value !text-[11px]">
+                            {selectedModel ? formatModelLabel(selectedModel) : "未配置模型"}
+                          </span>
+                          <ChevronDown className="size-3.5" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="start"
+                        className="chat-select-menu !text-[11px]"
+                        side="top"
+                        sideOffset={8}
+                      >
+                        <DropdownMenuRadioGroup
+                          value={selectedModel?.id ?? ""}
+                          onValueChange={setSelectedModelId}
+                        >
+                          {models.length === 0 ? (
+                            <DropdownMenuItem className="!py-1 !text-[11px]" disabled>
+                              未配置模型
+                            </DropdownMenuItem>
+                          ) : (
+                            sortedModels.map((model) => (
+                              <DropdownMenuRadioItem
+                                className="!py-1 !text-[11px]"
+                                key={model.id}
+                                value={model.id}
+                              >
+                                {formatModelLabel(model)}
+                              </DropdownMenuRadioItem>
+                            ))
+                          )}
+                        </DropdownMenuRadioGroup>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem asChild className="!py-1 !text-[11px]">
+                          <Link to="/settings/models">前往模型设置</Link>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : null}
+                  {!selectedAgentId ? (
+                    <ChatToolsPicker
+                      disabled={isReadOnly}
+                      open={toolsOpen}
+                      settings={chatTools}
+                      workspaceAvailable={Boolean(selectedCwd.trim())}
+                      onOpenChange={setToolsOpen}
+                      onSettingsChange={updateChatTools}
+                      mcpServers={mcpServers}
+                      selectedMcpIds={selectedMcpIds}
+                      onMcpSelectionChange={updateMcpSelection}
+                    />
+                  ) : null}
+                  {!selectedAgentId ? (
+                    <ChatSkillsPicker
+                      disabled={isReadOnly}
+                      open={skillsOpen}
+                      onOpenChange={setSkillsOpen}
+                      onSelectionChange={updateSkillSelection}
+                      selectedSkillIds={selectedSkillIds}
+                      skills={allowedSkills}
+                    />
+                  ) : null}
+                  {configuredModels?.length === 0 && (
+                    <Link className="chat-settings-link" to="/settings/models">
+                      配置模型
+                    </Link>
+                  )}
+                </div>
+                <div className="chat-composer-actions">
+                  <ChatContextPopover
+                    cacheReadTokens={currentContextUsage?.cacheReadTokens}
+                    inputContext={selectedModel?.inputContext}
+                    inputTokens={currentContextUsage?.inputTokens}
+                    isEstimated={currentContextUsage?.source === "estimate"}
+                    isGenerating={isGenerating}
+                    modelName={selectedModel?.name}
+                  />
+                  <Button
+                    aria-label={stopPending ? "正在停止" : isGenerating ? "停止生成" : "发送消息"}
+                    className="chat-send-button !size-9 !rounded-[10px]"
+                    disabled={
+                      isReadOnly ||
+                      stopPending ||
+                      (((!input.trim() && !pendingAttachments.some((a) => a.status === "ready")) ||
+                        (!selectedModel && !developerSettings.mockLongResponse) ||
+                        pendingAttachments.some((a) => a.status === "uploading") ||
+                        planTransition !== "idle") &&
+                        !isGenerating)
+                    }
+                    onClick={isGenerating ? stopCurrentRunFromButton : submitMessage}
+                    size="icon"
+                    title={stopPending ? "正在停止" : isGenerating ? "停止生成" : "发送消息"}
+                    type="button"
+                  >
+                    {stopPending ? (
+                      <LoaderCircle className="size-4 animate-spin" />
+                    ) : isGenerating ? (
+                      <Square className="size-4 fill-current" />
+                    ) : (
+                      <ArrowUp className="size-4" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+        <GitCommitDialog
+          branch={workspaceGitQuery.data?.summary?.branch}
+          hasChanges={Boolean(workspaceGitQuery.data?.summary?.filesChanged)}
+          canPush={Boolean(workspaceGitQuery.data?.summary?.ahead)}
+          insertions={workspaceGitQuery.data?.summary?.insertions ?? 0}
+          deletions={workspaceGitQuery.data?.summary?.deletions ?? 0}
+          filesChanged={workspaceGitQuery.data?.summary?.filesChanged ?? 0}
+          onOpenChange={setGitCommitOpen}
+          onSuccess={() => void workspaceGitQuery.refetch()}
+          open={gitCommitOpen}
+          workspaceId={workspaceKey}
+          cwd={selectedCwd}
+        />
+        <ChatContextDialog
+          promptKey={promptKey}
+          loadPrompt={async () =>
+            systemPromptRef.current ??
+            (await loadChatServerSystemPromptPreview(sessionId, await getPromptInput()))
+          }
+          sessionId={sessionId}
+          onOpenChange={setContextOpen}
+          open={contextOpen}
+        />
+        <ChatSettingsDialog
+          onOpenChange={setChatLayoutDialogOpen}
+          onSettingsChange={({ layout }) => changeChatLayout(layout)}
+          open={chatLayoutDialogOpen}
+          settings={{ layout: chatLayout }}
+        />
+        <ChatToolLogDialog messages={messages} onOpenChange={setToolLogOpen} open={toolLogOpen} />
+        <ChatTitleDialog
+          canGenerate={canRegenerateConversationTitle}
+          onGenerate={regenerateConversationTitle}
+          onOpenChange={setTitleDialogOpen}
+          onSave={saveConversationTitle}
+          open={titleDialogOpen}
+          title={sessionTitle}
+        />
+        <AlertDialog
+          onOpenChange={(open) => {
+            if (open) environmentImportMutation.reset();
+            setEnvironmentImportOpen(open);
+          }}
+          open={environmentImportOpen}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>导入本机开发工具？</AlertDialogTitle>
+              <AlertDialogDescription>
+                ChatDesk 会启动一次当前登录
+                Shell，并执行其启动配置。只解析白名单内开发工具的绝对路径；不会保存其他环境变量、Token
+                或 API Key。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            {environmentImportMutation.isError ? (
+              <p className="text-destructive text-sm" role="alert">
+                {environmentImportMutation.error instanceof Error
+                  ? environmentImportMutation.error.message
+                  : "开发工具导入失败。"}
+              </p>
+            ) : null}
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={environmentImportMutation.isPending}>
+                取消
+              </AlertDialogCancel>
+              <AlertDialogAction
+                disabled={environmentImportMutation.isPending}
+                onClick={(event) => {
+                  event.preventDefault();
+                  environmentImportMutation.mutate();
+                }}
+              >
+                {environmentImportMutation.isPending ? (
+                  <LoaderCircle className="size-4 animate-spin" />
+                ) : (
+                  <Download className="size-4" />
+                )}
+                确认导入
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        <Outlet />
+      </section>
+    </ChatLayoutComponent>
   );
 }
 
