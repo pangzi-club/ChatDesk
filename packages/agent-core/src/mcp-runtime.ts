@@ -1,6 +1,7 @@
 import { createMCPClient, type MCPClient } from "@ai-sdk/mcp";
 import { Experimental_StdioMCPTransport as StdioMCPTransport } from "@ai-sdk/mcp/mcp-stdio";
 import type { ToolSet } from "ai";
+import { compressChatImage } from "./image-compress.ts";
 
 type EnvironmentVariable = { name: string; value: string };
 
@@ -57,6 +58,59 @@ function stdioConfig(server: McpServerConfig) {
   };
 }
 
+type McpImageContent = { type: "image"; data: string; mimeType: string; [key: string]: unknown };
+
+function isImageContent(value: unknown): value is McpImageContent {
+  return (
+    Boolean(value) &&
+    typeof value === "object" &&
+    (value as { type?: unknown }).type === "image" &&
+    typeof (value as { data?: unknown }).data === "string" &&
+    typeof (value as { mimeType?: unknown }).mimeType === "string"
+  );
+}
+
+export async function compressMcpToolResult(result: unknown): Promise<unknown> {
+  if (!result || typeof result !== "object") return result;
+  const content = (result as { content?: unknown }).content;
+  if (!Array.isArray(content)) return result;
+  let changed = false;
+  const nextContent = await Promise.all(
+    content.map(async (item) => {
+      if (!isImageContent(item)) return item;
+      let bytes: Buffer;
+      try {
+        bytes = Buffer.from(item.data, "base64");
+      } catch {
+        return item;
+      }
+      const compressed = await compressChatImage(bytes);
+      if (!compressed.changed) return item;
+      changed = true;
+      return {
+        ...item,
+        data: compressed.bytes.toString("base64"),
+        mimeType: compressed.mediaType ?? item.mimeType,
+      };
+    }),
+  );
+  return changed ? { ...(result as Record<string, unknown>), content: nextContent } : result;
+}
+
+function wrapMcpTool(toolValue: ToolSet[string]): ToolSet[string] {
+  const toolWithExecute = toolValue as ToolSet[string] & {
+    execute?: (...args: unknown[]) => unknown;
+  };
+  if (typeof toolWithExecute.execute !== "function") return toolValue;
+  return {
+    ...toolValue,
+    execute: async function (this: unknown, ...args: unknown[]) {
+      const result = await toolWithExecute.execute?.apply(this, args);
+      return compressMcpToolResult(result);
+    },
+  } as ToolSet[string];
+}
+
 export class McpRuntime {
   private readonly clients = new Map<string, MCPClient>();
   private readonly starting = new Map<string, Promise<MCPClient>>();
@@ -81,7 +135,7 @@ export class McpRuntime {
       if (!client) continue;
       const serverTools = await client.tools({ schemas: "automatic" });
       for (const [name, tool] of Object.entries(serverTools)) {
-        tools[namespaceToolName(server.id, name)] = tool as ToolSet[string];
+        tools[namespaceToolName(server.id, name)] = wrapMcpTool(tool as ToolSet[string]);
       }
     }
     return tools;

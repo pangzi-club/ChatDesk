@@ -35,7 +35,7 @@ describe("semantic checkpoint context", () => {
           role: "tool",
           content: [{ type: "image", data: image, mimeType: "image/png", width: 320, height: 200 }],
         },
-      ] as ModelMessage[],
+      ] as unknown as ModelMessage[],
     });
     assert.doesNotMatch(prompt, new RegExp(image));
     assert.match(prompt, /"omittedFromCheckpoint":true/);
@@ -46,7 +46,9 @@ describe("semantic checkpoint context", () => {
   it("bounds oversized tool text in checkpoint prompts", () => {
     const oversized = `${"head ".repeat(6_000)}TAIL_MARKER`;
     const prompt = buildCheckpointPrompt({
-      messages: [{ role: "tool", content: [{ type: "text", text: oversized }] }] as ModelMessage[],
+      messages: [
+        { role: "tool", content: [{ type: "text", text: oversized }] },
+      ] as unknown as ModelMessage[],
     });
     assert.ok(prompt.length < oversized.length);
     assert.match(prompt, /TAIL_MARKER/);

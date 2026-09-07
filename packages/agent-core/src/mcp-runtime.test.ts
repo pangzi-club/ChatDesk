@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { McpRuntime } from "./mcp-runtime.ts";
+import { compressMcpToolResult, McpRuntime } from "./mcp-runtime.ts";
 
 const { createMCPClientMock, transportConfigs } = vi.hoisted(() => ({
   createMCPClientMock: vi.fn(),
@@ -38,6 +38,27 @@ describe("McpRuntime", () => {
   });
 
   afterEach(() => vi.unstubAllEnvs());
+
+  it("compresses inline MCP image content", async () => {
+    const result = await compressMcpToolResult({
+      content: [
+        {
+          type: "image",
+          data: Buffer.from("not really an image").toString("base64"),
+          mimeType: "image/png",
+        },
+      ],
+    });
+    expect(result).toEqual({
+      content: [
+        {
+          type: "image",
+          data: Buffer.from("not really an image").toString("base64"),
+          mimeType: "image/png",
+        },
+      ],
+    });
+  });
 
   it("loads selected servers and namespaces their tools", async () => {
     const client = createClient();
