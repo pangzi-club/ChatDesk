@@ -36,6 +36,7 @@ Durable project-specific notes live in [`MEMORY.md`](MEMORY.md). Read it when lo
 
 - Never start or open a development server.
 - Never attempt to repair, recreate, reinstall, or otherwise modify `node_modules`; report dependency issues instead.
+- For UI verification, reuse an Electron instance that is already running (for example, the user's `pnpm dev` session). Inspect and interact with it through the available desktop automation, using its visible UI state to verify pages and workflows. Do not launch another Electron instance or development server for this purpose.
 
 ## Desktop Runtime
 
