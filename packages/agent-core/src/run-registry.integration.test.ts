@@ -11,6 +11,7 @@ import { EventHub } from "./events.ts";
 import { PlanStore } from "./plan-store.ts";
 import type { ChatRunSummary, ChatSession, ServerEvent } from "./protocol.ts";
 import { RunRegistry } from "./run-registry.ts";
+import { SKILL_SUGGESTION_TEXT } from "./skill-suggestion.ts";
 import { SessionStore } from "./store.ts";
 
 type MockStreamResult = Awaited<ReturnType<MockLanguageModelV4["doStream"]>>;
@@ -211,6 +212,55 @@ async function finishRun(
 }
 
 describe("complete agent runs", () => {
+  it("persists and publishes a skill suggestion and carries confirmation into the next run", async () => {
+    const current = await fixture(
+      [textResult("Completed.", "first"), textResult("Ready to create the skill.", "second")],
+      {
+        planMode: "apply",
+        messages: [
+          {
+            id: "previous",
+            role: "assistant",
+            parts: [{ type: "text", text: "Previous work." }],
+            metadata: { runSummary: { runId: "previous", toolCallCount: 11 } },
+          },
+          { id: "user", role: "user", parts: [{ type: "text", text: "Finish the work." }] },
+        ],
+      },
+    );
+    await finishRun(current);
+    const saved = await current.store.get("session-1");
+    assert.ok(saved);
+    const finalMessage = saved.messages.at(-1);
+    assert.ok(finalMessage);
+    assert.equal((finalMessage.metadata as { skillSuggestion?: boolean }).skillSuggestion, true);
+    assert.equal(finalMessage?.parts.at(-1)?.type, "text");
+    assert.ok(JSON.stringify(finalMessage).includes(SKILL_SUGGESTION_TEXT));
+    const update = current.events.published
+      .filter((event) => event.type === "message.updated")
+      .at(-1);
+    assert.deepEqual(JSON.parse(JSON.stringify(update?.message)), finalMessage);
+
+    await current.store.save({
+      ...saved,
+      messages: [
+        ...saved.messages,
+        { id: "confirmation", role: "user", parts: [{ type: "text", text: "可以" }] },
+      ],
+    });
+    await finishRun(current);
+    const next = await current.store.get("session-1");
+    assert.ok(next);
+    assert.ok(next.systemPrompt?.text.includes("builtin:skill-creator"));
+    assert.ok(next.systemPrompt?.text.includes("不要把对其他问题的肯定回答当作创建授权"));
+    assert.equal(JSON.stringify(next.messages).split(SKILL_SUGGESTION_TEXT).length - 1, 1);
+    assert.equal(current.model.doStreamCalls.length, 2);
+    assert.ok(JSON.stringify(current.model.doStreamCalls[1].prompt).includes("可以"));
+    assert.ok(
+      JSON.stringify(current.model.doStreamCalls[1].prompt).includes(SKILL_SUGGESTION_TEXT),
+    );
+  });
+
   it("publishes and persists cache usage from the latest model step", async () => {
     const current = await fixture(
       [

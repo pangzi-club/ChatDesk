@@ -72,6 +72,7 @@ import {
 } from "./sandbox-boundary-reviewer.ts";
 import { runSandboxedShell } from "./sandbox-exec.ts";
 import { SandboxReviewLogStore } from "./sandbox-review-log.ts";
+import { appendSkillSuggestion, skillSuggestionInstructions } from "./skill-suggestion.ts";
 import { createReadSkillTool, loadBuiltinSkillsCatalog, SKILL_TOOL_NAME } from "./skill-tool.ts";
 import type { SessionStore } from "./store.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
@@ -680,7 +681,12 @@ export class RunRegistry {
       planInstructions,
       todoToolInstructions: TODO_TOOL_INSTRUCTIONS,
       taskToolInstructions: canCreateTask ? CREATE_TASK_TOOL_INSTRUCTIONS : "",
-      skillToolInstructions: await loadBuiltinSkillsCatalog(),
+      skillToolInstructions: [
+        await loadBuiltinSkillsCatalog(),
+        skillSuggestionInstructions(messages),
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
     });
     const session: ChatSession = {
       ...current,
@@ -1526,11 +1532,14 @@ export class RunRegistry {
           ),
         );
       }
-      const nextMessages = mergeLatestMessageMetadata(persistedMessages, {
+      let nextMessages = mergeLatestMessageMetadata(persistedMessages, {
         ...(isRecord(latestMessageMetadata) ? latestMessageMetadata : {}),
         ...(metrics.usage ? { usage: metrics.usage } : {}),
         runSummary,
       });
+      if ((!session.kind || session.kind === "chat") && !session.source) {
+        nextMessages = appendSkillSuggestion(nextMessages, completion.outcome);
+      }
       const current = (await this.store.get(sessionId)) ?? session;
       const updated: ChatSession = {
         ...current,
