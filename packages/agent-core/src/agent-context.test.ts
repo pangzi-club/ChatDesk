@@ -43,6 +43,16 @@ describe("semantic checkpoint context", () => {
     assert.match(prompt, /"width":320/);
   });
 
+  it("bounds oversized tool text in checkpoint prompts", () => {
+    const oversized = `${"head ".repeat(6_000)}TAIL_MARKER`;
+    const prompt = buildCheckpointPrompt({
+      messages: [{ role: "tool", content: [{ type: "text", text: oversized }] }] as ModelMessage[],
+    });
+    assert.ok(prompt.length < oversized.length);
+    assert.match(prompt, /TAIL_MARKER/);
+    assert.match(prompt, /checkpoint omitted/);
+  });
+
   it("keeps recent messages and counts checkpoint instructions in the estimate", () => {
     const messages = Array.from({ length: 10 }, (_, index) => ({
       role: index % 2 ? "assistant" : "user",

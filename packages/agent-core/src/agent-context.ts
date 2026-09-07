@@ -5,6 +5,7 @@ import { type ModelMessage, pruneMessages } from "ai";
 export const CHECKPOINT_OUTPUT_TOKENS = 4_000;
 export const RECENT_MODEL_MESSAGE_COUNT = 6;
 export const DEFAULT_CONTEXT_COMPACTION_WINDOW_MINUTES = 30;
+export const MAX_CHECKPOINT_TEXT_CHARS = 24_000;
 
 export type ContextCompactionResult = {
   messages: ModelMessage[];
@@ -38,6 +39,13 @@ function visibleValue(value: unknown): unknown {
           !item || typeof item !== "object" || (item as { type?: unknown }).type !== "reasoning",
       )
       .map(visibleValue);
+  }
+  if (typeof value === "string") {
+    if (value.length <= MAX_CHECKPOINT_TEXT_CHARS) return value;
+    const suffix = `\n[checkpoint omitted ${value.length - MAX_CHECKPOINT_TEXT_CHARS} chars]`;
+    const headLength = MAX_CHECKPOINT_TEXT_CHARS - suffix.length;
+    const head = Math.ceil(headLength * 0.75);
+    return `${value.slice(0, head)}${suffix}${value.slice(-(headLength - head))}`;
   }
   if (!value || typeof value !== "object") return value;
   if ((value as { type?: unknown }).type === "image") {
