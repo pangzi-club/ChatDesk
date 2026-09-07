@@ -1008,6 +1008,10 @@ function ChatPage() {
           }
         },
         onRunFinished: ({ sessionId: eventSessionId, runSummary }) => {
+          if (runSummary.touchedPaths?.some((file) => file.includes("/.agents/skills/"))) {
+            void queryClient.invalidateQueries({ queryKey: ["skills-available"] });
+            void queryClient.invalidateQueries({ queryKey: ["available-skills"] });
+          }
           liveDraftRenderBatcher.flush(eventSessionId);
           if (activeSessionRef.current === eventSessionId) {
             attachedStreamSessionRef.current = null;
@@ -1079,7 +1083,7 @@ function ChatPage() {
       cleanup?.();
       liveDraftRenderBatcher.cancelAll();
     };
-  }, [liveDraftRenderBatcher, setMessages]);
+  }, [liveDraftRenderBatcher, setMessages, queryClient]);
 
   useEffect(() => {
     const handleDisplaySettingsChange = (event: Event) => {

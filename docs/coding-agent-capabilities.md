@@ -61,6 +61,7 @@
 ### ✅ 工具生态
 - **MCP**：`mcp-runtime.ts` 支持 stdio 子进程 + remote HTTP 两种 transport，start / listTools / callTool / stop / test 全套，手写 JSON-RPC 2.0。
 - **Skills**：`skills-store.ts` 扫描本机 `~/.agents/skills` 的 `SKILL.md`，另扫描随应用打包的内置 skill（`packages/agent-core/skills`，打包后在 worker 旁的 `skills/`）。当前内置：`chatdesk-doc`、`skill-creator`、`skill-installer`。本机 skill 默认全部启用，用户可在设置中全局关闭；Chat 内可按会话临时取消。启用后全文注入。内置 skill 只把 name/description 放进 system prompt，正文通过 `read_skill` 按需读取。
+  `create_skill` 接收名称、描述和 Markdown 正文，生成 frontmatter，仅创建 `~/.agents/skills/<name>/SKILL.md`；拒绝同名目录、非法名称和符号链接目录。Ask 模式需要工具审批，Auto / Full 模式允许该受限操作，计划模式不提供工具。工具不额外调用模型，沿用主运行的调用记录；创建路径计入 run summary，桌面端在运行结束后刷新 Skills 查询。普通文件工具的受保护路径规则保持不变。
 - **内置工具**：web_search（responses 协议内置）、图片生成。
 
 ### 内置工具目录

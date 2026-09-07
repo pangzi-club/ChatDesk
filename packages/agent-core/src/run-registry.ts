@@ -35,6 +35,7 @@ import { type AiUsageLogStore, normalizeAiUsage } from "./ai-usage-log.ts";
 import { createBusinessTools } from "./business-tools.ts";
 import type { ChatConfigStore } from "./chat-config.ts";
 import { createClientTools } from "./client-tools.ts";
+import { CREATE_SKILL_TOOL_NAME, createSkillTool } from "./create-skill.ts";
 import type { EventHub } from "./events.ts";
 import type { JobRegistry } from "./job-registry.ts";
 import { createConfiguredLanguageModel, supportsRequiredToolChoice } from "./model-adaptor.ts";
@@ -927,6 +928,7 @@ export class RunRegistry {
                 }
               : {
                   todo_write: createTodoTool(),
+                  [CREATE_SKILL_TOOL_NAME]: createSkillTool(),
                   ...(canCreateTask
                     ? {
                         [CREATE_TASK_TOOL_NAME]: createTaskTool({
@@ -1813,7 +1815,12 @@ function collectTouchedPaths(paths: Set<string>, toolName: string, value: unknow
   const unwrapped = unwrapToolOutput(value);
   if (!unwrapped || typeof unwrapped !== "object") return;
   const output = unwrapped as Record<string, unknown>;
-  if ((toolName === "write_file" || toolName === "edit_file") && typeof output.path === "string") {
+  if (
+    (toolName === "write_file" ||
+      toolName === "edit_file" ||
+      toolName === CREATE_SKILL_TOOL_NAME) &&
+    typeof output.path === "string"
+  ) {
     paths.add(output.path);
   }
   if (toolName === "apply_patch" && Array.isArray(output.changedFiles)) {
@@ -1849,6 +1856,9 @@ function createToolApproval(options: {
     toolCall: { toolCallId?: string; toolName?: string; input?: unknown } | undefined;
   }) => {
     const toolName = toolCall?.toolName;
+    if (toolName === CREATE_SKILL_TOOL_NAME) {
+      return mode === "ask" ? ("user-approval" as const) : ("not-applicable" as const);
+    }
     if (!toolName || !isWorkspaceTool(toolName)) return "not-applicable" as const;
 
     const toolCallId = toolCall.toolCallId;

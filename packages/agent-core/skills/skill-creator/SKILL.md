@@ -18,11 +18,11 @@ description: 为 ChatDesk 创建或改写本机 SKILL.md。用户说要写 skill
 
 1. 用 1–2 个问题确认：做什么、用户会怎么说、要不要改现有 skill。
 2. 目录名：小写字母、数字、连字符，与 `name` 一致。
-3. 默认写到 `$HOME/.agents/skills/<name>/SKILL.md`。已有同名目录则先问是否覆盖。
-4. 写入后核对 frontmatter 只有 `name` 和 `description`；`description` 必须包含用途和触发语。
+3. 调用 `create_skill`，传入 `name`、`description` 和不含 frontmatter 的 Markdown `body`。工具固定写到 `$HOME/.agents/skills/<name>/SKILL.md`，自动生成 frontmatter。
+4. `description` 必须包含用途和触发语。同名目录会报冲突，不会覆盖；与用户确认新名称。修改已有 skill 不属于该工具能力，不要用创建操作覆盖。
 5. 告诉用户启用步骤，不要代为打开开关：Settings → Skills → 刷新。新 skill 默认启用，可在 Chat 工具栏按会话临时关闭。
 
-若沙箱拦住写入 `$HOME/.agents`，说明需要批准，或把文件内容交给用户自行保存。
+Ask 模式的创建操作走工具审批，计划模式不提供创建工具。不要通过普通文件工具或 Bash 重试被拒绝的创建操作。
 
 ## 参考
 

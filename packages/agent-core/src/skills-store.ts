@@ -6,6 +6,19 @@ import { fileURLToPath } from "node:url";
 
 const MAX_SKILL_FILE_BYTES = 512 * 1024;
 
+function parseFrontmatterValue(value: string) {
+  const trimmed = value.trim();
+  if (trimmed.startsWith('"')) {
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (typeof parsed === "string") return parsed;
+    } catch {
+      // Preserve compatibility with existing hand-written frontmatter.
+    }
+  }
+  return trimmed.replace(/^['"]|['"]$/g, "");
+}
+
 export const BUILTIN_SKILL_SOURCE = "builtin";
 
 export type ServerSkill = {
@@ -79,21 +92,16 @@ function parseSkill(file: string, source: string): Promise<ServerSkill | null> {
       for (const line of content.split(/\r?\n/).slice(0, 80)) {
         const trimmed = line.trim();
         if (trimmed === "---") {
+          if (frontmatter) break;
           frontmatter = !frontmatter;
         } else if (frontmatter && trimmed.startsWith("name:")) {
-          const parsedName = trimmed
-            .slice(5)
-            .trim()
-            .replace(/^['"]|['"]$/g, "");
+          const parsedName = parseFrontmatterValue(trimmed.slice(5));
           if (parsedName) {
             name = parsedName;
             hasName = true;
           }
         } else if (frontmatter && trimmed.startsWith("description:")) {
-          description = trimmed
-            .slice(12)
-            .trim()
-            .replace(/^['"]|['"]$/g, "");
+          description = parseFrontmatterValue(trimmed.slice(12));
         }
       }
       if (!hasName) return null;
