@@ -5057,7 +5057,7 @@ button.chat-task-item-summary:focus-visible .chat-task-item-chevron,
   flex-shrink: 0;
   border-bottom-color: var(--chat-line);
   background: var(--chat-surface);
-  padding: 2px 22px auto;
+  padding: 0 22px;
   -webkit-app-region: drag;
 }
 
@@ -5093,9 +5093,10 @@ button.chat-task-item-summary:focus-visible .chat-task-item-chevron,
   transform: translateY(-50%);
 }
 
-/* Keep both toolbars on the same center line: Chat actions left, shell search actions right. */
+/* Shell controls must remain above the opaque Chat header in every layout. */
 .chat-top-actions-layer {
   height: 48px;
+  z-index: 40;
 }
 
 /* Traffic-light spacer (72px) + toggle (28px) + gap, so the title does not cover the button. */
@@ -5111,6 +5112,11 @@ button.chat-task-item-summary:focus-visible .chat-task-item-chevron,
   width: 28px;
   height: 28px;
   padding: 0;
+}
+
+.chat-top-actions-layer .top-actions svg {
+  width: 15px;
+  height: 15px;
 }
 
 .chat-content,
@@ -5674,7 +5680,6 @@ button.chat-task-item-summary:focus-visible .chat-task-item-chevron,
   background: color-mix(in srgb, var(--background) 93%, transparent);
 }
 .chat-layout-geek :where(.chat-header) {
-  height: 44px;
   border-bottom-style: dashed;
   background: color-mix(in srgb, var(--background) 88%, transparent);
   backdrop-filter: blur(4px);
