@@ -40,6 +40,24 @@ function visibleValue(value: unknown): unknown {
       .map(visibleValue);
   }
   if (!value || typeof value !== "object") return value;
+  if ((value as { type?: unknown }).type === "image") {
+    const image = value as Record<string, unknown>;
+    const payload = image.data ?? image.image;
+    const payloadBytes =
+      typeof payload === "string"
+        ? Math.ceil((payload.replace(/^data:image\/[^;]+;base64,/, "").length * 3) / 4)
+        : payload instanceof Uint8Array
+          ? payload.byteLength
+          : undefined;
+    return {
+      type: "image",
+      ...(typeof image.mimeType === "string" ? { mimeType: image.mimeType } : {}),
+      ...(typeof image.width === "number" ? { width: image.width } : {}),
+      ...(typeof image.height === "number" ? { height: image.height } : {}),
+      ...(payloadBytes !== undefined ? { omittedBytes: payloadBytes } : {}),
+      omittedFromCheckpoint: true,
+    };
+  }
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>)
       .filter(([key]) => !["providerMetadata", "providerOptions", "reasoning"].includes(key))

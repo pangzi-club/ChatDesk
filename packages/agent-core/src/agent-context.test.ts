@@ -27,6 +27,22 @@ describe("semantic checkpoint context", () => {
     assert.match(prompt, /# Exact plan\nDo A/);
   });
 
+  it("omits image payloads from checkpoint prompts while retaining metadata", () => {
+    const image = Buffer.from("large-image-payload").toString("base64");
+    const prompt = buildCheckpointPrompt({
+      messages: [
+        {
+          role: "tool",
+          content: [{ type: "image", data: image, mimeType: "image/png", width: 320, height: 200 }],
+        },
+      ] as ModelMessage[],
+    });
+    assert.doesNotMatch(prompt, new RegExp(image));
+    assert.match(prompt, /"omittedFromCheckpoint":true/);
+    assert.match(prompt, /"mimeType":"image\/png"/);
+    assert.match(prompt, /"width":320/);
+  });
+
   it("keeps recent messages and counts checkpoint instructions in the estimate", () => {
     const messages = Array.from({ length: 10 }, (_, index) => ({
       role: index % 2 ? "assistant" : "user",
