@@ -69,6 +69,28 @@ The server enforces token validation on every request except `/health` and CORS 
 
 The app bundles only Chromium's headless shell. Updating Playwright requires rebuilding the browser resource and retesting the packaged browser tools.
 
+## Computer Use
+
+Computer Use is an optional macOS capability. The Electron main process owns the
+embedded Cua Driver host and passes its generated MCP stdio configuration to the
+Chat Server. The npm SDK does not contain the `cua-driver` executable.
+
+For local development, install Cua Driver and grant ChatDesk access under
+System Settings > Privacy & Security > Accessibility and Screen Recording. The
+settings page reports the two grants separately and opens these panes when
+requested. A custom executable can be selected with `CHATDESK_CUA_DRIVER`.
+
+For a packaged build, stage the signed executable while building sidecars:
+
+```sh
+CHATDESK_CUA_DRIVER=/path/to/cua-driver pnpm desktop:build
+```
+
+The sidecar script copies it to the app's `Resources/binaries` directory and
+preserves its executable bit. Sign and notarize the driver before signing the
+enclosing Electron application. Builds without a staged binary remain valid but
+show Computer Use as unavailable until a compatible driver is installed.
+
 Electron native modules, including ONNX Runtime and Sharp, are unpacked from asar so their `.node` binaries can be loaded by the Electron main process. Each macOS artifact must be built on a runner matching its target architecture; do not cross-build the native runtime from Rosetta.
 
 This layout assumes direct DMG or website distribution without macOS App Sandbox. A future App Store build would need a container-backed data location.

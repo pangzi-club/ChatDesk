@@ -5,6 +5,15 @@ const IPC_CHANNEL = "chatdesk:invoke";
 const IPC_EVENT_PREFIX = "chatdesk:event:";
 
 type DesktopUserStoreFile = "settings.json" | "bookmarks.json";
+type ComputerUseStatus = {
+  supported: boolean;
+  enabled: boolean;
+  driverInstalled: boolean;
+  driverPath: string | null;
+  hostRunning: boolean;
+  permissions: { accessibility: boolean; screenRecording: boolean };
+  error: string | null;
+};
 
 type DesktopBridge = {
   runtime: "electron";
@@ -23,6 +32,9 @@ type DesktopBridge = {
     onlyWhenWindowUnfocused?: boolean,
   ): Promise<boolean>;
   toggleWindowMaximize(): Promise<void>;
+  computerUseStatus(): Promise<ComputerUseStatus>;
+  setComputerUseEnabled(enabled: boolean): Promise<ComputerUseStatus>;
+  openComputerUsePermissions(): Promise<ComputerUseStatus>;
   httpRequest(request: {
     url: string;
     method: string;
@@ -70,6 +82,15 @@ const bridge: DesktopBridge = {
     }),
   toggleWindowMaximize: () =>
     ipcRenderer.invoke(IPC_CHANNEL, { command: "toggle_window_maximize", args: {} }),
+  computerUseStatus: () =>
+    ipcRenderer.invoke(IPC_CHANNEL, { command: "computer_use_status", args: {} }),
+  setComputerUseEnabled: (enabled: boolean) =>
+    ipcRenderer.invoke(IPC_CHANNEL, {
+      command: "computer_use_set_enabled",
+      args: { enabled },
+    }),
+  openComputerUsePermissions: () =>
+    ipcRenderer.invoke(IPC_CHANNEL, { command: "computer_use_open_permissions", args: {} }),
   httpRequest: (request) => ipcRenderer.invoke(IPC_CHANNEL, { command: "http_request", args: request }),
   terminalSpawn: async (args, onEvent) => {
     const id = crypto.randomUUID();

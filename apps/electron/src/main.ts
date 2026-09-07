@@ -35,6 +35,7 @@ import {
   validateUserStoreFile,
 } from "./ipc-contract.js";
 import { chatServerLaunchArgs, chatServerRuntimeRoot } from "./chat-server-launch.js";
+import { ComputerUseManager } from "./computer-use.js";
 import { performHttpRequest } from "./http-bridge.js";
 import {
   chatServerProxyHeaders,
@@ -141,6 +142,21 @@ let trayIcon: ReturnType<typeof nativeImage.createEmpty> | null = null;
 let supervisor: ChatServerSupervisor | null = null;
 let quitting = false;
 const terminalManager = new TerminalManager((id, event) => emit(`terminal:${id}`, event));
+let chatServerEnvironment: NodeJS.ProcessEnv | null = null;
+const computerUseManager = new ComputerUseManager((status) => {
+  emit("computer-use-status", status);
+  if (
+    status.enabled &&
+    !status.hostRunning &&
+    chatServerEnvironment?.CHATDESK_CUA_MCP_CONFIG &&
+    !quitting
+  ) {
+    delete chatServerEnvironment.CHATDESK_CUA_MCP_CONFIG;
+    void supervisor?.restart().catch((error) => {
+      console.error("Computer Use MCP 配置清理后重启 Chat Server 失败", error);
+    });
+  }
+});
 
 function userDataDirectory() {
   return join(app.getPath("home"), ".chatdesk");
@@ -148,6 +164,10 @@ function userDataDirectory() {
 
 function userStorePath(fileName: DesktopUserStoreFile) {
   return join(userDataDirectory(), fileName);
+}
+
+function computerUseSettingsPath() {
+  return join(userDataDirectory(), "computer-use.json");
 }
 
 function windowStatePath() {
@@ -405,7 +425,7 @@ function chatServerRuntimeEnvironment(worker: string, usingElectronRuntime: bool
   const playwrightBrowsers =
     process.env.CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH ||
     join(process.resourcesPath, "playwright-browsers");
-  return {
+  const environment: NodeJS.ProcessEnv = {
     ...(usingElectronRuntime ? { ELECTRON_RUN_AS_NODE: "1" } : {}),
     ...(existsSync(browserWorker) ? { CHAT_SERVER_BROWSER_WORKER: browserWorker } : {}),
     ...(existsSync(sandboxWorker) ? { CHAT_SERVER_SANDBOX_WORKER: sandboxWorker } : {}),
@@ -414,6 +434,26 @@ function chatServerRuntimeEnvironment(worker: string, usingElectronRuntime: bool
       ? { CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH: playwrightBrowsers }
       : {}),
   };
+  return environment;
+}
+
+function readComputerUseEnabledSetting() {
+  try {
+    const value: unknown = JSON.parse(readFileSync(computerUseSettingsPath(), "utf8"));
+    if (!value || typeof value !== "object") return false;
+    return (value as { enabled?: unknown }).enabled === true;
+  } catch {
+    return false;
+  }
+}
+
+function writeComputerUseEnabledSetting(enabled: boolean) {
+  ensureUserDataDirectory();
+  const target = computerUseSettingsPath();
+  const temporary = `${target}.${process.pid}.tmp`;
+  writeFileSync(temporary, JSON.stringify({ enabled }, null, 2), { mode: 0o600 });
+  renameSync(temporary, target);
+  if (process.platform !== "win32") chmodSync(target, 0o600);
 }
 
 function supervisorPort() {
@@ -459,12 +499,25 @@ async function setupSupervisor() {
   const usingElectronRuntime = nodeRuntime === process.execPath;
   const watch = process.env.CHATDESK_CHAT_SERVER_WATCH === "1";
   const dataDir = join(userDataDirectory(), "chat-server");
+  const environment = chatServerRuntimeEnvironment(worker, usingElectronRuntime);
+  chatServerEnvironment = environment;
+  const enabled = readComputerUseEnabledSetting();
+  computerUseManager.setEnabledState(enabled);
+  if (enabled) {
+    try {
+      await computerUseManager.start();
+      const config = computerUseManager.mcpConfig();
+      if (config) environment.CHATDESK_CUA_MCP_CONFIG = JSON.stringify(config);
+    } catch (error) {
+      console.error("Computer Use 启动失败", error);
+    }
+  }
   supervisor = new ChatServerSupervisor({
     command: nodeRuntime,
     args: chatServerLaunchArgs(worker, watch),
     cwd: dirname(worker),
     dataDir,
-    env: chatServerRuntimeEnvironment(worker, usingElectronRuntime),
+    env: environment,
     production: !watch,
     onOutput: (stream, text) => {
       const write = stream === "stderr" ? console.error : console.log;
@@ -479,6 +532,27 @@ async function setupSupervisor() {
     else clearChatServerRuntime(dataDir);
   });
   await supervisor.start();
+}
+
+async function setComputerUseEnabled(enabled: boolean) {
+  computerUseManager.setEnabledState(enabled);
+  if (enabled) {
+    try {
+      await computerUseManager.start();
+    } catch (error) {
+      computerUseManager.setEnabledState(false);
+      throw error;
+    }
+    const config = computerUseManager.mcpConfig();
+    if (!config || !chatServerEnvironment) throw new Error("Computer Use MCP 配置不可用");
+    chatServerEnvironment.CHATDESK_CUA_MCP_CONFIG = JSON.stringify(config);
+  } else {
+    if (chatServerEnvironment) delete chatServerEnvironment.CHATDESK_CUA_MCP_CONFIG;
+    await computerUseManager.stop();
+  }
+  writeComputerUseEnabledSetting(enabled);
+  if (supervisor) await supervisor.restart();
+  return computerUseManager.status();
 }
 
 function ensureUserDataDirectory() {
@@ -609,6 +683,14 @@ function setupIpc() {
         return supervisor?.restart() ?? null;
       case "chat_server_stop":
         return supervisor?.stop() ?? null;
+      case "computer_use_status":
+        return computerUseManager.status();
+      case "computer_use_set_enabled":
+        if (typeof args.enabled !== "boolean") throw new Error("Computer Use 开关参数无效");
+        return setComputerUseEnabled(args.enabled);
+      case "computer_use_open_permissions":
+        await computerUseManager.openPermissions();
+        return computerUseManager.status();
       case "terminal_spawn":
         return terminalManager.spawnSession({
           id: args.id,
@@ -731,7 +813,9 @@ if (!gotSingleInstanceLock) {
     windowStateSaveTimer = undefined;
     saveWindowState();
     terminalManager.shutdown();
-    void (supervisor?.stop() ?? Promise.resolve()).finally(() => app.exit(0));
+    void (supervisor?.stop() ?? Promise.resolve())
+      .finally(() => computerUseManager.dispose())
+      .finally(() => app.exit(0));
   });
   app.on("window-all-closed", () => undefined);
 }

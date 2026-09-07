@@ -21,6 +21,7 @@ extraResources:
     to: binaries
     filter:
       - node-runtime-*
+      - cua-driver
   - from: ../desktop/assets/icons/32x32.png
     to: icons/32x32.png
   - from: ../desktop/assets/icons/icon.png

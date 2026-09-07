@@ -27,6 +27,21 @@ export type DesktopTerminalSpawnResult = {
   unsubscribe?: () => void;
 };
 
+export type ComputerUsePermissionStatus = {
+  accessibility: boolean;
+  screenRecording: boolean;
+};
+
+export type ComputerUseStatus = {
+  supported: boolean;
+  enabled: boolean;
+  driverInstalled: boolean;
+  driverPath: string | null;
+  hostRunning: boolean;
+  permissions: ComputerUsePermissionStatus;
+  error: string | null;
+};
+
 export type DesktopBridge = {
   runtime: DesktopRuntime;
   call<T>(command: string, args?: Record<string, unknown>): Promise<T>;
@@ -44,6 +59,9 @@ export type DesktopBridge = {
     onlyWhenWindowUnfocused?: boolean,
   ): Promise<boolean>;
   toggleWindowMaximize(): Promise<void>;
+  computerUseStatus?(): Promise<ComputerUseStatus>;
+  setComputerUseEnabled?(enabled: boolean): Promise<ComputerUseStatus>;
+  openComputerUsePermissions?(): Promise<ComputerUseStatus>;
   httpRequest(request: DesktopHttpRequest): Promise<DesktopHttpResponse>;
   terminalSpawn(
     args: { cwd: string; cols: number; rows: number },

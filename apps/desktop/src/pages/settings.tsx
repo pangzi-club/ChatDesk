@@ -1,3 +1,4 @@
+import type { ComputerUseStatus } from "@chatdesk/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -20,6 +21,7 @@ import {
   LoaderCircle,
   MessageSquare,
   Mic,
+  Monitor,
   Package,
   Palette,
   Pencil,
@@ -131,6 +133,7 @@ import {
   loadChatToolsSettings,
   saveChatToolsSettings,
 } from "@/lib/chat-tools";
+import { getDesktopBridge, isDesktop } from "@/lib/desktop-bridge";
 import {
   DEFAULT_DEVELOPER_SETTINGS,
   type DeveloperSettings,
@@ -412,6 +415,7 @@ function SettingsLayout() {
             ["/settings/development", FlaskConical, "开发"],
             ["/settings/keys", KeyRound, "其他密钥"],
             ["/settings/chat-server", Server, "Chat Server"],
+            ["/settings/computer-use", Monitor, "Computer Use 电脑操作 辅助功能 录屏 系统录音"],
             ["/settings/statistics", ChartColumn, "使用量"],
             ["/settings/logs", ScrollText, "活动记录"],
           ]
@@ -553,6 +557,168 @@ function SystemLogsSettingsPage() {
         )}
       </section>
     </>
+  );
+}
+
+export function ComputerUseSettingsPage() {
+  const bridge = getDesktopBridge();
+  const queryClient = useQueryClient();
+  const statusQuery = useQuery<ComputerUseStatus>({
+    queryKey: ["computer-use-status"],
+    refetchOnWindowFocus: true,
+    queryFn: async () => {
+      if (!bridge?.computerUseStatus) {
+        return {
+          supported: false,
+          enabled: false,
+          driverInstalled: false,
+          driverPath: null,
+          hostRunning: false,
+          permissions: { accessibility: false, screenRecording: false },
+          error: null,
+        };
+      }
+      return bridge.computerUseStatus();
+    },
+  });
+  const enableMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      if (!bridge?.setComputerUseEnabled) throw new Error("当前运行环境不支持 Computer Use");
+      return bridge.setComputerUseEnabled(enabled);
+    },
+    onSuccess: (value) => queryClient.setQueryData(["computer-use-status"], value),
+  });
+  const permissionMutation = useMutation({
+    mutationFn: async () => {
+      if (!bridge?.openComputerUsePermissions) throw new Error("当前运行环境不支持权限设置");
+      return bridge.openComputerUsePermissions();
+    },
+    onSuccess: (value) => queryClient.setQueryData(["computer-use-status"], value),
+  });
+  const status = statusQuery.data;
+
+  useEffect(() => {
+    if (!bridge?.subscribe) return;
+    let unsubscribe: (() => void) | undefined;
+    void bridge
+      .subscribe("computer-use-status", (value) => {
+        queryClient.setQueryData(["computer-use-status"], value);
+      })
+      .then((dispose) => {
+        unsubscribe = dispose;
+      });
+    return () => unsubscribe?.();
+  }, [bridge, queryClient]);
+
+  return (
+    <>
+      <SettingsHeading
+        eyebrow="Desktop"
+        title="Computer Use"
+        description="允许 agent 查看和操作当前 macOS 页面。需要授予辅助功能，以及屏幕与系统音频录制权限。"
+      />
+      <section className="rounded-lg border border-border bg-card px-5 py-5">
+        {statusQuery.isPending ? (
+          <div className="space-y-4" aria-busy="true" role="status">
+            <div className="h-12 animate-pulse rounded-md bg-accent" />
+            <div className="h-28 animate-pulse rounded-md bg-accent" />
+          </div>
+        ) : statusQuery.isError ? (
+          <div className="py-10 text-center">
+            <CircleAlert className="mx-auto size-7 text-destructive" />
+            <p className="mt-3 font-medium text-sm">读取 Computer Use 状态失败</p>
+            <p className="mt-1 text-muted-foreground text-xs">请刷新设置页后重试。</p>
+          </div>
+        ) : !isDesktop() || !status?.supported ? (
+          <div className="py-10 text-center">
+            <Monitor className="mx-auto size-7 text-muted-foreground" />
+            <p className="mt-3 font-medium text-sm">当前平台暂不支持</p>
+            <p className="mt-1 text-muted-foreground text-xs">Computer Use 目前需要 macOS。</p>
+          </div>
+        ) : (
+          <div className="space-y-5">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="font-medium text-sm">启用 Computer Use</h2>
+                <p className="mt-1 text-muted-foreground text-xs">
+                  启用后，agent 可以通过内置 computer-use MCP 服务操作页面。
+                </p>
+              </div>
+              <Switch
+                aria-label="启用 Computer Use"
+                checked={status.enabled}
+                disabled={enableMutation.isPending || (!status.enabled && !status.driverInstalled)}
+                onCheckedChange={(checked) => enableMutation.mutate(checked)}
+              />
+            </div>
+            <div className="divide-y divide-border rounded-md border border-border">
+              <PermissionRow
+                label="cua-driver"
+                ok={status.driverInstalled}
+                detail={status.driverPath ?? "未找到可执行文件"}
+              />
+              <PermissionRow
+                label="辅助功能"
+                ok={status.permissions.accessibility}
+                detail="允许 ChatDesk / CuaDriver 控制电脑"
+              />
+              <PermissionRow
+                label="屏幕与系统音频录制"
+                ok={status.permissions.screenRecording}
+                detail="允许 agent 读取页面画面和系统声音"
+              />
+              <PermissionRow
+                label="Driver Host"
+                ok={status.hostRunning}
+                detail={status.hostRunning ? "正在运行" : "未运行"}
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                disabled={permissionMutation.isPending}
+                onClick={() => permissionMutation.mutate()}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                <ExternalLink className="size-3.5" /> 打开系统权限设置
+              </Button>
+              <Button
+                aria-label="刷新 Computer Use 状态"
+                disabled={statusQuery.isFetching}
+                onClick={() => void statusQuery.refetch()}
+                size="icon"
+                type="button"
+                variant="ghost"
+              >
+                <RefreshCw className={statusQuery.isFetching ? "size-4 animate-spin" : "size-4"} />
+              </Button>
+            </div>
+            {status.error || enableMutation.error || permissionMutation.error ? (
+              <p className="text-destructive text-xs">
+                {status.error ?? describeError(enableMutation.error ?? permissionMutation.error)}
+              </p>
+            ) : null}
+          </div>
+        )}
+      </section>
+    </>
+  );
+}
+
+function PermissionRow({ label, detail, ok }: { label: string; detail: string; ok: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-3 px-4 py-3">
+      <div className="min-w-0">
+        <p className="font-medium text-sm">{label}</p>
+        <p className="mt-0.5 truncate text-muted-foreground text-xs" title={detail}>
+          {detail}
+        </p>
+      </div>
+      <span className={ok ? "text-emerald-600 text-xs" : "text-amber-600 text-xs"}>
+        {ok ? "已就绪" : "需要处理"}
+      </span>
+    </div>
   );
 }
 

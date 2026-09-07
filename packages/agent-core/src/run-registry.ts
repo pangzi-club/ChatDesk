@@ -38,6 +38,7 @@ import { createClientTools } from "./client-tools.ts";
 import { CREATE_SKILL_TOOL_NAME, createSkillTool } from "./create-skill.ts";
 import type { EventHub } from "./events.ts";
 import type { JobRegistry } from "./job-registry.ts";
+import type { McpRuntime } from "./mcp-runtime.ts";
 import { createConfiguredLanguageModel, supportsRequiredToolChoice } from "./model-adaptor.ts";
 import type { PlanStore } from "./plan-store.ts";
 import { createPlanWriteTool } from "./plan-tool.ts";
@@ -449,6 +450,7 @@ export class RunRegistry {
   ) => LanguageModel;
   private readonly modelStreamTimeout: ModelStreamTimeout;
   private readonly jobs?: JobRegistry;
+  private readonly mcp?: McpRuntime;
 
   constructor(
     store: SessionStore,
@@ -461,6 +463,7 @@ export class RunRegistry {
     createLanguageModel?: (model: import("./protocol.ts").ServerModelConfig) => LanguageModel,
     modelStreamTimeout: ModelStreamTimeout = MODEL_STREAM_TIMEOUT,
     jobs?: JobRegistry,
+    mcp?: McpRuntime,
   ) {
     this.store = store;
     this.events = events;
@@ -472,6 +475,7 @@ export class RunRegistry {
     this.createLanguageModel = createLanguageModel;
     this.modelStreamTimeout = modelStreamTimeout;
     this.jobs = jobs;
+    this.mcp = mcp;
     this.journal = new RunJournal(store.root);
     this.reviewLog = new SandboxReviewLogStore(store.root);
   }
@@ -620,6 +624,7 @@ export class RunRegistry {
   async start(sessionId: string, input: RunStartInput, options: RunStartOptions = {}) {
     if (this.active.has(sessionId)) throw new Error("该会话已有正在运行的任务");
     const chatConfig = this.chatConfig.get();
+    const configuredMcpServers = chatConfig.mcpServers;
     const model = resolveConfiguredModel(chatConfig, input);
     if (!model?.apiKey || !model.baseUrl || !model.name) {
       throw new Error("模型配置不完整");
@@ -627,6 +632,14 @@ export class RunRegistry {
 
     const current = await this.store.get(sessionId);
     if (!current) throw new Error("会话不存在");
+    const defaultMcpServerIds = configuredMcpServers.flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const server = item as { id?: unknown; enabledByDefault?: unknown };
+      return server.id === "computer-use" && server.enabledByDefault === true ? [server.id] : [];
+    });
+    const mcpServerIds = [
+      ...new Set([...(input.mcpServerIds ?? current.mcpServerIds ?? []), ...defaultMcpServerIds]),
+    ];
     const planMode = input.planMode ?? current.planMode ?? "apply";
     const planId = input.planId ?? current.activePlanId;
     if (
@@ -697,7 +710,7 @@ export class RunRegistry {
       workspaceId,
       cwd: effectiveCwd,
       sandboxMode,
-      mcpServerIds: input.mcpServerIds ?? current.mcpServerIds,
+      mcpServerIds,
       skillIds: input.skillIds ?? current.skillIds,
       systemPrompt: prompt,
       messages: timestampedMessages,
@@ -912,6 +925,10 @@ export class RunRegistry {
           runId,
         }),
       });
+      const mcpTools =
+        model.supportsTools && planMode !== "plan" && this.mcp
+          ? await this.mcp.toolsForServers(configuredMcpServers, mcpServerIds)
+          : {};
       const tools = model.supportsTools
         ? {
             [SKILL_TOOL_NAME]: createReadSkillTool(),
@@ -941,7 +958,7 @@ export class RunRegistry {
                             cwd: effectiveCwd,
                             workspaceId,
                             sandboxMode,
-                            mcpServerIds: input.mcpServerIds ?? current.mcpServerIds,
+                            mcpServerIds,
                             skillIds: input.skillIds ?? current.skillIds,
                             planMode: "apply",
                           },
@@ -963,6 +980,7 @@ export class RunRegistry {
               ? { web_search: openai.tools.webSearch({}) as unknown as ToolSet[string] }
               : {}),
             ...(planMode !== "plan" ? (options.additionalTools ?? {}) : {}),
+            ...(planMode !== "plan" ? mcpTools : {}),
           }
         : undefined;
       const result = streamText({

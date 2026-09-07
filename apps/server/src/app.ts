@@ -121,6 +121,20 @@ const execFileAsync = promisify(execFile);
 
 type ArchiveImportSource = "codex" | "claude-code" | "cursor" | "kimi";
 
+function loadRuntimeMcpServers() {
+  const raw = process.env.CHATDESK_CUA_MCP_CONFIG;
+  if (!raw) return [];
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+    const id = (value as { id?: unknown }).id;
+    return typeof id === "string" && id.trim() ? [value] : [];
+  } catch (error) {
+    console.error(`[Chat Server] 读取运行时 MCP 配置失败: ${String(error)}`);
+    return [];
+  }
+}
+
 function mergeSessionMessages(current: ChatSession["messages"], incoming: unknown[]) {
   const incomingMessages: ChatSession["messages"] = [];
   for (const value of incoming) {
@@ -472,6 +486,7 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     aiUsageLogs,
     imageGeneration,
   } = core;
+  chatConfig.setRuntimeMcpServers(loadRuntimeMcpServers());
   const archive = new ArchiveStore(config.dataDir);
   await archive.init();
   await activityLogs.append({

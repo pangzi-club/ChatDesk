@@ -32,6 +32,7 @@ import {
   MessageSquare,
   MessageSquarePlus,
   Minimize2,
+  Monitor,
   MoreHorizontal,
   Package,
   Palette,
@@ -348,6 +349,12 @@ const commandItems = [
     label: "Chat Server",
     icon: Server,
     keywords: ["设置", "chat", "server", "端口", "localhost", "hono"],
+  },
+  {
+    to: "/settings/computer-use",
+    label: "Computer Use",
+    icon: Monitor,
+    keywords: ["设置", "computer use", "电脑操作", "辅助功能", "录屏", "系统录音"],
   },
   {
     to: "/settings/statistics",

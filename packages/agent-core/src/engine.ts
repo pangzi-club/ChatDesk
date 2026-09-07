@@ -75,6 +75,7 @@ export async function createAgentCore(options: AgentCoreOptions): Promise<AgentC
       options.createLanguageModel,
       options.modelStreamTimeout,
       jobs,
+      mcp,
     );
     await runs.initialize();
 

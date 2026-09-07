@@ -163,6 +163,7 @@ async function readJson(pathname: string, fallback: unknown) {
 
 export class ChatConfigStore {
   private value: ChatServerConfigData = structuredClone(DEFAULT_CONFIG);
+  private runtimeMcpServers: unknown[] = [];
   private readonly file: string;
 
   constructor(dataDir: string) {
@@ -180,14 +181,54 @@ export class ChatConfigStore {
   }
 
   get() {
-    return structuredClone(this.value);
+    const runtimeIds = new Set(
+      this.runtimeMcpServers.flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
+        const id = (item as { id?: unknown }).id;
+        return typeof id === "string" && id ? [id] : [];
+      }),
+    );
+    return {
+      ...structuredClone(this.value),
+      mcpServers: [
+        ...this.value.mcpServers.filter((item) => {
+          if (!item || typeof item !== "object") return true;
+          return !runtimeIds.has((item as { id?: unknown }).id as string);
+        }),
+        ...structuredClone(this.runtimeMcpServers),
+      ],
+    };
+  }
+
+  setRuntimeMcpServers(value: unknown[]) {
+    this.runtimeMcpServers = value.filter(
+      (item) =>
+        Boolean(item) &&
+        typeof item === "object" &&
+        typeof (item as { id?: unknown }).id === "string" &&
+        Boolean((item as { id: string }).id.trim()),
+    );
   }
 
   async update(value: unknown) {
     const next = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+    const runtimeIds = new Set(
+      this.runtimeMcpServers.flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
+        const id = (item as { id?: unknown }).id;
+        return typeof id === "string" && id ? [id] : [];
+      }),
+    );
+    const incomingMcpServers = Array.isArray(next.mcpServers)
+      ? next.mcpServers.filter((item) => {
+          if (!item || typeof item !== "object") return true;
+          return !runtimeIds.has((item as { id?: unknown }).id as string);
+        })
+      : this.value.mcpServers;
     this.value = normalize({
       ...this.value,
       ...next,
+      mcpServers: incomingMcpServers,
       apiKeys: { ...this.value.apiKeys, ...(next.apiKeys as Record<string, string> | undefined) },
       chatTools: {
         ...this.value.chatTools,
