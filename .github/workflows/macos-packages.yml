@@ -21,6 +21,11 @@ jobs:
             machine: arm64
             target: aarch64-apple-darwin
     runs-on: ${{ matrix.runner }}
+    env:
+      # Cua Driver is distributed separately from the npm SDK. Keep the
+      # artifact URL and digest overrideable for private mirrors.
+      CUA_DRIVER_URL: ${{ secrets.CUA_DRIVER_URL_MACOS_ARM64 || vars.CUA_DRIVER_URL_MACOS_ARM64 || 'https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.23.2/cua-driver-rs-0.23.2-darwin-arm64.tar.gz' }}
+      CUA_DRIVER_SHA256: ${{ secrets.CUA_DRIVER_SHA256_MACOS_ARM64 || vars.CUA_DRIVER_SHA256_MACOS_ARM64 || 'c606a0410eb1bf59ee81d697f6fbf8b7126b2e9a3f802272a34807b45b6ecd6f' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -42,10 +47,61 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Validate Cua Driver configuration
+        run: |
+          set -euo pipefail
+          if [ -z "${CUA_DRIVER_URL}" ] || [ -z "${CUA_DRIVER_SHA256}" ]; then
+            echo "::error::Set both CUA_DRIVER_URL_MACOS_ARM64 and CUA_DRIVER_SHA256_MACOS_ARM64."
+            exit 1
+          fi
+
+      - name: Prepare Cua Driver
+        if: env.CUA_DRIVER_URL != ''
+        env:
+          CUA_DRIVER_ARCHIVE: ${{ runner.temp }}/cua/cua-driver.tar.gz
+          CUA_DRIVER_EXTRACT_DIR: ${{ runner.temp }}/cua/extracted
+          CUA_DRIVER_PATH: ${{ runner.temp }}/cua/cua-driver
+        run: |
+          set -euo pipefail
+          case "${CUA_DRIVER_URL}" in
+            https://*) ;;
+            *)
+              echo "::error::CUA_DRIVER_URL must use HTTPS."
+              exit 1
+              ;;
+          esac
+          mkdir -p "${CUA_DRIVER_EXTRACT_DIR}"
+          curl --fail --location --retry 3 --silent --show-error \
+            "${CUA_DRIVER_URL}" \
+            --output "${CUA_DRIVER_ARCHIVE}"
+          test -s "${CUA_DRIVER_ARCHIVE}"
+          printf '%s  %s\n' "${CUA_DRIVER_SHA256}" "${CUA_DRIVER_ARCHIVE}" | shasum -a 256 -c -
+          tar -xzf "${CUA_DRIVER_ARCHIVE}" -C "${CUA_DRIVER_EXTRACT_DIR}"
+          driver_source="$(find "${CUA_DRIVER_EXTRACT_DIR}" -type f -name 'cua-driver' ! -path '*/CuaDriver.app/*' -print -quit)"
+          if [ -z "${driver_source}" ]; then
+            echo "::error::The Cua Driver archive does not contain a top-level cua-driver executable."
+            exit 1
+          fi
+          cp "${driver_source}" "${CUA_DRIVER_PATH}"
+          chmod 755 "${CUA_DRIVER_PATH}"
+          file "${CUA_DRIVER_PATH}"
+
       - name: Build Electron package
         run: pnpm electron:package
         env:
           DESKTOP_TARGET_TRIPLE: ${{ matrix.target }}
+          CHATDESK_CUA_DRIVER: ${{ runner.temp }}/cua/cua-driver
+
+      - name: Verify packaged Cua Driver
+        if: env.CUA_DRIVER_URL != ''
+        env:
+          CUA_DRIVER_PATH: ${{ runner.temp }}/cua/cua-driver
+        run: |
+          set -euo pipefail
+          test -x "${CUA_DRIVER_PATH}"
+          app_path="$(find apps/electron/dist-electron -type d -name 'ChatDesk.app' -print -quit)"
+          test -n "${app_path}"
+          test -x "${app_path}/Contents/Resources/binaries/cua-driver"
 
       - name: Upload package
         uses: actions/upload-artifact@v4

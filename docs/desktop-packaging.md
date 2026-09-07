@@ -53,6 +53,25 @@ Playwright is not bundled into JavaScript or embedded in an executable. The buil
 
 The Node runtime is copied from the build host, so `DESKTOP_TARGET_TRIPLE` must match the host architecture. Cross-platform artifacts must be built on native CI runners. The build fails if Node is not exactly 22.20.0 or if a requested target does not match the host architecture.
 
+The macOS workflow downloads the pinned, architecture-specific Cua Driver
+archive below by default. Configure the following repository variables (or
+same-named secrets for a private mirror) only when overriding that release:
+
+```text
+CUA_DRIVER_URL_MACOS_ARM64=https://artifacts.example.com/cua-driver-darwin-arm64.tar.gz
+CUA_DRIVER_SHA256_MACOS_ARM64=<64-character SHA-256 digest of the tar.gz>
+```
+
+For the pinned Cua Driver release, the URL is
+`https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.23.2/cua-driver-rs-0.23.2-darwin-arm64.tar.gz`
+and the SHA-256 is
+`c606a0410eb1bf59ee81d697f6fbf8b7126b2e9a3f802272a34807b45b6ecd6f`.
+The workflow verifies the archive, extracts the top-level `cua-driver`, sets
+its executable bit, and passes it to `desktop:sidecars`; the package check then
+confirms it exists at `Contents/Resources/binaries/cua-driver`. The archive
+must already be signed for macOS before it is downloaded. Supplying only one
+override value fails the build.
+
 `pnpm desktop:sidecars:verify` is intentionally separate from packaging. It verifies the staged Node version, loads Playwright and Sharp from the staged runtime, then performs `browser_open`, page evaluation, and close against a loopback page. Release CI repeats the same verification against the final Electron `.app` with `pnpm electron:package:verify`.
 
 ## Runtime behavior
