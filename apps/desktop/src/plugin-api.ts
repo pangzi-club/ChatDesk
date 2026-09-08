@@ -7,6 +7,7 @@ export type {
 export { ChatLayoutService } from "@/lib/chat-layout";
 export type {
   AnyWorkspaceTabContribution,
+  BuiltinWorkspaceTabType,
   DesktopIcon,
   DesktopPluginHandle,
   DesktopPluginInstallResult,
@@ -17,6 +18,7 @@ export type {
   SidebarNavigationContribution,
   WorkspaceTab,
   WorkspaceTabContribution,
+  WorkspaceTabData,
   WorkspaceTabDataMap,
   WorkspaceTabRenderProps,
   WorkspaceTabScope,

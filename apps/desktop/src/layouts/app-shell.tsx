@@ -950,7 +950,7 @@ function AppShell() {
         const next = { ...current };
         for (const [key, state] of Object.entries(current)) {
           const tabs = state.tabs.map((tab) =>
-            tab.type === "plan" && tab.data.sessionId === request.sessionId
+            isWorkspaceTabType(tab, "plan") && tab.data.sessionId === request.sessionId
               ? {
                   ...tab,
                   ...(tab.data.planId === request.planId ? { title: request.fileName } : {}),
@@ -1023,7 +1023,10 @@ function AppShell() {
         const next = { ...current };
         for (const [key, state] of Object.entries(current)) {
           const tabs = state.tabs.map((tab) => {
-            if (tab.type !== "context-detail" || tab.data.sessionId !== request.sessionId)
+            if (
+              !isWorkspaceTabType(tab, "context-detail") ||
+              tab.data.sessionId !== request.sessionId
+            )
               return tab;
             changed = true;
             return {
@@ -3194,7 +3197,7 @@ function ChatWorkspaceWindow({
       const nextTab = await contribution.create(tabScope);
       if (!nextTab) return;
       if (nextTab.type === "chat") return;
-      if (nextTab.type === "explorer") {
+      if (isWorkspaceTabType(nextTab, "explorer")) {
         const existing = state.tabs.find(
           (tab): tab is WorkspaceTab<"explorer"> =>
             isWorkspaceTabType(tab, "explorer") &&

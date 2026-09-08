@@ -17,7 +17,7 @@ import {
   TerminalTabRenderer,
 } from "@/components/workspace-tab-renderers";
 import { deleteChatServerSession, stopChatServerRun } from "@/lib/chat-server";
-import type { WorkspaceTab } from "@/lib/desktop-ui";
+import type { WorkspaceTab, WorkspaceTabContribution } from "@/lib/desktop-ui";
 import { terminalSessions } from "@/lib/terminal";
 import type { DesktopPluginModule } from "@/plugin-api";
 
@@ -44,7 +44,7 @@ export function apply(ctx: Context) {
           title: "Explorer",
           data: { workspaceId: scope.workspaceId, cwd: scope.cwd, view: "files" },
         }),
-      }),
+      } satisfies WorkspaceTabContribution<"explorer">),
       ctx.desktopUi.register("workspace.tab", {
         id: "terminal",
         label: "Terminal",
@@ -59,7 +59,7 @@ export function apply(ctx: Context) {
           data: { cwd: scope.cwd },
         }),
         onClose: (tab) => terminalSessions.close(tab.id),
-      }),
+      } satisfies WorkspaceTabContribution<"terminal">),
       ctx.desktopUi.register("workspace.tab", {
         id: "browser",
         label: "Browser",
@@ -72,7 +72,7 @@ export function apply(ctx: Context) {
           title: "Browser",
           data: {},
         }),
-      }),
+      } satisfies WorkspaceTabContribution<"browser">),
       ctx.desktopUi.register("workspace.tab", {
         id: "chat",
         label: "侧边聊天",
@@ -86,28 +86,28 @@ export function apply(ctx: Context) {
           await stopChatServerRun(tab.data.sessionId).catch(() => undefined);
           await deleteChatServerSession(tab.data.sessionId);
         },
-      }),
+      } satisfies WorkspaceTabContribution<"chat">),
       ctx.desktopUi.register("workspace.tab", {
         id: "image",
         label: "图片预览",
         icon: Image,
         order: 50,
         renderer: ImageTabRenderer,
-      }),
+      } satisfies WorkspaceTabContribution<"image">),
       ctx.desktopUi.register("workspace.tab", {
         id: "plan",
         label: "计划",
         icon: ScrollText,
         order: 60,
         renderer: PlanTabRenderer,
-      }),
+      } satisfies WorkspaceTabContribution<"plan">),
       ctx.desktopUi.register("workspace.tab", {
         id: "context-detail",
         label: "上下文",
         icon: ChartColumn,
         order: 70,
         renderer: ContextDetailTabRenderer,
-      }),
+      } satisfies WorkspaceTabContribution<"context-detail">),
     ];
     return () =>
       disposers.reverse().forEach((dispose) => {

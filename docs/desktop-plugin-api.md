@@ -5,7 +5,7 @@ Desktop Plugin API 允许随应用一起构建的模块向共享 Cordis Context 
 Electron 对象。
 
 ```tsx
-import type { DesktopPluginModule } from "@/plugin-api";
+import type { DesktopPluginModule, WorkspaceTabContribution } from "@/plugin-api";
 import { Rocket } from "lucide-react";
 
 function ExamplePage() {
@@ -57,6 +57,27 @@ contribution 时，宿主会对该类型的已打开 Tab 调用 `onClose`，以�
 
 插件名和每个 contribution id 都必须全局唯一；重复项返回或抛出明确错误，不会覆盖旧注册。排序继续
 使用 `order`，相同顺序按注册先后排列。
+
+自定义 Workspace Tab 使用 contribution 的两个泛型参数声明稳定的类型 id 和 data：
+
+```tsx
+type InspectorData = { resourceId: string };
+
+const inspector = {
+  id: "example.inspector",
+  label: "Inspector",
+  icon: Rocket,
+  create: () => ({
+    id: crypto.randomUUID(),
+    type: "example.inspector",
+    title: "Inspector",
+    data: { resourceId: "current" },
+  }),
+  renderer: ({ tab }) => <main>{tab.data.resourceId}</main>,
+} satisfies WorkspaceTabContribution<"example.inspector", InspectorData>;
+```
+
+内置 Tab 仍通过 `WorkspaceTabDataMap` 自动推导 data；插件自定义 Tab 不需要修改该内置映射。
 
 首版仅支持构建期可导入模块，不支持目录扫描、远程代码、本地 manifest、权限沙箱或第三方 ABI
 兼容承诺。插件不得创建第二个 Desktop Cordis Context。

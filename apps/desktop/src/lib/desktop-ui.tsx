@@ -106,10 +106,15 @@ export type WorkspaceTabDataMap = {
   blank: Record<string, never>;
 };
 
-export type WorkspaceTabType = keyof WorkspaceTabDataMap;
-export type WorkspaceTab<K extends WorkspaceTabType = WorkspaceTabType> = K extends WorkspaceTabType
-  ? { id: string; type: K; title: string; data: WorkspaceTabDataMap[K] }
-  : never;
+export type BuiltinWorkspaceTabType = keyof WorkspaceTabDataMap;
+export type WorkspaceTabType = string;
+export type WorkspaceTabData<K extends WorkspaceTabType> = K extends BuiltinWorkspaceTabType
+  ? WorkspaceTabDataMap[K]
+  : object;
+export type WorkspaceTab<
+  K extends WorkspaceTabType = WorkspaceTabType,
+  D extends object = WorkspaceTabData<K>,
+> = { id: string; type: K; title: string; data: D };
 
 export type WorkspaceTabScope = {
   workspaceId: string;
@@ -120,27 +125,42 @@ export type WorkspaceTabScope = {
   openSideChat: (draft?: string) => Promise<WorkspaceTab<"chat"> | undefined>;
 };
 
-export type WorkspaceTabRenderProps<K extends WorkspaceTabType = WorkspaceTabType> = {
-  tab: WorkspaceTab<K>;
+export type WorkspaceTabRenderProps<
+  K extends WorkspaceTabType = WorkspaceTabType,
+  D extends object = WorkspaceTabData<K>,
+> = {
+  tab: WorkspaceTab<K, D>;
   scope: WorkspaceTabScope;
-  updateTab: (patch: Partial<WorkspaceTabDataMap[K]> & { title?: string }) => void;
+  updateTab: (patch: Partial<D> & { title?: string }) => void;
 };
 
-export type WorkspaceTabContribution<K extends WorkspaceTabType = WorkspaceTabType> = {
+export type WorkspaceTabContribution<
+  K extends WorkspaceTabType = WorkspaceTabType,
+  D extends object = WorkspaceTabData<K>,
+> = {
   id: K;
   label: string;
   compactLabel?: string;
   icon: DesktopIcon;
   order?: number;
-  renderer?: ComponentType<WorkspaceTabRenderProps<K>>;
-  create?: (scope: WorkspaceTabScope) => WorkspaceTab<K> | Promise<WorkspaceTab<K> | undefined>;
+  renderer?: ComponentType<WorkspaceTabRenderProps<NoInfer<K>, NoInfer<D>>>;
+  create?: (
+    scope: WorkspaceTabScope,
+  ) => WorkspaceTab<K, D> | Promise<WorkspaceTab<K, D> | undefined>;
   isAvailable?: (scope: WorkspaceTabScope) => boolean;
-  onClose?: (tab: WorkspaceTab<K>, scope: WorkspaceTabScope) => void | Promise<void>;
+  onClose?: (
+    tab: WorkspaceTab<NoInfer<K>, NoInfer<D>>,
+    scope: WorkspaceTabScope,
+  ) => void | Promise<void>;
 };
 
-export type AnyWorkspaceTabContribution = {
-  [K in WorkspaceTabType]: WorkspaceTabContribution<K>;
-}[WorkspaceTabType];
+export type AnyWorkspaceTabContribution = Omit<
+  WorkspaceTabContribution<WorkspaceTabType, object>,
+  "renderer" | "onClose"
+> & {
+  renderer?: ComponentType<never>;
+  onClose?: (tab: never, scope: WorkspaceTabScope) => void | Promise<void>;
+};
 
 type WorkspaceTabCloseHandler = (
   tab: WorkspaceTab,
@@ -216,12 +236,17 @@ export class DesktopUiService extends Service {
     super(ctx, "desktopUi");
   }
 
-  register<K extends DesktopUiSlot>(slot: K, contribution: SlotMap[K]) {
+  register(slot: "workspace.tab", contribution: AnyWorkspaceTabContribution): () => void;
+  register<K extends Exclude<DesktopUiSlot, "workspace.tab">>(
+    slot: K,
+    contribution: SlotMap[K],
+  ): () => void;
+  register(slot: DesktopUiSlot, contribution: SlotMap[DesktopUiSlot]) {
     const definitions = this.definitions[slot];
     if (definitions.has(contribution.id)) {
       throw new Error(`desktop UI contribution already registered: ${slot}:${contribution.id}`);
     }
-    definitions.set(contribution.id, contribution);
+    definitions.set(contribution.id, contribution as never);
     this.refresh(slot);
     return () => {
       if (!definitions.delete(contribution.id)) return;

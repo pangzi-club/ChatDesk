@@ -7,6 +7,8 @@ import {
   createDesktopUiRuntime,
   DesktopUiService,
   useDesktopUiSlot,
+  type WorkspaceTabContribution,
+  type WorkspaceTabRenderProps,
   type WorkspaceTabScope,
 } from "@/lib/desktop-ui";
 import type { DesktopPluginModule } from "@/plugin-api";
@@ -268,6 +270,57 @@ describe("DesktopUiService", () => {
 
     await runtime.dispose();
     expect(closeTab).toHaveBeenCalledOnce();
+  });
+
+  it("supports plugin-defined workspace tab types and data", async () => {
+    type InspectorData = { resourceId: string; expanded: boolean };
+    const onClose = vi.fn();
+    function InspectorTab({ tab }: WorkspaceTabRenderProps<"plugin.inspector", InspectorData>) {
+      return tab.data.resourceId;
+    }
+    const contribution = {
+      id: "plugin.inspector",
+      label: "Inspector",
+      icon: MessageCircle,
+      renderer: InspectorTab,
+      create: () => ({
+        id: "inspector-1",
+        type: "plugin.inspector" as const,
+        title: "Inspector",
+        data: { resourceId: "resource-1", expanded: false },
+      }),
+      onClose,
+    } satisfies WorkspaceTabContribution<"plugin.inspector", InspectorData>;
+    const runtime = await createDesktopUiRuntime("standard", [
+      {
+        name: "test.custom-workspace-tab",
+        inject: ["desktopUi"],
+        apply(ctx) {
+          return ctx.desktopUi.register("workspace.tab", contribution);
+        },
+      },
+    ]);
+
+    const registered = runtime.service
+      .getSnapshot("workspace.tab")
+      .find((item) => item.id === contribution.id);
+    expect(registered).toBeDefined();
+    const tab = contribution.create();
+    expect(tab.data.resourceId).toBe("resource-1");
+
+    const scope = {
+      workspaceId: "workspace",
+      cwd: "/tmp/workspace",
+      sessionId: null,
+      messages: [],
+      sideChatOpening: false,
+      openSideChat: async () => undefined,
+    } satisfies WorkspaceTabScope;
+    runtime.service.trackWorkspaceTabs([tab], scope);
+    await runtime.uninstallPlugin("test.custom-workspace-tab");
+    expect(onClose).toHaveBeenCalledWith(tab, scope);
+
+    await runtime.dispose();
   });
 
   it("isolates plugin failures and rejects duplicate plugin names", async () => {

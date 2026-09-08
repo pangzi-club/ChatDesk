@@ -12,6 +12,8 @@ contribution 系统。核心宿主仍负责应用布局、权限、路由基础�
   contribution 回退到 `/chat`。
 - 增加 `desktop.workspace.tab`，以 `{ id, type, title, data }` 的判别联合替代包含大量可选字段的
   Workspace Tab。
+- Workspace Tab 类型支持插件自定义字符串 id 与独立 data 类型；内置 Tab 继续从
+  `WorkspaceTabDataMap` 自动推导，不需要把插件类型加入宿主联合。
 - Workspace Tab contribution 提供图标、renderer、创建条件、创建函数和关闭清理；宿主继续管理
   标签顺序、激活状态、拖拽、窗口尺寸与分栏。
 - 新建菜单和空窗口快捷入口共享可创建 contribution 清单。Explorer、Terminal、Browser 和 Side
@@ -36,12 +38,16 @@ contribution 的已打开实例。
 
 ## P2：命令与 Shell 扩展
 
+尚未实现：
+
 - `desktop.action`：注册无页面的全局动作，并由命令菜单和快捷键调用宿主 action registry。
 - `desktop.shell.overlay`、`desktop.shell.before/after`：承载状态横幅、通知与全局透明浮层。
 - `desktop.sidebar.before/after/footer`：允许内置能力贡献 Sidebar 附加区域，Workspace 与会话列表仍
   属于宿主核心。
 
 ## P3：Chat 内部扩展
+
+尚未实现：
 
 - `desktop.chat.header.action`：按 session/workspace scope 贡献 Chat Header 操作。
 - `desktop.chat.composer.tool`：通过受控 props 与 callback 贡献 Composer 工具，不直接读取 Chat 私有
