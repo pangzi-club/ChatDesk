@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  DESKTOP_PLUGIN_API_VERSION,
-  defineDesktopPlugin,
-  type DesktopPluginModule,
-} from "./index";
+import { DESKTOP_PLUGIN_API_VERSION, type DesktopPluginModule, defineDesktopPlugin } from "./index";
 
 describe("desktop plugin SDK", () => {
   it("defines a plugin without changing its public module", () => {
