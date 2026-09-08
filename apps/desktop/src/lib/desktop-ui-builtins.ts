@@ -46,6 +46,7 @@ import {
 } from "@/pages/settings";
 import { StatisticsSettingsPage } from "@/pages/statistics";
 import { VoiceSettingsPage } from "@/pages/voice-settings";
+import type { DesktopPluginModule } from "@/plugin-api";
 
 const settings = [
   [
@@ -165,7 +166,7 @@ const settings = [
 ] as const;
 
 export const name = "desktop-ui-builtins";
-export const inject = ["desktopUi"];
+export const inject: DesktopPluginModule["inject"] = ["desktopUi"];
 
 export function apply(ctx: Context) {
   ctx.effect(() => {

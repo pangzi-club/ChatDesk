@@ -8,7 +8,7 @@ import {
   useSyncExternalStore,
 } from "react";
 
-export type ChatLayout = "standard" | "cute" | "geek";
+export type ChatLayout = "standard" | "cute" | "geek" | (string & {});
 
 export type ChatLayoutProps = {
   children: ReactNode;

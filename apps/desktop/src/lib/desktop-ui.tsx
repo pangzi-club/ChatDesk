@@ -1,6 +1,6 @@
 import type { SystemPromptSnapshot } from "@chatdesk/shared";
 import type { UIMessage } from "ai";
-import { Context, Service } from "cordis";
+import { Context, type Fiber, type Inject, Service } from "cordis";
 import {
   type ComponentType,
   createContext,
@@ -11,6 +11,22 @@ import {
 import type { BrowserNavigationState } from "@/lib/browser-preview";
 import { type ChatLayout, ChatLayoutService } from "@/lib/chat-layout";
 import type { ContextDetailPromptInput } from "@/lib/context-detail-events";
+
+/** A build-time Desktop plugin installed into the application's shared Cordis context. */
+export type DesktopPluginModule = {
+  name: string;
+  inject?: Inject;
+  apply: (ctx: Context) => unknown;
+};
+
+export type DesktopPluginHandle = {
+  name: string;
+  dispose: () => Promise<void>;
+};
+
+export type DesktopPluginInstallResult =
+  | { ok: true; name: string; handle: DesktopPluginHandle }
+  | { ok: false; name: string; error: Error };
 
 export type DesktopUiSlot = "sidebar.navigation" | "settings.page" | "route" | "workspace.tab";
 export type DesktopIcon = ComponentType<{ className?: string }>;
@@ -180,6 +196,7 @@ export class DesktopUiService extends Service {
     string,
     { tab: WorkspaceTab; scope: WorkspaceTabScope }
   >();
+  private readonly pendingWorkspaceTabClosures = new Set<Promise<unknown>>();
   private snapshots: Record<
     DesktopUiSlot,
     readonly (
@@ -208,6 +225,9 @@ export class DesktopUiService extends Service {
     this.refresh(slot);
     return () => {
       if (!definitions.delete(contribution.id)) return;
+      if (slot === "workspace.tab") {
+        this.closeWorkspaceTabsForContribution(contribution as AnyWorkspaceTabContribution);
+      }
       this.refresh(slot);
     };
   }
@@ -239,11 +259,29 @@ export class DesktopUiService extends Service {
         return closeWorkspaceTabContribution(contribution, tab, scope);
       }),
     );
+    await this.flushWorkspaceTabClosures();
+  }
+
+  async flushWorkspaceTabClosures() {
+    await Promise.allSettled([...this.pendingWorkspaceTabClosures]);
   }
 
   private refresh<K extends DesktopUiSlot>(slot: K) {
     this.snapshots[slot] = sortContributions([...this.definitions[slot].values()]);
     for (const listener of this.listeners) listener();
+  }
+
+  private closeWorkspaceTabsForContribution(contribution: AnyWorkspaceTabContribution) {
+    const closures: Promise<unknown>[] = [];
+    for (const [instanceId, { tab, scope }] of this.workspaceTabInstances) {
+      if (tab.type !== contribution.id) continue;
+      this.workspaceTabInstances.delete(instanceId);
+      closures.push(Promise.resolve(closeWorkspaceTabContribution(contribution, tab, scope)));
+    }
+    if (!closures.length) return;
+    const pending = Promise.allSettled(closures);
+    this.pendingWorkspaceTabClosures.add(pending);
+    void pending.finally(() => this.pendingWorkspaceTabClosures.delete(pending));
   }
 }
 
@@ -257,10 +295,16 @@ export type DesktopUiRuntime = {
   ctx: Context;
   service: DesktopUiService;
   chatLayouts: ChatLayoutService;
+  pluginResults: readonly DesktopPluginInstallResult[];
+  installPlugin: (plugin: DesktopPluginModule) => Promise<DesktopPluginInstallResult>;
+  uninstallPlugin: (name: string) => Promise<boolean>;
   dispose: () => Promise<void>;
 };
 
-export async function createDesktopUiRuntime(initialLayout: ChatLayout): Promise<DesktopUiRuntime> {
+export async function createDesktopUiRuntime(
+  initialLayout: ChatLayout,
+  initialPlugins: readonly DesktopPluginModule[] = [],
+): Promise<DesktopUiRuntime> {
   const ctx = new Context();
   await ctx.plugin(ChatLayoutService);
   await ctx.plugin(DesktopUiService);
@@ -271,19 +315,84 @@ export async function createDesktopUiRuntime(initialLayout: ChatLayout): Promise
     import("@/lib/desktop-ui-builtins"),
     import("@/lib/workspace-tab-builtins"),
   ]);
-  const fibers = await Promise.all(
-    modules.map((module) =>
-      ctx.plugin({ name: module.name, inject: module.inject, apply: module.apply }),
-    ),
+  const installed = new Map<string, Fiber>();
+  const installOrder: string[] = [];
+
+  const installPlugin = async (
+    plugin: DesktopPluginModule,
+  ): Promise<DesktopPluginInstallResult> => {
+    const name = plugin.name.trim();
+    if (!name) {
+      return { ok: false, name, error: new Error("desktop plugin name must not be empty") };
+    }
+    if (installed.has(name)) {
+      return {
+        ok: false,
+        name,
+        error: new Error(`desktop plugin already installed: ${name}`),
+      };
+    }
+
+    let fiber: Fiber | undefined;
+    try {
+      const pluginFiber = ctx.plugin({ name, inject: plugin.inject, apply: plugin.apply });
+      fiber = pluginFiber;
+      await pluginFiber;
+      installed.set(name, pluginFiber);
+      installOrder.push(name);
+      const handle: DesktopPluginHandle = {
+        name,
+        dispose: async () => {
+          if (installed.get(name) !== pluginFiber) return;
+          installed.delete(name);
+          const index = installOrder.indexOf(name);
+          if (index >= 0) installOrder.splice(index, 1);
+          await pluginFiber.dispose();
+          await ctx.desktopUi.flushWorkspaceTabClosures();
+        },
+      };
+      return { ok: true, name, handle };
+    } catch (cause) {
+      await fiber?.dispose().catch(() => undefined);
+      const error = cause instanceof Error ? cause : new Error(String(cause));
+      console.error(`Failed to install desktop plugin "${name}"`, error);
+      return { ok: false, name, error };
+    }
+  };
+
+  const uninstallPlugin = async (name: string) => {
+    const fiber = installed.get(name);
+    if (!fiber) return false;
+    installed.delete(name);
+    const index = installOrder.indexOf(name);
+    if (index >= 0) installOrder.splice(index, 1);
+    await fiber.dispose();
+    await ctx.desktopUi.flushWorkspaceTabClosures();
+    return true;
+  };
+
+  const defaultPlugins = modules.map(
+    (module): DesktopPluginModule => ({
+      name: module.name,
+      inject: module.inject,
+      apply: module.apply,
+    }),
   );
+  const pluginResults: DesktopPluginInstallResult[] = [];
+  for (const plugin of [...defaultPlugins, ...initialPlugins]) {
+    pluginResults.push(await installPlugin(plugin));
+  }
   ctx.chatLayouts.activate(initialLayout);
   return {
     ctx,
     service: ctx.desktopUi,
     chatLayouts: ctx.chatLayouts,
+    pluginResults,
+    installPlugin,
+    uninstallPlugin,
     dispose: async () => {
       await ctx.desktopUi.disposeWorkspaceTabs();
-      for (const fiber of fibers.reverse()) await fiber.dispose();
+      for (const name of [...installOrder].reverse()) await uninstallPlugin(name);
       await ctx.fiber.dispose();
     },
   };

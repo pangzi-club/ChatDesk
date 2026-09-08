@@ -19,13 +19,14 @@ import {
 import { deleteChatServerSession, stopChatServerRun } from "@/lib/chat-server";
 import type { WorkspaceTab } from "@/lib/desktop-ui";
 import { terminalSessions } from "@/lib/terminal";
+import type { DesktopPluginModule } from "@/plugin-api";
 
 function tabId() {
   return `chat-window-tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 export const name = "workspace-tab-builtins";
-export const inject = ["desktopUi"];
+export const inject: DesktopPluginModule["inject"] = ["desktopUi"];
 
 export function apply(ctx: Context) {
   ctx.effect(() => {

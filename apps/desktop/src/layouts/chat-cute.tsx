@@ -1,9 +1,10 @@
 import type { Context } from "cordis";
 import { Cloud, Fish, Sparkles, Waves } from "lucide-react";
 import type { ChatLayoutProps } from "@/lib/chat-layout";
+import type { DesktopPluginModule } from "@/plugin-api";
 
 export const name = "chat-layout-cute";
-export const inject = ["chatLayouts"];
+export const inject: DesktopPluginModule["inject"] = ["chatLayouts"];
 
 export function apply(ctx: Context) {
   ctx.effect(

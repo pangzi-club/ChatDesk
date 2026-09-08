@@ -1,8 +1,9 @@
 import type { Context } from "cordis";
 import type { ChatLayoutProps } from "@/lib/chat-layout";
+import type { DesktopPluginModule } from "@/plugin-api";
 
 export const name = "chat-layout-geek";
-export const inject = ["chatLayouts"];
+export const inject: DesktopPluginModule["inject"] = ["chatLayouts"];
 
 const glyphs = [
   { id: "binary-a", text: "01" },

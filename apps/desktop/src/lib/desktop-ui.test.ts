@@ -9,6 +9,7 @@ import {
   useDesktopUiSlot,
   type WorkspaceTabScope,
 } from "@/lib/desktop-ui";
+import type { DesktopPluginModule } from "@/plugin-api";
 
 function EmptyPage() {
   return null;
@@ -187,5 +188,146 @@ describe("DesktopUiService", () => {
     expect(runtime.service.getSnapshot("settings.page")).toEqual([]);
     expect(runtime.service.getSnapshot("route")).toEqual([]);
     expect(runtime.service.getSnapshot("workspace.tab")).toEqual([]);
+  });
+
+  it("installs and uninstalls a plugin through the public module API", async () => {
+    const closeTab = vi.fn();
+    const plugin: DesktopPluginModule = {
+      name: "test.public-api",
+      inject: ["desktopUi", "chatLayouts"],
+      apply(ctx) {
+        ctx.effect(() => {
+          const disposers = [
+            ctx.desktopUi.register("sidebar.navigation", {
+              id: "plugin.navigation",
+              path: "/plugin",
+              label: "Plugin",
+              icon: MessageCircle,
+            }),
+            ctx.desktopUi.register("route", {
+              id: "plugin.route",
+              path: "/plugin",
+              title: "Plugin",
+              icon: MessageCircle,
+              keywords: ["plugin"],
+              component: EmptyPage,
+            }),
+            ctx.desktopUi.register("settings.page", {
+              id: "plugin.settings",
+              path: "plugin",
+              label: "Plugin",
+              icon: MessageCircle,
+              keywords: ["plugin"],
+              component: EmptyPage,
+            }),
+            ctx.desktopUi.register("workspace.tab", {
+              id: "blank",
+              label: "Plugin tab",
+              icon: MessageCircle,
+              onClose: closeTab,
+            }),
+            ctx.chatLayouts.register("plugin-layout", ({ children }) => children),
+          ];
+          return () =>
+            disposers.reverse().forEach((dispose) => {
+              dispose();
+            });
+        }, "test public plugin contributions");
+      },
+    };
+    const runtime = await createDesktopUiRuntime("standard", [plugin]);
+
+    expect(runtime.pluginResults[runtime.pluginResults.length - 1]?.ok).toBe(true);
+    const navigation = runtime.service.getSnapshot("sidebar.navigation");
+    expect(navigation.some((item) => item.id === "plugin.navigation")).toBe(true);
+    const routes = runtime.service.getSnapshot("route");
+    expect(routes.some((item) => item.id === "plugin.route")).toBe(true);
+    const settings = runtime.service.getSnapshot("settings.page");
+    expect(settings.some((item) => item.id === "plugin.settings")).toBe(true);
+    expect(runtime.chatLayouts.getSnapshot().id).toBe("standard");
+    runtime.chatLayouts.activate("plugin-layout");
+    expect(runtime.chatLayouts.getSnapshot().id).toBe("plugin-layout");
+
+    const scope: WorkspaceTabScope = {
+      workspaceId: "workspace",
+      cwd: "/tmp/workspace",
+      sessionId: null,
+      messages: [],
+      sideChatOpening: false,
+      openSideChat: async () => undefined,
+    };
+    runtime.service.trackWorkspaceTabs(
+      [{ id: "plugin-tab", type: "blank", title: "Plugin", data: {} }],
+      scope,
+    );
+    expect(await runtime.uninstallPlugin(plugin.name)).toBe(true);
+    expect(runtime.service.getSnapshot("route").some((item) => item.id === "plugin.route")).toBe(
+      false,
+    );
+    expect(() => runtime.chatLayouts.activate("plugin-layout")).toThrow("unknown chat layout");
+
+    await runtime.dispose();
+    expect(closeTab).toHaveBeenCalledOnce();
+  });
+
+  it("isolates plugin failures and rejects duplicate plugin names", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const failing: DesktopPluginModule = {
+      name: "test.failing",
+      apply() {
+        throw new Error("plugin exploded");
+      },
+    };
+    const healthy: DesktopPluginModule = {
+      name: "test.healthy",
+      inject: ["desktopUi"],
+      apply(ctx) {
+        return ctx.desktopUi.register("sidebar.navigation", {
+          id: "healthy.navigation",
+          path: "/healthy",
+          label: "Healthy",
+          icon: MessageCircle,
+        });
+      },
+    };
+    const runtime = await createDesktopUiRuntime("standard", [failing, healthy]);
+
+    expect(runtime.pluginResults[runtime.pluginResults.length - 2]).toMatchObject({
+      ok: false,
+      name: "test.failing",
+    });
+    expect(runtime.pluginResults[runtime.pluginResults.length - 1]).toMatchObject({
+      ok: true,
+      name: "test.healthy",
+    });
+    expect(
+      runtime.service
+        .getSnapshot("sidebar.navigation")
+        .some((item) => item.id === "healthy.navigation"),
+    ).toBe(true);
+
+    const duplicate = await runtime.installPlugin(healthy);
+    expect(duplicate.ok).toBe(false);
+    if (!duplicate.ok) expect(duplicate.error.message).toContain("already installed");
+
+    const contributionCollision = await runtime.installPlugin({
+      name: "test.colliding-contribution",
+      inject: ["desktopUi"],
+      apply(ctx) {
+        return ctx.desktopUi.register("sidebar.navigation", {
+          id: "healthy.navigation",
+          path: "/collision",
+          label: "Collision",
+          icon: MessageCircle,
+        });
+      },
+    });
+    expect(contributionCollision.ok).toBe(false);
+    if (!contributionCollision.ok) {
+      expect(contributionCollision.error.message).toContain("contribution already registered");
+    }
+
+    await runtime.dispose();
+    errorSpy.mockRestore();
   });
 });
