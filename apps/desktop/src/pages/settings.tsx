@@ -1,11 +1,8 @@
 import type { ComputerUseStatus } from "@chatdesk/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft,
-  Bell,
   Bot,
   Brain,
-  ChartColumn,
   Check,
   CircleAlert,
   CircleCheck,
@@ -14,22 +11,17 @@ import {
   Eye,
   EyeOff,
   FileText,
-  FlaskConical,
   FolderOpen,
-  Keyboard,
   KeyRound,
   LoaderCircle,
   MessageSquare,
-  Mic,
   Monitor,
   Package,
-  Palette,
   Pencil,
   PlugZap,
   Plus,
   RefreshCw,
   ScrollText,
-  Search,
   Server,
   ShieldCheck,
   Sparkles,
@@ -40,13 +32,6 @@ import {
   X,
 } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
-import {
-  NavLink,
-  type NavLinkRenderProps,
-  Outlet,
-  useLocation,
-  useNavigate,
-} from "react-router-dom";
 import { AgentAvatar, AgentAvatarPicker } from "@/components/agent-avatar";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { ChatMemorySettings } from "@/components/chat-memory-settings";
@@ -92,7 +77,6 @@ import {
   saveAgents,
   sortAgents,
 } from "@/lib/agents";
-import { getReturnPath } from "@/lib/app-return-path";
 import { useChatLayout } from "@/lib/chat-layout";
 import {
   type ChatMemoryStore,
@@ -358,100 +342,6 @@ const themeColors: Array<{
     swatches: ["#c43f5b", "#e85d75", "#7c5cff", "#f59e0b"],
   },
 ];
-
-function SettingsLayout() {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const [search, setSearch] = useState("");
-  const isHistoryRoute = location.pathname.startsWith("/settings/history");
-
-  return (
-    <div
-      className={`settings-page ${
-        isHistoryRoute
-          ? "flex h-full min-h-0 w-full overflow-hidden bg-background"
-          : "flex min-h-full w-full bg-background"
-      }`}
-    >
-      <aside className="app-shell-sidebar sticky top-0 flex h-screen w-[248px] shrink-0 flex-col border-border border-r px-4 pt-8 max-md:w-[220px] max-sm:w-[76px] max-sm:px-2">
-        <Button
-          aria-label="返回应用"
-          className="mb-3 h-8 justify-start gap-2 px-2 text-muted-foreground text-sm hover:text-foreground max-sm:justify-center max-sm:px-0"
-          onClick={() => navigate(getReturnPath())}
-          type="button"
-          variant="ghost"
-        >
-          <ArrowLeft className="size-4" />
-          <span className="max-sm:hidden">返回应用</span>
-        </Button>
-        <label className="mb-4 flex h-8 items-center gap-2 rounded-md border border-border bg-background px-3 text-[13px] text-muted-foreground shadow-xs">
-          <Search className="size-4 shrink-0" />
-          <input
-            aria-label="搜索设置"
-            className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground max-sm:hidden"
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="搜索设置..."
-            value={search}
-          />
-        </label>
-        <p className="px-2 pb-1 font-medium text-[11px] text-muted-foreground uppercase tracking-wider max-sm:hidden">
-          工作区
-        </p>
-        <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto" aria-label="设置导航">
-          {[
-            ["/settings/general", Bell, "常规 通知"],
-            ["/settings/theme", Palette, "主题 外观"],
-            ["/settings/shortcuts", Keyboard, "快捷键"],
-            ["/settings/models", Package, "模型"],
-            ["/settings/agents", Bot, "Agents"],
-            ["/settings/channel", MessageSquare, "Channel 飞书"],
-            ["/settings/mcp", PlugZap, "MCP"],
-            ["/settings/skills", Sparkles, "Skills"],
-            ["/settings/tools", Wrench, "Tools"],
-            ["/settings/sandbox", ShieldCheck, "沙箱"],
-            ["/settings/memory", Brain, "长期记忆"],
-            ["/settings/voice", Mic, "语音 语音输入"],
-            ["/settings/environment", SquareTerminal, "环境"],
-            ["/settings/development", FlaskConical, "开发"],
-            ["/settings/keys", KeyRound, "其他密钥"],
-            ["/settings/chat-server", Server, "Chat Server"],
-            ["/settings/computer-use", Monitor, "Computer Use 电脑操作 辅助功能 录屏 系统录音"],
-            ["/settings/statistics", ChartColumn, "使用量"],
-            ["/settings/logs", ScrollText, "活动记录"],
-          ]
-            .filter(
-              ([, , keywords]) =>
-                !search.trim() ||
-                String(keywords).toLowerCase().includes(search.trim().toLowerCase()),
-            )
-            .map(([to, icon, keywords]) => (
-              <SettingsNavItem
-                key={String(to)}
-                to={String(to)}
-                icon={icon as typeof Palette}
-                label={String(keywords).split(" ")[0]}
-              />
-            ))}
-        </nav>
-        <div className="mt-3 border-border border-t py-3 text-[11px] text-muted-foreground max-sm:hidden">
-          ChatDesk
-          <span className="mt-1 block opacity-60">本地工作区设置</span>
-        </div>
-      </aside>
-      {isHistoryRoute ? (
-        <main className="app-shell-content flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <Outlet />
-        </main>
-      ) : (
-        <main className="app-shell-content min-w-0 flex-1 px-8 pt-16 pb-14 sm:px-12 lg:px-20">
-          <div className="mx-auto w-full max-w-3xl">
-            <Outlet />
-          </div>
-        </main>
-      )}
-    </div>
-  );
-}
 
 const logLevelLabels: Record<SystemLogLevel, string> = {
   info: "信息",
@@ -749,28 +639,6 @@ function SystemLogRow({ log }: { log: SystemLog }) {
 function formatLogTime(timestamp: string) {
   return new Intl.DateTimeFormat("zh-CN", { dateStyle: "short", timeStyle: "medium" }).format(
     new Date(timestamp),
-  );
-}
-
-function SettingsNavItem({
-  to,
-  icon: Icon,
-  label,
-}: {
-  to: string;
-  icon: typeof Palette;
-  label: string;
-}) {
-  return (
-    <NavLink
-      className={({ isActive }: NavLinkRenderProps) =>
-        `sidebar-nav-item flex h-8 items-center gap-2 px-3 text-[13px] transition-colors max-sm:justify-center max-sm:px-0 ${isActive ? "is-active font-medium" : ""}`
-      }
-      to={to}
-    >
-      <Icon className="size-4" />
-      <span className="max-sm:hidden">{label}</span>
-    </NavLink>
   );
 }
 
@@ -4463,7 +4331,6 @@ export {
   MemorySettingsPage,
   ModelsSettingsPage,
   SandboxSettingsPage,
-  SettingsLayout,
   ShortcutsSettingsPage,
   SkillsSettingsPage,
   SystemLogsSettingsPage,

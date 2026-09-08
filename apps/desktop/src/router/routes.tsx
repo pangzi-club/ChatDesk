@@ -6,36 +6,15 @@ import {
   useLocation,
   useParams,
 } from "react-router-dom";
-
+import { SettingsRouteHost } from "@/components/settings-route-host";
 import { AppShell } from "@/layouts/app-shell";
+import { SettingsLayout } from "@/layouts/settings-layout";
 import { chatIndexRedirectPath } from "@/lib/chat-routes";
 import { AutomationsPage } from "@/pages/automations";
 import { ChannelsPage } from "@/pages/channels";
 import { ChatPage } from "@/pages/chat";
 import { HistoryDetailPage } from "@/pages/history";
 import { ImageGenerationPage } from "@/pages/image-generation";
-import {
-  AgentsSettingsPage,
-  ApiKeysSettingsPage,
-  ChatServerSettingsPage,
-  ComputerUseSettingsPage,
-  DevelopmentSettingsPage,
-  EnvironmentSettingsPage,
-  FeishuChannelSettingsPage,
-  GeneralSettingsPage,
-  McpSettingsPage,
-  MemorySettingsPage,
-  ModelsSettingsPage,
-  SandboxSettingsPage,
-  SettingsLayout,
-  ShortcutsSettingsPage,
-  SkillsSettingsPage,
-  SystemLogsSettingsPage,
-  ThemeSettingsPage,
-  ToolsSettingsPage,
-} from "@/pages/settings";
-import { StatisticsSettingsPage } from "@/pages/statistics";
-import { VoiceSettingsPage } from "@/pages/voice-settings";
 
 const router = createHashRouter([
   {
@@ -76,29 +55,11 @@ const router = createHashRouter([
         element: <SettingsLayout />,
         children: [
           { index: true, element: <Navigate replace to="general" /> },
-          { path: "general", element: <GeneralSettingsPage /> },
-          { path: "channel", element: <FeishuChannelSettingsPage /> },
-          { path: "theme", element: <ThemeSettingsPage /> },
-          { path: "shortcuts", element: <ShortcutsSettingsPage /> },
-          { path: "keys", element: <ApiKeysSettingsPage /> },
-          { path: "models", element: <ModelsSettingsPage /> },
-          { path: "agents", element: <AgentsSettingsPage /> },
-          { path: "mcp", element: <McpSettingsPage /> },
-          { path: "skills", element: <SkillsSettingsPage /> },
-          { path: "tools", element: <ToolsSettingsPage /> },
-          { path: "sandbox", element: <SandboxSettingsPage /> },
-          { path: "environment", element: <EnvironmentSettingsPage /> },
-          { path: "development", element: <DevelopmentSettingsPage /> },
-          { path: "memory", element: <MemorySettingsPage /> },
-          { path: "voice", element: <VoiceSettingsPage /> },
           { path: "history", element: <Navigate replace to="/settings/statistics" /> },
           { path: "history/analysis", element: <Navigate replace to="/settings/statistics" /> },
           { path: "history/:source/:id", element: <HistoryDetailPage /> },
-          { path: "statistics", element: <StatisticsSettingsPage /> },
           { path: "tray", element: <Navigate replace to="/settings/general" /> },
-          { path: "chat-server", element: <ChatServerSettingsPage /> },
-          { path: "computer-use", element: <ComputerUseSettingsPage /> },
-          { path: "logs", element: <SystemLogsSettingsPage /> },
+          { path: "*", element: <SettingsRouteHost /> },
         ],
       },
       { path: "history", element: <Navigate replace to="/settings/statistics" /> },

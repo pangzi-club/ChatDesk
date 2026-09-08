@@ -8,50 +8,34 @@ import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/rea
 import {
   ArrowDown,
   ArrowUp,
-  Bell,
-  Bot,
-  Brain,
   ChartColumn,
   Check,
   ChevronDown,
   ChevronRight,
   CircleAlert,
-  Clock3,
   CopyX,
   CornerDownLeft,
-  FlaskConical,
   FolderGit2,
   Globe2,
   Image,
-  Keyboard,
-  KeyRound,
   List,
   LoaderCircle,
   Maximize2,
   MessageCircle,
-  MessageSquare,
   MessageSquarePlus,
   Minimize2,
-  Monitor,
   MoreHorizontal,
-  Package,
-  Palette,
   PanelLeft,
   Play,
-  PlugZap,
   Plus,
   RefreshCw,
   ScrollText,
   Search,
-  Server,
   Settings,
-  ShieldCheck,
-  Sparkles,
   SquareTerminal,
   Trash2,
   Undo2,
   Upload,
-  Wrench,
   X,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -172,6 +156,7 @@ import {
   subscribeContextDetailUpdated,
 } from "@/lib/context-detail-events";
 import { getDesktopBridge, isDesktop } from "@/lib/desktop-bridge";
+import { type SidebarNavigationContribution, useDesktopUiSlot } from "@/lib/desktop-ui";
 import { DEFAULT_DEVELOPER_SETTINGS, loadDeveloperSettings } from "@/lib/developer-settings";
 import { explorerFileIconKind } from "@/lib/explorer-file-icon";
 import { subscribeFileViewerOpen } from "@/lib/file-viewer-events";
@@ -221,16 +206,6 @@ import {
   workspaceGitQueryKey,
 } from "@/lib/workspaces";
 
-const navItems = [
-  { to: "/chat", label: "Chat", icon: MessageCircle },
-  { to: "/channels", label: "Channel", icon: MessageSquare },
-  { to: "/automations", label: "Automations", icon: Clock3 },
-] satisfies Array<{
-  to: string;
-  label: string;
-  icon: ComponentType<{ className?: string }>;
-}>;
-
 const WORKBENCH_MOTION_TRANSITION = { duration: 0.16, ease: "easeOut" } as const;
 const WORKBENCH_LAYOUT_TRANSITION = { duration: 0.18, ease: "easeOut" } as const;
 const REDUCED_MOTION_TRANSITION = { duration: 0 } as const;
@@ -243,138 +218,12 @@ function getWorkbenchLayoutTransition(shouldReduceMotion: boolean) {
   return shouldReduceMotion ? REDUCED_MOTION_TRANSITION : WORKBENCH_LAYOUT_TRANSITION;
 }
 
-const commandItems = [
-  { to: "/chat", label: "Chat", icon: MessageCircle, keywords: ["对话", "聊天"] },
-  { to: "/automations", label: "Automations", icon: Clock3, keywords: ["自动化", "任务"] },
-  {
-    to: "/channels",
-    label: "Channel",
-    icon: MessageSquare,
-    keywords: ["飞书", "消息", "联系人", "channel"],
-  },
-  { to: "/settings", label: "Settings", icon: Settings, keywords: ["设置"] },
-  {
-    to: "/settings/channel",
-    label: "Channel",
-    icon: MessageSquare,
-    keywords: ["设置", "飞书", "channel", "消息"],
-  },
-  {
-    to: "/settings/general",
-    label: "常规",
-    icon: Bell,
-    keywords: ["设置", "常规", "通知", "系统通知", "对话完成"],
-  },
-  {
-    to: "/settings/theme",
-    label: "主题",
-    icon: Palette,
-    keywords: ["theme", "外观", "配色", "颜色", "Chat 布局", "标准", "可爱", "Geek", "文本", "UI"],
-  },
-  {
-    to: "/settings/shortcuts",
-    label: "快捷键",
-    icon: Keyboard,
-    keywords: ["设置", "快捷键", "shortcut", "hotkey", "键盘"],
-  },
-  {
-    to: "/settings/keys",
-    label: "其他密钥",
-    icon: KeyRound,
-    keywords: ["设置", "密钥", "其他密钥", "API Keys", "api"],
-  },
-  { to: "/settings/models", label: "模型", icon: Package, keywords: ["设置", "models", "model"] },
-  {
-    to: "/settings/agents",
-    label: "Agents",
-    icon: Bot,
-    keywords: ["设置", "agents", "agent", "智能体", "助手"],
-  },
-  {
-    to: "/settings/mcp",
-    label: "MCP",
-    icon: PlugZap,
-    keywords: ["设置", "mcp", "模型上下文协议", "插件", "服务器", "工具"],
-  },
-  {
-    to: "/settings/skills",
-    label: "Skills",
-    icon: Sparkles,
-    keywords: ["设置", "skills", "skill", "技能", "提示词", "工作流", "agents"],
-  },
-  {
-    to: "/settings/tools",
-    label: "Tools",
-    icon: Wrench,
-    keywords: ["设置", "tools", "工具", "工具包", "chat tools"],
-  },
-  {
-    to: "/settings/sandbox",
-    label: "沙箱",
-    icon: ShieldCheck,
-    keywords: ["设置", "sandbox", "沙箱", "读取白名单", "目录权限"],
-  },
-  {
-    to: "/settings/environment",
-    label: "环境",
-    icon: SquareTerminal,
-    keywords: ["设置", "环境", "environment", "path", "node", "pnpm", "python", "go"],
-  },
-  {
-    to: "/settings/development",
-    label: "开发",
-    icon: FlaskConical,
-    keywords: [
-      "设置",
-      "开发",
-      "development",
-      "mock",
-      "长文本",
-      "流式",
-      "性能测试",
-      "显示所有task",
-      "sidebar",
-      "channel",
-      "自动化",
-    ],
-  },
-  {
-    to: "/settings/memory",
-    label: "长期记忆",
-    icon: Brain,
-    keywords: ["设置", "memory", "记忆", "长期记忆"],
-  },
-  {
-    to: "/settings/chat-server",
-    label: "Chat Server",
-    icon: Server,
-    keywords: ["设置", "chat", "server", "端口", "localhost", "hono"],
-  },
-  {
-    to: "/settings/computer-use",
-    label: "Computer Use",
-    icon: Monitor,
-    keywords: ["设置", "computer use", "电脑操作", "辅助功能", "录屏", "系统录音"],
-  },
-  {
-    to: "/settings/statistics",
-    label: "使用量",
-    icon: ChartColumn,
-    keywords: ["设置", "使用量", "usage", "token", "统计", "历史", "归档", "导入"],
-  },
-  {
-    to: "/settings/logs",
-    label: "活动记录",
-    icon: ScrollText,
-    keywords: ["设置", "活动", "记录", "日志", "logs"],
-  },
-] satisfies Array<{
+type CommandItem = {
   to: string;
   label: string;
   icon: ComponentType<{ className?: string }>;
   keywords: string[];
-}>;
-type CommandItem = (typeof commandItems)[number];
+};
 
 const CHAT_UNREAD_STORAGE_KEY = "m-dashboard-chat-unread-v1";
 const WORKSPACE_COLLAPSE_STORAGE_KEY = "m-dashboard-workspace-collapse-v1";
@@ -518,6 +367,7 @@ async function saveSidebarConversationView(view: SidebarConversationView) {
 }
 
 function AppShell() {
+  const navigationContributions = useDesktopUiSlot("sidebar.navigation");
   const [feishuUnreadCount, setFeishuUnreadCount] = useState(0);
   const [isCommandMenuOpen, setIsCommandMenuOpen] = useState(false);
   const [isChatSearchOpen, setIsChatSearchOpen] = useState(false);
@@ -1345,22 +1195,26 @@ function AppShell() {
                     className="space-y-0.5 px-2 py-2 pb-1 max-sm:px-1.5"
                     aria-label="Main navigation"
                   >
-                    {navItems.slice(0, 1).map((item) => (
-                      <SidebarNavItem item={item} key={item.to} />
-                    ))}
+                    {navigationContributions
+                      .filter((item) => item.section === "primary")
+                      .map((item) => (
+                        <SidebarNavItem item={item} key={item.id} />
+                      ))}
                   </nav>
                   <div className="sidebar-scroll-area h-0 min-h-0 flex-1 overflow-y-auto">
                     <nav
                       className="space-y-0.5 px-2 pt-0 max-sm:px-1.5"
                       aria-label="Secondary navigation"
                     >
-                      {navItems.slice(1).map((item) => (
-                        <SidebarNavItem
-                          item={item}
-                          key={item.to}
-                          unreadCount={item.to === "/channels" ? feishuUnreadCount : 0}
-                        />
-                      ))}
+                      {navigationContributions
+                        .filter((item) => item.section !== "primary")
+                        .map((item) => (
+                          <SidebarNavItem
+                            item={item}
+                            key={item.id}
+                            unreadCount={item.id === "channels" ? feishuUnreadCount : 0}
+                          />
+                        ))}
                     </nav>
                     <WorkspaceConversationGroups view={sidebarConversationView} />
                   </div>
@@ -1699,13 +1553,13 @@ function SidebarNavItem({
   item,
   unreadCount = 0,
 }: {
-  item: (typeof navItems)[number];
+  item: SidebarNavigationContribution;
   unreadCount?: number;
 }) {
   const location = useLocation();
   const Icon = item.icon;
-  const isChatItem = item.to === "/chat";
-  const to = isChatItem ? chatNewPath() : item.to;
+  const isChatItem = item.id === "chat";
+  const to = isChatItem ? chatNewPath() : item.path;
   const isItemActive = isChatItem ? location.pathname === "/chat/new" : undefined;
 
   return (
@@ -4239,16 +4093,37 @@ function CommandMenu({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const chatSearch = useChatPaletteSearch(query);
+  const navigationContributions = useDesktopUiSlot("sidebar.navigation");
+  const settingsContributions = useDesktopUiSlot("settings.page");
   const chats = chatSearch.chats;
+  const registeredCommands = useMemo(
+    () => [
+      ...navigationContributions.map((item) => ({
+        to: item.path,
+        label: item.label,
+        icon: item.icon,
+        keywords: item.keywords ?? [],
+      })),
+      ...settingsContributions
+        .filter((item) => item.visible !== false)
+        .map((item) => ({
+          to: `/settings/${item.path}`,
+          label: item.label,
+          icon: item.icon,
+          keywords: item.keywords,
+        })),
+    ],
+    [navigationContributions, settingsContributions],
+  );
   const commandMatches = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
-    if (!normalized) return commandItems;
-    return commandItems.filter((item) =>
+    if (!normalized) return registeredCommands;
+    return registeredCommands.filter((item) =>
       [item.label, ...item.keywords].some((value) =>
         value.toLocaleLowerCase().includes(normalized),
       ),
     );
-  }, [query]);
+  }, [query, registeredCommands]);
   const items = useMemo<CommandMenuEntry[]>(
     () => [
       ...chats.map((chat) => ({ type: "chat" as const, chat })),

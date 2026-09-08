@@ -1,4 +1,4 @@
-import { Context, Service } from "cordis";
+import { type Context, Service } from "cordis";
 import {
   type ComponentType,
   createContext,
@@ -72,37 +72,6 @@ export class ChatLayoutService extends Service {
   private notify() {
     for (const listener of this.listeners) listener();
   }
-}
-
-export type ChatLayoutRuntime = {
-  ctx: Context;
-  service: ChatLayoutService;
-  dispose: () => Promise<void>;
-};
-
-export async function createChatLayoutRuntime(initial: ChatLayout): Promise<ChatLayoutRuntime> {
-  const ctx = new Context();
-  await ctx.plugin(ChatLayoutService);
-  const service = ctx.chatLayouts;
-  const modules = await Promise.all([
-    import("@/layouts/chat-standard"),
-    import("@/layouts/chat-cute"),
-    import("@/layouts/chat-geek"),
-  ]);
-  const fibers = await Promise.all(
-    modules.map((module) =>
-      ctx.plugin({ name: module.name, inject: module.inject, apply: module.apply }),
-    ),
-  );
-  service.activate(initial);
-  return {
-    ctx,
-    service,
-    dispose: async () => {
-      for (const fiber of fibers.reverse()) await fiber.dispose();
-      await ctx.fiber.dispose();
-    },
-  };
 }
 
 const ChatLayoutContext = createContext<ChatLayoutService | null>(null);

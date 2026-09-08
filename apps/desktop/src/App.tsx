@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ChatLayoutThemeLayer } from "@/components/chat-layout-theme-layer";
 import { ThemeProvider } from "@/components/theme-provider";
-import { ChatLayoutProvider, type ChatLayoutRuntime } from "@/lib/chat-layout";
+import { ChatLayoutProvider } from "@/lib/chat-layout";
+import { DesktopUiProvider, type DesktopUiRuntime } from "@/lib/desktop-ui";
 import { AppRouter } from "@/router/routes";
 
 import "./App.css";
@@ -16,14 +17,16 @@ const queryClient = new QueryClient({
   },
 });
 
-function App({ chatLayoutRuntime }: { chatLayoutRuntime: ChatLayoutRuntime }) {
+function App({ desktopUiRuntime }: { desktopUiRuntime: DesktopUiRuntime }) {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <ChatLayoutProvider service={chatLayoutRuntime.service}>
-          <AppRouter />
-          <ChatLayoutThemeLayer />
-        </ChatLayoutProvider>
+        <DesktopUiProvider service={desktopUiRuntime.service}>
+          <ChatLayoutProvider service={desktopUiRuntime.chatLayouts}>
+            <AppRouter />
+            <ChatLayoutThemeLayer />
+          </ChatLayoutProvider>
+        </DesktopUiProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

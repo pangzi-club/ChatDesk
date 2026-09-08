@@ -18,16 +18,20 @@ const glyphs = [
 ] as const;
 
 export function apply(ctx: Context) {
-  return ctx.chatLayouts.register("geek", ({ children }: ChatLayoutProps) => (
-    <div className="chat-layout-root chat-layout-geek">
-      <div aria-hidden="true" className="chat-geek-streams">
-        {glyphs.map((glyph, index) => (
-          <span className={`chat-geek-glyph is-${index + 1}`} key={glyph.id}>
-            {glyph.text}
-          </span>
-        ))}
-      </div>
-      {children}
-    </div>
-  ));
+  ctx.effect(
+    () =>
+      ctx.chatLayouts.register("geek", ({ children }: ChatLayoutProps) => (
+        <div className="chat-layout-root chat-layout-geek">
+          <div aria-hidden="true" className="chat-geek-streams">
+            {glyphs.map((glyph, index) => (
+              <span className={`chat-geek-glyph is-${index + 1}`} key={glyph.id}>
+                {glyph.text}
+              </span>
+            ))}
+          </div>
+          {children}
+        </div>
+      )),
+    "geek chat layout",
+  );
 }

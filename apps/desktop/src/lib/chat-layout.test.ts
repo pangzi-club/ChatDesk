@@ -1,6 +1,6 @@
 import { Context } from "cordis";
 import { describe, expect, it, vi } from "vitest";
-import { ChatLayoutService, createChatLayoutRuntime } from "@/lib/chat-layout";
+import { ChatLayoutService } from "@/lib/chat-layout";
 
 describe("ChatLayoutService", () => {
   it("registers, activates, notifies, and disposes layouts", async () => {
@@ -25,12 +25,5 @@ describe("ChatLayoutService", () => {
     unsubscribe();
     disposeStandard();
     await ctx.fiber.dispose();
-  });
-
-  it("boots the bundled layout runtime", async () => {
-    const runtime = await createChatLayoutRuntime("geek");
-    expect(runtime.service.getSnapshot().id).toBe("geek");
-    expect(runtime.service.getSnapshot().component).toBeTypeOf("function");
-    await runtime.dispose();
   });
 });
