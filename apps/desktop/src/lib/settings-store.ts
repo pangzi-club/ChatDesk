@@ -18,7 +18,9 @@ export class UserDataStore {
     const bridge = getDesktopBridge();
     const contents = bridge
       ? await bridge.readUserStore(this.fileName)
-      : (window.localStorage.getItem(storageKey(this.fileName)) ?? "");
+      : typeof window !== "undefined"
+        ? (window.localStorage.getItem(storageKey(this.fileName)) ?? "")
+        : "";
     if (contents.trim()) {
       const parsed: unknown = JSON.parse(contents);
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
@@ -52,7 +54,8 @@ export class UserDataStore {
     if (bridge) {
       await bridge.writeUserStore(this.fileName, contents);
     } else {
-      window.localStorage.setItem(storageKey(this.fileName), contents);
+      if (typeof window !== "undefined")
+        window.localStorage.setItem(storageKey(this.fileName), contents);
     }
   }
 }

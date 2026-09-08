@@ -101,6 +101,7 @@ const inspector = {
 contribution 只接收 session、workspace、cwd、生成状态和只读状态，不应读取 Chat 页面内部 React
 state。Composer tool 应通过宿主提供的 `insertText` 修改输入内容。
 
-阶段一仅支持构建期可导入模块，不支持目录扫描、远程代码、本地 `manifest.json`、权限沙箱或动态
-外部安装。`apiVersion` 提供带版本号的兼容协商，但不承诺跨宿主版本永久 ABI。插件不得创建第二个
-Desktop Cordis Context。
+阶段一支持扫描构建期预定义目录 `apps/desktop/src/plugins`：入口由静态 glob 注册表映射，必须与
+`manifest.entry` 一致；未知插件默认禁用，安装即启用、卸载即禁用。桌面设置只持久化成功安装的
+插件 ID，重启时仅恢复仍然有效的 ID。扫描不会执行 `apply`，非法 manifest、越界/重复入口和重复 ID
+会显示为不可用。当前仍不支持用户任意目录、远程代码、动态下载、权限沙箱或签名校验。

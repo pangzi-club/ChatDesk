@@ -13,6 +13,7 @@ import { SettingsLayout } from "@/layouts/settings-layout";
 import { chatIndexRedirectPath } from "@/lib/chat-routes";
 import { ChatPage } from "@/pages/chat";
 import { HistoryDetailPage } from "@/pages/history";
+import { PluginsPage } from "@/pages/plugins";
 
 const router = createHashRouter([
   {
@@ -36,6 +37,7 @@ const router = createHashRouter([
           },
         ],
       },
+      { path: "plugins", element: <PluginsPage /> },
       {
         path: "settings",
         element: <SettingsLayout />,

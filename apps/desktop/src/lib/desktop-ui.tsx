@@ -17,6 +17,12 @@ import {
 import type { BrowserNavigationState } from "@/lib/browser-preview";
 import { type ChatLayout, ChatLayoutService } from "@/lib/chat-layout";
 import type { ContextDetailPromptInput } from "@/lib/context-detail-events";
+import {
+  type DiscoveredPlugin,
+  scanDesktopPlugins,
+  validateDesktopPluginManifest,
+} from "@/lib/desktop-plugin-discovery";
+import { settingsStore } from "@/lib/settings-store";
 
 export const DESKTOP_PLUGIN_API_VERSION = 1 as const;
 
@@ -28,6 +34,7 @@ export type DesktopPluginModule = SdkDesktopPluginModule;
 export type DesktopPluginHandle = SdkDesktopPluginHandle;
 
 export type DesktopPluginInstallResult = SdkDesktopPluginInstallResult;
+export { validateDesktopPluginManifest };
 
 export type DesktopUiSlot =
   | "sidebar.navigation"
@@ -291,6 +298,13 @@ function sortContributions<T extends { order?: number }>(items: T[]) {
 }
 
 export class DesktopUiService extends Service {
+  scanPlugins: () => readonly DiscoveredPlugin[] = () => [];
+  installDiscoveredPlugin: (id: string) => Promise<DesktopPluginInstallResult> = async (id) => ({
+    ok: false,
+    id,
+    error: new Error("插件扫描尚未就绪"),
+  });
+  uninstallPlugin: (id: string) => Promise<boolean> = async () => false;
   private readonly definitions: { [K in DesktopUiSlot]: Map<string, SlotMap[K]> } = {
     "sidebar.navigation": new Map(),
     "settings.page": new Map(),
@@ -464,50 +478,8 @@ export async function createDesktopUiRuntime(
       id,
       error: new Error(message),
     });
-    if (!manifest || !id) return fail("desktop plugin manifest id must not be empty");
-    if (!/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(id)) {
-      return fail(`desktop plugin manifest id is invalid: ${id}`);
-    }
-    if (!/^\d+\.\d+\.\d+$/.test(manifest.version)) {
-      return fail(`desktop plugin manifest version is invalid: ${manifest.version}`);
-    }
-    if (manifest.apiVersion !== DESKTOP_PLUGIN_API_VERSION) {
-      return fail(
-        `desktop plugin API version ${String(manifest.apiVersion)} is not supported; expected ${DESKTOP_PLUGIN_API_VERSION}`,
-      );
-    }
-    if (typeof manifest.entry !== "string" || !manifest.entry.trim()) {
-      return fail("desktop plugin manifest entry must not be empty");
-    }
-    const validSlots = new Set<DesktopUiSlot>([
-      "sidebar.navigation",
-      "settings.page",
-      "route",
-      "workspace.tab",
-      "action",
-      "shell.overlay",
-      "shell.before",
-      "shell.after",
-      "sidebar.before",
-      "sidebar.after",
-      "sidebar.footer",
-      "chat.header.action",
-      "chat.composer.tool",
-    ]);
-    if (
-      !Array.isArray(manifest.contributes) ||
-      manifest.contributes.some(
-        (slot) => typeof slot !== "string" || !validSlots.has(slot as DesktopUiSlot),
-      )
-    ) {
-      return fail("desktop plugin manifest contributes contains an unknown slot");
-    }
-    if (new Set(manifest.contributes).size !== manifest.contributes.length) {
-      return fail("desktop plugin manifest contributes contains duplicates");
-    }
-    if (!Array.isArray(manifest.permissions) || manifest.permissions.length > 0) {
-      return fail("desktop plugin manifest permissions must be an empty array");
-    }
+    const validation = validateDesktopPluginManifest(manifest);
+    if (validation.length) return fail(validation[0].message);
     if (installed.has(id)) {
       return {
         ok: false,
@@ -565,10 +537,52 @@ export async function createDesktopUiRuntime(
       apply: module.apply as unknown as DesktopPluginModule["apply"],
     }),
   );
+  let installedPluginIds = new Set<string>();
+  const storedIds = await settingsStore.get<unknown>("installedPluginIds");
+  if (Array.isArray(storedIds))
+    installedPluginIds = new Set(storedIds.filter((id): id is string => typeof id === "string"));
+  const discovered = scanDesktopPlugins([...installedPluginIds]);
+  const availableIds = new Set(
+    discovered
+      .filter((candidate) => candidate.installable && candidate.manifest)
+      .map((candidate) => candidate.manifest?.id),
+  );
+  installedPluginIds = new Set([...installedPluginIds].filter((id) => availableIds.has(id)));
+  await settingsStore.set("installedPluginIds", [...installedPluginIds]);
+  await settingsStore.save();
+  ctx.desktopUi.scanPlugins = () => scanDesktopPlugins([...installedPluginIds]);
+  ctx.desktopUi.installDiscoveredPlugin = async (id) => {
+    const candidate = scanDesktopPlugins([...installedPluginIds]).find(
+      (item) => item.manifest?.id === id,
+    );
+    if (!candidate?.installable || !candidate.module)
+      return { ok: false, id, error: new Error(candidate?.errors[0]?.message ?? "插件不可安装") };
+    const result = await installPlugin(candidate.module);
+    if (result.ok) {
+      installedPluginIds.add(id);
+      await settingsStore.set("installedPluginIds", [...installedPluginIds]);
+      await settingsStore.save();
+    }
+    return result;
+  };
   const pluginResults: DesktopPluginInstallResult[] = [];
   for (const plugin of [...defaultPlugins, ...initialPlugins]) {
     pluginResults.push(await installPlugin(plugin));
   }
+  for (const candidate of discovered) {
+    if (candidate.installed && candidate.module) await installPlugin(candidate.module);
+  }
+  const originalUninstall = uninstallPlugin;
+  const persistedUninstall = async (id: string) => {
+    const result = await originalUninstall(id);
+    if (result) {
+      installedPluginIds.delete(id);
+      await settingsStore.set("installedPluginIds", [...installedPluginIds]);
+      await settingsStore.save();
+    }
+    return result;
+  };
+  ctx.desktopUi.uninstallPlugin = persistedUninstall;
   ctx.chatLayouts.activate(initialLayout);
   return {
     ctx,
@@ -576,7 +590,7 @@ export async function createDesktopUiRuntime(
     chatLayouts: ctx.chatLayouts,
     pluginResults,
     installPlugin,
-    uninstallPlugin,
+    uninstallPlugin: persistedUninstall,
     dispose: async () => {
       await ctx.desktopUi.disposeWorkspaceTabs();
       for (const name of [...installOrder].reverse()) await uninstallPlugin(name);

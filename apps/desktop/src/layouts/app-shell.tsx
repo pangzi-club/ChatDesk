@@ -21,6 +21,7 @@ import {
   MessageCircle,
   Minimize2,
   MoreHorizontal,
+  Package,
   PanelLeft,
   Plus,
   RefreshCw,
@@ -380,6 +381,15 @@ function AppShell() {
   const navigationContributions = useMemo(
     () =>
       [
+        {
+          id: "plugins",
+          path: "/plugins",
+          label: "Plugins",
+          icon: Package,
+          section: "secondary",
+          order: 35,
+          keywords: ["插件", "plugins"],
+        } satisfies SidebarNavigationContribution,
         ...sidebarContributions,
         ...routeContributions.flatMap((route) =>
           route.navigation
@@ -1686,6 +1696,7 @@ function SidebarNavItem({
         }`
       }
       state={isChatItem ? chatNewNavigationState() : undefined}
+      end={item.id === "plugins"}
       to={to}
     >
       {({ isActive }: NavLinkRenderProps) => (

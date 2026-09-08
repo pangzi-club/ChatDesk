@@ -22,6 +22,8 @@ export type ChatLayoutComponent = ComponentType<ChatLayoutProps>;
 export type ChatLayout = string;
 export type DesktopPluginManifest = {
   id: string;
+  name?: string;
+  description?: string;
   version: string;
   apiVersion: typeof DESKTOP_PLUGIN_API_VERSION;
   entry: string;

@@ -35,8 +35,10 @@ Desktop 现在通过 `@chatdesk/desktop-plugin-sdk` 提供构建期插件入口�
 隔离；卸载会释放 Cordis fiber、`ctx.effect` 资源、UI contribution，以及属于被移除 Workspace Tab
 contribution 的已打开实例。
 
-这是应用内 TypeScript/JavaScript 模块 API，当前通过 `apiVersion: 1` 进行精确版本协商。阶段一不扫描
-用户目录、不执行运行时下载的代码，也不提供权限沙箱、Electron IPC 或无需重启的外部安装机制。
+这是应用内 TypeScript/JavaScript 模块 API，当前通过 `apiVersion: 1` 进行精确版本协商。当前本地开发
+能力已包含对预定义 `apps/desktop/src/plugins` 的静态目录扫描、校验和插件管理页；扫描插件默认不启用，
+只有用户点击安装才会启用并持久化 ID。动态外部安装、升级、回滚、用户任意目录、运行时下载代码、权限
+隔离和签名校验保留到后续阶段。
 
 ## P2：命令与 Shell 扩展
 
