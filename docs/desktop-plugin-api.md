@@ -106,3 +106,43 @@ state。Composer tool 应通过宿主提供的 `insertText` 修改输入内容�
 `manifest.entry` 一致；未知插件默认禁用，安装即启用、卸载即禁用。桌面设置只持久化成功安装的
 插件 ID，重启时仅恢复仍然有效的 ID。扫描不会执行 `apply`，非法 manifest、越界/重复入口和重复 ID
 会显示为不可用。当前仍不支持用户任意目录、远程代码、动态下载、权限沙箱或签名校验。
+
+## 能力评估与后续优先级
+
+当前 API 已经足够支撑“构建期的桌面 UI 插件”：导航、顶层路由、设置页、Workspace Tab、命令与
+快捷键、Shell/Sidebar 附加区域、Chat Header/Composer 工具，以及 Chat layout 都可以通过公开 slot
+注册。结合 `ctx.effect`、稳定 ID、排序、安装/卸载和 Tab `onClose`，内置功能模块化和常规 UI 扩展已经
+具备可用的生命周期基础。
+
+但它还不是完整的开放式插件平台。当前插件 Context 只有 UI 注册和 effect，缺少 storage、通知、dialog、
+session/chat 操作、workspace、Server API、文件系统和 Electron 能力；Chat scope 也不能扩展消息渲染、
+发送流程、工具调用或模型选择。`permissions` 暂时只能是空数组，插件加载仍限于构建期静态入口，因此
+第三方插件可以做丰富的 UI，但还不能稳定地做深度业务集成或安全运行不可信代码。
+
+后续工作按优先级分为：
+
+### P0：先建立可持续的插件基础能力
+
+- 增加版本化的 capability/service 合约，优先覆盖 `storage`、`notifications`、`dialogs`、`commands`、
+  `sessions/chat`、`workspace` 和 `serverClient`。
+- 将权限从 `readonly []` 演进为可校验的 capability 声明，并让宿主按权限注入服务；没有授权时服务不可用。
+- 统一 `packages/desktop-plugin-sdk` 与 `apps/desktop/src/plugin-api.ts` 的公开类型来源，避免两套类型
+  漂移；同时明确 SDK 的发布边界和 `apiVersion` 兼容策略。
+- 为插件渲染增加错误边界、失败隔离和诊断信息，避免单个插件破坏整个 App Shell。
+
+### P1：补齐高价值 UI 扩展面
+
+- Chat 消息操作/渲染、消息工具栏和发送流程扩展。
+- Workspace Tab toolbar、context menu、status bar，以及 Explorer/editor 扩展。
+- Modal/panel、通知中心等需要宿主协调状态的 UI surface。
+- 对高频扩展抽象通用 contribution 元数据，避免仅靠不断增加字符串 slot 导致协议碎片化。
+
+### P2：开放第三方生态与安全运行
+
+- 支持用户插件目录、动态安装、升级、回滚和依赖管理。
+- 增加插件包签名/完整性校验、权限审核和兼容性检查。
+- 在需要运行不可信第三方代码时提供隔离边界（独立进程或受限沙箱），并明确 Electron、文件系统和网络
+  能力的安全策略。
+
+因此，当前版本可以定义为“UI contribution SDK”；完成 P0 后才适合承诺“可扩展业务插件 SDK”，完成
+P2 后再考虑面向不可信第三方的开放插件市场。
