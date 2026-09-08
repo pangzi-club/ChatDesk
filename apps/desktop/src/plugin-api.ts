@@ -17,6 +17,7 @@ export type {
   DesktopIcon,
   DesktopPluginHandle,
   DesktopPluginInstallResult,
+  DesktopPluginManifest,
   DesktopPluginModule,
   DesktopRouteContribution,
   DesktopShellContribution,
@@ -33,4 +34,4 @@ export type {
   WorkspaceTabScope,
   WorkspaceTabType,
 } from "@/lib/desktop-ui";
-export { DesktopUiService } from "@/lib/desktop-ui";
+export { DESKTOP_PLUGIN_API_VERSION, DesktopUiService } from "@/lib/desktop-ui";

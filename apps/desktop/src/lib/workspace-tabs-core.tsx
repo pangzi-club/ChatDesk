@@ -1,31 +1,19 @@
 import type { Context } from "cordis";
-import {
-  ChartColumn,
-  FolderGit2,
-  Globe2,
-  Image,
-  MessageSquarePlus,
-  ScrollText,
-  SquareTerminal,
-} from "lucide-react";
-import {
-  BrowserTabRenderer,
-  ContextDetailTabRenderer,
-  ImageTabRenderer,
-  PlanTabRenderer,
-  SideChatTabRenderer,
-  TerminalTabRenderer,
-} from "@/components/workspace-tab-renderers";
-import { deleteChatServerSession, stopChatServerRun } from "@/lib/chat-server";
+import { FolderGit2, Globe2, SquareTerminal } from "lucide-react";
+import { BrowserTabRenderer, TerminalTabRenderer } from "@/components/workspace-tab-renderers";
 import type { WorkspaceTab, WorkspaceTabContribution } from "@/lib/desktop-ui";
 import { terminalSessions } from "@/lib/terminal";
+import { tabId } from "@/lib/workspace-tab-utils";
 import type { DesktopPluginModule } from "@/plugin-api";
 
-function tabId() {
-  return `chat-window-tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-export const name = "workspace-tab-builtins";
+export const manifest = {
+  id: "workspace-tabs-core",
+  version: "1.0.0",
+  apiVersion: 1,
+  entry: "lib/workspace-tabs-core",
+  contributes: ["workspace.tab"],
+  permissions: [],
+} as const;
 export const inject: DesktopPluginModule["inject"] = ["desktopUi"];
 
 export function apply(ctx: Context) {
@@ -73,45 +61,11 @@ export function apply(ctx: Context) {
           data: {},
         }),
       } satisfies WorkspaceTabContribution<"browser">),
-      ctx.desktopUi.register("workspace.tab", {
-        id: "chat",
-        label: "侧边聊天",
-        icon: MessageSquarePlus,
-        order: 40,
-        renderer: SideChatTabRenderer,
-        isAvailable: (scope) => !scope.sideChatOpening,
-        create: (scope) => scope.openSideChat(),
-        onClose: async (tab) => {
-          if (!tab.data.sessionId) return;
-          await stopChatServerRun(tab.data.sessionId).catch(() => undefined);
-          await deleteChatServerSession(tab.data.sessionId);
-        },
-      } satisfies WorkspaceTabContribution<"chat">),
-      ctx.desktopUi.register("workspace.tab", {
-        id: "image",
-        label: "图片预览",
-        icon: Image,
-        order: 50,
-        renderer: ImageTabRenderer,
-      } satisfies WorkspaceTabContribution<"image">),
-      ctx.desktopUi.register("workspace.tab", {
-        id: "plan",
-        label: "计划",
-        icon: ScrollText,
-        order: 60,
-        renderer: PlanTabRenderer,
-      } satisfies WorkspaceTabContribution<"plan">),
-      ctx.desktopUi.register("workspace.tab", {
-        id: "context-detail",
-        label: "上下文",
-        icon: ChartColumn,
-        order: 70,
-        renderer: ContextDetailTabRenderer,
-      } satisfies WorkspaceTabContribution<"context-detail">),
     ];
-    return () =>
+    return () => {
       disposers.reverse().forEach((dispose) => {
         dispose();
       });
-  }, "workspace tab builtin contributions");
+    };
+  }, "core workspace tab contributions");
 }

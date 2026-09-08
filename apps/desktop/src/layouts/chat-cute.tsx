@@ -3,7 +3,14 @@ import { Cloud, Fish, Sparkles, Waves } from "lucide-react";
 import type { ChatLayoutProps } from "@/lib/chat-layout";
 import type { DesktopPluginModule } from "@/plugin-api";
 
-export const name = "chat-layout-cute";
+export const manifest = {
+  id: "chat-layout-cute",
+  version: "1.0.0",
+  apiVersion: 1,
+  entry: "layouts/chat-cute",
+  contributes: [],
+  permissions: [],
+} as const;
 export const inject: DesktopPluginModule["inject"] = ["chatLayouts"];
 
 export function apply(ctx: Context) {

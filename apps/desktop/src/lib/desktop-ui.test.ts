@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createDesktopUiRuntime,
   DesktopUiService,
+  type DesktopUiSlot,
   useDesktopUiSlot,
   type WorkspaceTabContribution,
   type WorkspaceTabRenderProps,
@@ -15,6 +16,17 @@ import type { DesktopPluginModule } from "@/plugin-api";
 
 function EmptyPage() {
   return null;
+}
+
+function manifest(id: string, contributes: readonly DesktopUiSlot[] = []) {
+  return {
+    id,
+    version: "1.0.0",
+    apiVersion: 1 as const,
+    entry: `test/${id}`,
+    contributes,
+    permissions: [],
+  } as const;
 }
 
 describe("DesktopUiService", () => {
@@ -196,7 +208,17 @@ describe("DesktopUiService", () => {
     const closeTab = vi.fn();
     const runAction = vi.fn();
     const plugin: DesktopPluginModule = {
-      name: "test.public-api",
+      manifest: manifest("test.public-api", [
+        "sidebar.navigation",
+        "route",
+        "settings.page",
+        "workspace.tab",
+        "action",
+        "shell.overlay",
+        "sidebar.footer",
+        "chat.header.action",
+        "chat.composer.tool",
+      ]),
       inject: ["desktopUi", "chatLayouts"],
       apply(ctx) {
         ctx.effect(() => {
@@ -304,7 +326,7 @@ describe("DesktopUiService", () => {
       [{ id: "plugin-tab", type: "blank", title: "Plugin", data: {} }],
       scope,
     );
-    expect(await runtime.uninstallPlugin(plugin.name)).toBe(true);
+    expect(await runtime.uninstallPlugin(plugin.manifest.id)).toBe(true);
     expect(runtime.service.getSnapshot("route").some((item) => item.id === "plugin.route")).toBe(
       false,
     );
@@ -340,7 +362,7 @@ describe("DesktopUiService", () => {
     } satisfies WorkspaceTabContribution<"plugin.inspector", InspectorData>;
     const runtime = await createDesktopUiRuntime("standard", [
       {
-        name: "test.custom-workspace-tab",
+        manifest: manifest("test.custom-workspace-tab", ["workspace.tab"]),
         inject: ["desktopUi"],
         apply(ctx) {
           return ctx.desktopUi.register("workspace.tab", contribution);
@@ -373,13 +395,13 @@ describe("DesktopUiService", () => {
   it("isolates plugin failures and rejects duplicate plugin names", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const failing: DesktopPluginModule = {
-      name: "test.failing",
+      manifest: manifest("test.failing"),
       apply() {
         throw new Error("plugin exploded");
       },
     };
     const healthy: DesktopPluginModule = {
-      name: "test.healthy",
+      manifest: manifest("test.healthy", ["sidebar.navigation"]),
       inject: ["desktopUi"],
       apply(ctx) {
         return ctx.desktopUi.register("sidebar.navigation", {
@@ -394,11 +416,11 @@ describe("DesktopUiService", () => {
 
     expect(runtime.pluginResults[runtime.pluginResults.length - 2]).toMatchObject({
       ok: false,
-      name: "test.failing",
+      id: "test.failing",
     });
     expect(runtime.pluginResults[runtime.pluginResults.length - 1]).toMatchObject({
       ok: true,
-      name: "test.healthy",
+      id: "test.healthy",
     });
     expect(
       runtime.service
@@ -411,7 +433,7 @@ describe("DesktopUiService", () => {
     if (!duplicate.ok) expect(duplicate.error.message).toContain("already installed");
 
     const contributionCollision = await runtime.installPlugin({
-      name: "test.colliding-contribution",
+      manifest: manifest("test.colliding-contribution", ["sidebar.navigation"]),
       inject: ["desktopUi"],
       apply(ctx) {
         return ctx.desktopUi.register("sidebar.navigation", {
@@ -429,5 +451,48 @@ describe("DesktopUiService", () => {
 
     await runtime.dispose();
     errorSpy.mockRestore();
+  });
+
+  it("validates manifests before executing a plugin", async () => {
+    const apply = vi.fn();
+    const runtime = await createDesktopUiRuntime("standard", [
+      {
+        manifest: { ...manifest("test.bad-version"), version: "1.0" },
+        apply,
+      } as unknown as DesktopPluginModule,
+      {
+        manifest: { ...manifest("test.bad-api"), apiVersion: 2 },
+        apply,
+      } as unknown as DesktopPluginModule,
+      {
+        manifest: { ...manifest("test.bad-permission"), permissions: ["filesystem"] },
+        apply,
+      } as unknown as DesktopPluginModule,
+      {
+        manifest: { ...manifest("test.duplicate-slot"), contributes: ["route", "route"] },
+        apply,
+      } as unknown as DesktopPluginModule,
+      {
+        manifest: { ...manifest(""), id: "" },
+        apply,
+      } as unknown as DesktopPluginModule,
+      {
+        manifest: { ...manifest("test.unknown-slot"), contributes: ["unknown.slot"] },
+        apply,
+      } as unknown as DesktopPluginModule,
+    ]);
+
+    const failures = runtime.pluginResults.slice(-6);
+    expect(failures.every((result) => !result.ok)).toBe(true);
+    expect(apply).not.toHaveBeenCalled();
+    expect(failures.map((result) => (result.ok ? "" : result.error.message))).toEqual([
+      "desktop plugin manifest version is invalid: 1.0",
+      "desktop plugin API version 2 is not supported; expected 1",
+      "desktop plugin manifest permissions must be an empty array",
+      "desktop plugin manifest contributes contains duplicates",
+      "desktop plugin manifest id must not be empty",
+      "desktop plugin manifest contributes contains an unknown slot",
+    ]);
+    await runtime.dispose();
   });
 });

@@ -23,8 +23,9 @@ contribution 系统。核心宿主仍负责应用布局、权限、路由基础�
 
 ## 应用内 Plugin API
 
-Desktop 现在通过 `apps/desktop/src/plugin-api.ts` 提供构建期插件入口。插件导出带稳定 `name` 的
-`DesktopPluginModule`，并在共享 Cordis Context 中使用 `desktopUi` 与 `chatLayouts` service。启动时
+Desktop 现在通过 `apps/desktop/src/plugin-api.ts` 提供构建期插件入口。插件导出带稳定 manifest 的
+`DesktopPluginModule`，manifest 包含 `id`、`version`、`apiVersion`、`entry`、`contributes` 和
+`permissions`。插件在共享 Cordis Context 中使用 `desktopUi` 与 `chatLayouts` service。启动时
 插件可作为 `createDesktopUiRuntime(layout, plugins)` 的第二个参数传入，运行中也可通过
 `runtime.installPlugin()` 安装并通过返回的 handle 或 `runtime.uninstallPlugin(name)` 卸载。
 
@@ -33,8 +34,8 @@ Desktop 现在通过 `apps/desktop/src/plugin-api.ts` 提供构建期插件入�
 隔离；卸载会释放 Cordis fiber、`ctx.effect` 资源、UI contribution，以及属于被移除 Workspace Tab
 contribution 的已打开实例。
 
-这是应用内 TypeScript/JavaScript 模块 API，不是跨版本稳定的第三方 ABI。当前不扫描用户目录、不执行
-运行时下载的代码，也不提供插件 manifest、沙箱、Electron IPC 或无需重启的外部安装机制。
+这是应用内 TypeScript/JavaScript 模块 API，当前通过 `apiVersion: 1` 进行精确版本协商。阶段一不扫描
+用户目录、不执行运行时下载的代码，也不提供权限沙箱、Electron IPC 或无需重启的外部安装机制。
 
 ## P2：命令与 Shell 扩展
 

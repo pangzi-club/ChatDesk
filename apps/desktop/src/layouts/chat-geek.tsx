@@ -2,7 +2,14 @@ import type { Context } from "cordis";
 import type { ChatLayoutProps } from "@/lib/chat-layout";
 import type { DesktopPluginModule } from "@/plugin-api";
 
-export const name = "chat-layout-geek";
+export const manifest = {
+  id: "chat-layout-geek",
+  version: "1.0.0",
+  apiVersion: 1,
+  entry: "layouts/chat-geek",
+  contributes: [],
+  permissions: [],
+} as const;
 export const inject: DesktopPluginModule["inject"] = ["chatLayouts"];
 
 const glyphs = [

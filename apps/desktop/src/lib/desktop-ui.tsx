@@ -12,21 +12,32 @@ import type { BrowserNavigationState } from "@/lib/browser-preview";
 import { type ChatLayout, ChatLayoutService } from "@/lib/chat-layout";
 import type { ContextDetailPromptInput } from "@/lib/context-detail-events";
 
+export const DESKTOP_PLUGIN_API_VERSION = 1 as const;
+
+export type DesktopPluginManifest = {
+  id: string;
+  version: string;
+  apiVersion: typeof DESKTOP_PLUGIN_API_VERSION;
+  entry: string;
+  contributes: readonly DesktopUiSlot[];
+  permissions: readonly [];
+};
+
 /** A build-time Desktop plugin installed into the application's shared Cordis context. */
 export type DesktopPluginModule = {
-  name: string;
+  manifest: DesktopPluginManifest;
   inject?: Inject;
   apply: (ctx: Context) => unknown;
 };
 
 export type DesktopPluginHandle = {
-  name: string;
+  id: string;
   dispose: () => Promise<void>;
 };
 
 export type DesktopPluginInstallResult =
-  | { ok: true; name: string; handle: DesktopPluginHandle }
-  | { ok: false; name: string; error: Error };
+  | { ok: true; id: string; handle: DesktopPluginHandle }
+  | { ok: false; id: string; error: Error };
 
 export type DesktopUiSlot =
   | "sidebar.navigation"
@@ -429,7 +440,7 @@ export type DesktopUiRuntime = {
   chatLayouts: ChatLayoutService;
   pluginResults: readonly DesktopPluginInstallResult[];
   installPlugin: (plugin: DesktopPluginModule) => Promise<DesktopPluginInstallResult>;
-  uninstallPlugin: (name: string) => Promise<boolean>;
+  uninstallPlugin: (id: string) => Promise<boolean>;
   dispose: () => Promise<void>;
 };
 
@@ -444,8 +455,11 @@ export async function createDesktopUiRuntime(
     import("@/layouts/chat-standard"),
     import("@/layouts/chat-cute"),
     import("@/layouts/chat-geek"),
-    import("@/lib/desktop-ui-builtins"),
-    import("@/lib/workspace-tab-builtins"),
+    import("@/lib/desktop-navigation"),
+    import("@/lib/desktop-settings"),
+    import("@/lib/workspace-tabs-core"),
+    import("@/lib/workspace-tabs-chat"),
+    import("@/lib/workspace-tabs-content"),
   ]);
   const installed = new Map<string, Fiber>();
   const installOrder: string[] = [];
@@ -453,50 +467,97 @@ export async function createDesktopUiRuntime(
   const installPlugin = async (
     plugin: DesktopPluginModule,
   ): Promise<DesktopPluginInstallResult> => {
-    const name = plugin.name.trim();
-    if (!name) {
-      return { ok: false, name, error: new Error("desktop plugin name must not be empty") };
+    const manifest = plugin.manifest;
+    const id = typeof manifest?.id === "string" ? manifest.id.trim() : "";
+    const fail = (message: string): DesktopPluginInstallResult => ({
+      ok: false,
+      id,
+      error: new Error(message),
+    });
+    if (!manifest || !id) return fail("desktop plugin manifest id must not be empty");
+    if (!/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(id)) {
+      return fail(`desktop plugin manifest id is invalid: ${id}`);
     }
-    if (installed.has(name)) {
+    if (!/^\d+\.\d+\.\d+$/.test(manifest.version)) {
+      return fail(`desktop plugin manifest version is invalid: ${manifest.version}`);
+    }
+    if (manifest.apiVersion !== DESKTOP_PLUGIN_API_VERSION) {
+      return fail(
+        `desktop plugin API version ${String(manifest.apiVersion)} is not supported; expected ${DESKTOP_PLUGIN_API_VERSION}`,
+      );
+    }
+    if (typeof manifest.entry !== "string" || !manifest.entry.trim()) {
+      return fail("desktop plugin manifest entry must not be empty");
+    }
+    const validSlots = new Set<DesktopUiSlot>([
+      "sidebar.navigation",
+      "settings.page",
+      "route",
+      "workspace.tab",
+      "action",
+      "shell.overlay",
+      "shell.before",
+      "shell.after",
+      "sidebar.before",
+      "sidebar.after",
+      "sidebar.footer",
+      "chat.header.action",
+      "chat.composer.tool",
+    ]);
+    if (
+      !Array.isArray(manifest.contributes) ||
+      manifest.contributes.some(
+        (slot) => typeof slot !== "string" || !validSlots.has(slot as DesktopUiSlot),
+      )
+    ) {
+      return fail("desktop plugin manifest contributes contains an unknown slot");
+    }
+    if (new Set(manifest.contributes).size !== manifest.contributes.length) {
+      return fail("desktop plugin manifest contributes contains duplicates");
+    }
+    if (!Array.isArray(manifest.permissions) || manifest.permissions.length > 0) {
+      return fail("desktop plugin manifest permissions must be an empty array");
+    }
+    if (installed.has(id)) {
       return {
         ok: false,
-        name,
-        error: new Error(`desktop plugin already installed: ${name}`),
+        id,
+        error: new Error(`desktop plugin already installed: ${id}`),
       };
     }
 
     let fiber: Fiber | undefined;
     try {
-      const pluginFiber = ctx.plugin({ name, inject: plugin.inject, apply: plugin.apply });
+      const pluginFiber = ctx.plugin({ name: id, inject: plugin.inject, apply: plugin.apply });
       fiber = pluginFiber;
       await pluginFiber;
-      installed.set(name, pluginFiber);
-      installOrder.push(name);
+      installed.set(id, pluginFiber);
+      installOrder.push(id);
       const handle: DesktopPluginHandle = {
-        name,
+        id,
         dispose: async () => {
-          if (installed.get(name) !== pluginFiber) return;
-          installed.delete(name);
-          const index = installOrder.indexOf(name);
+          if (installed.get(id) !== pluginFiber) return;
+          installed.delete(id);
+          const index = installOrder.indexOf(id);
           if (index >= 0) installOrder.splice(index, 1);
           await pluginFiber.dispose();
           await ctx.desktopUi.flushWorkspaceTabClosures();
         },
       };
-      return { ok: true, name, handle };
+      return { ok: true, id, handle };
     } catch (cause) {
       await fiber?.dispose().catch(() => undefined);
       const error = cause instanceof Error ? cause : new Error(String(cause));
-      console.error(`Failed to install desktop plugin "${name}"`, error);
-      return { ok: false, name, error };
+      console.error(`Failed to install desktop plugin "${id}"`, error);
+      return { ok: false, id, error };
     }
   };
 
-  const uninstallPlugin = async (name: string) => {
-    const fiber = installed.get(name);
+  const uninstallPlugin = async (id: string) => {
+    const fiber = installed.get(id);
     if (!fiber) return false;
-    installed.delete(name);
-    const index = installOrder.indexOf(name);
+    installed.delete(id);
+    const index = installOrder.indexOf(id);
     if (index >= 0) installOrder.splice(index, 1);
     await fiber.dispose();
     await ctx.desktopUi.flushWorkspaceTabClosures();
@@ -505,7 +566,7 @@ export async function createDesktopUiRuntime(
 
   const defaultPlugins = modules.map(
     (module): DesktopPluginModule => ({
-      name: module.name,
+      manifest: module.manifest,
       inject: module.inject,
       apply: module.apply,
     }),

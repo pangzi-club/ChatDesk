@@ -13,7 +13,14 @@ function ExamplePage() {
 }
 
 export const plugin = {
-  name: "example.dashboard",
+  manifest: {
+    id: "example.dashboard",
+    version: "1.0.0",
+    apiVersion: 1,
+    entry: "example/dashboard",
+    contributes: ["route"],
+    permissions: [],
+  },
   inject: ["desktopUi"],
   apply(ctx) {
     ctx.effect(() =>
@@ -30,6 +37,10 @@ export const plugin = {
   },
 } satisfies DesktopPluginModule;
 ```
+
+`manifest.id` 是插件的全局稳定标识，`version` 使用 `major.minor.patch` 格式，`entry` 是构建期入口
+标识。宿主当前只接受 `apiVersion: 1`；`contributes` 必须是公开 slot 且不能重复，首版
+`permissions` 必须为空数组。Manifest 在创建 Cordis fiber 前校验，失败插件不会执行 `apply`。
 
 ## 加载和卸载
 
@@ -89,5 +100,6 @@ const inspector = {
 contribution 只接收 session、workspace、cwd、生成状态和只读状态，不应读取 Chat 页面内部 React
 state。Composer tool 应通过宿主提供的 `insertText` 修改输入内容。
 
-首版仅支持构建期可导入模块，不支持目录扫描、远程代码、本地 manifest、权限沙箱或第三方 ABI
-兼容承诺。插件不得创建第二个 Desktop Cordis Context。
+阶段一仅支持构建期可导入模块，不支持目录扫描、远程代码、本地 `manifest.json`、权限沙箱或动态
+外部安装。`apiVersion` 提供带版本号的兼容协商，但不承诺跨宿主版本永久 ABI。插件不得创建第二个
+Desktop Cordis Context。
