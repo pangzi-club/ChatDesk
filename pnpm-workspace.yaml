@@ -8,6 +8,14 @@ allowBuilds:
   protobufjs: true
   sharp: true
 enableGlobalVirtualStore: true
+minimumReleaseAgeExclude:
+  - '@trycua/cua-driver-darwin-arm64@0.24.0'
+  - '@trycua/cua-driver-darwin-x64@0.24.0'
+  - '@trycua/cua-driver-linux-arm64-gnu@0.24.0'
+  - '@trycua/cua-driver-linux-x64-gnu@0.24.0'
+  - '@trycua/cua-driver-win32-arm64-msvc@0.24.0'
+  - '@trycua/cua-driver-win32-x64-msvc@0.24.0'
+  - '@trycua/cua-driver@0.24.0'
 packageExtensions:
   ink-testing-library:
     peerDependencies:

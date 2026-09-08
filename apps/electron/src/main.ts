@@ -78,6 +78,7 @@ const MAX_WINDOW_DIMENSION = 10000;
 const WINDOW_SHOW_FALLBACK_MS = 5_000;
 const NOTIFICATION_RESULT_TIMEOUT_MS = 60_000;
 const NOTIFICATION_RETENTION_MS = 10 * 60_000;
+const APP_SHUTDOWN_TIMEOUT_MS = 5_000;
 let windowStateSaveTimer: NodeJS.Timeout | undefined;
 const activeNotifications = new Set<Notification>();
 
@@ -813,9 +814,16 @@ if (!gotSingleInstanceLock) {
     windowStateSaveTimer = undefined;
     saveWindowState();
     terminalManager.shutdown();
+    const forceExitTimer = setTimeout(() => {
+      console.error("应用清理超时，强制退出");
+      app.exit(0);
+    }, APP_SHUTDOWN_TIMEOUT_MS);
     void (supervisor?.stop() ?? Promise.resolve())
       .finally(() => computerUseManager.dispose())
-      .finally(() => app.exit(0));
+      .finally(() => {
+        clearTimeout(forceExitTimer);
+        app.exit(0);
+      });
   });
   app.on("window-all-closed", () => undefined);
 }

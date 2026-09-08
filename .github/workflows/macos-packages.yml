@@ -24,8 +24,8 @@ jobs:
     env:
       # Cua Driver is distributed separately from the npm SDK. Keep the
       # artifact URL and digest overrideable for private mirrors.
-      CUA_DRIVER_URL: ${{ secrets.CUA_DRIVER_URL_MACOS_ARM64 || vars.CUA_DRIVER_URL_MACOS_ARM64 || 'https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.23.2/cua-driver-rs-0.23.2-darwin-arm64.tar.gz' }}
-      CUA_DRIVER_SHA256: ${{ secrets.CUA_DRIVER_SHA256_MACOS_ARM64 || vars.CUA_DRIVER_SHA256_MACOS_ARM64 || 'c606a0410eb1bf59ee81d697f6fbf8b7126b2e9a3f802272a34807b45b6ecd6f' }}
+      CUA_DRIVER_URL: ${{ secrets.CUA_DRIVER_URL_MACOS_ARM64 || vars.CUA_DRIVER_URL_MACOS_ARM64 || 'https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.24.0/cua-driver-rs-0.24.0-darwin-arm64.tar.gz' }}
+      CUA_DRIVER_SHA256: ${{ secrets.CUA_DRIVER_SHA256_MACOS_ARM64 || vars.CUA_DRIVER_SHA256_MACOS_ARM64 || 'fd0cf565db831ad34d44a3c2321439575e02a6ce3ca97d04f267db1da7883685' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

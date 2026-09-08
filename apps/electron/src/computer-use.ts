@@ -6,6 +6,7 @@ import {
 import { currentMacOsPermissionStatus } from "@trycua/cua-driver";
 import { EmbeddedCuaDriverHost, EmbeddedDriverHostState } from "@trycua/cua-driver/embedded";
 import { app, shell } from "electron";
+import { kill } from "node:process";
 import { accessSync, constants, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
@@ -40,6 +41,7 @@ export type ComputerUseMcpConfig = {
 };
 
 const MACOS_HOST_BUNDLE_ID = "org.bohao.mdashboard";
+const STOP_TIMEOUT_MS = 2_000;
 
 function resolveDriverPath() {
   const candidates = [
@@ -164,13 +166,27 @@ export class ComputerUseManager {
 
   async stop() {
     const host = this.host;
-    this.exitController?.abort();
+    const connection = this.connection;
     this.exitController = null;
     this.host = null;
     this.connection = null;
     if (host) {
-      await host.stop().catch(() => undefined);
-      host.uniffiDestroy();
+      let stopped = false;
+      try {
+        stopped = await Promise.race([
+          host.stop().then(() => true).catch(() => true),
+          delay(STOP_TIMEOUT_MS).then(() => false),
+        ]);
+      } finally {
+        if (!stopped && connection?.pid) {
+          try {
+            kill(connection.pid, "SIGKILL");
+          } catch {
+            // The daemon may have exited during the timeout window.
+          }
+        }
+        host.uniffiDestroy();
+      }
     }
     this.emitStatus?.(this.status());
   }
@@ -206,4 +222,8 @@ export class ComputerUseManager {
   async dispose() {
     await this.stop();
   }
+}
+
+function delay(milliseconds: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 }

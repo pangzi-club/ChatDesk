@@ -18,7 +18,7 @@
   "dependencies": {
     "@chatdesk/desktop-host": "workspace:*",
     "@chatdesk/shared": "workspace:*",
-    "@trycua/cua-driver": "^0.23.2",
+    "@trycua/cua-driver": "^0.24.0",
     "node-pty": "^1.1.0"
   },
   "devDependencies": {
