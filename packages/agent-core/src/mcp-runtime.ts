@@ -193,13 +193,13 @@ export class McpRuntime {
       return createMCPClient({
         transport: { type: "http", url: server.url, headers: server.headers },
         clientName: "ChatDesk",
-        version: "0.6.0",
+        version: "0.6.1",
       });
     }
     return createMCPClient({
       transport: new StdioMCPTransport(stdioConfig(server)),
       clientName: "ChatDesk",
-      version: "0.6.0",
+      version: "0.6.1",
     });
   }
 }

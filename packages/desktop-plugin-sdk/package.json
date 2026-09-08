@@ -1,7 +1,7 @@
 {
   "name": "@chatdesk/desktop-plugin-sdk",
   "private": true,
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Public contract for ChatDesk Desktop plugins",
   "license": "MIT",
   "packageManager": "pnpm@11.19.0",
