@@ -6,15 +6,13 @@ import {
   useLocation,
   useParams,
 } from "react-router-dom";
+import { DesktopRouteHost } from "@/components/desktop-route-host";
 import { SettingsRouteHost } from "@/components/settings-route-host";
 import { AppShell } from "@/layouts/app-shell";
 import { SettingsLayout } from "@/layouts/settings-layout";
 import { chatIndexRedirectPath } from "@/lib/chat-routes";
-import { AutomationsPage } from "@/pages/automations";
-import { ChannelsPage } from "@/pages/channels";
 import { ChatPage } from "@/pages/chat";
 import { HistoryDetailPage } from "@/pages/history";
-import { ImageGenerationPage } from "@/pages/image-generation";
 
 const router = createHashRouter([
   {
@@ -39,18 +37,6 @@ const router = createHashRouter([
         ],
       },
       {
-        path: "channels",
-        element: <ChannelsPage />,
-      },
-      {
-        path: "image-generation",
-        element: <ImageGenerationPage />,
-      },
-      {
-        path: "automations",
-        element: <AutomationsPage />,
-      },
-      {
         path: "settings",
         element: <SettingsLayout />,
         children: [
@@ -71,6 +57,7 @@ const router = createHashRouter([
         path: "history/:source/:id",
         element: <HistoryLegacyRedirect />,
       },
+      { path: "*", element: <DesktopRouteHost /> },
     ],
   },
   {

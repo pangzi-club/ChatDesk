@@ -22,6 +22,9 @@ import {
   SquareTerminal,
   Wrench,
 } from "lucide-react";
+import { AutomationsPage } from "@/pages/automations";
+import { ChannelsPage } from "@/pages/channels";
+import { ImageGenerationPage } from "@/pages/image-generation";
 import {
   AgentsSettingsPage,
   ApiKeysSettingsPage,
@@ -176,23 +179,34 @@ export function apply(ctx: Context) {
         order: 10,
         keywords: ["对话", "聊天"],
       }),
-      ctx.desktopUi.register("sidebar.navigation", {
+      ctx.desktopUi.register("route", {
         id: "channels",
         path: "/channels",
-        label: "Channel",
+        title: "Channel",
         icon: MessageSquare,
-        section: "secondary",
+        keywords: ["飞书", "消息", "联系人", "channel"],
         order: 20,
-        keywords: ["飞书", "消息", "联系人"],
+        navigation: { label: "Channel", section: "secondary" },
+        component: ChannelsPage,
       }),
-      ctx.desktopUi.register("sidebar.navigation", {
+      ctx.desktopUi.register("route", {
         id: "automations",
         path: "/automations",
-        label: "Automations",
+        title: "Automations",
         icon: Clock3,
-        section: "secondary",
-        order: 30,
         keywords: ["自动化", "任务"],
+        order: 30,
+        navigation: { label: "Automations", section: "secondary" },
+        component: AutomationsPage,
+      }),
+      ctx.desktopUi.register("route", {
+        id: "image-generation",
+        path: "/image-generation",
+        title: "Image Generation",
+        icon: Sparkles,
+        keywords: ["图片", "图像", "生成"],
+        order: 40,
+        component: ImageGenerationPage,
       }),
       ...settings.map(([path, label, icon, keywords, component], index) =>
         ctx.desktopUi.register("settings.page", {

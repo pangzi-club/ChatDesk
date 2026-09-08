@@ -253,6 +253,10 @@
 - App Shell、标题栏、Chat 路由、权限和核心状态属于宿主骨架，直接由 Desktop 实现。
 - 主导航与 Settings 页面等内置可选能力通过 Desktop 的 Cordis UI contribution 注册，由同一个
   Cordis `Context` 统一管理注册、排序、订阅和释放。
+- Channel、Automations 等可选顶层页面通过 `desktop.route` 注册；Router 只保留 Chat、Settings、
+  兼容跳转和动态 Route Host 等宿主骨架。
+- Workspace 宿主管理 Tab 实例、顺序、激活、拖拽与分栏；工具类型、图标、渲染、创建条件和资源释放
+  通过 `desktop.workspace.tab` 注册。新建菜单与空窗口入口必须消费同一份 contribution 清单。
 - 新增或重命名 Settings 页面时，必须在对应 `desktop.settings.page` descriptor 中同时维护当前标签、
   搜索关键词、图标和排序；Settings 导航与命令搜索均消费这份 descriptor，不再维护平行清单。
 - 当前 contribution 协议是 Desktop 内部边界，不作为第三方插件 ABI，也不负责插件安装、启停或加载。

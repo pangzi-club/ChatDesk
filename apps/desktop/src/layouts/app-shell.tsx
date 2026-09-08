@@ -1,14 +1,13 @@
 import {
   DEFAULT_WORKSPACE_ID,
-  type SystemPromptSnapshot,
   type WorkspaceFileEntry,
   type WorkspaceGitFile,
 } from "@chatdesk/shared";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { UIMessage } from "ai";
 import {
   ArrowDown,
   ArrowUp,
-  ChartColumn,
   Check,
   ChevronDown,
   ChevronRight,
@@ -16,23 +15,17 @@ import {
   CopyX,
   CornerDownLeft,
   FolderGit2,
-  Globe2,
-  Image,
   List,
   LoaderCircle,
   Maximize2,
   MessageCircle,
-  MessageSquarePlus,
   Minimize2,
   MoreHorizontal,
   PanelLeft,
-  Play,
   Plus,
   RefreshCw,
-  ScrollText,
   Search,
   Settings,
-  SquareTerminal,
   Trash2,
   Undo2,
   Upload,
@@ -59,20 +52,15 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
-import { ChatBrowser } from "@/components/chat-browser";
-import { ChatContextDetail } from "@/components/chat-context-detail";
 import { ChatConversationHoverCard } from "@/components/chat-conversation-hover-card";
 import {
   ChatConversationMenuItems,
   copyChatConversationId,
 } from "@/components/chat-conversation-menu-items";
-import { ChatMarkdown } from "@/components/chat-markdown";
-import { ChatTerminal } from "@/components/chat-terminal";
 import { ChatTitleDialog } from "@/components/chat-title-dialog";
 import { ExplorerFileIcon } from "@/components/explorer-file-icon";
 import { FileViewer } from "@/components/file-viewer";
 import { GitCommitDialog } from "@/components/git-commit-dialog";
-import { SideChat } from "@/components/side-chat";
 import { TitlebarDragRegion } from "@/components/titlebar";
 import {
   AlertDialog,
@@ -103,10 +91,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { rememberReturnPath } from "@/lib/app-return-path";
 import {
-  type BrowserNavigationState,
-  getBrowserNavigationState,
   getBrowserPreviewTitle,
-  moveBrowserNavigation,
   normalizeBrowserPreviewUrl,
   pushBrowserNavigation,
 } from "@/lib/browser-preview";
@@ -125,10 +110,7 @@ import {
   canMonitorChatServer,
   canRestartChatServer,
   createChatServerSession,
-  deleteChatServerSession,
   getChatServerStatus,
-  loadChatPlan,
-  loadChatPlans,
   loadChatServerPort,
   loadFeishuUnread,
   loadServerWorkspaceFile,
@@ -138,7 +120,6 @@ import {
   regenerateChatSessionTitle,
   restartChatServer,
   restoreServerWorkspaceGit,
-  stopChatServerRun,
   subscribeChatServerConnection,
   subscribeChatServerEvents,
   updateChatSessionTitle,
@@ -151,22 +132,27 @@ import {
   searchChatIndex,
 } from "@/lib/chat-store";
 import {
-  type ContextDetailPromptInput,
   subscribeContextDetailOpen,
   subscribeContextDetailUpdated,
 } from "@/lib/context-detail-events";
 import { getDesktopBridge, isDesktop } from "@/lib/desktop-bridge";
-import { type SidebarNavigationContribution, useDesktopUiSlot } from "@/lib/desktop-ui";
+import {
+  type AnyWorkspaceTabContribution,
+  patchWorkspaceTab,
+  type SidebarNavigationContribution,
+  useDesktopUi,
+  useDesktopUiSlot,
+  type WorkspaceTab,
+  type WorkspaceTabRenderProps,
+  type WorkspaceTabScope,
+  type WorkspaceTabType,
+} from "@/lib/desktop-ui";
 import { DEFAULT_DEVELOPER_SETTINGS, loadDeveloperSettings } from "@/lib/developer-settings";
 import { explorerFileIconKind } from "@/lib/explorer-file-icon";
 import { subscribeFileViewerOpen } from "@/lib/file-viewer-events";
 import { loadGeneralSettings, notifyFeishuMessage } from "@/lib/general-settings";
 import { subscribeImagePreviewOpen } from "@/lib/image-preview-events";
-import {
-  requestPlanExecution,
-  subscribePlanViewerOpen,
-  subscribePlanViewerUpdated,
-} from "@/lib/plan-viewer-events";
+import { subscribePlanViewerOpen, subscribePlanViewerUpdated } from "@/lib/plan-viewer-events";
 import { settingsStore } from "@/lib/settings-store";
 import {
   DEFAULT_SHORTCUTS,
@@ -178,7 +164,6 @@ import {
 } from "@/lib/shortcuts";
 import { subscribeSideChatOpen } from "@/lib/side-chat-events";
 import { appendSystemLog } from "@/lib/system-log";
-import { terminalSessions } from "@/lib/terminal";
 import {
   adjacentConversationId,
   clusterConversations,
@@ -219,6 +204,7 @@ function getWorkbenchLayoutTransition(shouldReduceMotion: boolean) {
 }
 
 type CommandItem = {
+  id: string;
   to: string;
   label: string;
   icon: ComponentType<{ className?: string }>;
@@ -367,7 +353,31 @@ async function saveSidebarConversationView(view: SidebarConversationView) {
 }
 
 function AppShell() {
-  const navigationContributions = useDesktopUiSlot("sidebar.navigation");
+  const desktopUi = useDesktopUi();
+  const sidebarContributions = useDesktopUiSlot("sidebar.navigation");
+  const routeContributions = useDesktopUiSlot("route");
+  const navigationContributions = useMemo(
+    () =>
+      [
+        ...sidebarContributions,
+        ...routeContributions.flatMap((route) =>
+          route.navigation
+            ? [
+                {
+                  id: route.id,
+                  path: route.path,
+                  label: route.navigation.label,
+                  icon: route.icon,
+                  order: route.order,
+                  section: route.navigation.section,
+                  keywords: route.keywords,
+                } satisfies SidebarNavigationContribution,
+              ]
+            : [],
+        ),
+      ].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
+    [routeContributions, sidebarContributions],
+  );
   const [feishuUnreadCount, setFeishuUnreadCount] = useState(0);
   const [isCommandMenuOpen, setIsCommandMenuOpen] = useState(false);
   const [isChatSearchOpen, setIsChatSearchOpen] = useState(false);
@@ -486,10 +496,10 @@ function AppShell() {
             )
           : (chatSessionQuery.data.cwd ?? "")
         : "";
-  async function openSideChat(draft?: string) {
-    if (!isChatPage || sideChatOpening) return;
+  async function openSideChat(draft?: string): Promise<WorkspaceTab<"chat"> | undefined> {
+    if (!isChatPage || sideChatOpening) return undefined;
     const state = chatWindowStates[chatWindowKey] ?? createChatWindowState();
-    const existing = state.tabs.find((tab) => tab.kind === "chat");
+    const existing = state.tabs.find((tab) => isWorkspaceTabType(tab, "chat"));
     if (existing) {
       setChatWindowStates((current) => ({
         ...current,
@@ -497,14 +507,20 @@ function AppShell() {
           ...state,
           open: true,
           activeTabId: existing.id,
-          tabs: state.tabs.map((tab) =>
-            tab.id === existing.id && draft
-              ? { ...tab, draft, draftRevision: (tab.draftRevision ?? 0) + 1 }
-              : tab,
-          ),
+          tabs: state.tabs.map((tab) => {
+            if (!isWorkspaceTabType(tab, "chat") || tab.id !== existing.id || !draft) return tab;
+            return {
+              ...tab,
+              data: {
+                ...tab.data,
+                draft,
+                draftRevision: (tab.data.draftRevision ?? 0) + 1,
+              },
+            };
+          }),
         },
       }));
-      return;
+      return existing;
     }
     setSideChatOpening(true);
     try {
@@ -514,23 +530,27 @@ function AppShell() {
         workspaceId: chatWorkspaceId,
         cwd: chatWorkspaceCwd,
       });
-      const tab: ChatWindowTab = {
+      const tab: WorkspaceTab<"chat"> = {
         id: createChatWindowTabId(),
         title: "侧边聊天",
-        kind: "chat",
-        sessionId: session.id,
-        workspaceId: chatWorkspaceId,
-        cwd: chatWorkspaceCwd,
-        contextMessages: chatSessionQuery.data?.messages ?? [],
-        draft,
-        draftRevision: draft ? 1 : 0,
+        type: "chat",
+        data: {
+          sessionId: session.id,
+          workspaceId: chatWorkspaceId,
+          cwd: chatWorkspaceCwd,
+          messages: chatSessionQuery.data?.messages ?? [],
+          draft,
+          draftRevision: draft ? 1 : 0,
+        },
       };
       setChatWindowStates((current) => ({
         ...current,
         [chatWindowKey]: { ...state, open: true, tabs: [...state.tabs, tab], activeTabId: tab.id },
       }));
+      return tab;
     } catch (error) {
       console.error("Failed to create side chat", error);
+      return undefined;
     } finally {
       setSideChatOpening(false);
     }
@@ -545,11 +565,15 @@ function AppShell() {
   function closeSideChatWindow(key: string) {
     const state = chatWindowStates[key];
     for (const tab of state?.tabs ?? []) {
-      if (tab.kind !== "chat" || !tab.sessionId) continue;
-      void stopChatServerRun(tab.sessionId).catch(() => undefined);
-      void deleteChatServerSession(tab.sessionId).catch((error) =>
-        console.error("Failed to delete side chat", error),
-      );
+      if (tab.type !== "chat") continue;
+      void desktopUi.releaseWorkspaceTab(tab, {
+        workspaceId: chatWorkspaceId,
+        cwd: chatWorkspaceCwd,
+        sessionId: chatSessionId,
+        messages: chatSessionQuery.data?.messages ?? [],
+        sideChatOpening,
+        openSideChat,
+      });
     }
     setChatWindowStates((current) => ({
       ...current,
@@ -557,8 +581,8 @@ function AppShell() {
         ...(current[key] ?? createChatWindowState()),
         open: false,
         expanded: false,
-        tabs: (current[key]?.tabs ?? []).filter((tab) => tab.kind !== "chat"),
-        activeTabId: (current[key]?.tabs ?? []).find((tab) => tab.kind !== "chat")?.id ?? null,
+        tabs: (current[key]?.tabs ?? []).filter((tab) => tab.type !== "chat"),
+        activeTabId: (current[key]?.tabs ?? []).find((tab) => tab.type !== "chat")?.id ?? null,
       },
     }));
   }
@@ -876,32 +900,33 @@ function AppShell() {
       setChatWindowStates((current) => {
         const state = current[key] ?? createChatWindowState();
         const existing = state.tabs.find(
-          (tab) =>
-            (tab.kind === "workspace" || tab.kind === "source" || tab.kind === "git-diff") &&
-            tab.workspaceId === request.workspaceId,
+          (tab): tab is WorkspaceTab<"explorer"> =>
+            isWorkspaceTabType(tab, "explorer") && tab.data.workspaceId === request.workspaceId,
         );
-        const tab: ChatWindowTab = existing ?? {
+        const tab: WorkspaceTab<"explorer"> = existing ?? {
           id: createChatWindowTabId(),
           title: "Explorer",
-          kind: "workspace" as const,
-          workspaceId: request.workspaceId,
-          cwd: request.cwd,
-          path: request.path,
-          content: request.content,
-          refreshToken: Date.now(),
-          explorerView: request.mode === "diff" ? ("git" as const) : ("files" as const),
-          editorMode: request.mode,
+          type: "explorer",
+          data: {
+            workspaceId: request.workspaceId,
+            cwd: request.cwd,
+            path: request.path,
+            content: request.content,
+            view: request.mode === "diff" ? "git" : "files",
+            editorMode: request.mode,
+          },
         };
-        const refreshedTab: ChatWindowTab = existing
+        const refreshedTab: WorkspaceTab<"explorer"> = existing
           ? {
               ...existing,
-              kind: "workspace" as const,
-              refreshToken: Date.now(),
-              path: request.path,
-              content: request.content,
-              cwd: request.cwd ?? existing.cwd,
-              explorerView: request.mode === "diff" ? ("git" as const) : ("files" as const),
-              editorMode: request.mode,
+              data: {
+                ...existing.data,
+                path: request.path,
+                content: request.content,
+                cwd: request.cwd ?? existing.data.cwd,
+                view: request.mode === "diff" ? "git" : "files",
+                editorMode: request.mode,
+              },
             }
           : tab;
         return {
@@ -925,18 +950,21 @@ function AppShell() {
         const next = { ...current };
         for (const [key, state] of Object.entries(current)) {
           const tabs = state.tabs.map((tab) =>
-            tab.kind === "plan" && tab.sessionId === request.sessionId
+            tab.type === "plan" && tab.data.sessionId === request.sessionId
               ? {
                   ...tab,
-                  ...(tab.planId === request.planId
-                    ? {
-                        title: request.fileName,
-                        content: request.content ?? tab.content,
-                        canExecute: request.canExecute ?? tab.canExecute,
-                      }
-                    : { canExecute: false }),
-                  activePlanId: request.planId,
-                  activePlanCanExecute: request.canExecute ?? tab.activePlanCanExecute,
+                  ...(tab.data.planId === request.planId ? { title: request.fileName } : {}),
+                  data: {
+                    ...tab.data,
+                    ...(tab.data.planId === request.planId
+                      ? {
+                          content: request.content ?? tab.data.content,
+                          canExecute: request.canExecute ?? tab.data.canExecute,
+                        }
+                      : { canExecute: false }),
+                    activePlanId: request.planId,
+                    activePlanCanExecute: request.canExecute ?? tab.data.activePlanCanExecute,
+                  },
                 }
               : tab,
           );
@@ -955,19 +983,23 @@ function AppShell() {
       setChatWindowStates((current) => {
         const state = current[key] ?? createChatWindowState();
         const existing = state.tabs.find(
-          (tab) => tab.kind === "context-detail" && tab.sessionId === request.sessionId,
+          (tab): tab is WorkspaceTab<"context-detail"> =>
+            isWorkspaceTabType(tab, "context-detail") && tab.data.sessionId === request.sessionId,
         );
-        const tab: ChatWindowTab = existing ?? {
+        const tab: WorkspaceTab<"context-detail"> = existing ?? {
           id: createChatWindowTabId(),
           title: "上下文详情",
-          kind: "context-detail",
-          sessionId: request.sessionId,
+          type: "context-detail",
+          data: { sessionId: request.sessionId },
         };
-        const updated: ChatWindowTab = {
+        const updated: WorkspaceTab<"context-detail"> = {
           ...tab,
-          contextMessages: request.messages,
-          contextPromptInput: request.promptInput,
-          ...(request.systemPrompt ? { contextSystemPrompt: request.systemPrompt } : {}),
+          data: {
+            ...tab.data,
+            messages: request.messages,
+            promptInput: request.promptInput,
+            ...(request.systemPrompt ? { systemPrompt: request.systemPrompt } : {}),
+          },
         };
         return {
           ...current,
@@ -991,13 +1023,17 @@ function AppShell() {
         const next = { ...current };
         for (const [key, state] of Object.entries(current)) {
           const tabs = state.tabs.map((tab) => {
-            if (tab.kind !== "context-detail" || tab.sessionId !== request.sessionId) return tab;
+            if (tab.type !== "context-detail" || tab.data.sessionId !== request.sessionId)
+              return tab;
             changed = true;
             return {
               ...tab,
-              ...(request.messages ? { contextMessages: request.messages } : {}),
-              ...(request.promptInput ? { contextPromptInput: request.promptInput } : {}),
-              ...(request.systemPrompt ? { contextSystemPrompt: request.systemPrompt } : {}),
+              data: {
+                ...tab.data,
+                ...(request.messages ? { messages: request.messages } : {}),
+                ...(request.promptInput ? { promptInput: request.promptInput } : {}),
+                ...(request.systemPrompt ? { systemPrompt: request.systemPrompt } : {}),
+              },
             };
           });
           if (tabs.some((tab, index) => tab !== state.tabs[index])) next[key] = { ...state, tabs };
@@ -1013,27 +1049,33 @@ function AppShell() {
       setChatWindowStates((current) => {
         const state = current[key] ?? createChatWindowState();
         const existing = state.tabs.find(
-          (tab) => tab.kind === "plan" && tab.sessionId === request.sessionId,
+          (tab): tab is WorkspaceTab<"plan"> =>
+            isWorkspaceTabType(tab, "plan") && tab.data.sessionId === request.sessionId,
         );
-        const tab: ChatWindowTab = existing ?? {
+        const tab: WorkspaceTab<"plan"> = existing ?? {
           id: createChatWindowTabId(),
           title: request.fileName,
-          kind: "plan",
-          sessionId: request.sessionId,
-          planId: request.planId,
-          content: request.content,
-          canExecute: request.canExecute,
-          activePlanId: request.planId,
-          activePlanCanExecute: request.canExecute,
+          type: "plan",
+          data: {
+            sessionId: request.sessionId,
+            planId: request.planId,
+            content: request.content,
+            canExecute: request.canExecute,
+            activePlanId: request.planId,
+            activePlanCanExecute: request.canExecute,
+          },
         };
-        const updated = {
+        const updated: WorkspaceTab<"plan"> = {
           ...tab,
           title: request.fileName,
-          planId: request.planId,
-          content: request.content,
-          canExecute: request.canExecute,
-          activePlanId: request.planId,
-          activePlanCanExecute: request.canExecute,
+          data: {
+            ...tab.data,
+            planId: request.planId,
+            content: request.content,
+            canExecute: request.canExecute,
+            activePlanId: request.planId,
+            activePlanCanExecute: request.canExecute,
+          },
         };
         return {
           ...current,
@@ -1059,41 +1101,59 @@ function AppShell() {
         const state = current[key] ?? createChatWindowState();
         if (request.source === "frame") {
           const frameTab = state.tabs.find(
-            (tab) => tab.id === request.frameName && tab.kind === "browser",
+            (tab): tab is WorkspaceTab<"browser"> =>
+              tab.id === request.frameName && isWorkspaceTabType(tab, "browser"),
           );
           if (!frameTab) return current;
           return {
             ...current,
             [key]: {
               ...state,
-              tabs: state.tabs.map((tab) =>
-                tab.id === frameTab.id
-                  ? {
-                      ...tab,
-                      browserNavigation: pushBrowserNavigation(tab, url),
-                      title: getBrowserPreviewTitle(url),
+              tabs: state.tabs.map((tab) => {
+                if (!isWorkspaceTabType(tab, "browser") || tab.id !== frameTab.id) return tab;
+                return {
+                  ...frameTab,
+                  title: getBrowserPreviewTitle(url),
+                  data: {
+                    ...frameTab.data,
+                    navigation: pushBrowserNavigation(
+                      {
+                        browserNavigation: frameTab.data.navigation,
+                        url: frameTab.data.url,
+                      },
                       url,
-                    }
-                  : tab,
-              ),
+                    ),
+                    url,
+                  },
+                };
+              }),
             },
           };
         }
         const existing = request.newTab
           ? undefined
-          : [...state.tabs].reverse().find((tab) => tab.kind === "browser");
-        const tab: ChatWindowTab = existing ?? {
+          : [...state.tabs]
+              .reverse()
+              .find((tab): tab is WorkspaceTab<"browser"> => isWorkspaceTabType(tab, "browser"));
+        const tab: WorkspaceTab<"browser"> = existing ?? {
           id: createChatWindowTabId(),
           title: getBrowserPreviewTitle(url),
-          kind: "browser",
+          type: "browser",
+          data: {},
         };
-        const updatedTab = {
+        const updatedTab: WorkspaceTab<"browser"> = {
           ...tab,
-          browserNavigation: pushBrowserNavigation(tab, url),
-          browserLoadUrl: url,
           title: getBrowserPreviewTitle(url),
-          url,
-          refreshToken: Date.now(),
+          data: {
+            ...tab.data,
+            navigation: pushBrowserNavigation(
+              { browserNavigation: tab.data.navigation, url: tab.data.url },
+              url,
+            ),
+            loadUrl: url,
+            url,
+            refreshToken: Date.now(),
+          },
         };
         return {
           ...current,
@@ -1117,18 +1177,21 @@ function AppShell() {
         const state = current[key] ?? createChatWindowState();
         const existing = [...state.tabs]
           .reverse()
-          .find((tab) => tab.kind === "image" && tab.url === request.url);
+          .find(
+            (tab): tab is WorkspaceTab<"image"> =>
+              isWorkspaceTabType(tab, "image") && tab.data.url === request.url,
+          );
         const title = request.filename?.trim() || "图片预览";
-        const tab: ChatWindowTab = existing ?? {
+        const tab: WorkspaceTab<"image"> = existing ?? {
           id: createChatWindowTabId(),
           title,
-          kind: "image",
+          type: "image",
+          data: {},
         };
-        const updatedTab = {
+        const updatedTab: WorkspaceTab<"image"> = {
           ...tab,
           title,
-          url: request.url,
-          refreshToken: Date.now(),
+          data: { url: request.url, refreshToken: Date.now() },
         };
         return {
           ...current,
@@ -1315,8 +1378,10 @@ function AppShell() {
                       split
                       workspaceId={chatWorkspaceId}
                       cwd={chatWorkspaceCwd}
+                      sessionId={chatSessionId}
+                      messages={chatSessionQuery.data?.messages ?? []}
                       state={chatWindowStates[chatWindowKey] ?? createChatWindowState()}
-                      onOpenSideChat={() => void openSideChat()}
+                      onOpenSideChat={openSideChat}
                       sideChatOpening={sideChatOpening}
                       onToggle={() => closeSideChatWindow(chatWindowKey)}
                       onToggleExpanded={() =>
@@ -2545,41 +2610,14 @@ function describeError(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-type ChatWindowTab = {
-  id: string;
-  title: string;
-  kind?:
-    | "blank"
-    | "workspace"
-    | "git-diff"
-    | "source"
-    | "terminal"
-    | "browser"
-    | "image"
-    | "plan"
-    | "context-detail"
-    | "chat";
-  workspaceId?: string;
-  cwd?: string;
-  path?: string;
-  content?: string;
-  refreshToken?: number;
-  explorerView?: "files" | "git";
-  editorMode?: "source" | "diff";
-  url?: string;
-  browserNavigation?: BrowserNavigationState;
-  browserLoadUrl?: string;
-  sessionId?: string;
-  planId?: string;
-  canExecute?: boolean;
-  activePlanId?: string;
-  activePlanCanExecute?: boolean;
-  contextMessages?: import("ai").UIMessage[];
-  contextPromptInput?: ContextDetailPromptInput;
-  contextSystemPrompt?: SystemPromptSnapshot;
-  draft?: string;
-  draftRevision?: number;
-};
+type ChatWindowTab = WorkspaceTab;
+
+function isWorkspaceTabType<K extends WorkspaceTabType>(
+  tab: ChatWindowTab,
+  type: K,
+): tab is WorkspaceTab<K> {
+  return tab.type === type;
+}
 type ChatWindowState = {
   open: boolean;
   expanded: boolean;
@@ -2632,12 +2670,14 @@ function ChatWorkspaceWindow({
   state,
   workspaceId,
   cwd,
+  sessionId,
+  messages,
 }: {
   expanded: boolean;
   maximizeShortcut: string;
   panelShortcut: string;
   onChange: (state: ChatWindowState) => void;
-  onOpenSideChat: () => void;
+  onOpenSideChat: (draft?: string) => Promise<WorkspaceTab<"chat"> | undefined>;
   onToggle: () => void;
   onToggleExpanded: () => void;
   sideChatOpening: boolean;
@@ -2645,7 +2685,11 @@ function ChatWorkspaceWindow({
   state: ChatWindowState;
   workspaceId: string;
   cwd: string;
+  sessionId: string | null;
+  messages: UIMessage[];
 }) {
+  const desktopUi = useDesktopUi();
+  const tabContributions = useDesktopUiSlot("workspace.tab");
   const interactionRef = useRef<WindowInteraction | null>(null);
   const sidebarResizeRef = useRef<{ startX: number; initialWidth: number } | null>(null);
   const draggedTabIdRef = useRef<string | null>(null);
@@ -2654,29 +2698,23 @@ function ChatWorkspaceWindow({
   const panelTransition = getWorkbenchLayoutTransition(shouldReduceMotion);
   const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
   const activeTabId = activeTab?.id;
-  const workspaceTab =
-    activeTab?.kind === "workspace" ||
-    activeTab?.kind === "source" ||
-    activeTab?.kind === "git-diff"
-      ? activeTab
-      : null;
-  const terminalTab = activeTab?.kind === "terminal" ? activeTab : null;
-  const browserTab = activeTab?.kind === "browser" ? activeTab : null;
-  const browserNavigation = getBrowserNavigationState(browserTab ?? {});
-  const imageTab = activeTab?.kind === "image" ? activeTab : null;
-  const planTab = activeTab?.kind === "plan" ? activeTab : null;
-  const contextDetailTab = activeTab?.kind === "context-detail" ? activeTab : null;
-  const chatTab = activeTab?.kind === "chat" ? activeTab : null;
-  const activeTabWorkspaceId = workspaceTab?.workspaceId;
+  const workspaceTab = activeTab && isWorkspaceTabType(activeTab, "explorer") ? activeTab : null;
+  const activeContribution = activeTab
+    ? tabContributions.find((contribution) => contribution.id === activeTab.type)
+    : undefined;
+  const ActiveRenderer = activeContribution?.renderer as
+    | ComponentType<WorkspaceTabRenderProps>
+    | undefined;
+  const activeTabWorkspaceId = workspaceTab?.data.workspaceId;
   const explorerCwd = cwd.trim();
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
   const [tabDropTarget, setTabDropTarget] = useState<{
     id: string;
     edge: "before" | "after";
   } | null>(null);
-  const [selectedPath, setSelectedPath] = useState(workspaceTab?.path ?? "");
+  const [selectedPath, setSelectedPath] = useState(workspaceTab?.data.path ?? "");
   const [explorerView, setExplorerView] = useState<"files" | "git">(
-    workspaceTab?.explorerView ?? (workspaceTab?.kind === "git-diff" ? "git" : "files"),
+    workspaceTab?.data.view ?? "files",
   );
   const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(() => new Set(["."]));
   const [editorTabs, setEditorTabs] = useState<
@@ -2690,7 +2728,7 @@ function ChatWorkspaceWindow({
       truncated?: boolean;
     }>
   >([]);
-  const [activeEditorPath, setActiveEditorPath] = useState(workspaceTab?.path ?? "");
+  const [activeEditorPath, setActiveEditorPath] = useState(workspaceTab?.data.path ?? "");
   const [editorContent, setEditorContent] = useState<{
     path: string;
     mode: "source" | "diff";
@@ -2713,16 +2751,6 @@ function ChatWorkspaceWindow({
       Boolean(activeTabWorkspaceId) &&
       (!isDefaultWorkspaceId(activeTabWorkspaceId) || Boolean(explorerCwd)),
     refetchInterval: 15_000,
-  });
-  const planQuery = useQuery({
-    queryKey: ["chat-plan", planTab?.sessionId, planTab?.planId],
-    queryFn: () => loadChatPlan(planTab?.sessionId ?? "", planTab?.planId ?? ""),
-    enabled: Boolean(planTab?.sessionId && planTab?.planId),
-  });
-  const planListQuery = useQuery({
-    queryKey: ["chat-plans", planTab?.sessionId],
-    queryFn: () => loadChatPlans(planTab?.sessionId ?? ""),
-    enabled: Boolean(planTab?.sessionId),
   });
   const gitInfo = gitQuery.data;
   const isGitWorkspace = gitInfo?.isRepository === true;
@@ -2781,35 +2809,32 @@ function ChatWorkspaceWindow({
 
   useEffect(() => {
     if (!activeTabId) return;
-    const nextView =
-      workspaceTab?.explorerView ?? (workspaceTab?.kind === "git-diff" ? "git" : "files");
+    const nextView = workspaceTab?.data.view ?? "files";
     setExplorerView(gitInfo?.isRepository === false ? "files" : nextView);
-    setSelectedPath(workspaceTab?.path ?? "");
-    setActiveEditorPath(workspaceTab?.path ?? "");
+    setSelectedPath(workspaceTab?.data.path ?? "");
+    setActiveEditorPath(workspaceTab?.data.path ?? "");
     setEditorContent(null);
     setViewerError(null);
-  }, [
-    activeTabId,
-    gitInfo?.isRepository,
-    workspaceTab?.explorerView,
-    workspaceTab?.kind,
-    workspaceTab?.path,
-  ]);
+  }, [activeTabId, gitInfo?.isRepository, workspaceTab?.data.view, workspaceTab?.data.path]);
 
   // Refreshing Git intentionally reloads the selected editor snapshot as well as the sidebar.
   // biome-ignore lint/correctness/useExhaustiveDependencies: refresh intentionally reloads current editor content.
   useEffect(() => {
     let active = true;
     const path = activeEditorPath || selectedPath;
-    if (!workspaceTab || !path || !activeTabWorkspaceId || planTab) return;
+    if (!workspaceTab || !path || !activeTabWorkspaceId) return;
     const mode = explorerView === "git" ? "diff" : "source";
-    if (mode === "source" && workspaceTab.path === path && workspaceTab.content !== undefined) {
-      setEditorContent({ path, mode, content: workspaceTab.content });
+    if (
+      mode === "source" &&
+      workspaceTab.data.path === path &&
+      workspaceTab.data.content !== undefined
+    ) {
+      setEditorContent({ path, mode, content: workspaceTab.data.content });
       setEditorTabs((tabs) => {
         const index = tabs.findIndex((tab) => tab.path === path);
-        if (index < 0) return [...tabs, { path, mode, content: workspaceTab.content }];
+        if (index < 0) return [...tabs, { path, mode, content: workspaceTab.data.content }];
         const next = [...tabs];
-        next[index] = { path, mode, content: workspaceTab.content };
+        next[index] = { path, mode, content: workspaceTab.data.content };
         return next;
       });
       return;
@@ -2866,61 +2891,23 @@ function ChatWorkspaceWindow({
     workspaceTab,
   ]);
 
-  function updateWorkspaceTab(patch: Partial<ChatWindowTab>) {
-    if (!activeTab) return;
+  function updateWorkspaceTab(
+    patch: Partial<WorkspaceTab<"explorer">["data"]> & { title?: string },
+  ) {
+    if (!workspaceTab) return;
     onChange({
       ...state,
       tabs: state.tabs.map((tab) =>
-        tab.id === activeTab.id ? { ...tab, ...patch, kind: "workspace" } : tab,
+        tab.id === workspaceTab.id ? patchWorkspaceTab(workspaceTab, patch) : tab,
       ),
     });
-  }
-
-  function selectPlan(planId: string) {
-    if (!planTab?.sessionId) return;
-    void loadChatPlan(planTab.sessionId, planId)
-      .then((plan) => {
-        onChange({
-          ...state,
-          tabs: state.tabs.map((tab) =>
-            tab.id === planTab.id
-              ? {
-                  ...tab,
-                  title: plan.fileName,
-                  planId: plan.id,
-                  content: plan.content,
-                  canExecute: plan.id === tab.activePlanId && tab.activePlanCanExecute,
-                }
-              : tab,
-          ),
-        });
-      })
-      .catch((error) => setViewerError(error instanceof Error ? error.message : String(error)));
-  }
-
-  function refreshPlan() {
-    if (!planTab) return;
-    void planQuery
-      .refetch()
-      .then(({ data }) => {
-        if (!data) return;
-        onChange({
-          ...state,
-          tabs: state.tabs.map((tab) =>
-            tab.id === planTab.id
-              ? { ...tab, title: data.fileName, planId: data.id, content: data.content }
-              : tab,
-          ),
-        });
-      })
-      .catch((error) => setViewerError(error instanceof Error ? error.message : String(error)));
   }
 
   function selectFile(path: string, mode: "source" | "diff") {
     setSelectedPath(path);
     setActiveEditorPath(path);
     setExplorerView(mode === "diff" ? "git" : "files");
-    updateWorkspaceTab({ path, editorMode: mode, explorerView: mode === "diff" ? "git" : "files" });
+    updateWorkspaceTab({ path, editorMode: mode, view: mode === "diff" ? "git" : "files" });
   }
 
   function selectGitFile(file: WorkspaceGitFile) {
@@ -2939,7 +2926,7 @@ function ChatWorkspaceWindow({
   function switchExplorerView(view: "files" | "git") {
     if (view === "git" && !isGitWorkspace) return;
     setExplorerView(view);
-    updateWorkspaceTab({ explorerView: view });
+    updateWorkspaceTab({ view });
     if (view === "git") {
       const first = gitSummary?.files[0];
       if (first) selectGitFile(first);
@@ -2957,7 +2944,7 @@ function ChatWorkspaceWindow({
       updateWorkspaceTab({
         path: fallback.path,
         editorMode: fallback.mode,
-        explorerView: fallback.mode === "diff" ? "git" : "files",
+        view: fallback.mode === "diff" ? "git" : "files",
       });
       return;
     }
@@ -3081,7 +3068,7 @@ function ChatWorkspaceWindow({
     updateWorkspaceTab({
       path: tab.path,
       editorMode: tab.mode,
-      explorerView: tab.mode === "diff" ? "git" : "files",
+      view: tab.mode === "diff" ? "git" : "files",
     });
   }
 
@@ -3190,136 +3177,58 @@ function ChatWorkspaceWindow({
   }
 
   const canOpenExplorer = Boolean(workspaceId) && !(isDefaultWorkspaceId(workspaceId) && !cwd);
-  const canOpenTerminal = Boolean(cwd);
+  const tabScope: WorkspaceTabScope = {
+    workspaceId,
+    cwd,
+    sessionId,
+    messages,
+    sideChatOpening,
+    openSideChat: onOpenSideChat,
+  };
+  desktopUi.trackWorkspaceTabs(state.tabs, tabScope);
+  const createContributions = tabContributions.filter((contribution) => contribution.create);
 
-  function addWorkspaceExplorerTab(view: "files" | "git") {
-    if (!canOpenExplorer) return;
-    const existing = state.tabs.find(
-      (tab) =>
-        (tab.kind === "workspace" || tab.kind === "source" || tab.kind === "git-diff") &&
-        tab.workspaceId === workspaceId,
-    );
-    if (existing) {
-      onChange({
-        ...state,
-        activeTabId: existing.id,
-        tabs: state.tabs.map((tab) =>
-          tab.id === existing.id
-            ? {
-                ...tab,
-                kind: "workspace" as const,
-                cwd,
-                explorerView: view,
-                refreshToken: Date.now(),
-              }
-            : tab,
-        ),
-      });
-      return;
+  async function addContributionTab(contribution: AnyWorkspaceTabContribution) {
+    if (!contribution.create || contribution.isAvailable?.(tabScope) === false) return;
+    try {
+      const nextTab = await contribution.create(tabScope);
+      if (!nextTab) return;
+      if (nextTab.type === "chat") return;
+      if (nextTab.type === "explorer") {
+        const existing = state.tabs.find(
+          (tab): tab is WorkspaceTab<"explorer"> =>
+            isWorkspaceTabType(tab, "explorer") &&
+            tab.data.workspaceId === nextTab.data.workspaceId,
+        );
+        if (existing) {
+          onChange({
+            ...state,
+            activeTabId: existing.id,
+            tabs: state.tabs.map((tab) =>
+              tab.id === existing.id
+                ? { ...existing, data: { ...existing.data, ...nextTab.data } }
+                : tab,
+            ),
+          });
+          return;
+        }
+      }
+      const terminalCount = state.tabs.filter((tab) => tab.type === "terminal").length;
+      const titledTab =
+        nextTab.type === "terminal" && terminalCount > 0
+          ? { ...nextTab, title: `Terminal ${terminalCount + 1}` }
+          : nextTab;
+      onChange({ ...state, tabs: [...state.tabs, titledTab], activeTabId: titledTab.id });
+    } catch (error) {
+      console.error(`Failed to create workspace tab: ${contribution.id}`, error);
     }
-    const nextTab = {
-      id: createChatWindowTabId(),
-      title: "Explorer",
-      kind: "workspace" as const,
-      workspaceId,
-      cwd,
-      explorerView: view,
-      refreshToken: Date.now(),
-    };
-    onChange({ ...state, tabs: [...state.tabs, nextTab], activeTabId: nextTab.id });
-  }
-
-  function addGitDiffTab() {
-    addWorkspaceExplorerTab("git");
-  }
-
-  function addTerminalTab() {
-    if (!cwd) return;
-    const terminalCount = state.tabs.filter((tab) => tab.kind === "terminal").length;
-    const nextTab: ChatWindowTab = {
-      id: createChatWindowTabId(),
-      title: terminalCount === 0 ? "Terminal" : `Terminal ${terminalCount + 1}`,
-      kind: "terminal",
-      workspaceId,
-      cwd,
-    };
-    onChange({ ...state, tabs: [...state.tabs, nextTab], activeTabId: nextTab.id });
-  }
-
-  function addBrowserTab() {
-    const nextTab: ChatWindowTab = {
-      id: createChatWindowTabId(),
-      title: "Browser",
-      kind: "browser",
-      url: "",
-    };
-    onChange({ ...state, tabs: [...state.tabs, nextTab], activeTabId: nextTab.id });
-  }
-
-  function navigateBrowser(url: string) {
-    if (!browserTab) return;
-    const nextNavigation = pushBrowserNavigation(browserTab, url);
-    onChange({
-      ...state,
-      tabs: state.tabs.map((tab) =>
-        tab.id === browserTab.id
-          ? {
-              ...tab,
-              browserNavigation: nextNavigation,
-              browserLoadUrl: url,
-              title: getBrowserPreviewTitle(url),
-              url,
-              refreshToken: Date.now(),
-            }
-          : tab,
-      ),
-    });
-  }
-
-  function moveBrowser(offset: -1 | 1) {
-    if (!browserTab) return;
-    const next = moveBrowserNavigation(browserTab, offset);
-    if (!next) return;
-    onChange({
-      ...state,
-      tabs: state.tabs.map((tab) =>
-        tab.id === browserTab.id
-          ? {
-              ...tab,
-              browserNavigation: next.browserNavigation,
-              browserLoadUrl: next.url,
-              title: getBrowserPreviewTitle(next.url),
-              url: next.url,
-              refreshToken: Date.now(),
-            }
-          : tab,
-      ),
-    });
-  }
-
-  function refreshBrowser() {
-    if (!browserTab?.url) return;
-    onChange({
-      ...state,
-      tabs: state.tabs.map((tab) =>
-        tab.id === browserTab.id
-          ? { ...tab, browserLoadUrl: browserTab.url, refreshToken: Date.now() }
-          : tab,
-      ),
-    });
   }
 
   function closeTab(tabId: string) {
     const closingTab = state.tabs.find((tab) => tab.id === tabId);
-    if (closingTab?.kind === "terminal") {
-      void terminalSessions
-        .close(tabId)
-        .catch((error) => console.error("Failed to close terminal session", error));
-    }
-    if (closingTab?.kind === "chat" && closingTab.sessionId) {
-      void stopChatServerRun(closingTab.sessionId).catch(() => undefined);
-      void deleteChatServerSession(closingTab.sessionId).catch((error) =>
-        console.error("Failed to delete side chat", error),
+    if (closingTab) {
+      void Promise.resolve(desktopUi.releaseWorkspaceTab(closingTab, tabScope)).catch((error) =>
+        console.error(`Failed to close workspace tab: ${closingTab.type}`, error),
       );
     }
     const nextTabs = state.tabs.filter((tab) => tab.id !== tabId);
@@ -3334,17 +3243,9 @@ function ChatWorkspaceWindow({
 
   function closeAllTabs() {
     for (const tab of state.tabs) {
-      if (tab.kind === "terminal") {
-        void terminalSessions
-          .close(tab.id)
-          .catch((error) => console.error("Failed to close terminal session", error));
-      }
-      if (tab.kind === "chat" && tab.sessionId) {
-        void stopChatServerRun(tab.sessionId).catch(() => undefined);
-        void deleteChatServerSession(tab.sessionId).catch((error) =>
-          console.error("Failed to delete side chat", error),
-        );
-      }
+      void Promise.resolve(desktopUi.releaseWorkspaceTab(tab, tabScope)).catch((error) =>
+        console.error(`Failed to close workspace tab: ${tab.type}`, error),
+      );
     }
     onChange({ ...state, tabs: [], activeTabId: null });
   }
@@ -3449,12 +3350,10 @@ function ChatWorkspaceWindow({
                     title={tab.title}
                     type="button"
                   >
-                    {tab.kind === "terminal" ? <SquareTerminal className="size-3.5" /> : null}
-                    {tab.kind === "browser" ? <Globe2 className="size-3.5" /> : null}
-                    {tab.kind === "image" ? <Image className="size-3.5" /> : null}
-                    {tab.kind === "plan" ? <ScrollText className="size-3.5" /> : null}
-                    {tab.kind === "context-detail" ? <ChartColumn className="size-3.5" /> : null}
-                    {tab.kind === "chat" ? <MessageSquarePlus className="size-3.5" /> : null}
+                    {(() => {
+                      const Icon = tabContributions.find((item) => item.id === tab.type)?.icon;
+                      return Icon ? <Icon className="size-3.5" /> : null;
+                    })()}
                     <span>{tab.title}</span>
                   </button>
                   <button
@@ -3495,26 +3394,26 @@ function ChatWorkspaceWindow({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" sideOffset={6}>
-            <DropdownMenuItem disabled={!canOpenExplorer} onSelect={addGitDiffTab}>
-              <FolderGit2 className="size-3.5" />
-              Workspace Explorer
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={!canOpenTerminal} onSelect={addTerminalTab}>
-              <SquareTerminal className="size-3.5" />
-              Terminal
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={addBrowserTab}>
-              <Globe2 className="size-3.5" />
-              Browser
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={sideChatOpening} onSelect={onOpenSideChat}>
-              {sideChatOpening ? (
-                <LoaderCircle className="size-3.5 animate-spin" />
-              ) : (
-                <MessageSquarePlus className="size-3.5" />
-              )}
-              侧边聊天
-            </DropdownMenuItem>
+            {createContributions.map((contribution) => {
+              const disabled =
+                (contribution.id === "chat" && sideChatOpening) ||
+                contribution.isAvailable?.(tabScope) === false;
+              const Icon = contribution.icon;
+              return (
+                <DropdownMenuItem
+                  disabled={disabled}
+                  key={contribution.id}
+                  onSelect={() => void addContributionTab(contribution)}
+                >
+                  {contribution.id === "chat" && sideChatOpening ? (
+                    <LoaderCircle className="size-3.5 animate-spin" />
+                  ) : (
+                    <Icon className="size-3.5" />
+                  )}
+                  {contribution.label}
+                </DropdownMenuItem>
+              );
+            })}
           </DropdownMenuContent>
         </DropdownMenu>
         <Button
@@ -3541,108 +3440,7 @@ function ChatWorkspaceWindow({
           <PanelLeft className="size-4 rotate-180" />
         </Button>
       </div>
-      {chatTab ? (
-        <SideChat
-          contextMessages={chatTab.contextMessages ?? []}
-          draft={chatTab.draft}
-          draftRevision={chatTab.draftRevision ?? 0}
-          sessionId={chatTab.sessionId ?? ""}
-        />
-      ) : contextDetailTab?.contextPromptInput ? (
-        <ChatContextDetail
-          messages={contextDetailTab.contextMessages ?? []}
-          promptInput={contextDetailTab.contextPromptInput}
-          sessionId={contextDetailTab.sessionId ?? ""}
-          systemPrompt={contextDetailTab.contextSystemPrompt}
-        />
-      ) : planTab ? (
-        <div className="chat-explorer-shell">
-          <header className="chat-explorer-toolbar">
-            <span className="chat-explorer-title">{planTab.title}</span>
-            <span className="chat-explorer-toolbar-actions">
-              <span className="file-viewer-readonly">只读计划</span>
-              {planTab.canExecute && planTab.sessionId && planTab.planId ? (
-                <Button
-                  className="!h-7 !gap-1.5 !px-2.5 !text-[11px]"
-                  onClick={() =>
-                    requestPlanExecution({
-                      sessionId: planTab.sessionId ?? "",
-                      planId: planTab.planId ?? "",
-                    })
-                  }
-                  size="sm"
-                  title="执行当前计划"
-                  type="button"
-                >
-                  <Play className="size-3.5 fill-current" />
-                  执行计划
-                </Button>
-              ) : null}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    aria-label="选择历史计划"
-                    className="chat-workspace-window-add"
-                    size="icon"
-                    title="历史计划"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <ScrollText className="size-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" sideOffset={6}>
-                  {planListQuery.isLoading ? (
-                    <DropdownMenuItem disabled>加载中...</DropdownMenuItem>
-                  ) : planListQuery.data?.length ? (
-                    planListQuery.data.map((plan) => (
-                      <DropdownMenuItem key={plan.id} onSelect={() => selectPlan(plan.id)}>
-                        <ScrollText className="size-3.5" />
-                        {plan.fileName}
-                      </DropdownMenuItem>
-                    ))
-                  ) : (
-                    <DropdownMenuItem disabled>暂无历史计划</DropdownMenuItem>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <Button
-                aria-label="刷新计划"
-                className="chat-workspace-window-add"
-                onClick={refreshPlan}
-                size="icon"
-                title="刷新计划"
-                type="button"
-                variant="ghost"
-              >
-                <RefreshCw className="size-4" />
-              </Button>
-            </span>
-          </header>
-          <div className="chat-explorer-editor-pane">
-            <div className="chat-plan-preview">
-              {viewerError ? (
-                <div className="chat-workspace-window-empty text-destructive">{viewerError}</div>
-              ) : planQuery.isLoading && planTab.content === undefined ? (
-                <div aria-label="加载计划" className="chat-plan-preview-skeleton" role="status">
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                </div>
-              ) : (planTab.content ?? planQuery.data?.content ?? "").trim() ? (
-                <div className="chat-message-text chat-plan-preview-content">
-                  <ChatMarkdown isAnimating={false}>
-                    {planTab.content ?? planQuery.data?.content ?? ""}
-                  </ChatMarkdown>
-                </div>
-              ) : (
-                <div className="chat-workspace-window-empty">计划正在生成...</div>
-              )}
-            </div>
-          </div>
-        </div>
-      ) : workspaceTab ? (
+      {workspaceTab ? (
         <div className="chat-explorer-shell">
           <header className="chat-explorer-toolbar">
             <span className="chat-explorer-title">
@@ -3825,29 +3623,21 @@ function ChatWorkspaceWindow({
             </section>
           </div>
         </div>
-      ) : terminalTab ? (
-        <ChatTerminal cwd={terminalTab.cwd ?? cwd} sessionKey={terminalTab.id} />
-      ) : browserTab ? (
-        <ChatBrowser
-          canGoBack={browserNavigation.index > 0}
-          canGoForward={browserNavigation.index < browserNavigation.entries.length - 1}
-          frameName={browserTab.id}
-          loadUrl={browserTab.browserLoadUrl}
-          onBack={() => moveBrowser(-1)}
-          onForward={() => moveBrowser(1)}
-          onNavigate={navigateBrowser}
-          onRefresh={refreshBrowser}
-          refreshToken={browserTab.refreshToken}
-          url={browserTab.url}
+      ) : ActiveRenderer && activeTab ? (
+        <ActiveRenderer
+          tab={activeTab}
+          scope={tabScope}
+          updateTab={(patch) => {
+            onChange({
+              ...state,
+              tabs: state.tabs.map((tab) =>
+                tab.id === activeTab.id ? patchWorkspaceTab(activeTab, patch) : tab,
+              ),
+            });
+          }}
         />
-      ) : imageTab ? (
-        <div className="chat-image-preview">
-          {imageTab.url ? (
-            <img alt={imageTab.title} src={imageTab.url} />
-          ) : (
-            <p className="chat-image-preview-empty">无图片</p>
-          )}
-        </div>
+      ) : activeTab ? (
+        <div className="chat-workspace-window-empty">该工具不可用</div>
       ) : (
         <div className="chat-workspace-window-empty" aria-live="polite">
           <div className="chat-workspace-window-empty-guide">
@@ -3858,53 +3648,28 @@ function ChatWorkspaceWindow({
                 : "当前对话没有可用工作区。可以先打开 Browser，或绑定工作区后再浏览文件。"}
             </p>
             <div className="chat-workspace-window-empty-actions">
-              <Button
-                disabled={!canOpenExplorer}
-                onClick={() => addWorkspaceExplorerTab("files")}
-                size="sm"
-                title={canOpenExplorer ? "打开工作区 Explorer" : "当前对话没有可用工作区"}
-                type="button"
-                variant="outline"
-              >
-                <FolderGit2 className="size-3.5" />
-                Explorer
-              </Button>
-              <Button
-                disabled={!canOpenTerminal}
-                onClick={addTerminalTab}
-                size="sm"
-                title={canOpenTerminal ? "打开 Terminal" : "当前对话没有工作目录"}
-                type="button"
-                variant="outline"
-              >
-                <SquareTerminal className="size-3.5" />
-                Terminal
-              </Button>
-              <Button
-                onClick={addBrowserTab}
-                size="sm"
-                title="打开 Browser"
-                type="button"
-                variant="outline"
-              >
-                <Globe2 className="size-3.5" />
-                Browser
-              </Button>
-              <Button
-                disabled={sideChatOpening}
-                onClick={onOpenSideChat}
-                size="sm"
-                title="打开侧边聊天"
-                type="button"
-                variant="outline"
-              >
-                {sideChatOpening ? (
-                  <LoaderCircle className="size-3.5 animate-spin" />
-                ) : (
-                  <MessageSquarePlus className="size-3.5" />
-                )}
-                侧边聊天
-              </Button>
+              {createContributions.map((contribution) => {
+                const disabled = contribution.isAvailable?.(tabScope) === false;
+                const Icon = contribution.icon;
+                return (
+                  <Button
+                    disabled={disabled}
+                    key={contribution.id}
+                    onClick={() => void addContributionTab(contribution)}
+                    size="sm"
+                    title={`打开 ${contribution.label}`}
+                    type="button"
+                    variant="outline"
+                  >
+                    {contribution.id === "chat" && sideChatOpening ? (
+                      <LoaderCircle className="size-3.5 animate-spin" />
+                    ) : (
+                      <Icon className="size-3.5" />
+                    )}
+                    {contribution.compactLabel ?? contribution.label}
+                  </Button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -4094,27 +3859,37 @@ function CommandMenu({ onClose }: { onClose: () => void }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const chatSearch = useChatPaletteSearch(query);
   const navigationContributions = useDesktopUiSlot("sidebar.navigation");
+  const routeContributions = useDesktopUiSlot("route");
   const settingsContributions = useDesktopUiSlot("settings.page");
   const chats = chatSearch.chats;
-  const registeredCommands = useMemo(
-    () => [
+  const registeredCommands = useMemo(() => {
+    const commands = [
       ...navigationContributions.map((item) => ({
+        id: item.id,
         to: item.path,
         label: item.label,
         icon: item.icon,
         keywords: item.keywords ?? [],
       })),
+      ...routeContributions.map((item) => ({
+        id: item.id,
+        to: item.path,
+        label: item.title,
+        icon: item.icon,
+        keywords: item.keywords,
+      })),
       ...settingsContributions
         .filter((item) => item.visible !== false)
         .map((item) => ({
+          id: item.id,
           to: `/settings/${item.path}`,
           label: item.label,
           icon: item.icon,
           keywords: item.keywords,
         })),
-    ],
-    [navigationContributions, settingsContributions],
-  );
+    ];
+    return [...new Map(commands.map((command) => [command.id, command])).values()];
+  }, [navigationContributions, routeContributions, settingsContributions]);
   const commandMatches = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
     if (!normalized) return registeredCommands;
@@ -4251,7 +4026,7 @@ function CommandMenu({ onClose }: { onClose: () => void }) {
               return (
                 <button
                   className={`flex h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors ${isActive ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/70 hover:text-accent-foreground"}`}
-                  key={`command:${item.command.to}`}
+                  key={`command:${item.command.id}`}
                   onClick={() => selectCommand(item.command)}
                   onMouseEnter={() => setActiveIndex(index)}
                   type="button"
