@@ -7,9 +7,12 @@ import { ImageGenerationPage } from "@/pages/image-generation";
 
 export const manifest = {
   id: "desktop-navigation",
+  builtin: true,
+  name: "桌面导航",
+  description: "提供 Chat、Channel、Automations 和图片生成等核心页面与侧边栏入口。",
   version: "1.0.0",
   apiVersion: 1,
-  entry: "lib/desktop-navigation",
+  entry: "plugins/desktop-navigation",
   contributes: ["sidebar.navigation", "route"],
   permissions: [],
 } as const;

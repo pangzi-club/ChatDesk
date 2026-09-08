@@ -456,14 +456,14 @@ export async function createDesktopUiRuntime(
   await ctx.plugin(ChatLayoutService);
   await ctx.plugin(DesktopUiService);
   const modules = await Promise.all([
-    import("@/layouts/chat-standard"),
-    import("@/layouts/chat-cute"),
-    import("@/layouts/chat-geek"),
-    import("@/lib/desktop-navigation"),
-    import("@/lib/desktop-settings"),
-    import("@/lib/workspace-tabs-core"),
-    import("@/lib/workspace-tabs-chat"),
-    import("@/lib/workspace-tabs-content"),
+    import("@/plugins/chat-layout-standard"),
+    import("@/plugins/chat-layout-cute"),
+    import("@/plugins/chat-layout-geek"),
+    import("@/plugins/desktop-navigation"),
+    import("@/plugins/desktop-settings"),
+    import("@/plugins/workspace-tabs-core"),
+    import("@/plugins/workspace-tabs-chat"),
+    import("@/plugins/workspace-tabs-content"),
   ]);
   const installed = new Map<string, Fiber>();
   const installOrder: string[] = [];
@@ -520,6 +520,10 @@ export async function createDesktopUiRuntime(
   };
 
   const uninstallPlugin = async (id: string) => {
+    const candidate = scanDesktopPlugins([...installedPluginIds]).find(
+      (item) => item.manifest?.id === id,
+    );
+    if (candidate?.manifest?.builtin) return false;
     const fiber = installed.get(id);
     if (!fiber) return false;
     installed.delete(id);
@@ -544,7 +548,9 @@ export async function createDesktopUiRuntime(
   const discovered = scanDesktopPlugins([...installedPluginIds]);
   const availableIds = new Set(
     discovered
-      .filter((candidate) => candidate.installable && candidate.manifest)
+      .filter(
+        (candidate) => candidate.installable && candidate.manifest && !candidate.manifest.builtin,
+      )
       .map((candidate) => candidate.manifest?.id),
   );
   installedPluginIds = new Set([...installedPluginIds].filter((id) => availableIds.has(id)));
@@ -557,6 +563,8 @@ export async function createDesktopUiRuntime(
     );
     if (!candidate?.installable || !candidate.module)
       return { ok: false, id, error: new Error(candidate?.errors[0]?.message ?? "插件不可安装") };
+    if (candidate.manifest?.builtin)
+      return { ok: false, id, error: new Error("内置插件始终启用，不能重复安装") };
     const result = await installPlugin(candidate.module);
     if (result.ok) {
       installedPluginIds.add(id);
@@ -570,7 +578,8 @@ export async function createDesktopUiRuntime(
     pluginResults.push(await installPlugin(plugin));
   }
   for (const candidate of discovered) {
-    if (candidate.installed && candidate.module) await installPlugin(candidate.module);
+    if (candidate.installed && !candidate.manifest?.builtin && candidate.module)
+      await installPlugin(candidate.module);
   }
   const originalUninstall = uninstallPlugin;
   const persistedUninstall = async (id: string) => {

@@ -8,9 +8,12 @@ import { tabId } from "@/lib/workspace-tab-utils";
 
 export const manifest = {
   id: "workspace-tabs-core",
+  builtin: true,
+  name: "工作区工具",
+  description: "提供 Workspace Explorer、Terminal 和 Browser 等基础工作区标签。",
   version: "1.0.0",
   apiVersion: 1,
-  entry: "lib/workspace-tabs-core",
+  entry: "plugins/workspace-tabs-core",
   contributes: ["workspace.tab"],
   permissions: [],
 } as const;

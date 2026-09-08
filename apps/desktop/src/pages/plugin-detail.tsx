@@ -69,18 +69,20 @@ export function PluginDetailPage() {
           <Button onClick={() => navigate("/plugins")} variant="ghost">
             <ArrowLeft className="size-4" /> 返回插件
           </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button aria-label="更多操作" size="icon" variant="ghost">
-                <MoreHorizontal className="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => void installOrUninstall()}>
-                {plugin.installed ? "卸载插件" : "安装插件"}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {!manifest.builtin ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button aria-label="更多操作" size="icon" variant="ghost">
+                  <MoreHorizontal className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => void installOrUninstall()}>
+                  {plugin.installed ? "卸载插件" : "安装插件"}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
         </div>
 
         <section className="border-b pb-8">
@@ -105,10 +107,18 @@ export function PluginDetailPage() {
                 </Button>
               ) : (
                 <Button
-                  disabled={busy || (isInstalled && !canOpen) || !plugin.installable}
+                  disabled={
+                    manifest.builtin || busy || (isInstalled && !canOpen) || !plugin.installable
+                  }
                   onClick={() => void installOrUninstall()}
                 >
-                  {busy ? "处理中…" : isInstalled ? "已安装" : "安装"}
+                  {manifest.builtin
+                    ? "内置插件"
+                    : busy
+                      ? "处理中…"
+                      : isInstalled
+                        ? "已安装"
+                        : "安装"}
                 </Button>
               )}
             </div>
@@ -182,7 +192,10 @@ export function PluginDetailPage() {
             <dt className="text-muted-foreground">开发者</dt>
             <dd>本地插件</dd>
             <dt className="text-muted-foreground">版本</dt>
-            <dd>{manifest.version}</dd>
+            <dd>
+              {manifest.version}
+              {manifest.builtin ? " · 内置" : ""}
+            </dd>
             <dt className="text-muted-foreground">插件 ID</dt>
             <dd className="truncate font-mono text-xs">{manifest.id}</dd>
             <dt className="text-muted-foreground">入口</dt>

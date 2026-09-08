@@ -7,9 +7,12 @@ import type { WorkspaceTabContribution } from "@/lib/desktop-ui";
 
 export const manifest = {
   id: "workspace-tabs-chat",
+  builtin: true,
+  name: "侧边聊天",
+  description: "在工作区中打开可独立使用的侧边聊天标签，并自动管理会话资源。",
   version: "1.0.0",
   apiVersion: 1,
-  entry: "lib/workspace-tabs-chat",
+  entry: "plugins/workspace-tabs-chat",
   contributes: ["workspace.tab"],
   permissions: [],
 } as const;

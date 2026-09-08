@@ -22,6 +22,7 @@ export type ChatLayoutComponent = ComponentType<ChatLayoutProps>;
 export type ChatLayout = string;
 export type DesktopPluginManifest = {
   id: string;
+  builtin?: boolean;
   name?: string;
   description?: string;
   version: string;

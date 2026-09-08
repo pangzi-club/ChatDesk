@@ -10,9 +10,12 @@ import type { WorkspaceTabContribution } from "@/lib/desktop-ui";
 
 export const manifest = {
   id: "workspace-tabs-content",
+  builtin: true,
+  name: "内容预览标签",
+  description: "提供图片、计划和上下文详情等内容型 Workspace 标签。",
   version: "1.0.0",
   apiVersion: 1,
-  entry: "lib/workspace-tabs-content",
+  entry: "plugins/workspace-tabs-content",
   contributes: ["workspace.tab"],
   permissions: [],
 } as const;

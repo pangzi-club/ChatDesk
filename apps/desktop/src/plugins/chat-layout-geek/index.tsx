@@ -4,9 +4,12 @@ import type { ChatLayoutProps } from "@/lib/chat-layout";
 
 export const manifest = {
   id: "chat-layout-geek",
+  builtin: true,
+  name: "Geek 聊天布局",
+  description: "为 Chat 页面提供偏开发者风格的代码主题布局。",
   version: "1.0.0",
   apiVersion: 1,
-  entry: "layouts/chat-geek",
+  entry: "plugins/chat-layout-geek",
   contributes: [],
   permissions: [],
 } as const;

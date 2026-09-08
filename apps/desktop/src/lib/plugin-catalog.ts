@@ -1,4 +1,16 @@
-import { Blocks, Clock3, Search, Sparkles } from "lucide-react";
+import {
+  Blocks,
+  Clock3,
+  Code2,
+  Compass,
+  Layers3,
+  LayoutDashboard,
+  MessagesSquare,
+  Palette,
+  Search,
+  Settings2,
+  Sparkles,
+} from "lucide-react";
 import type { ComponentType } from "react";
 import type { DiscoveredPlugin } from "@/lib/desktop-plugin-discovery";
 
@@ -8,6 +20,14 @@ const iconById: Record<string, PluginIcon> = {
   "demo-command-palette": Sparkles,
   "demo-pomodoro": Clock3,
   "demo-workspace-inspector": Search,
+  "desktop-navigation": Compass,
+  "desktop-settings": Settings2,
+  "workspace-tabs-core": Layers3,
+  "workspace-tabs-chat": MessagesSquare,
+  "workspace-tabs-content": Palette,
+  "chat-layout-standard": LayoutDashboard,
+  "chat-layout-cute": Sparkles,
+  "chat-layout-geek": Code2,
 };
 
 const contributionLabels: Record<string, { label: string; description: string }> = {
@@ -31,6 +51,7 @@ export function getPluginIcon(plugin: DiscoveredPlugin): PluginIcon {
 }
 
 export function getPluginCategory(plugin: DiscoveredPlugin) {
+  if (plugin.manifest?.builtin) return "内置";
   const contributes = plugin.manifest?.contributes ?? [];
   if (contributes.some((item) => item.includes("chat"))) return "聊天与工作流";
   if (contributes.includes("workspace.tab")) return "工作区";

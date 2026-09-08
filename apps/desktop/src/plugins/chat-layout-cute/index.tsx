@@ -5,9 +5,12 @@ import type { ChatLayoutProps } from "@/lib/chat-layout";
 
 export const manifest = {
   id: "chat-layout-cute",
+  builtin: true,
+  name: "可爱聊天布局",
+  description: "为 Chat 页面提供轻松活泼的海洋主题布局。",
   version: "1.0.0",
   apiVersion: 1,
-  entry: "layouts/chat-cute",
+  entry: "plugins/chat-layout-cute",
   contributes: [],
   permissions: [],
 } as const;

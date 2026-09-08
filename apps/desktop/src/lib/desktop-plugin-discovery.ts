@@ -31,6 +31,8 @@ export function validateDesktopPluginManifest(manifest: unknown): PluginValidati
   if (!manifest || typeof manifest !== "object")
     return [{ code: "manifest", message: "缺少插件 manifest" }];
   const value = manifest as Record<string, unknown>;
+  if (value.builtin !== undefined && typeof value.builtin !== "boolean")
+    errors.push({ code: "builtin", message: "desktop plugin manifest builtin must be a boolean" });
   const id = typeof value.id === "string" ? value.id.trim() : "";
   if (!id) errors.push({ code: "id", message: "desktop plugin manifest id must not be empty" });
   else if (!/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(id))
@@ -107,7 +109,7 @@ export function scanDesktopPlugins(installedIds: readonly string[] = []): Discov
         manifest,
         entry,
         installable: errors.length === 0,
-        installed: !!manifest && installedIds.includes(manifest.id),
+        installed: !!manifest && (manifest.builtin === true || installedIds.includes(manifest.id)),
         errors,
         module: errors.length === 0 ? module : undefined,
       };

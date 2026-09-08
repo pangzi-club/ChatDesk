@@ -39,7 +39,12 @@ export function PluginsPage() {
       const category = getPluginCategory(plugin);
       grouped.set(category, [...(grouped.get(category) ?? []), plugin]);
     }
-    return [...grouped.entries()];
+    const categoryOrder = ["精选", "聊天与工作流", "工作区", "生产力", "内置"];
+    return [...grouped.entries()].sort(
+      ([a], [b]) =>
+        (categoryOrder.indexOf(a) < 0 ? categoryOrder.length : categoryOrder.indexOf(a)) -
+        (categoryOrder.indexOf(b) < 0 ? categoryOrder.length : categoryOrder.indexOf(b)),
+    );
   }, [filteredPlugins]);
 
   async function toggle(id: string, isInstalled: boolean) {
@@ -169,8 +174,22 @@ export function PluginsPage() {
                           </span>
                         </button>
                         <div className="flex shrink-0 items-center gap-1">
-                          <Badge variant={plugin.installed ? "default" : "secondary"}>
-                            {plugin.installed ? "已安装" : plugin.installable ? "可安装" : "不可用"}
+                          <Badge
+                            variant={
+                              manifest?.builtin
+                                ? "outline"
+                                : plugin.installed
+                                  ? "default"
+                                  : "secondary"
+                            }
+                          >
+                            {manifest?.builtin
+                              ? "内置"
+                              : plugin.installed
+                                ? "已安装"
+                                : plugin.installable
+                                  ? "可安装"
+                                  : "不可用"}
                           </Badge>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -184,7 +203,7 @@ export function PluginsPage() {
                               >
                                 查看详情
                               </DropdownMenuItem>
-                              {plugin.installable && manifest ? (
+                              {plugin.installable && manifest && !manifest.builtin ? (
                                 <DropdownMenuItem
                                   disabled={busy === manifest.id}
                                   onClick={() => void toggle(manifest.id, plugin.installed)}

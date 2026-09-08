@@ -18,4 +18,20 @@ describe("desktop plugin SDK", () => {
     expect(plugin.manifest.apiVersion).toBe(1);
     expect(plugin.manifest.id).toBe("demo.sdk");
   });
+
+  it("supports builtin manifests", () => {
+    const plugin = defineDesktopPlugin({
+      manifest: {
+        id: "builtin.sdk",
+        builtin: true,
+        version: "1.0.0",
+        apiVersion: DESKTOP_PLUGIN_API_VERSION,
+        entry: "plugins/builtin-sdk",
+        contributes: [],
+        permissions: [],
+      },
+      apply: () => undefined,
+    } satisfies DesktopPluginModule);
+    expect(plugin.manifest.builtin).toBe(true);
+  });
 });

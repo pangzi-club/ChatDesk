@@ -42,6 +42,7 @@ export const plugin = {
 第三方依赖。`manifest.id` 是插件的全局稳定标识，`version` 使用 `major.minor.patch` 格式，`entry` 是构建期入口
 标识。宿主当前只接受 `apiVersion: 1`；`contributes` 必须是公开 slot 且不能重复，首版
 `permissions` 必须为空数组。Manifest 在创建 Cordis fiber 前校验，失败插件不会执行 `apply`。
+内置插件可设置 `builtin: true`；这类插件由 Desktop 启动时默认加载，插件目录中显示为“内置”，且不能安装或卸载，启用状态不依赖持久化插件列表。
 
 ## 加载和卸载
 

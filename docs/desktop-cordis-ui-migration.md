@@ -31,6 +31,7 @@ Desktop 现在通过 `@chatdesk/desktop-plugin-sdk` 提供构建期插件入口�
 `runtime.installPlugin()` 安装并通过返回的 handle 或 `runtime.uninstallPlugin(name)` 卸载。
 
 当前公开能力包括 `sidebar.navigation`、`route`、`settings.page`、`workspace.tab` 和 Chat layout。
+内置 Desktop 插件统一位于 `apps/desktop/src/plugins/<id>/index.tsx`，manifest 可使用 `builtin: true` 标记；这类插件启动时默认加载并在插件目录中显示为内置，但不可安装或卸载。
 插件名与 contribution id 必须全局唯一。安装失败会返回包含原始 `Error` 的失败结果并与其他插件
 隔离；卸载会释放 Cordis fiber、`ctx.effect` 资源、UI contribution，以及属于被移除 Workspace Tab
 contribution 的已打开实例。

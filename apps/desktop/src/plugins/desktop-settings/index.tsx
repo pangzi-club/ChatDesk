@@ -162,9 +162,12 @@ const settings = [
 
 export const manifest = {
   id: "desktop-settings",
+  builtin: true,
+  name: "桌面设置",
+  description: "集中提供模型、主题、快捷键、工具、语音和系统等桌面端设置页面。",
   version: "1.0.0",
   apiVersion: 1,
-  entry: "lib/desktop-settings",
+  entry: "plugins/desktop-settings",
   contributes: ["settings.page"],
   permissions: [],
 } as const;
