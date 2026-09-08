@@ -1,6 +1,6 @@
+import type { DesktopPluginModule } from "@chatdesk/desktop-plugin-sdk";
 import type { Context } from "cordis";
 import type { ChatLayoutProps } from "@/lib/chat-layout";
-import type { DesktopPluginModule } from "@/plugin-api";
 
 export const manifest = {
   id: "chat-layout-geek",

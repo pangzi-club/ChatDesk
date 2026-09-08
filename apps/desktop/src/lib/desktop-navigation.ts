@@ -1,9 +1,9 @@
+import type { DesktopPluginModule } from "@chatdesk/desktop-plugin-sdk";
 import type { Context } from "cordis";
 import { Clock3, MessageCircle, MessageSquare, Sparkles } from "lucide-react";
 import { AutomationsPage } from "@/pages/automations";
 import { ChannelsPage } from "@/pages/channels";
 import { ImageGenerationPage } from "@/pages/image-generation";
-import type { DesktopPluginModule } from "@/plugin-api";
 
 export const manifest = {
   id: "desktop-navigation",

@@ -1,3 +1,4 @@
+import type { DesktopPluginModule } from "@chatdesk/desktop-plugin-sdk";
 import type { Context } from "cordis";
 import {
   Bell,
@@ -41,7 +42,6 @@ import {
 } from "@/pages/settings";
 import { StatisticsSettingsPage } from "@/pages/statistics";
 import { VoiceSettingsPage } from "@/pages/voice-settings";
-import type { DesktopPluginModule } from "@/plugin-api";
 
 const settings = [
   [

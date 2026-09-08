@@ -10,6 +10,7 @@ export default defineConfig({
       "packages/agent-core/vitest.config.ts",
       "packages/chat-server-client/vitest.config.ts",
       "packages/desktop-host/vitest.config.ts",
+      "packages/desktop-plugin-sdk/vitest.config.ts",
       "apps/electron/vitest.config.ts",
     ],
   },

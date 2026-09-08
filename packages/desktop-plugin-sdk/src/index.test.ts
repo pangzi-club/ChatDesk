@@ -1,0 +1,25 @@
+import { describe, expect, it } from "vitest";
+import {
+  DESKTOP_PLUGIN_API_VERSION,
+  defineDesktopPlugin,
+  type DesktopPluginModule,
+} from "./index";
+
+describe("desktop plugin SDK", () => {
+  it("defines a plugin without changing its public module", () => {
+    const plugin = defineDesktopPlugin({
+      manifest: {
+        id: "demo.sdk",
+        version: "1.0.0",
+        apiVersion: DESKTOP_PLUGIN_API_VERSION,
+        entry: "demo/sdk",
+        contributes: [],
+        permissions: [],
+      },
+      apply: () => undefined,
+    } satisfies DesktopPluginModule);
+
+    expect(plugin.manifest.apiVersion).toBe(1);
+    expect(plugin.manifest.id).toBe("demo.sdk");
+  });
+});

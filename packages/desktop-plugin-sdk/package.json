@@ -1,0 +1,29 @@
+{
+  "name": "@chatdesk/desktop-plugin-sdk",
+  "private": true,
+  "version": "0.6.0",
+  "description": "Public contract for ChatDesk Desktop plugins",
+  "license": "MIT",
+  "packageManager": "pnpm@11.19.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "react": ">=19"
+  },
+  "dependencies": {
+    "@chatdesk/shared": "workspace:*",
+    "ai": "^7.0.51"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "@types/react": "^19.1.8",
+    "typescript": "7.0.2",
+    "vitest": "^4.1.10"
+  },
+  "scripts": {
+    "test": "vitest run --root ../.. packages/desktop-plugin-sdk/src",
+    "typecheck": "tsc --noEmit"
+  }
+}

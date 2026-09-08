@@ -1,3 +1,4 @@
+import type { DesktopPluginModule } from "@chatdesk/desktop-plugin-sdk";
 import type { Context } from "cordis";
 import { ChartColumn, Image, ScrollText } from "lucide-react";
 import {
@@ -6,7 +7,6 @@ import {
   PlanTabRenderer,
 } from "@/components/workspace-tab-renderers";
 import type { WorkspaceTabContribution } from "@/lib/desktop-ui";
-import type { DesktopPluginModule } from "@/plugin-api";
 
 export const manifest = {
   id: "workspace-tabs-content",

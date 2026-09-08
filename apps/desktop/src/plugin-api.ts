@@ -1,10 +1,3 @@
-export type { Context as DesktopPluginContext } from "cordis";
-export type {
-  ChatLayout,
-  ChatLayoutComponent,
-  ChatLayoutProps,
-} from "@/lib/chat-layout";
-export { ChatLayoutService } from "@/lib/chat-layout";
 export type {
   AnyWorkspaceTabContribution,
   BuiltinWorkspaceTabType,
@@ -15,6 +8,7 @@ export type {
   DesktopActionContribution,
   DesktopActionScope,
   DesktopIcon,
+  DesktopPluginContext,
   DesktopPluginHandle,
   DesktopPluginInstallResult,
   DesktopPluginManifest,
@@ -33,5 +27,12 @@ export type {
   WorkspaceTabRenderProps,
   WorkspaceTabScope,
   WorkspaceTabType,
-} from "@/lib/desktop-ui";
-export { DESKTOP_PLUGIN_API_VERSION, DesktopUiService } from "@/lib/desktop-ui";
+} from "@chatdesk/desktop-plugin-sdk";
+export { DESKTOP_PLUGIN_API_VERSION, defineDesktopPlugin } from "@chatdesk/desktop-plugin-sdk";
+export type {
+  ChatLayout,
+  ChatLayoutComponent,
+  ChatLayoutProps,
+} from "@/lib/chat-layout";
+export { ChatLayoutService } from "@/lib/chat-layout";
+export { DesktopUiService } from "@/lib/desktop-ui";

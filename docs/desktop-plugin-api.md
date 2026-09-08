@@ -5,7 +5,7 @@ Desktop Plugin API 允许随应用一起构建的模块向共享 Cordis Context 
 Electron 对象。
 
 ```tsx
-import type { DesktopPluginModule, WorkspaceTabContribution } from "@/plugin-api";
+import type { DesktopPluginModule, WorkspaceTabContribution } from "@chatdesk/desktop-plugin-sdk";
 import { Rocket } from "lucide-react";
 
 function ExamplePage() {
@@ -38,7 +38,8 @@ export const plugin = {
 } satisfies DesktopPluginModule;
 ```
 
-`manifest.id` 是插件的全局稳定标识，`version` 使用 `major.minor.patch` 格式，`entry` 是构建期入口
+第三方插件唯一从 `@chatdesk/desktop-plugin-sdk` 导入公开契约；`@/plugin-api` 只是宿主兼容门面，不能作为
+第三方依赖。`manifest.id` 是插件的全局稳定标识，`version` 使用 `major.minor.patch` 格式，`entry` 是构建期入口
 标识。宿主当前只接受 `apiVersion: 1`；`contributes` 必须是公开 slot 且不能重复，首版
 `permissions` 必须为空数组。Manifest 在创建 Cordis fiber 前校验，失败插件不会执行 `apply`。
 

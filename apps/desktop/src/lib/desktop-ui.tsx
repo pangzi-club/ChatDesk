@@ -1,6 +1,12 @@
+import type {
+  DesktopPluginHandle as SdkDesktopPluginHandle,
+  DesktopPluginInstallResult as SdkDesktopPluginInstallResult,
+  DesktopPluginManifest as SdkDesktopPluginManifest,
+  DesktopPluginModule as SdkDesktopPluginModule,
+} from "@chatdesk/desktop-plugin-sdk";
 import type { SystemPromptSnapshot } from "@chatdesk/shared";
 import type { UIMessage } from "ai";
-import { Context, type Fiber, type Inject, Service } from "cordis";
+import { Context, type Fiber, Service } from "cordis";
 import {
   type ComponentType,
   createContext,
@@ -14,30 +20,14 @@ import type { ContextDetailPromptInput } from "@/lib/context-detail-events";
 
 export const DESKTOP_PLUGIN_API_VERSION = 1 as const;
 
-export type DesktopPluginManifest = {
-  id: string;
-  version: string;
-  apiVersion: typeof DESKTOP_PLUGIN_API_VERSION;
-  entry: string;
-  contributes: readonly DesktopUiSlot[];
-  permissions: readonly [];
-};
+export type DesktopPluginManifest = SdkDesktopPluginManifest;
 
 /** A build-time Desktop plugin installed into the application's shared Cordis context. */
-export type DesktopPluginModule = {
-  manifest: DesktopPluginManifest;
-  inject?: Inject;
-  apply: (ctx: Context) => unknown;
-};
+export type DesktopPluginModule = SdkDesktopPluginModule;
 
-export type DesktopPluginHandle = {
-  id: string;
-  dispose: () => Promise<void>;
-};
+export type DesktopPluginHandle = SdkDesktopPluginHandle;
 
-export type DesktopPluginInstallResult =
-  | { ok: true; id: string; handle: DesktopPluginHandle }
-  | { ok: false; id: string; error: Error };
+export type DesktopPluginInstallResult = SdkDesktopPluginInstallResult;
 
 export type DesktopUiSlot =
   | "sidebar.navigation"
@@ -528,7 +518,11 @@ export async function createDesktopUiRuntime(
 
     let fiber: Fiber | undefined;
     try {
-      const pluginFiber = ctx.plugin({ name: id, inject: plugin.inject, apply: plugin.apply });
+      const pluginFiber = ctx.plugin({
+        name: id,
+        inject: plugin.inject,
+        apply: plugin.apply as unknown as (ctx: Context) => unknown,
+      });
       fiber = pluginFiber;
       await pluginFiber;
       installed.set(id, pluginFiber);
@@ -568,7 +562,7 @@ export async function createDesktopUiRuntime(
     (module): DesktopPluginModule => ({
       manifest: module.manifest,
       inject: module.inject,
-      apply: module.apply,
+      apply: module.apply as unknown as DesktopPluginModule["apply"],
     }),
   );
   const pluginResults: DesktopPluginInstallResult[] = [];

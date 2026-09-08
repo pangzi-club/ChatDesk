@@ -23,7 +23,8 @@ contribution 系统。核心宿主仍负责应用布局、权限、路由基础�
 
 ## 应用内 Plugin API
 
-Desktop 现在通过 `apps/desktop/src/plugin-api.ts` 提供构建期插件入口。插件导出带稳定 manifest 的
+Desktop 现在通过 `@chatdesk/desktop-plugin-sdk` 提供构建期插件入口；`apps/desktop/src/plugin-api.ts`
+仅作为宿主兼容门面。插件导出带稳定 manifest 的
 `DesktopPluginModule`，manifest 包含 `id`、`version`、`apiVersion`、`entry`、`contributes` 和
 `permissions`。插件在共享 Cordis Context 中使用 `desktopUi` 与 `chatLayouts` service。启动时
 插件可作为 `createDesktopUiRuntime(layout, plugins)` 的第二个参数传入，运行中也可通过

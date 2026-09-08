@@ -1,10 +1,10 @@
+import type { DesktopPluginModule } from "@chatdesk/desktop-plugin-sdk";
 import type { Context } from "cordis";
 import { FolderGit2, Globe2, SquareTerminal } from "lucide-react";
 import { BrowserTabRenderer, TerminalTabRenderer } from "@/components/workspace-tab-renderers";
 import type { WorkspaceTab, WorkspaceTabContribution } from "@/lib/desktop-ui";
 import { terminalSessions } from "@/lib/terminal";
 import { tabId } from "@/lib/workspace-tab-utils";
-import type { DesktopPluginModule } from "@/plugin-api";
 
 export const manifest = {
   id: "workspace-tabs-core",

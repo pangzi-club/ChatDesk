@@ -1,7 +1,7 @@
+import type { DesktopPluginModule } from "@chatdesk/desktop-plugin-sdk";
 import type { Context } from "cordis";
 import { Cloud, Fish, Sparkles, Waves } from "lucide-react";
 import type { ChatLayoutProps } from "@/lib/chat-layout";
-import type { DesktopPluginModule } from "@/plugin-api";
 
 export const manifest = {
   id: "chat-layout-cute",
