@@ -257,6 +257,11 @@
   兼容跳转和动态 Route Host 等宿主骨架。
 - Workspace 宿主管理 Tab 实例、顺序、激活、拖拽与分栏；工具类型、图标、渲染、创建条件和资源释放
   通过 `desktop.workspace.tab` 注册。新建菜单与空窗口入口必须消费同一份 contribution 清单。
+- 无页面命令通过 `desktop.action` 注册，由 Command Menu 与全局快捷键消费；宿主核心快捷键优先于
+  插件快捷键。应用和 Sidebar 附加内容使用 `desktop.shell.*` 与 `desktop.sidebar.*` 插槽，不接管
+  Shell、标题栏、Workspace 列表或账户区的宿主状态。
+- Chat Header 操作和 Composer 工具分别通过 `desktop.chat.header.action` 与
+  `desktop.chat.composer.tool` 注册，只使用宿主提供的只读 scope 和受控回调，不读取 Chat 私有状态。
 - 新增或重命名 Settings 页面时，必须在对应 `desktop.settings.page` descriptor 中同时维护当前标签、
   搜索关键词、图标和排序；Settings 导航与命令搜索均消费这份 descriptor，不再维护平行清单。
 - 当前 contribution 协议是 Desktop 内部边界，不作为第三方插件 ABI，也不负责插件安装、启停或加载。

@@ -237,6 +237,7 @@ import {
 } from "@/lib/chat-usage";
 import { openContextDetail, updateContextDetail } from "@/lib/context-detail-events";
 import { getDesktopBridge } from "@/lib/desktop-bridge";
+import { useDesktopUiSlot } from "@/lib/desktop-ui";
 import { detectMissingDevelopmentTools } from "@/lib/developer-environment";
 import { DEFAULT_DEVELOPER_SETTINGS, loadDeveloperSettings } from "@/lib/developer-settings";
 import { openFileViewer } from "@/lib/file-viewer-events";
@@ -505,6 +506,8 @@ function ChatPage() {
     component: ChatLayoutComponent,
     activate: activateChatLayout,
   } = useChatLayout();
+  const headerActionContributions = useDesktopUiSlot("chat.header.action");
+  const composerToolContributions = useDesktopUiSlot("chat.composer.tool");
   const workspaceRef = useRef("");
   const sandboxModeRef = useRef<ChatSandboxMode>(DEFAULT_CHAT_SANDBOX_MODE);
   const planModeRef = useRef<ChatPlanMode>("apply");
@@ -1151,6 +1154,13 @@ function ChatPage() {
 
   const isGenerating =
     serverRunActive || (localRunActive && attachedStreamSessionRef.current === sessionId);
+  const chatContributionScope = {
+    sessionId,
+    workspaceId: workspaceKey,
+    cwd: selectedCwd,
+    isGenerating,
+    isReadOnly,
+  };
   const pendingContextDetailRef = useRef({ sessionId, messages });
   const contextDetailTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastContextDetailSyncAtRef = useRef(0);
@@ -2582,6 +2592,9 @@ function ChatPage() {
             </div>
           </div>
           <div className="chat-header-actions">
+            {headerActionContributions.map(({ id, component: Component }) => (
+              <Component key={id} scope={chatContributionScope} />
+            ))}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -3301,6 +3314,19 @@ function ChatPage() {
                       skills={allowedSkills}
                     />
                   ) : null}
+                  {composerToolContributions.map(({ id, component: Component }) => (
+                    <Component
+                      disabled={isReadOnly || planTransition !== "idle"}
+                      focus={() => inputRef.current?.focus()}
+                      insertText={(text) => {
+                        inputRef.current?.replaceRange(commandCaret, commandCaret, text);
+                        inputRef.current?.focus();
+                      }}
+                      key={id}
+                      scope={chatContributionScope}
+                      value={input}
+                    />
+                  ))}
                   {configuredModels?.length === 0 && (
                     <Link className="chat-settings-link" to="/settings/models">
                       配置模型

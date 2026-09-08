@@ -28,8 +28,84 @@ export type DesktopPluginInstallResult =
   | { ok: true; name: string; handle: DesktopPluginHandle }
   | { ok: false; name: string; error: Error };
 
-export type DesktopUiSlot = "sidebar.navigation" | "settings.page" | "route" | "workspace.tab";
+export type DesktopUiSlot =
+  | "sidebar.navigation"
+  | "settings.page"
+  | "route"
+  | "workspace.tab"
+  | "action"
+  | "shell.overlay"
+  | "shell.before"
+  | "shell.after"
+  | "sidebar.before"
+  | "sidebar.after"
+  | "sidebar.footer"
+  | "chat.header.action"
+  | "chat.composer.tool";
 export type DesktopIcon = ComponentType<{ className?: string }>;
+
+export type DesktopShortcut = {
+  alt: boolean;
+  code?: string;
+  ctrl: boolean;
+  key: string;
+  meta: boolean;
+  shift: boolean;
+};
+
+export type DesktopActionScope = {
+  pathname: string;
+  navigate: (to: string) => void;
+};
+
+export type DesktopActionContribution = {
+  id: string;
+  label: string;
+  icon: DesktopIcon;
+  keywords?: string[];
+  order?: number;
+  shortcut?: DesktopShortcut;
+  run: (scope: DesktopActionScope) => void | Promise<void>;
+};
+
+export type DesktopShellScope = {
+  pathname: string;
+  isChatPage: boolean;
+};
+
+export type DesktopShellContribution = {
+  id: string;
+  order?: number;
+  component: ComponentType<{ scope: DesktopShellScope }>;
+};
+
+export type ChatContributionScope = {
+  sessionId: string;
+  workspaceId: string;
+  cwd: string;
+  isGenerating: boolean;
+  isReadOnly: boolean;
+};
+
+export type ChatHeaderActionContribution = {
+  id: string;
+  order?: number;
+  component: ComponentType<{ scope: ChatContributionScope }>;
+};
+
+export type ChatComposerToolProps = {
+  scope: ChatContributionScope;
+  value: string;
+  disabled: boolean;
+  insertText: (text: string) => void;
+  focus: () => void;
+};
+
+export type ChatComposerToolContribution = {
+  id: string;
+  order?: number;
+  component: ComponentType<ChatComposerToolProps>;
+};
 
 export type SidebarNavigationContribution = {
   id: string;
@@ -195,6 +271,15 @@ type SlotMap = {
   "settings.page": SettingsPageContribution;
   route: DesktopRouteContribution;
   "workspace.tab": AnyWorkspaceTabContribution;
+  action: DesktopActionContribution;
+  "shell.overlay": DesktopShellContribution;
+  "shell.before": DesktopShellContribution;
+  "shell.after": DesktopShellContribution;
+  "sidebar.before": DesktopShellContribution;
+  "sidebar.after": DesktopShellContribution;
+  "sidebar.footer": DesktopShellContribution;
+  "chat.header.action": ChatHeaderActionContribution;
+  "chat.composer.tool": ChatComposerToolContribution;
 };
 
 function sortContributions<T extends { order?: number }>(items: T[]) {
@@ -210,6 +295,15 @@ export class DesktopUiService extends Service {
     "settings.page": new Map(),
     route: new Map(),
     "workspace.tab": new Map(),
+    action: new Map(),
+    "shell.overlay": new Map(),
+    "shell.before": new Map(),
+    "shell.after": new Map(),
+    "sidebar.before": new Map(),
+    "sidebar.after": new Map(),
+    "sidebar.footer": new Map(),
+    "chat.header.action": new Map(),
+    "chat.composer.tool": new Map(),
   };
   private readonly listeners = new Set<() => void>();
   private readonly workspaceTabInstances = new Map<
@@ -224,12 +318,25 @@ export class DesktopUiService extends Service {
       | SettingsPageContribution
       | DesktopRouteContribution
       | AnyWorkspaceTabContribution
+      | DesktopActionContribution
+      | DesktopShellContribution
+      | ChatHeaderActionContribution
+      | ChatComposerToolContribution
     )[]
   > = {
     "sidebar.navigation": [],
     "settings.page": [],
     route: [],
     "workspace.tab": [],
+    action: [],
+    "shell.overlay": [],
+    "shell.before": [],
+    "shell.after": [],
+    "sidebar.before": [],
+    "sidebar.after": [],
+    "sidebar.footer": [],
+    "chat.header.action": [],
+    "chat.composer.tool": [],
   };
 
   constructor(ctx: Context) {

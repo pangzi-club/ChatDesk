@@ -194,6 +194,7 @@ describe("DesktopUiService", () => {
 
   it("installs and uninstalls a plugin through the public module API", async () => {
     const closeTab = vi.fn();
+    const runAction = vi.fn();
     const plugin: DesktopPluginModule = {
       name: "test.public-api",
       inject: ["desktopUi", "chatLayouts"],
@@ -228,6 +229,29 @@ describe("DesktopUiService", () => {
               icon: MessageCircle,
               onClose: closeTab,
             }),
+            ctx.desktopUi.register("action", {
+              id: "plugin.action",
+              label: "Plugin action",
+              icon: MessageCircle,
+              keywords: ["plugin"],
+              run: runAction,
+            }),
+            ctx.desktopUi.register("shell.overlay", {
+              id: "plugin.overlay",
+              component: EmptyPage,
+            }),
+            ctx.desktopUi.register("sidebar.footer", {
+              id: "plugin.sidebar-footer",
+              component: EmptyPage,
+            }),
+            ctx.desktopUi.register("chat.header.action", {
+              id: "plugin.chat-header-action",
+              component: EmptyPage,
+            }),
+            ctx.desktopUi.register("chat.composer.tool", {
+              id: "plugin.chat-composer-tool",
+              component: EmptyPage,
+            }),
             ctx.chatLayouts.register("plugin-layout", ({ children }) => children),
           ];
           return () =>
@@ -246,6 +270,24 @@ describe("DesktopUiService", () => {
     expect(routes.some((item) => item.id === "plugin.route")).toBe(true);
     const settings = runtime.service.getSnapshot("settings.page");
     expect(settings.some((item) => item.id === "plugin.settings")).toBe(true);
+    const action = runtime.service
+      .getSnapshot("action")
+      .find((item) => item.id === "plugin.action");
+    expect(action).toBeDefined();
+    await action?.run({ pathname: "/chat", navigate: vi.fn() });
+    expect(runAction).toHaveBeenCalledOnce();
+    expect(runtime.service.getSnapshot("shell.overlay").map((item) => item.id)).toEqual([
+      "plugin.overlay",
+    ]);
+    expect(runtime.service.getSnapshot("sidebar.footer").map((item) => item.id)).toEqual([
+      "plugin.sidebar-footer",
+    ]);
+    expect(runtime.service.getSnapshot("chat.header.action").map((item) => item.id)).toEqual([
+      "plugin.chat-header-action",
+    ]);
+    expect(runtime.service.getSnapshot("chat.composer.tool").map((item) => item.id)).toEqual([
+      "plugin.chat-composer-tool",
+    ]);
     expect(runtime.chatLayouts.getSnapshot().id).toBe("standard");
     runtime.chatLayouts.activate("plugin-layout");
     expect(runtime.chatLayouts.getSnapshot().id).toBe("plugin-layout");
@@ -266,6 +308,11 @@ describe("DesktopUiService", () => {
     expect(runtime.service.getSnapshot("route").some((item) => item.id === "plugin.route")).toBe(
       false,
     );
+    expect(runtime.service.getSnapshot("action")).toEqual([]);
+    expect(runtime.service.getSnapshot("shell.overlay")).toEqual([]);
+    expect(runtime.service.getSnapshot("sidebar.footer")).toEqual([]);
+    expect(runtime.service.getSnapshot("chat.header.action")).toEqual([]);
+    expect(runtime.service.getSnapshot("chat.composer.tool")).toEqual([]);
     expect(() => runtime.chatLayouts.activate("plugin-layout")).toThrow("unknown chat layout");
 
     await runtime.dispose();

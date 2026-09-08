@@ -53,6 +53,11 @@ contribution 时，宿主会对该类型的已打开 Tab 调用 `onClose`，以�
 - `route`：顶层页面及可选导航入口。
 - `settings.page`：设置页面、搜索关键词与布局元数据。
 - `workspace.tab`：Tab renderer、创建条件、创建及关闭行为。
+- `action`：无页面动作，可进入 Command Menu 并绑定全局快捷键。
+- `shell.overlay`、`shell.before/after`：应用级状态、内容和浮层。
+- `sidebar.before/after/footer`：Sidebar 附加区域。
+- `chat.header.action`：使用只读对话 scope 渲染 Chat Header 操作。
+- `chat.composer.tool`：使用受控 value、`insertText` 和 `focus` 回调扩展 Composer 工具栏。
 - `chatLayouts`：注册和激活 Chat layout。
 
 插件名和每个 contribution id 都必须全局唯一；重复项返回或抛出明确错误，不会覆盖旧注册。排序继续
@@ -78,6 +83,11 @@ const inspector = {
 ```
 
 内置 Tab 仍通过 `WorkspaceTabDataMap` 自动推导 data；插件自定义 Tab 不需要修改该内置映射。
+
+`action.run` 接收当前 `pathname` 和受控 `navigate`。声明 `shortcut` 后宿主会在全局键盘处理器中执行
+动作；宿主核心快捷键优先，插件之间发生冲突时按 contribution 排序选择第一个动作。Chat
+contribution 只接收 session、workspace、cwd、生成状态和只读状态，不应读取 Chat 页面内部 React
+state。Composer tool 应通过宿主提供的 `insertText` 修改输入内容。
 
 首版仅支持构建期可导入模块，不支持目录扫描、远程代码、本地 manifest、权限沙箱或第三方 ABI
 兼容承诺。插件不得创建第二个 Desktop Cordis Context。

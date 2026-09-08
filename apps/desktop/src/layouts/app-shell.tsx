@@ -138,6 +138,9 @@ import {
 import { getDesktopBridge, isDesktop } from "@/lib/desktop-bridge";
 import {
   type AnyWorkspaceTabContribution,
+  type DesktopActionContribution,
+  type DesktopShellContribution,
+  type DesktopShellScope,
   patchWorkspaceTab,
   type SidebarNavigationContribution,
   useDesktopUi,
@@ -205,11 +208,22 @@ function getWorkbenchLayoutTransition(shouldReduceMotion: boolean) {
 
 type CommandItem = {
   id: string;
-  to: string;
   label: string;
   icon: ComponentType<{ className?: string }>;
   keywords: string[];
+  to?: string;
+  run?: () => void | Promise<void>;
 };
+
+function DesktopShellSlot({
+  contributions,
+  scope,
+}: {
+  contributions: readonly DesktopShellContribution[];
+  scope: DesktopShellScope;
+}) {
+  return contributions.map(({ id, component: Component }) => <Component key={id} scope={scope} />);
+}
 
 const CHAT_UNREAD_STORAGE_KEY = "m-dashboard-chat-unread-v1";
 const WORKSPACE_COLLAPSE_STORAGE_KEY = "m-dashboard-workspace-collapse-v1";
@@ -356,6 +370,13 @@ function AppShell() {
   const desktopUi = useDesktopUi();
   const sidebarContributions = useDesktopUiSlot("sidebar.navigation");
   const routeContributions = useDesktopUiSlot("route");
+  const actionContributions = useDesktopUiSlot("action");
+  const shellOverlayContributions = useDesktopUiSlot("shell.overlay");
+  const shellBeforeContributions = useDesktopUiSlot("shell.before");
+  const shellAfterContributions = useDesktopUiSlot("shell.after");
+  const sidebarBeforeContributions = useDesktopUiSlot("sidebar.before");
+  const sidebarAfterContributions = useDesktopUiSlot("sidebar.after");
+  const sidebarFooterContributions = useDesktopUiSlot("sidebar.footer");
   const navigationContributions = useMemo(
     () =>
       [
@@ -448,6 +469,10 @@ function AppShell() {
     );
   }
   const isChatPage = isChatPath(location.pathname);
+  const shellScope = useMemo<DesktopShellScope>(
+    () => ({ pathname: location.pathname, isChatPage }),
+    [isChatPage, location.pathname],
+  );
   const chatWindowKey = getChatWindowKey(location.pathname, location.search);
   const previousChatWindowKeyRef = useRef(chatWindowKey);
   const previousSideChatKeyRef = useRef(chatWindowKey);
@@ -753,8 +778,7 @@ function AppShell() {
         toggleMainSidebar();
         return;
       }
-      if (!isChatPage) return;
-      if (matchesShortcut(event, shortcutSettings.newConversation)) {
+      if (isChatPage && matchesShortcut(event, shortcutSettings.newConversation)) {
         if (chatRoute.kind === "session" && !chatSessionQuery.data) return;
         event.preventDefault();
         const isDefaultWorkspace = chatWorkspaceId === DEFAULT_WORKSPACE_ID;
@@ -767,7 +791,7 @@ function AppShell() {
         );
         return;
       }
-      if (matchesShortcut(event, shortcutSettings.chatSidebar)) {
+      if (isChatPage && matchesShortcut(event, shortcutSettings.chatSidebar)) {
         event.preventDefault();
         setChatWindowStates((current) => {
           const state = current[chatWindowKey] ?? createChatWindowState();
@@ -779,7 +803,7 @@ function AppShell() {
         });
         return;
       }
-      if (matchesShortcut(event, shortcutSettings.chatSidebarMaximize)) {
+      if (isChatPage && matchesShortcut(event, shortcutSettings.chatSidebarMaximize)) {
         event.preventDefault();
         setChatWindowStates((current) => {
           const state = current[chatWindowKey] ?? createChatWindowState();
@@ -792,18 +816,30 @@ function AppShell() {
             },
           };
         });
+        return;
+      }
+      const action = actionContributions.find(
+        (item) => item.shortcut && matchesShortcut(event, item.shortcut),
+      );
+      if (action) {
+        event.preventDefault();
+        void Promise.resolve(
+          action.run({ pathname: location.pathname, navigate: (to) => navigate(to) }),
+        ).catch((error) => console.error(`Failed to run desktop action: ${action.id}`, error));
       }
     }
 
     window.addEventListener("keydown", handleGlobalShortcut);
     return () => window.removeEventListener("keydown", handleGlobalShortcut);
   }, [
+    actionContributions,
     chatRoute.kind,
     chatSessionQuery.data,
     chatWorkspaceCwd,
     chatWorkspaceId,
     chatWindowKey,
     isChatPage,
+    location.pathname,
     navigate,
     shortcutSettings,
     toggleMainSidebar,
@@ -1213,6 +1249,7 @@ function AppShell() {
 
   return (
     <main className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+      <DesktopShellSlot contributions={shellBeforeContributions} scope={shellScope} />
       <ChatServerStatusBanner />
       <div className="flex min-h-0 w-full flex-1 overflow-hidden bg-background">
         {hideMainSidebar ? (
@@ -1257,6 +1294,7 @@ function AppShell() {
                     }}
                     onToggleConversationView={toggleSidebarConversationView}
                   />
+                  <DesktopShellSlot contributions={sidebarBeforeContributions} scope={shellScope} />
                   <nav
                     className="space-y-0.5 px-2 py-2 pb-1 max-sm:px-1.5"
                     aria-label="Main navigation"
@@ -1285,7 +1323,13 @@ function AppShell() {
                     <WorkspaceConversationGroups view={sidebarConversationView} />
                   </div>
 
+                  <DesktopShellSlot contributions={sidebarAfterContributions} scope={shellScope} />
+
                   <footer className="relative mt-auto border-border border-t px-2 py-1 max-sm:px-1.5">
+                    <DesktopShellSlot
+                      contributions={sidebarFooterContributions}
+                      scope={shellScope}
+                    />
                     <details className="group">
                       <summary className="flex h-8 cursor-pointer list-none items-center justify-between rounded-md px-3 text-left text-[13px] font-semibold text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground max-md:justify-center max-md:px-0 [&::-webkit-details-marker]:hidden">
                         <span className="flex min-w-0 items-center gap-2">
@@ -1445,7 +1489,11 @@ function AppShell() {
           </>
         ) : null}
       </div>
-      {isCommandMenuOpen && <CommandMenu onClose={() => setIsCommandMenuOpen(false)} />}
+      <DesktopShellSlot contributions={shellAfterContributions} scope={shellScope} />
+      <DesktopShellSlot contributions={shellOverlayContributions} scope={shellScope} />
+      {isCommandMenuOpen && (
+        <CommandMenu actions={actionContributions} onClose={() => setIsCommandMenuOpen(false)} />
+      )}
       {isChatSearchOpen && <ChatSearchMenu onClose={() => setIsChatSearchOpen(false)} />}
     </main>
   );
@@ -3855,8 +3903,15 @@ function useChatPaletteSearch(query: string) {
   };
 }
 
-function CommandMenu({ onClose }: { onClose: () => void }) {
+function CommandMenu({
+  actions,
+  onClose,
+}: {
+  actions: readonly DesktopActionContribution[];
+  onClose: () => void;
+}) {
   const navigate = useNavigate();
+  const location = useLocation();
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -3890,9 +3945,23 @@ function CommandMenu({ onClose }: { onClose: () => void }) {
           icon: item.icon,
           keywords: item.keywords,
         })),
+      ...actions.map((item) => ({
+        id: item.id,
+        label: item.label,
+        icon: item.icon,
+        keywords: item.keywords ?? [],
+        run: () => item.run({ pathname: location.pathname, navigate: (to) => navigate(to) }),
+      })),
     ];
     return [...new Map(commands.map((command) => [command.id, command])).values()];
-  }, [navigationContributions, routeContributions, settingsContributions]);
+  }, [
+    actions,
+    location.pathname,
+    navigate,
+    navigationContributions,
+    routeContributions,
+    settingsContributions,
+  ]);
   const commandMatches = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
     if (!normalized) return registeredCommands;
@@ -3918,10 +3987,16 @@ function CommandMenu({ onClose }: { onClose: () => void }) {
     onClose();
   }
   function selectCommand(item: CommandItem) {
-    navigate(
-      item.to === "/chat" ? chatNewPath() : item.to,
-      item.to === "/chat" ? { state: chatNewNavigationState() } : undefined,
-    );
+    if (item.run) {
+      void Promise.resolve(item.run()).catch((error) =>
+        console.error(`Failed to run desktop action: ${item.id}`, error),
+      );
+    } else if (item.to) {
+      navigate(
+        item.to === "/chat" ? chatNewPath() : item.to,
+        item.to === "/chat" ? { state: chatNewNavigationState() } : undefined,
+      );
+    }
     onClose();
   }
   function selectItem(item: CommandMenuEntry) {
