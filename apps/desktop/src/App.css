@@ -3111,7 +3111,7 @@
   right: 50%;
   bottom: calc(100% + 8px);
   display: flex;
-  max-width: calc(100% - 16px);
+  max-width: 300px;
   align-items: center;
   justify-content: center;
   gap: 8px;

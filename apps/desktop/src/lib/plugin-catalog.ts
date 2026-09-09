@@ -10,6 +10,7 @@ import {
   Search,
   Settings2,
   Sparkles,
+  StickyNote,
 } from "lucide-react";
 import type { ComponentType } from "react";
 import type { DiscoveredPlugin } from "@/lib/desktop-plugin-discovery";
@@ -17,6 +18,7 @@ import type { DiscoveredPlugin } from "@/lib/desktop-plugin-discovery";
 type PluginIcon = ComponentType<{ className?: string }>;
 
 const iconById: Record<string, PluginIcon> = {
+  "demo-chat-note": StickyNote,
   "demo-command-palette": Sparkles,
   "demo-pomodoro": Clock3,
   "demo-workspace-inspector": Search,
@@ -34,6 +36,10 @@ const contributionLabels: Record<string, { label: string; description: string }>
   action: { label: "命令", description: "向命令菜单和快捷操作提供能力" },
   "chat.composer.tool": { label: "聊天工具", description: "在聊天输入区提供辅助工具" },
   "chat.header.action": { label: "聊天操作", description: "在聊天标题栏提供快捷操作" },
+  "chat.messages.before": { label: "消息区前置", description: "在聊天消息列表上方插入内容" },
+  "chat.messages.after": { label: "消息区后置", description: "在聊天消息列表末尾插入内容" },
+  "chat.composer.float": { label: "输入区浮层", description: "在聊天输入框上方提供浮层内容" },
+  "chat.message.action": { label: "消息操作", description: "为每条聊天消息提供操作按钮" },
   route: { label: "页面", description: "提供一个可从应用导航打开的页面" },
   "settings.page": { label: "设置页面", description: "向设置中心添加一个页面" },
   "sidebar.navigation": { label: "侧边栏", description: "在应用侧边栏添加导航入口" },

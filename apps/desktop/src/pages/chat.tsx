@@ -237,7 +237,7 @@ import {
 } from "@/lib/chat-usage";
 import { openContextDetail, updateContextDetail } from "@/lib/context-detail-events";
 import { getDesktopBridge } from "@/lib/desktop-bridge";
-import { useDesktopUiSlot } from "@/lib/desktop-ui";
+import { type ChatContributionScope, useDesktopUiSlot } from "@/lib/desktop-ui";
 import { detectMissingDevelopmentTools } from "@/lib/developer-environment";
 import { DEFAULT_DEVELOPER_SETTINGS, loadDeveloperSettings } from "@/lib/developer-settings";
 import { openFileViewer } from "@/lib/file-viewer-events";
@@ -508,6 +508,9 @@ function ChatPage() {
   } = useChatLayout();
   const headerActionContributions = useDesktopUiSlot("chat.header.action");
   const composerToolContributions = useDesktopUiSlot("chat.composer.tool");
+  const messagesBeforeContributions = useDesktopUiSlot("chat.messages.before");
+  const messagesAfterContributions = useDesktopUiSlot("chat.messages.after");
+  const composerFloatContributions = useDesktopUiSlot("chat.composer.float");
   const workspaceRef = useRef("");
   const sandboxModeRef = useRef<ChatSandboxMode>(DEFAULT_CHAT_SANDBOX_MODE);
   const planModeRef = useRef<ChatPlanMode>("apply");
@@ -1154,13 +1157,16 @@ function ChatPage() {
 
   const isGenerating =
     serverRunActive || (localRunActive && attachedStreamSessionRef.current === sessionId);
-  const chatContributionScope = {
-    sessionId,
-    workspaceId: workspaceKey,
-    cwd: selectedCwd,
-    isGenerating,
-    isReadOnly,
-  };
+  const chatContributionScope = useMemo(
+    () => ({
+      sessionId,
+      workspaceId: workspaceKey,
+      cwd: selectedCwd,
+      isGenerating,
+      isReadOnly,
+    }),
+    [sessionId, workspaceKey, selectedCwd, isGenerating, isReadOnly],
+  );
   const pendingContextDetailRef = useRef({ sessionId, messages });
   const contextDetailTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastContextDetailSyncAtRef = useRef(0);
@@ -2692,6 +2698,11 @@ function ChatPage() {
                       <div className="chat-transcript-skeleton-line is-short" />
                     </div>
                   ) : null}
+                  {!showHydrateSkeleton
+                    ? messagesBeforeContributions.map(({ id, component: Component }) => (
+                        <Component key={id} scope={chatContributionScope} />
+                      ))
+                    : null}
                   {!showHydrateSkeleton && showEmptyState ? (
                     <div className="chat-empty-state">
                       <div aria-hidden="true" className="chat-empty-mark">
@@ -2761,6 +2772,7 @@ function ChatPage() {
                           showTokenUsage
                           cwd={selectedCwd}
                           workspaceId={workspaceKey || undefined}
+                          contributionScope={chatContributionScope}
                         />
                       ))}
                   {developerEnvironmentQuery.data &&
@@ -2822,6 +2834,9 @@ function ChatPage() {
                       </div>
                     </div>
                   )}
+                  {messagesAfterContributions.map(({ id, component: Component }) => (
+                    <Component key={id} scope={chatContributionScope} />
+                  ))}
                 </div>
               </div>
             </ContextMenuTrigger>
@@ -2886,6 +2901,9 @@ function ChatPage() {
                 />
               ) : null}
               <ChatTodoPanel messages={messages} />
+              {composerFloatContributions.map(({ id, component: Component }) => (
+                <Component key={id} scope={chatContributionScope} />
+              ))}
               {showPlanStartAction ? (
                 <Button
                   aria-label="执行计划"
@@ -3632,6 +3650,7 @@ const MessageBubble = memo(function MessageBubble({
   planAttachment,
   cwd,
   workspaceId,
+  contributionScope,
 }: {
   message: UIMessage;
   isStreaming: boolean;
@@ -3647,7 +3666,9 @@ const MessageBubble = memo(function MessageBubble({
   planAttachment?: ChatPlanAttachment;
   cwd: string;
   workspaceId?: string;
+  contributionScope: ChatContributionScope;
 }) {
+  const messageActionContributions = useDesktopUiSlot("chat.message.action");
   const text = messageText(message);
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
@@ -3923,6 +3944,15 @@ const MessageBubble = memo(function MessageBubble({
                 )}
               </Button>
             ) : null}
+            {messageActionContributions.map(({ id, component: Component }) => (
+              <Component
+                key={id}
+                scope={{
+                  ...contributionScope,
+                  message: { id: message.id, role: message.role, text },
+                }}
+              />
+            ))}
             {!isUser && usageLabel ? (
               <span className="chat-message-usage">{usageLabel}</span>
             ) : null}

@@ -71,6 +71,10 @@ contribution 时，宿主会对该类型的已打开 Tab 调用 `onClose`，以�
 - `sidebar.before/after/footer`：Sidebar 附加区域。
 - `chat.header.action`：使用只读对话 scope 渲染 Chat Header 操作。
 - `chat.composer.tool`：使用受控 value、`insertText` 和 `focus` 回调扩展 Composer 工具栏。
+- `chat.messages.before` / `chat.messages.after`：使用只读对话 scope 在消息列表上方/末尾插入内容。
+- `chat.composer.float`：使用只读对话 scope 在 Composer 上方浮层区（Git 摘要、待办面板旁）提供内容。
+- `chat.message.action`：在每条消息的操作行渲染插件按钮，scope 为只读对话 scope 加上 `message`
+  （`id`、`role`、`text`），插件不得修改消息或读取 Chat 页面内部 React state。
 - `chatLayouts`：注册和激活 Chat layout。
 
 插件名和每个 contribution id 都必须全局唯一；重复项返回或抛出明确错误，不会覆盖旧注册。排序继续
@@ -100,7 +104,8 @@ const inspector = {
 `action.run` 接收当前 `pathname` 和受控 `navigate`。声明 `shortcut` 后宿主会在全局键盘处理器中执行
 动作；宿主核心快捷键优先，插件之间发生冲突时按 contribution 排序选择第一个动作。Chat
 contribution 只接收 session、workspace、cwd、生成状态和只读状态，不应读取 Chat 页面内部 React
-state。Composer tool 应通过宿主提供的 `insertText` 修改输入内容。
+state。`chat.message.action` 额外接收只读的消息 `id`、`role` 和 `text`。Composer tool 应通过宿主提供的
+`insertText` 修改输入内容。
 
 阶段一支持扫描构建期预定义目录 `apps/desktop/src/plugins`：入口由静态 glob 注册表映射，必须与
 `manifest.entry` 一致；未知插件默认禁用，安装即启用、卸载即禁用。桌面设置只持久化成功安装的
@@ -110,7 +115,8 @@ state。Composer tool 应通过宿主提供的 `insertText` 修改输入内容�
 ## 能力评估与后续优先级
 
 当前 API 已经足够支撑“构建期的桌面 UI 插件”：导航、顶层路由、设置页、Workspace Tab、命令与
-快捷键、Shell/Sidebar 附加区域、Chat Header/Composer 工具，以及 Chat layout 都可以通过公开 slot
+快捷键、Shell/Sidebar 附加区域、Chat Header/Composer 工具、Chat 消息区前后置/输入区浮层/消息操作，
+以及 Chat layout 都可以通过公开 slot
 注册。结合 `ctx.effect`、稳定 ID、排序、安装/卸载和 Tab `onClose`，内置功能模块化和常规 UI 扩展已经
 具备可用的生命周期基础。
 
@@ -132,7 +138,7 @@ session/chat 操作、workspace、Server API、文件系统和 Electron 能力�
 
 ### P1：补齐高价值 UI 扩展面
 
-- Chat 消息操作/渲染、消息工具栏和发送流程扩展。
+- Chat 消息渲染替换、发送流程扩展（消息操作与消息区前后置/输入区浮层 slot 已提供）。
 - Workspace Tab toolbar、context menu、status bar，以及 Explorer/editor 扩展。
 - Modal/panel、通知中心等需要宿主协调状态的 UI surface。
 - 对高频扩展抽象通用 contribution 元数据，避免仅靠不断增加字符串 slot 导致协议碎片化。

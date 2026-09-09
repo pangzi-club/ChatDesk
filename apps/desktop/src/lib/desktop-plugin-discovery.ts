@@ -24,6 +24,10 @@ const validSlots = new Set<DesktopUiSlot>([
   "sidebar.footer",
   "chat.header.action",
   "chat.composer.tool",
+  "chat.messages.before",
+  "chat.messages.after",
+  "chat.composer.float",
+  "chat.message.action",
 ]);
 
 export function validateDesktopPluginManifest(manifest: unknown): PluginValidationError[] {

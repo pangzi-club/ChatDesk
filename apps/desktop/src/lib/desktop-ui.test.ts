@@ -73,6 +73,40 @@ describe("DesktopUiService", () => {
     await ctx.fiber.dispose();
   });
 
+  it("orders chat region and message action contributions and rejects duplicates", async () => {
+    const ctx = new Context();
+    await ctx.plugin(DesktopUiService);
+    ctx.desktopUi.register("chat.composer.float", {
+      id: "float.second",
+      order: 20,
+      component: EmptyPage,
+    });
+    ctx.desktopUi.register("chat.composer.float", {
+      id: "float.first",
+      order: 10,
+      component: EmptyPage,
+    });
+    ctx.desktopUi.register("chat.message.action", {
+      id: "action.pin",
+      component: EmptyPage,
+    });
+
+    expect(ctx.desktopUi.getSnapshot("chat.composer.float").map((item) => item.id)).toEqual([
+      "float.first",
+      "float.second",
+    ]);
+    expect(ctx.desktopUi.getSnapshot("chat.message.action").map((item) => item.id)).toEqual([
+      "action.pin",
+    ]);
+    expect(() =>
+      ctx.desktopUi.register("chat.message.action", {
+        id: "action.pin",
+        component: EmptyPage,
+      }),
+    ).toThrow("desktop UI contribution already registered");
+    await ctx.fiber.dispose();
+  });
+
   it("keeps route and workspace tab slots ordered and isolated", async () => {
     const ctx = new Context();
     await ctx.plugin(DesktopUiService);
@@ -218,6 +252,10 @@ describe("DesktopUiService", () => {
         "sidebar.footer",
         "chat.header.action",
         "chat.composer.tool",
+        "chat.messages.before",
+        "chat.messages.after",
+        "chat.composer.float",
+        "chat.message.action",
       ]),
       inject: ["desktopUi", "chatLayouts"],
       apply(ctx) {
@@ -274,6 +312,22 @@ describe("DesktopUiService", () => {
               id: "plugin.chat-composer-tool",
               component: EmptyPage,
             }),
+            ctx.desktopUi.register("chat.messages.before", {
+              id: "plugin.chat-messages-before",
+              component: EmptyPage,
+            }),
+            ctx.desktopUi.register("chat.messages.after", {
+              id: "plugin.chat-messages-after",
+              component: EmptyPage,
+            }),
+            ctx.desktopUi.register("chat.composer.float", {
+              id: "plugin.chat-composer-float",
+              component: EmptyPage,
+            }),
+            ctx.desktopUi.register("chat.message.action", {
+              id: "plugin.chat-message-action",
+              component: EmptyPage,
+            }),
             ctx.chatLayouts.register("plugin-layout", ({ children }) => children),
           ];
           return () =>
@@ -310,6 +364,18 @@ describe("DesktopUiService", () => {
     expect(runtime.service.getSnapshot("chat.composer.tool").map((item) => item.id)).toEqual([
       "plugin.chat-composer-tool",
     ]);
+    expect(runtime.service.getSnapshot("chat.messages.before").map((item) => item.id)).toEqual([
+      "plugin.chat-messages-before",
+    ]);
+    expect(runtime.service.getSnapshot("chat.messages.after").map((item) => item.id)).toEqual([
+      "plugin.chat-messages-after",
+    ]);
+    expect(runtime.service.getSnapshot("chat.composer.float").map((item) => item.id)).toEqual([
+      "plugin.chat-composer-float",
+    ]);
+    expect(runtime.service.getSnapshot("chat.message.action").map((item) => item.id)).toEqual([
+      "plugin.chat-message-action",
+    ]);
     expect(runtime.chatLayouts.getSnapshot().id).toBe("standard");
     runtime.chatLayouts.activate("plugin-layout");
     expect(runtime.chatLayouts.getSnapshot().id).toBe("plugin-layout");
@@ -335,6 +401,10 @@ describe("DesktopUiService", () => {
     expect(runtime.service.getSnapshot("sidebar.footer")).toEqual([]);
     expect(runtime.service.getSnapshot("chat.header.action")).toEqual([]);
     expect(runtime.service.getSnapshot("chat.composer.tool")).toEqual([]);
+    expect(runtime.service.getSnapshot("chat.messages.before")).toEqual([]);
+    expect(runtime.service.getSnapshot("chat.messages.after")).toEqual([]);
+    expect(runtime.service.getSnapshot("chat.composer.float")).toEqual([]);
+    expect(runtime.service.getSnapshot("chat.message.action")).toEqual([]);
     expect(() => runtime.chatLayouts.activate("plugin-layout")).toThrow("unknown chat layout");
 
     await runtime.dispose();

@@ -49,7 +49,11 @@ export type DesktopUiSlot =
   | "sidebar.after"
   | "sidebar.footer"
   | "chat.header.action"
-  | "chat.composer.tool";
+  | "chat.composer.tool"
+  | "chat.messages.before"
+  | "chat.messages.after"
+  | "chat.composer.float"
+  | "chat.message.action";
 export type DesktopIcon = ComponentType<{ className?: string }>;
 
 export type DesktopShortcut = {
@@ -113,6 +117,22 @@ export type ChatComposerToolContribution = {
   id: string;
   order?: number;
   component: ComponentType<ChatComposerToolProps>;
+};
+
+export type ChatRegionContribution = {
+  id: string;
+  order?: number;
+  component: ComponentType<{ scope: ChatContributionScope }>;
+};
+
+export type ChatMessageScope = ChatContributionScope & {
+  message: { id: string; role: string; text: string };
+};
+
+export type ChatMessageActionContribution = {
+  id: string;
+  order?: number;
+  component: ComponentType<{ scope: ChatMessageScope }>;
 };
 
 export type SidebarNavigationContribution = {
@@ -288,6 +308,10 @@ type SlotMap = {
   "sidebar.footer": DesktopShellContribution;
   "chat.header.action": ChatHeaderActionContribution;
   "chat.composer.tool": ChatComposerToolContribution;
+  "chat.messages.before": ChatRegionContribution;
+  "chat.messages.after": ChatRegionContribution;
+  "chat.composer.float": ChatRegionContribution;
+  "chat.message.action": ChatMessageActionContribution;
 };
 
 function sortContributions<T extends { order?: number }>(items: T[]) {
@@ -319,6 +343,10 @@ export class DesktopUiService extends Service {
     "sidebar.footer": new Map(),
     "chat.header.action": new Map(),
     "chat.composer.tool": new Map(),
+    "chat.messages.before": new Map(),
+    "chat.messages.after": new Map(),
+    "chat.composer.float": new Map(),
+    "chat.message.action": new Map(),
   };
   private readonly listeners = new Set<() => void>();
   private readonly workspaceTabInstances = new Map<
@@ -337,6 +365,8 @@ export class DesktopUiService extends Service {
       | DesktopShellContribution
       | ChatHeaderActionContribution
       | ChatComposerToolContribution
+      | ChatRegionContribution
+      | ChatMessageActionContribution
     )[]
   > = {
     "sidebar.navigation": [],
@@ -352,6 +382,10 @@ export class DesktopUiService extends Service {
     "sidebar.footer": [],
     "chat.header.action": [],
     "chat.composer.tool": [],
+    "chat.messages.before": [],
+    "chat.messages.after": [],
+    "chat.composer.float": [],
+    "chat.message.action": [],
   };
 
   constructor(ctx: Context) {

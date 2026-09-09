@@ -15,7 +15,11 @@ export type DesktopUiSlot =
   | "sidebar.after"
   | "sidebar.footer"
   | "chat.header.action"
-  | "chat.composer.tool";
+  | "chat.composer.tool"
+  | "chat.messages.before"
+  | "chat.messages.after"
+  | "chat.composer.float"
+  | "chat.message.action";
 export type DesktopIcon = ComponentType<{ className?: string }>;
 export type ChatLayoutProps = { children: ReactNode };
 export type ChatLayoutComponent = ComponentType<ChatLayoutProps>;
@@ -78,6 +82,19 @@ export type ChatComposerToolContribution = {
   id: string;
   order?: number;
   component: ComponentType<ChatComposerToolProps>;
+};
+export type ChatRegionContribution = {
+  id: string;
+  order?: number;
+  component: ComponentType<{ scope: ChatContributionScope }>;
+};
+export type ChatMessageScope = ChatContributionScope & {
+  message: { id: string; role: string; text: string };
+};
+export type ChatMessageActionContribution = {
+  id: string;
+  order?: number;
+  component: ComponentType<{ scope: ChatMessageScope }>;
 };
 export type SidebarNavigationContribution = {
   id: string;
@@ -165,6 +182,10 @@ export type DesktopContributionMap = {
   "sidebar.footer": DesktopShellContribution;
   "chat.header.action": ChatHeaderActionContribution;
   "chat.composer.tool": ChatComposerToolContribution;
+  "chat.messages.before": ChatRegionContribution;
+  "chat.messages.after": ChatRegionContribution;
+  "chat.composer.float": ChatRegionContribution;
+  "chat.message.action": ChatMessageActionContribution;
 };
 export interface DesktopUiServiceContract {
   register<K extends DesktopUiSlot>(slot: K, contribution: DesktopContributionMap[K]): () => void;
