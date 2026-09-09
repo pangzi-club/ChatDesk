@@ -80,6 +80,13 @@ const RENDERER_DEV_LOAD_RETRY_BASE_DELAY_MS = 500;
 const RENDERER_DEV_LOAD_RETRY_MAX_DELAY_MS = 3_000;
 // Chromium net error code for cancelled navigations (e.g. user reload); retrying it would fight the user.
 const NET_ERR_ABORTED = -3;
+// A dev reload can land while Vite is mid-restart: the HTML loads (so did-fail-load never
+// fires) but module boot dies and the window stays blank. Poll for a mounted #root after
+// load and refresh once if it never appears.
+const RENDERER_BOOT_CHECK_DELAY_MS = 4_000;
+const RENDERER_BOOT_RECHECK_INTERVAL_MS = 1_500;
+const RENDERER_BOOT_RECHECKS = 2;
+const RENDERER_BOOT_MAX_RELOADS = 5;
 const NOTIFICATION_RESULT_TIMEOUT_MS = 60_000;
 const NOTIFICATION_RETENTION_MS = 10 * 60_000;
 const APP_SHUTDOWN_TIMEOUT_MS = 5_000;
@@ -353,6 +360,40 @@ function createWindow() {
   let devRendererRetryTimer: NodeJS.Timeout | undefined;
   if (process.env.CHATDESK_RENDERER_URL) {
     let retryDelay = RENDERER_DEV_LOAD_RETRY_BASE_DELAY_MS;
+    let bootCheckTimer: NodeJS.Timeout | undefined;
+    let bootReloadCount = 0;
+    const scheduleRendererBootCheck = (delay: number, rechecksLeft: number) => {
+      if (bootCheckTimer) clearTimeout(bootCheckTimer);
+      bootCheckTimer = setTimeout(async () => {
+        bootCheckTimer = undefined;
+        if (window.isDestroyed()) return;
+        let booted = false;
+        try {
+          booted = await window.webContents.executeJavaScript(
+            "Boolean(document.getElementById('root')?.firstElementChild)",
+          );
+        } catch (error) {
+          console.error("Renderer boot check failed", error);
+        }
+        if (booted) {
+          bootReloadCount = 0;
+          return;
+        }
+        if (rechecksLeft > 0) {
+          scheduleRendererBootCheck(RENDERER_BOOT_RECHECK_INTERVAL_MS, rechecksLeft - 1);
+          return;
+        }
+        if (bootReloadCount >= RENDERER_BOOT_MAX_RELOADS) {
+          console.error("Renderer failed to boot after repeated refreshes; giving up");
+          return;
+        }
+        bootReloadCount += 1;
+        console.warn(
+          `Renderer did not boot; refreshing (${bootReloadCount}/${RENDERER_BOOT_MAX_RELOADS})`,
+        );
+        window.webContents.reload();
+      }, delay);
+    };
     window.webContents.on(
       "did-fail-load",
       (_event, errorCode, _errorDescription, _validatedUrl, isMainFrame) => {
@@ -377,6 +418,7 @@ function createWindow() {
         clearTimeout(devRendererRetryTimer);
         devRendererRetryTimer = undefined;
       }
+      scheduleRendererBootCheck(RENDERER_BOOT_CHECK_DELAY_MS, RENDERER_BOOT_RECHECKS);
     });
   }
   let showFallbackTimer: NodeJS.Timeout | undefined;
