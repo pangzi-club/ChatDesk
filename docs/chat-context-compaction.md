@@ -28,9 +28,17 @@ min(floor(contextWindow * 0.75), 750,000)
 因此，未知模型的默认 128K 窗口会在 96K 触发，1M 及更大窗口模型最多在 750K 触发；
 小于 1M 的模型仍按窗口的 75% 触发。
 
-## 压缩规则
+## 压缩策略与规则
 
-Chat Server 在 `streamText.prepareStep` 中检查将发送给当前模型步骤的 `ModelMessage[]`。
+Chat Server 在 `streamText.prepareStep` 中检查将发送给当前模型步骤的 `ModelMessage[]`。策略由
+`contextCompactionStrategy` 选择，当前有两种：
+
+- `semantic-checkpoint`（默认）：调用一次模型生成事实检查点，随后删除旧 reasoning 和工具内容，只保留最近约 6 条模型消息；检查点写入后续 system instructions。
+- `recent-time`：按配置的时间窗口保留消息，并自动补回与保留消息配对的 tool-call/tool-result；结果 metadata 包含 `cutoffAt` 和 `droppedMessageCount`，不调用摘要模型。
+
+两种策略都不修改 Session Store 中的原始 UI 消息。`semantic-checkpoint` 适合长任务保留事实进度，
+`recent-time` 适合不希望额外调用模型的场景。
+
 消息 token 数使用 `JSON.stringify(messages).length / 4` 取整估算，并与上一轮供应商返回的实际
 `inputTokens` 取较大值。超过阈值时调用 AI SDK
 的 `pruneMessages`：
@@ -39,7 +47,7 @@ Chat Server 在 `streamText.prepareStep` 中检查将发送给当前模型步骤
 - 删除最后 3 条消息之前的工具调用、工具结果和工具审批内容；
 - 删除剪枝后没有内容的消息。
 
-只有剪枝后的估算 token 数确实下降时，才认为发生了一次压缩。`prepareStep` 返回的新消息会
+只有压缩后的估算 token 数确实下降时，才认为发生了一次压缩。`prepareStep` 返回的新消息会
 成为本次 Agent 循环后续步骤的基础，因此旧工具结果不会在下一步恢复；之后积累出新的旧工具
 结果时仍可再次压缩。
 

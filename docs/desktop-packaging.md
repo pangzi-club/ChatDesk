@@ -4,7 +4,7 @@ The desktop release ships one shared Node.js runtime with the Electron package. 
 
 ## Local build
 
-Use Node.js 22 or newer and pnpm 11.19.0.
+Use Node.js 22 and pnpm 11.19.0 for development. The sidecar/release build requires exactly Node.js 22.20.0.
 
 ```sh
 pnpm install

@@ -49,7 +49,7 @@
 ### ✅ 环境感知
 - **文件工具**：`workspace-tools.ts` 提供 list_dir / read_file / write_file / edit_file / apply_patch / search_files。`list_dir` 默认返回 200 项、最多 500 项并支持 offset 分页；`read_file` 单次最多返回 64 KiB；`apply_patch` 最大 256 KiB，先检查全部 hunk 再原子应用。
 - **文件搜索**：`file-search.ts` 优先调用 ripgrep，支持 glob、大小写不敏感的固定文本搜索、命中行摘要和 `.gitignore`；没有 `rg` 时回退到 Git 文件清单与内置遍历。只启用终端而未启用 `search_files` 时，模型可直接通过 Bash 使用 `rg`。
-- **终端**：`bash` 工具，120s 超时，macOS 使用支持 `pipefail` 的 shell；输出采用 128 KiB 固定头尾缓冲，超限只标记截断而不终止命令。命令始终同步等待，超时杀进程树；没有 job id，也没有 `block_until` / 后台托管。
+- **终端**：`bash` 工具，最长等待 120s，macOS 使用支持 `pipefail` 的 shell；输出采用 128 KiB 固定头尾缓冲，超限只标记截断而不终止命令。通过 `block_until` 或 `run_in_background` 可将命令交给 `JobRegistry` 托管，并使用 `bash_wait` / `bash_output` / `bash_stop` 管理；交互式 stdin 仍不支持。
 - **浏览器**：`client-tools.ts` + `browser-runtime.ts`，隔离的 headless Chromium session，open / screenshot / click / eval / close 全套。`browser_screenshot` 把截图写入当前聊天 session 的 `attachments/`（与用户上传、生成图同一目录），落盘前走统一 Sharp 压缩，输出可能是 WebP。开发态用 `import.meta.url` / 仓库相对路径回退到 `packages/agent-core/workers/browser-worker.mjs`；打包态由 Electron 注入普通 JS worker 路径，Chat Server 使用共享 Node 的 `process.execPath` 启动，缺失则启动失败。
 
 ### ✅ 上下文与记忆
@@ -119,9 +119,9 @@
 
 | 能力 | 现状 | 差距 |
 |---|---|---|
-| 上下文管理 | 已支持基于窗口阈值剪枝旧 reasoning 与工具结果 | 第一版不生成早期自然语言对话摘要 |
+| 上下文管理 | 已支持窗口阈值压缩，提供 semantic-checkpoint 与 recent-time 两种策略 | 不生成可回溯的会话树压缩节点 |
 | 并行工具调用 | 依赖模型单次返回多个 tool call（AI SDK 支持并行执行） | 无显式编排 |
-| 终端后台托管 | `bash` 支持 `block_until`；超时后由 JobRegistry 托管并返回 `jobId`，可用 `bash_wait` / `bash_output` / `bash_stop` 管理 | 第一版不支持交互式 stdin；Server 重启会终止并标记 Job 为 `interrupted` |
+| 终端后台托管 | `bash` 支持 `block_until` / `run_in_background`；后台任务由 JobRegistry 托管并返回 `jobId`，可用 `bash_wait` / `bash_output` / `bash_stop` 管理 | 不支持交互式 stdin；Server 重启会终止并标记 Job 为 `interrupted` |
 | Checkpoint / 回滚 | Git diff/restore/commit 接口已实现（`app.ts`） | 无基于 run 生命周期的自动快照 |
 
 ## 四、agent-core 未实现（→ TODO）
@@ -141,20 +141,14 @@
 3. **Web Fetch 工具**
    - 已有 web_search，缺 `web_fetch`（打开 URL 读正文）。对调研类任务很常用。
 
-4. **终端后台托管（block_until）**
-   - `bash` 的 `block_until` 缺省保持同步行为，`0` 立即后台；命令在等待窗口内结束时返回兼容的 Bash 结果，超时仍在运行时转为 Job 并返回 `jobId`。
-   - `bash_wait` 等待状态变化，`bash_output` 使用 cursor 读取有限环形缓冲中的增量输出，`bash_stop` 停止整个进程组。
-   - Job 绑定创建它的 session、run、workspace 和 cwd；停止父 run 不自动停止 Job，Server 重启会杀掉托管进程并持久化为 `interrupted`。
-   - `create_task` 不能替代：它另开子会话并流式进度，但父 tool 仍等到子任务结束才返回；Automation 也不在本阶段触发 Agent 或 Job。
-
-5. **终端交互增强**
+4. **终端交互增强**
    - 交互式命令（sudo 密码、选择器）目前无法处理。
    - 至少：检测到交互时提示用户或直接失败并给替代方案。
 
-6. **语义代码搜索 / RAG**
+5. **语义代码搜索 / RAG**
     - 现在只有 grep 级搜索。可接入代码索引（如 ripgrep + embedding），对大仓库提升显著。
 
-7. **会话分享 / 导出**
+6. **会话分享 / 导出**
     - 归档已有 JSON，可加 Markdown/HTML 导出，或生成可分享链接。
 
 ## 五、结论

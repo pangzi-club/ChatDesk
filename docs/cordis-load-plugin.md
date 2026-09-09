@@ -1,3 +1,6 @@
+> 本文是基于旧版 Wework/DSH 工程的历史调研记录，不描述当前 ChatDesk 实现。
+> 当前桌面插件系统请参阅 [`desktop-plugin-api.md`](./desktop-plugin-api.md)。
+
 我来先找到 dsh 相关代码，再深入看它的插件加载机制。
 
 看到 dsh 用了 `cordis.patch.yml`，说明插件体系可能基于 Cordis。先按规范读一下 `wework/AGENTS.md`，再看核心代码。

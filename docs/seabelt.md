@@ -1,4 +1,4 @@
-# Seabelt
+# Seatbelt（历史原型）
 
 > **⚠️ 本文档为早期原型草稿，不再反映当前实现。**
 >
@@ -7,9 +7,10 @@
 > 非登录 shell（`-c`）、最小化环境变量和独立的缓存目录。如需了解实际沙箱策略，
 > 请参阅 `docs/aisdk-seatbelt-sandbox.md` 和 `docs/agent-sandbox-permission-controls.md`。
 >
-> 本文档保留仅用于记录 Seatbelt 的基础概念，**不要将以下代码用于生产环境**。
+> 本文档仅保留历史原型，不应作为实现或操作指南。当前实现、权限模式、结构化文件 helper 和网络策略请参阅
+> [`aisdk-seatbelt-sandbox.md`](./aisdk-seatbelt-sandbox.md)。
 
-## 早期原型示例
+## 早期原型示例（不适用于当前代码）
 
 ```js
 import { spawn } from "node:child_process";

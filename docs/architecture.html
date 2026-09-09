@@ -63,7 +63,7 @@
       .badges { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 48px; }
       .badge { font-size: 12px; padding: 5px 10px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line-2); color: var(--text); font-weight: 500; }
       .badge .dot { display: inline-block; width: 6px; height: 6px; border-radius: 999px; margin-right: 6px; vertical-align: middle; }
-      .badge.tauri .dot { background: var(--orange); }
+      .badge.electron .dot { background: var(--orange); }
       .badge.react .dot { background: var(--cyan); }
       .badge.node .dot { background: var(--green); }
       .badge.hono .dot { background: var(--pink); }
@@ -138,7 +138,7 @@
           负责拉起 sidecar、注入 token、提供原生能力与沙箱。
         </p>
         <div class="badges">
-          <span class="badge tauri"><span class="dot"></span>Electron</span>
+          <span class="badge electron"><span class="dot"></span>Electron</span>
           <span class="badge react"><span class="dot"></span>React 19 + Vite 7</span>
           <span class="badge node"><span class="dot"></span>Node 22 (--watch + strip-types)</span>
           <span class="badge hono"><span class="dot"></span>Hono 4</span>

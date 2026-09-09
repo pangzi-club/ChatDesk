@@ -1,4 +1,7 @@
-# 用 Cordis 在运行时替换 React Layout
+# 用 Cordis 在运行时替换 React Layout（独立教程）
+
+> 这是独立的 Cordis 教程，不是当前 ChatDesk 插件 API 的规范。当前桌面插件和 Chat layout 合同请参阅
+> [`desktop-plugin-api.md`](./desktop-plugin-api.md)。
 
 这个独立教程演示一个更适合 Cordis 的 React 场景：应用只渲染一个稳定的 `App`，但运行时可以卸载当前 Layout 插件、加载另一个 Layout 插件，React 不需要修改调用方代码。
 

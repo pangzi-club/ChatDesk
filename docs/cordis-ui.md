@@ -2,7 +2,10 @@
 sidebar_position: 35
 ---
 
-# 使用 Cordis 自定义 Wework UI
+# 使用 Cordis 自定义 Wework UI（历史文档）
+
+> 本文针对旧版 Wework/DSH，不是当前 ChatDesk Desktop Plugin API。当前实现请参阅
+> [`desktop-plugin-api.md`](./desktop-plugin-api.md)。
 
 本文介绍如何通过 Cordis/DSH 为 Wework 桌面端添加应用、路由、设置页、侧边栏入口和工作区面板。Wework UI 只使用 Core DSH 作为插件运行时；插件不需要、也不应创建 Wework 私有 manifest、动态模块加载器或第二个 Cordis `Context`。
 

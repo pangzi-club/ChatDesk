@@ -1,23 +1,25 @@
-# Electron 迁移计划
+# Electron 迁移记录
 
 **状态**：Tauri 回退宿主已删除。桌面运行时只保留 Electron；browser worker 源文件位于 `packages/agent-core/workers/browser-worker.mjs`。
 
 ## 目标
 
-将 ChatDesk 从 Tauri 逐步迁移到 Electron，同时保持以下边界不变：
+ChatDesk 已完成从 Tauri 到 Electron 的桌面运行时迁移。本文保留迁移目标、已完成事项和剩余发布工作；当前桌面运行时只支持 Electron。
+
+迁移过程中保持以下边界不变：
 
 - React/Vite renderer 继续位于 `apps/desktop`；
 - `@chatdesk/agent-core` 继续作为 Session/Run 真相源，`apps/server` 继续作为 HTTP 入口；
 - HTTP/SSE、会话格式和 `~/.chatdesk` 数据目录保持向后兼容。
 
-迁移不是把 Rust 代码逐文件翻译成 Node，而是让 Electron 成为第二个宿主，实现与 Tauri 相同的桌面能力契约。
+迁移不是把 Rust 代码逐文件翻译成 Node，而是让 Electron 实现原有桌面能力契约。
 
 ## 目标架构
 
 ```text
 apps/desktop/src              React/Vite renderer
   -> desktop bridge            typed host capability boundary
-apps/electron                  Electron main/preload/services（第二阶段引入）
+apps/electron                  Electron main/preload/services
 apps/server                    Chat Server HTTP、鉴权、产品 API
 packages/agent-core            Agent harness：会话、运行、工具编排
 packages/shared                跨运行时的 IPC 类型和协议
@@ -30,22 +32,22 @@ Renderer 不直接调用 Electron 或 Node API。所有宿主能力通过 bridge
 
 ### 0. 基线与 PoC
 
-- 记录 Tauri 的启动时间、Chat Server 就绪时间、内存和关键工作流成功率。
+- 迁移前曾记录 Tauri 的启动时间、Chat Server 就绪时间、内存和关键工作流成功率。
 - 优先验证交互式 PTY、Playwright/Sharp native 依赖、窗口标题栏和托盘。
 - 明确 macOS、Windows、Linux 的安装包和签名要求。
 
 退出标准：有能力矩阵、性能基线和一次可执行的回滚演练。
 
-### 1. 抽离 renderer 宿主边界（当前阶段）
+### 1. 抽离 renderer 宿主边界（已完成）
 
 - 使用 `apps/desktop/src/lib/desktop-bridge.ts` 定义统一 bridge。
 - 先迁移设置、文件选择、外链、图片保存、托盘和事件订阅。
-- Tauri 继续作为当前 bridge 实现；Electron bridge 通过 `contextBridge` 注入。
-- 后续逐步清理其它模块中的直接 `@tauri-apps/*` 引用。
+- Electron bridge 通过 `contextBridge` 注入。
+- renderer 不再依赖 Tauri 宿主实现。
 
-退出标准：低风险能力在 Tauri 下行为不变，renderer 只依赖 bridge 或产品级 adapter。
+退出标准：renderer 只依赖 bridge 或产品级 adapter。
 
-### 2. Electron 壳与 Chat Server 监管（当前默认宿主）
+### 2. Electron 壳与 Chat Server 监管（已完成）
 
 - 新增 `apps/electron` main/preload/services 包。
 - Electron `43.4.0` 与 electron-builder `26.15.3` 已加入 workspace；安装命令：`pnpm install --frozen-lockfile`。
@@ -55,7 +57,7 @@ Renderer 不直接调用 Electron 或 Node API。所有宿主能力通过 bridge
 
 退出标准：Electron 可以独立启动、打开 Chat、重启 Chat Server，并在退出时完成清理。
 
-### 3. 原生能力迁移
+### 3. 原生能力迁移（已完成）
 
 - 文件/目录选择、保存文件、外部链接和系统日志迁移到 Electron main。
 - `convertFileSrc` 替换为受限 custom protocol，禁止 renderer 任意读取 `file://`。
@@ -65,22 +67,22 @@ Renderer 不直接调用 Electron 或 Node API。所有宿主能力通过 bridge
 
 退出标准：工作区、终端、附件、图片、MCP、Git 和 sandbox 通过功能矩阵。
 
-### 4. 数据兼容与回滚
+### 4. 数据兼容与回滚（已完成）
 
 - 首个 Electron 版本继续使用 `~/.chatdesk`，不做隐式目录切换。
-- 增加数据目录实例锁，禁止 Tauri 与 Electron 同时写入同一份数据。
+- 增加数据目录实例锁，禁止多个 Chat Server 实例同时写入同一份数据。
 - 对旧设置、会话、附件和归档使用备份后迁移；迁移必须幂等、可中止、可回滚。
-- 窗口几何单独兼容原 Tauri 配置目录，不与 Chat Server 数据混在一起。
+- 窗口几何单独存放，不与 Chat Server 数据混在一起。
 
 退出标准：旧数据 fixture 可读取，新旧版本切换不丢数据，异常中断后可恢复。
 
-### 5. 打包、CI 与 Beta
+### 5. 打包、CI 与发布（进行中）
 
-- 将现有 sidecar 构建整理为 Tauri/Electron 共用的 runtime staging。
+- 将 sidecar 构建整理为 Electron 使用的 runtime staging。
 - Electron 安装包必须验证 Node runtime、Chat Server、browser worker、Playwright Chromium 和 Sharp。
 - 增加 Electron 的 macOS、Windows、Linux 构建、签名、安装后 smoke test。
-- Electron 作为本地开发和默认桌面构建入口；Tauri 保留为回退宿主和现有发布流水线。
-- 至少两个稳定发布周期无阻断问题后，才删除 Tauri 构建和回滚路径。
+- Electron 作为本地开发和默认桌面构建入口。
+- Windows/Linux 安装包、签名和安装后 smoke test 仍待完成。
 
 ## 安全基线
 
@@ -92,14 +94,14 @@ Renderer 不直接调用 Electron 或 Node API。所有宿主能力通过 bridge
 
 ## 当前进度
 
-- [x] 建立 `DesktopBridge` 契约并保留 Tauri 适配器。
+- [x] 建立 `DesktopBridge` 契约并接入 Electron bridge。
 - [x] 将设置、文件选择、外链、图片保存、托盘、标题栏和宿主事件切换到 bridge。
 - [x] 抽离 Chat Server supervisor，覆盖 loopback/token 注入、健康检查、自动重启和优雅停止。
 - [x] 将终端和跨域 HTTP 能力切换到 Electron 可实现的受限接口；Electron 使用 `node-pty` 和主进程受限 HTTP 代理。
 - [x] 新增 Electron main/preload，启用 `nodeIntegration: false`、`contextIsolation: true`、sandbox 和显式 IPC。
 - [x] 将 supervisor 接入 Electron main，保留 loopback、token、健康检查、自动重启和退出清理。
 - [x] 迁移 PTY 和 MCP/图片相关 HTTP 调用；仍需完成多平台 native rebuild 和安装后 smoke test。
-- [x] Chat Server 在共享数据目录上增加实例锁，Tauri/Electron 不能同时启动同一份 Chat Server 数据。
+- [x] Chat Server 在共享数据目录上增加实例锁。
 - [x] 旧数据迁移记录新增文件与设置备份，支持异常中断后通过 manifest 安全回滚。
 - [x] 在当前 macOS 主机生成并检查 Electron DMG/ZIP，产物包含 renderer、Node runtime、Chat Server、Playwright 和 `node-pty` native 模块。
 - [x] 将根目录 `pnpm dev`、`pnpm desktop:dev` 和 `pnpm desktop:build` 切换到 Electron。
