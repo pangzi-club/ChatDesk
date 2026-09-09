@@ -1,4 +1,5 @@
 import {
+  AppWindow,
   Blocks,
   Clock3,
   Code2,
@@ -21,6 +22,7 @@ const iconById: Record<string, PluginIcon> = {
   "demo-chat-note": StickyNote,
   "demo-command-palette": Sparkles,
   "demo-pomodoro": Clock3,
+  "demo-window-logo": AppWindow,
   "demo-workspace-inspector": Search,
   "desktop-navigation": Compass,
   "desktop-settings": Settings2,

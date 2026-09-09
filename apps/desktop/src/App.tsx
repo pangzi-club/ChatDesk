@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ChatLayoutThemeLayer } from "@/components/chat-layout-theme-layer";
 import { ThemeProvider } from "@/components/theme-provider";
+import { Toaster } from "@/components/ui/toaster";
 import { ChatLayoutProvider } from "@/lib/chat-layout";
 import { DesktopUiProvider, type DesktopUiRuntime } from "@/lib/desktop-ui";
 import { AppRouter } from "@/router/routes";
@@ -26,6 +27,7 @@ function App({ desktopUiRuntime }: { desktopUiRuntime: DesktopUiRuntime }) {
             <AppRouter />
             <ChatLayoutThemeLayer />
           </ChatLayoutProvider>
+          <Toaster />
         </DesktopUiProvider>
       </ThemeProvider>
     </QueryClientProvider>
