@@ -60,7 +60,16 @@ export function getPluginIcon(plugin: DiscoveredPlugin): PluginIcon {
   return iconById[plugin.manifest?.id ?? ""] ?? Blocks;
 }
 
+export function isDemoPlugin(plugin: DiscoveredPlugin) {
+  return plugin.manifest?.id?.startsWith("demo-") ?? false;
+}
+
+export function shouldShowPlugin(plugin: DiscoveredPlugin, showDemoPlugins: boolean) {
+  return !isDemoPlugin(plugin) || showDemoPlugins || plugin.installed;
+}
+
 export function getPluginCategory(plugin: DiscoveredPlugin) {
+  if (isDemoPlugin(plugin)) return "Demo";
   if (plugin.source === "external") return "外部";
   if (plugin.manifest?.builtin) return "内置";
   const contributes = plugin.manifest?.contributes ?? [];

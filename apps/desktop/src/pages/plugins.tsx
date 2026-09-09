@@ -23,13 +23,19 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { DiscoveredPlugin } from "@/lib/desktop-plugin-discovery";
 import { useDesktopUi } from "@/lib/desktop-ui";
+import { loadDeveloperSettings } from "@/lib/developer-settings";
 import {
   externalPluginsSupported,
   loadExternalPluginDirectories,
   saveExternalPluginDirectories,
 } from "@/lib/external-plugins";
 import { pickDirectory } from "@/lib/platform";
-import { getPluginCategory, getPluginIcon, getPluginSearchText } from "@/lib/plugin-catalog";
+import {
+  getPluginCategory,
+  getPluginIcon,
+  getPluginSearchText,
+  shouldShowPlugin,
+} from "@/lib/plugin-catalog";
 
 type PluginFilter = "all" | "installed";
 
@@ -46,11 +52,15 @@ export function PluginsPage() {
   const runtime = useDesktopUi();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [, setRevision] = useState(0);
+  const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<PluginFilter>("all");
+  const developerSettingsQuery = useQuery({
+    queryKey: ["developer-settings"],
+    queryFn: loadDeveloperSettings,
+  });
 
   const externalQuery = useQuery({
     queryKey: EXTERNAL_PLUGINS_QUERY_KEY,
@@ -68,25 +78,28 @@ export function PluginsPage() {
   });
 
   const plugins = useMemo(() => {
+    void revision;
     const builtinPlugins = runtime.scanPlugins().filter((plugin) => plugin.source === "builtin");
     const externalPlugins = externalQuery.data?.plugins ?? [];
     return [...builtinPlugins, ...externalPlugins];
-  }, [externalQuery.data?.plugins, runtime]);
+  }, [externalQuery.data?.plugins, revision, runtime]);
   const installed = plugins.filter((plugin) => plugin.installed && plugin.manifest);
   const filteredPlugins = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
+    const showDemoPlugins = developerSettingsQuery.data?.showDemoPlugins ?? false;
     return plugins.filter((plugin) => {
+      if (!shouldShowPlugin(plugin, showDemoPlugins)) return false;
       if (filter === "installed" && !plugin.installed) return false;
       return !normalized || getPluginSearchText(plugin).includes(normalized);
     });
-  }, [filter, plugins, query]);
+  }, [developerSettingsQuery.data?.showDemoPlugins, filter, plugins, query]);
   const groups = useMemo(() => {
     const grouped = new Map<string, typeof filteredPlugins>();
     for (const plugin of filteredPlugins) {
       const category = getPluginCategory(plugin);
       grouped.set(category, [...(grouped.get(category) ?? []), plugin]);
     }
-    const categoryOrder = ["精选", "聊天与工作流", "工作区", "生产力", "外部", "内置"];
+    const categoryOrder = ["精选", "Demo", "聊天与工作流", "工作区", "生产力", "外部", "内置"];
     return [...grouped.entries()].sort(
       ([a], [b]) =>
         (categoryOrder.indexOf(a) < 0 ? categoryOrder.length : categoryOrder.indexOf(a)) -

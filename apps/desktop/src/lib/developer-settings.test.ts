@@ -15,6 +15,7 @@ describe("developer settings", () => {
     expect(normalizeDeveloperSettings({ mockLongResponse: true })).toEqual({
       mockLongResponse: true,
       showAllTasks: false,
+      showDemoPlugins: false,
     });
   });
 
@@ -22,6 +23,12 @@ describe("developer settings", () => {
     expect(normalizeDeveloperSettings({ showAllTasks: true }).showAllTasks).toBe(true);
     expect(normalizeDeveloperSettings({ showAllTasks: "true" }).showAllTasks).toBe(false);
     expect(normalizeDeveloperSettings({ showAllTasks: 1 }).showAllTasks).toBe(false);
+  });
+
+  it("only enables demo plugins for a strict true value", () => {
+    expect(normalizeDeveloperSettings({ showDemoPlugins: true }).showDemoPlugins).toBe(true);
+    expect(normalizeDeveloperSettings({ showDemoPlugins: "true" }).showDemoPlugins).toBe(false);
+    expect(normalizeDeveloperSettings({ showDemoPlugins: 1 }).showDemoPlugins).toBe(false);
   });
 
   it("persists normalized settings in the web fallback", async () => {
@@ -41,11 +48,15 @@ describe("developer settings", () => {
       },
     );
 
-    await saveDeveloperSettings({ mockLongResponse: false, showAllTasks: true });
+    await saveDeveloperSettings({
+      mockLongResponse: false,
+      showAllTasks: true,
+      showDemoPlugins: true,
+    });
 
     expect(setItem).toHaveBeenCalledWith(
       "chatdesk-developer-settings-v1",
-      JSON.stringify({ mockLongResponse: false, showAllTasks: true }),
+      JSON.stringify({ mockLongResponse: false, showAllTasks: true, showDemoPlugins: true }),
     );
     expect(dispatchEvent).toHaveBeenCalledOnce();
   });

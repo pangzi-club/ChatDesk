@@ -1295,6 +1295,10 @@ function DevelopmentSettingsPage() {
     saveMutation.mutate({ ...settings, showAllTasks: enabled });
   }
 
+  function updateShowDemoPlugins(enabled: boolean) {
+    saveMutation.mutate({ ...settings, showDemoPlugins: enabled });
+  }
+
   return (
     <>
       <SettingsHeading
@@ -1351,6 +1355,32 @@ function DevelopmentSettingsPage() {
             disabled={settingsQuery.isPending || saveMutation.isPending}
             id="show-all-tasks"
             onCheckedChange={(checked) => updateShowAllTasks(checked === true)}
+          />
+        </label>
+      </section>
+      <section className="mt-6 overflow-hidden rounded-lg border border-border bg-card">
+        <div className="border-border border-b px-5 py-4">
+          <h2 className="font-medium text-sm">Test Plugin</h2>
+          <p className="mt-1 text-muted-foreground text-xs">
+            控制插件页是否显示用于测试的 demo plugin；不会影响已经安装的插件。
+          </p>
+        </div>
+        <label
+          className="flex cursor-pointer items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-accent/40"
+          htmlFor="show-demo-plugins"
+        >
+          <span className="min-w-0">
+            <span className="block font-medium text-sm">显示 Test Plugin</span>
+            <span className="mt-1 block text-muted-foreground text-xs">
+              开启后，插件页会显示全部 demo plugin，并统一放在 Demo 分组。
+            </span>
+          </span>
+          <Switch
+            aria-label="显示 Test Plugin"
+            checked={settings.showDemoPlugins}
+            disabled={settingsQuery.isPending || saveMutation.isPending}
+            id="show-demo-plugins"
+            onCheckedChange={(checked) => updateShowDemoPlugins(checked === true)}
           />
         </label>
       </section>

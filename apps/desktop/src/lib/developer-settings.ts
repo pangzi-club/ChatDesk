@@ -4,11 +4,13 @@ import { settingsStore } from "@/lib/settings-store";
 export type DeveloperSettings = {
   mockLongResponse: boolean;
   showAllTasks: boolean;
+  showDemoPlugins: boolean;
 };
 
 export const DEFAULT_DEVELOPER_SETTINGS: DeveloperSettings = {
   mockLongResponse: false,
   showAllTasks: false,
+  showDemoPlugins: false,
 };
 
 const DEVELOPER_SETTINGS_STORE_KEY = "developer";
@@ -19,6 +21,7 @@ export function normalizeDeveloperSettings(value: unknown): DeveloperSettings {
   return {
     mockLongResponse: (value as Record<string, unknown>).mockLongResponse === true,
     showAllTasks: (value as Record<string, unknown>).showAllTasks === true,
+    showDemoPlugins: (value as Record<string, unknown>).showDemoPlugins === true,
   };
 }
 
