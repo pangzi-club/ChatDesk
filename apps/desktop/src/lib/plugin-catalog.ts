@@ -14,6 +14,7 @@ import {
   StickyNote,
 } from "lucide-react";
 import type { ComponentType } from "react";
+import { resolveDesktopIcon } from "@/lib/desktop-icons";
 import type { DiscoveredPlugin } from "@/lib/desktop-plugin-discovery";
 
 type PluginIcon = ComponentType<{ className?: string }>;
@@ -55,10 +56,12 @@ const contributionLabels: Record<string, { label: string; description: string }>
 };
 
 export function getPluginIcon(plugin: DiscoveredPlugin): PluginIcon {
+  if (plugin.source === "external") return resolveDesktopIcon(plugin.iconKey);
   return iconById[plugin.manifest?.id ?? ""] ?? Blocks;
 }
 
 export function getPluginCategory(plugin: DiscoveredPlugin) {
+  if (plugin.source === "external") return "外部";
   if (plugin.manifest?.builtin) return "内置";
   const contributes = plugin.manifest?.contributes ?? [];
   if (contributes.some((item) => item.includes("chat"))) return "聊天与工作流";
@@ -78,6 +81,7 @@ export function getPluginSearchText(plugin: DiscoveredPlugin) {
     manifest?.name,
     manifest?.description,
     ...(manifest?.contributes ?? []),
+    plugin.directory,
     ...plugin.errors.map((item) => item.message),
   ]
     .filter(Boolean)

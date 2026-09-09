@@ -42,6 +42,24 @@ export type ComputerUseStatus = {
   error: string | null;
 };
 
+/**
+ * Raw material for one external plugin directory, read by the Electron host.
+ * The renderer validates the manifest and the entry syntax; this payload only
+ * carries file contents plus a stable directory identity.
+ */
+export type ExternalPluginScanItem = {
+  id: string;
+  directory: string;
+  manifestJson: string | null;
+  entrySource: string | null;
+  error: string | null;
+};
+
+export type ExternalPluginScanResult = {
+  supported: boolean;
+  plugins: ExternalPluginScanItem[];
+};
+
 export type DesktopBridge = {
   runtime: DesktopRuntime;
   call<T>(command: string, args?: Record<string, unknown>): Promise<T>;
@@ -63,6 +81,8 @@ export type DesktopBridge = {
   setComputerUseEnabled?(enabled: boolean): Promise<ComputerUseStatus>;
   openComputerUsePermissions?(): Promise<ComputerUseStatus>;
   httpRequest(request: DesktopHttpRequest): Promise<DesktopHttpResponse>;
+  scanExternalPlugins?(directories: string[]): Promise<ExternalPluginScanResult>;
+  revealPluginDirectory?(directory: string): Promise<void>;
   terminalSpawn(
     args: { cwd: string; cols: number; rows: number },
     onEvent: (event: DesktopTerminalEvent) => void,

@@ -1,25 +1,9 @@
+import type { DESKTOP_UI_SLOTS } from "@chatdesk/shared";
 import type { UIMessage } from "ai";
 import type { ComponentType, ReactNode } from "react";
 
 export const DESKTOP_PLUGIN_API_VERSION = 1 as const;
-export type DesktopUiSlot =
-  | "sidebar.navigation"
-  | "settings.page"
-  | "route"
-  | "workspace.tab"
-  | "action"
-  | "shell.overlay"
-  | "shell.before"
-  | "shell.after"
-  | "sidebar.before"
-  | "sidebar.after"
-  | "sidebar.footer"
-  | "chat.header.action"
-  | "chat.composer.tool"
-  | "chat.messages.before"
-  | "chat.messages.after"
-  | "chat.composer.float"
-  | "chat.message.action";
+export type DesktopUiSlot = (typeof DESKTOP_UI_SLOTS)[number];
 export type DesktopIcon = ComponentType<{ className?: string }>;
 export type ChatLayoutProps = { children: ReactNode };
 export type ChatLayoutComponent = ComponentType<ChatLayoutProps>;
@@ -29,6 +13,7 @@ export type DesktopPluginManifest = {
   builtin?: boolean;
   name?: string;
   description?: string;
+  icon?: string;
   version: string;
   apiVersion: typeof DESKTOP_PLUGIN_API_VERSION;
   entry: string;
@@ -201,6 +186,32 @@ export interface DesktopPluginContext {
 }
 export type DesktopPluginModule = {
   manifest: DesktopPluginManifest;
+  inject?: readonly string[];
+  apply: (ctx: DesktopPluginContext) => unknown;
+};
+/**
+ * Contract for the `plugin.json` file inside an external plugin directory.
+ * The manifest is the single source of truth for identity; `index.js` only
+ * provides the module export (see `ExternalPluginModuleExport`). `id` must
+ * equal the directory name. Omit `apiVersion` for the current format; other
+ * values are rejected so future formats can be distinguished.
+ */
+export type ExternalPluginManifest = {
+  id: string;
+  name?: string;
+  description?: string;
+  version: string;
+  apiVersion?: typeof DESKTOP_PLUGIN_API_VERSION;
+  icon?: string;
+  contributes: readonly DesktopUiSlot[];
+  permissions?: readonly [];
+};
+/**
+ * Shape exported by an external plugin's `index.js` (plain JavaScript, CommonJS
+ * style). `React` is available through the injected `require("react")`; build
+ * elements with `React.createElement` because JSX is not supported.
+ */
+export type ExternalPluginModuleExport = {
   inject?: readonly string[];
   apply: (ctx: DesktopPluginContext) => unknown;
 };

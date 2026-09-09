@@ -33,3 +33,22 @@ export function validateAssetPath(assetPath: unknown, allowedRoots: readonly str
   if (!insideRoot) throw new Error("资源路径不在允许范围内");
   return candidate;
 }
+
+const MAX_PLUGIN_DIRECTORIES = 32;
+const MAX_PLUGIN_DIRECTORY_LENGTH = 1024;
+
+export function validatePluginDirectory(value: unknown): string {
+  if (typeof value !== "string" || !isAbsolute(value)) {
+    throw new Error("插件目录必须是绝对路径");
+  }
+  if (value.length > MAX_PLUGIN_DIRECTORY_LENGTH) throw new Error("插件目录路径过长");
+  return normalize(resolve(value));
+}
+
+export function validatePluginDirectoryList(value: unknown): string[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw new Error("插件目录列表必须是数组");
+  if (value.length > MAX_PLUGIN_DIRECTORIES) throw new Error("插件目录数量超出限制");
+  const directories = value.map((item) => validatePluginDirectory(item));
+  return [...new Set(directories)];
+}

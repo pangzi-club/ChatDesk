@@ -35,6 +35,7 @@ import { type AiUsageLogStore, normalizeAiUsage } from "./ai-usage-log.ts";
 import { createBusinessTools } from "./business-tools.ts";
 import type { ChatConfigStore } from "./chat-config.ts";
 import { createClientTools } from "./client-tools.ts";
+import { CREATE_PLUGIN_TOOL_NAME, createPluginTool } from "./create-plugin.ts";
 import { CREATE_SKILL_TOOL_NAME, createSkillTool } from "./create-skill.ts";
 import type { EventHub } from "./events.ts";
 import type { JobRegistry } from "./job-registry.ts";
@@ -946,6 +947,7 @@ export class RunRegistry {
               : {
                   todo_write: createTodoTool(),
                   [CREATE_SKILL_TOOL_NAME]: createSkillTool(),
+                  [CREATE_PLUGIN_TOOL_NAME]: createPluginTool(),
                   ...(canCreateTask
                     ? {
                         [CREATE_TASK_TOOL_NAME]: createTaskTool({

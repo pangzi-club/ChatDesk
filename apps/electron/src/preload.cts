@@ -46,6 +46,17 @@ type DesktopBridge = {
     headers: Array<[string, string]>;
     body: number[];
   }>;
+  scanExternalPlugins(directories: string[]): Promise<{
+    supported: boolean;
+    plugins: Array<{
+      id: string;
+      directory: string;
+      manifestJson: string | null;
+      entrySource: string | null;
+      error: string | null;
+    }>;
+  }>;
+  revealPluginDirectory(directory: string): Promise<void>;
   terminalSpawn(
     args: { cwd: string; cols: number; rows: number },
     onEvent: (event: unknown) => void,
@@ -92,6 +103,10 @@ const bridge: DesktopBridge = {
   openComputerUsePermissions: () =>
     ipcRenderer.invoke(IPC_CHANNEL, { command: "computer_use_open_permissions", args: {} }),
   httpRequest: (request) => ipcRenderer.invoke(IPC_CHANNEL, { command: "http_request", args: request }),
+  scanExternalPlugins: (directories: string[]) =>
+    ipcRenderer.invoke(IPC_CHANNEL, { command: "plugins_scan", args: { directories } }),
+  revealPluginDirectory: (directory: string) =>
+    ipcRenderer.invoke(IPC_CHANNEL, { command: "plugins_reveal", args: { directory } }),
   terminalSpawn: async (args, onEvent) => {
     const id = crypto.randomUUID();
     const channel = `${IPC_EVENT_PREFIX}terminal:${id}`;

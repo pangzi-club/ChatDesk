@@ -95,6 +95,7 @@ describe("scanBuiltinSkills", () => {
     const ids = skills.map((skill) => skill.id).sort();
     assert.deepEqual(ids, [
       "builtin:chatdesk-doc",
+      "builtin:plugin-creator",
       "builtin:skill-creator",
       "builtin:skill-installer",
     ]);

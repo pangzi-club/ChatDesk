@@ -11,3 +11,5 @@
 - 用量：`~/.chatdesk/chat-server/ai-usage-log.jsonl`
 
 macOS 默认数据目录是 `~/.chatdesk/chat-server`（可用 `CHAT_SERVER_DATA_DIR` 覆盖）。
+
+外部 ChatDesk 插件默认目录是 `~/.chatdesk/plugins`；插件页可额外持久化扫描目录。

@@ -1,4 +1,4 @@
-import { ArrowLeft, ExternalLink, MoreHorizontal, TriangleAlert } from "lucide-react";
+import { ArrowLeft, ExternalLink, FolderOpen, MoreHorizontal, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { useDesktopUi, useDesktopUiSlot } from "@/lib/desktop-ui";
+import { revealExternalPluginDirectory } from "@/lib/external-plugins";
 import {
   getContributionInfo,
   getPluginCategory,
@@ -41,6 +42,7 @@ export function PluginDetailPage() {
   }
 
   const manifest = plugin.manifest;
+  const discoveredPlugin = plugin;
   const Icon = getPluginIcon(plugin);
   const isInstalled = plugin.installed;
   const route = routes.find((candidate) => candidate.id === manifest.id);
@@ -62,6 +64,15 @@ export function PluginDetailPage() {
     }
   }
 
+  async function revealDirectory() {
+    if (!discoveredPlugin.directory) return;
+    try {
+      await revealExternalPluginDirectory(discoveredPlugin.directory);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }
+
   return (
     <main className="h-full overflow-y-auto bg-background px-6 py-8 sm:px-10 lg:px-16">
       <div className="mx-auto max-w-4xl pb-16">
@@ -80,6 +91,11 @@ export function PluginDetailPage() {
                 <DropdownMenuItem onClick={() => void installOrUninstall()}>
                   {plugin.installed ? "卸载插件" : "安装插件"}
                 </DropdownMenuItem>
+                {discoveredPlugin.source === "external" && discoveredPlugin.directory ? (
+                  <DropdownMenuItem onClick={() => void revealDirectory()}>
+                    打开插件目录
+                  </DropdownMenuItem>
+                ) : null}
               </DropdownMenuContent>
             </DropdownMenu>
           ) : null}
@@ -195,6 +211,7 @@ export function PluginDetailPage() {
             <dd>
               {manifest.version}
               {manifest.builtin ? " · 内置" : ""}
+              {plugin.source === "external" ? " · 外部" : ""}
             </dd>
             <dt className="text-muted-foreground">插件 ID</dt>
             <dd className="truncate font-mono text-xs">{manifest.id}</dd>
@@ -202,6 +219,26 @@ export function PluginDetailPage() {
             <dd className="truncate font-mono text-xs">{manifest.entry}</dd>
             <dt className="text-muted-foreground">API 版本</dt>
             <dd>{manifest.apiVersion}</dd>
+            {plugin.source === "external" ? (
+              <>
+                <dt className="text-muted-foreground">目录</dt>
+                <dd className="flex min-w-0 items-center gap-2">
+                  <span className="truncate font-mono text-xs" title={plugin.directory}>
+                    {plugin.directory}
+                  </span>
+                  {plugin.directory ? (
+                    <Button
+                      className="h-6 shrink-0 px-2 text-xs"
+                      onClick={() => void revealDirectory()}
+                      size="sm"
+                      variant="ghost"
+                    >
+                      <FolderOpen className="size-3.5" /> 打开目录
+                    </Button>
+                  ) : null}
+                </dd>
+              </>
+            ) : null}
           </dl>
         </section>
       </div>

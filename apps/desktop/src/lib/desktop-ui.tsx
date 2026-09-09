@@ -22,6 +22,11 @@ import {
   scanDesktopPlugins,
   validateDesktopPluginManifest,
 } from "@/lib/desktop-plugin-discovery";
+import {
+  createExternalPluginModule,
+  type ExternalPluginEntry,
+  refreshExternalPlugins,
+} from "@/lib/external-plugins";
 import { settingsStore } from "@/lib/settings-store";
 
 export const DESKTOP_PLUGIN_API_VERSION = 1 as const;
@@ -329,6 +334,7 @@ export class DesktopUiService extends Service {
     error: new Error("插件扫描尚未就绪"),
   });
   uninstallPlugin: (id: string) => Promise<boolean> = async () => false;
+  refreshPlugins: () => Promise<void> = async () => {};
   private readonly definitions: { [K in DesktopUiSlot]: Map<string, SlotMap[K]> } = {
     "sidebar.navigation": new Map(),
     "settings.page": new Map(),
@@ -579,7 +585,29 @@ export async function createDesktopUiRuntime(
   const storedIds = await settingsStore.get<unknown>("installedPluginIds");
   if (Array.isArray(storedIds))
     installedPluginIds = new Set(storedIds.filter((id): id is string => typeof id === "string"));
-  const discovered = scanDesktopPlugins([...installedPluginIds]);
+  let externalPlugins: DiscoveredPlugin[] = [];
+  const externalEntries = new Map<string, ExternalPluginEntry>();
+  const refreshExternalSnapshot = async () => {
+    try {
+      const result = await refreshExternalPlugins({
+        reservedIds: new Set(
+          scanDesktopPlugins()
+            .map((item) => item.manifest?.id)
+            .filter((id): id is string => !!id),
+        ),
+        installedIds: [...installedPluginIds],
+      });
+      externalPlugins = result.plugins;
+      externalEntries.clear();
+      for (const [id, entry] of result.entries) externalEntries.set(id, entry);
+    } catch (cause) {
+      console.error("外部插件扫描失败", cause);
+      externalPlugins = [];
+      externalEntries.clear();
+    }
+  };
+  await refreshExternalSnapshot();
+  const discovered = [...scanDesktopPlugins([...installedPluginIds]), ...externalPlugins];
   const availableIds = new Set(
     discovered
       .filter(
@@ -590,16 +618,45 @@ export async function createDesktopUiRuntime(
   installedPluginIds = new Set([...installedPluginIds].filter((id) => availableIds.has(id)));
   await settingsStore.set("installedPluginIds", [...installedPluginIds]);
   await settingsStore.save();
-  ctx.desktopUi.scanPlugins = () => scanDesktopPlugins([...installedPluginIds]);
+  ctx.desktopUi.scanPlugins = () => [
+    ...scanDesktopPlugins([...installedPluginIds]),
+    ...externalPlugins.map((plugin) => ({
+      ...plugin,
+      installed: plugin.installable && installedPluginIds.has(plugin.manifest?.id ?? ""),
+    })),
+  ];
   ctx.desktopUi.installDiscoveredPlugin = async (id) => {
     const candidate = scanDesktopPlugins([...installedPluginIds]).find(
       (item) => item.manifest?.id === id,
     );
-    if (!candidate?.installable || !candidate.module)
-      return { ok: false, id, error: new Error(candidate?.errors[0]?.message ?? "插件不可安装") };
-    if (candidate.manifest?.builtin)
-      return { ok: false, id, error: new Error("内置插件始终启用，不能重复安装") };
-    const result = await installPlugin(candidate.module);
+    if (candidate?.manifest) {
+      if (!candidate.installable || !candidate.module)
+        return {
+          ok: false,
+          id,
+          error: new Error(candidate.errors[0]?.message ?? "插件不可安装"),
+        };
+      if (candidate.manifest.builtin)
+        return { ok: false, id, error: new Error("内置插件始终启用，不能重复安装") };
+      const result = await installPlugin(candidate.module);
+      if (result.ok) {
+        installedPluginIds.add(id);
+        await settingsStore.set("installedPluginIds", [...installedPluginIds]);
+        await settingsStore.save();
+      }
+      return result;
+    }
+    const externalEntry = externalEntries.get(id);
+    if (!externalEntry) return { ok: false, id, error: new Error("插件不可安装") };
+    let module: DesktopPluginModule;
+    try {
+      module = createExternalPluginModule(externalEntry);
+    } catch (cause) {
+      const error = cause instanceof Error ? cause : new Error(String(cause));
+      console.error(`Failed to evaluate external plugin "${id}"`, error);
+      return { ok: false, id, error };
+    }
+    const result = await installPlugin(module);
     if (result.ok) {
       installedPluginIds.add(id);
       await settingsStore.set("installedPluginIds", [...installedPluginIds]);
@@ -607,13 +664,26 @@ export async function createDesktopUiRuntime(
     }
     return result;
   };
+  ctx.desktopUi.refreshPlugins = async () => {
+    await refreshExternalSnapshot();
+  };
   const pluginResults: DesktopPluginInstallResult[] = [];
   for (const plugin of [...defaultPlugins, ...initialPlugins]) {
     pluginResults.push(await installPlugin(plugin));
   }
   for (const candidate of discovered) {
-    if (candidate.installed && !candidate.manifest?.builtin && candidate.module)
+    if (!candidate.installed || candidate.manifest?.builtin) continue;
+    if (candidate.source === "external") {
+      const entry = externalEntries.get(candidate.manifest?.id ?? "");
+      if (!entry) continue;
+      try {
+        await installPlugin(createExternalPluginModule(entry));
+      } catch (cause) {
+        console.error(`Failed to restore external plugin "${candidate.manifest?.id}"`, cause);
+      }
+    } else if (candidate.module) {
       await installPlugin(candidate.module);
+    }
   }
   const originalUninstall = uninstallPlugin;
   const persistedUninstall = async (id: string) => {

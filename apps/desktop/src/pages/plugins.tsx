@@ -1,4 +1,14 @@
-import { MoreHorizontal, Package, Search, TriangleAlert } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Folder,
+  FolderPlus,
+  MoreHorizontal,
+  Package,
+  RefreshCw,
+  Search,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
@@ -11,20 +21,57 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { DiscoveredPlugin } from "@/lib/desktop-plugin-discovery";
 import { useDesktopUi } from "@/lib/desktop-ui";
+import {
+  externalPluginsSupported,
+  loadExternalPluginDirectories,
+  saveExternalPluginDirectories,
+} from "@/lib/external-plugins";
+import { pickDirectory } from "@/lib/platform";
 import { getPluginCategory, getPluginIcon, getPluginSearchText } from "@/lib/plugin-catalog";
 
 type PluginFilter = "all" | "installed";
 
+const EXTERNAL_PLUGINS_QUERY_KEY = ["external-plugins"] as const;
+const DEFAULT_PLUGIN_ROOT_LABEL = "~/.chatdesk/plugins";
+
+type ExternalPluginsView = {
+  supported: boolean;
+  directories: string[];
+  plugins: DiscoveredPlugin[];
+};
+
 export function PluginsPage() {
   const runtime = useDesktopUi();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [, setRevision] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<PluginFilter>("all");
-  const plugins = runtime.scanPlugins();
+
+  const externalQuery = useQuery({
+    queryKey: EXTERNAL_PLUGINS_QUERY_KEY,
+    queryFn: async (): Promise<ExternalPluginsView> => {
+      const directories = await loadExternalPluginDirectories();
+      await runtime.refreshPlugins();
+      return {
+        supported: externalPluginsSupported(),
+        directories,
+        plugins: runtime
+          .scanPlugins()
+          .filter((plugin) => plugin.source === "external") as DiscoveredPlugin[],
+      };
+    },
+  });
+
+  const plugins = useMemo(() => {
+    const builtinPlugins = runtime.scanPlugins().filter((plugin) => plugin.source === "builtin");
+    const externalPlugins = externalQuery.data?.plugins ?? [];
+    return [...builtinPlugins, ...externalPlugins];
+  }, [externalQuery.data?.plugins, runtime]);
   const installed = plugins.filter((plugin) => plugin.installed && plugin.manifest);
   const filteredPlugins = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
@@ -39,13 +86,14 @@ export function PluginsPage() {
       const category = getPluginCategory(plugin);
       grouped.set(category, [...(grouped.get(category) ?? []), plugin]);
     }
-    const categoryOrder = ["精选", "聊天与工作流", "工作区", "生产力", "内置"];
+    const categoryOrder = ["精选", "聊天与工作流", "工作区", "生产力", "外部", "内置"];
     return [...grouped.entries()].sort(
       ([a], [b]) =>
         (categoryOrder.indexOf(a) < 0 ? categoryOrder.length : categoryOrder.indexOf(a)) -
         (categoryOrder.indexOf(b) < 0 ? categoryOrder.length : categoryOrder.indexOf(b)),
     );
   }, [filteredPlugins]);
+  const supported = externalQuery.data?.supported ?? externalPluginsSupported();
 
   async function toggle(id: string, isInstalled: boolean) {
     setBusy(id);
@@ -56,11 +104,40 @@ export function PluginsPage() {
         const result = await runtime.installDiscoveredPlugin(id);
         if (!result.ok) throw result.error;
       }
-      setRevision((value) => value + 1);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setBusy(null);
+      setRevision((value) => value + 1);
+      await queryClient.invalidateQueries({ queryKey: EXTERNAL_PLUGINS_QUERY_KEY });
+    }
+  }
+
+  async function addDirectory() {
+    const selected = await pickDirectory();
+    if (!selected) return;
+    setError(null);
+    try {
+      const directories = await loadExternalPluginDirectories();
+      if (!directories.includes(selected)) {
+        await saveExternalPluginDirectories([...directories, selected]);
+      }
+      await queryClient.invalidateQueries({ queryKey: EXTERNAL_PLUGINS_QUERY_KEY });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }
+
+  async function removeDirectory(directory: string) {
+    setError(null);
+    try {
+      const directories = (await loadExternalPluginDirectories()).filter(
+        (item) => item !== directory,
+      );
+      await saveExternalPluginDirectories(directories);
+      await queryClient.invalidateQueries({ queryKey: EXTERNAL_PLUGINS_QUERY_KEY });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
     }
   }
 
@@ -98,6 +175,23 @@ export function PluginsPage() {
           </div>
         ) : null}
 
+        {externalQuery.isError ? (
+          <div className="mb-6 flex items-center justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-destructive text-sm">
+            <span className="flex min-w-0 items-center gap-2">
+              <TriangleAlert className="size-4 shrink-0" />
+              外部插件扫描失败，请重试。
+            </span>
+            <Button
+              onClick={() => void externalQuery.refetch()}
+              size="sm"
+              variant="ghost"
+              className="shrink-0"
+            >
+              重试
+            </Button>
+          </div>
+        ) : null}
+
         <section className="mb-8 border-b pb-7">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="font-semibold text-lg">已安装</h2>
@@ -125,6 +219,76 @@ export function PluginsPage() {
           ) : (
             <p className="text-muted-foreground text-sm">还没有安装插件。</p>
           )}
+        </section>
+
+        <section className="mb-8 border-b pb-7">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="font-semibold text-lg">外部插件目录</h2>
+            {supported ? (
+              <div className="flex items-center gap-1">
+                <Button
+                  disabled={externalQuery.isFetching}
+                  onClick={() => void externalQuery.refetch()}
+                  size="sm"
+                  variant="ghost"
+                >
+                  <RefreshCw
+                    className={externalQuery.isFetching ? "size-4 animate-spin" : "size-4"}
+                  />
+                  重新扫描
+                </Button>
+                <Button onClick={() => void addDirectory()} size="sm" variant="outline">
+                  <FolderPlus className="size-4" />
+                  添加目录
+                </Button>
+              </div>
+            ) : null}
+          </div>
+          {externalQuery.isPending ? (
+            <div aria-busy="true" className="flex flex-wrap gap-2" role="status">
+              <div className="h-7 w-56 animate-pulse rounded-md bg-muted" />
+              <div className="h-7 w-44 animate-pulse rounded-md bg-muted" />
+            </div>
+          ) : !supported ? (
+            <p className="text-muted-foreground text-sm">外部插件仅在 ChatDesk 桌面端可用。</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              <span
+                className="inline-flex h-7 items-center gap-1.5 rounded-md border bg-muted/40 px-2.5 font-mono text-muted-foreground text-xs"
+                title={DEFAULT_PLUGIN_ROOT_LABEL}
+              >
+                <Folder className="size-3.5 shrink-0" />
+                {DEFAULT_PLUGIN_ROOT_LABEL}
+                <Badge className="ml-0.5 px-1 py-0 text-[10px]" variant="outline">
+                  默认
+                </Badge>
+              </span>
+              {(externalQuery.data?.directories ?? []).map((directory) => (
+                <span
+                  className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-md border bg-muted/40 px-2.5 font-mono text-muted-foreground text-xs"
+                  key={directory}
+                  title={directory}
+                >
+                  <Folder className="size-3.5 shrink-0" />
+                  <span className="truncate">{directory}</span>
+                  <button
+                    aria-label={`移除目录 ${directory}`}
+                    className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => void removeDirectory(directory)}
+                    type="button"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          {supported ? (
+            <p className="mt-3 text-muted-foreground text-xs">
+              每个包含 plugin.json
+              的子目录都是一个可安装的外部插件；对话中创建的插件也会出现在默认目录。
+            </p>
+          ) : null}
         </section>
 
         <Tabs onValueChange={(value) => setFilter(value as PluginFilter)} value={filter}>
@@ -174,6 +338,9 @@ export function PluginsPage() {
                           </span>
                         </button>
                         <div className="flex shrink-0 items-center gap-1">
+                          {plugin.source === "external" ? (
+                            <Badge variant="outline">外部</Badge>
+                          ) : null}
                           <Badge
                             variant={
                               manifest?.builtin
@@ -223,8 +390,30 @@ export function PluginsPage() {
           ) : (
             <div className="py-16 text-center text-muted-foreground text-sm">没有匹配的插件。</div>
           )}
+          {externalQuery.isPending ? <ExternalPluginsSkeleton /> : null}
         </div>
       </div>
     </main>
+  );
+}
+
+function ExternalPluginsSkeleton() {
+  return (
+    <section>
+      <div className="mb-3 flex items-center justify-between border-b pb-3">
+        <h2 className="font-semibold text-lg">外部</h2>
+      </div>
+      <div aria-busy="true" className="grid gap-x-10 md:grid-cols-2" role="status">
+        {[0, 1].map((row) => (
+          <div className="flex items-center gap-3 border-b py-4" key={row}>
+            <div className="size-11 shrink-0 animate-pulse rounded-xl bg-muted" />
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="h-3.5 w-1/3 animate-pulse rounded bg-muted" />
+              <div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }

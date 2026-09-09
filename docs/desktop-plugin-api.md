@@ -112,6 +112,17 @@ state。`chat.message.action` 额外接收只读的消息 `id`、`role` 和 `tex
 插件 ID，重启时仅恢复仍然有效的 ID。扫描不会执行 `apply`，非法 manifest、越界/重复入口和重复 ID
 会显示为不可用。当前仍不支持用户任意目录、远程代码、动态下载、权限沙箱或签名校验。
 
+## 外部插件（Cordis 动态加载）
+
+桌面端还支持从 `~/.chatdesk/plugins`（以及 Plugins 页添加的目录）扫描纯 JavaScript 插件。每个插件目录包含
+`plugin.json` 与 `index.js`；manifest 的 `id` 必须与目录名一致，`apiVersion` 为 `1`，`contributes` 只能使用公开
+slot，`permissions` 必须为空数组。入口使用 CommonJS 风格导出 `{ inject?, apply(ctx) }`，可通过宿主注入的
+`require("react")` 使用 React 单例并用 `React.createElement` 编写组件。
+
+扫描阶段只读取文件并用 `new Function` 做语法编译预检，不执行未安装插件。用户点击安装后，入口才在页面进程中求值，
+随后进入与内置插件相同的 Cordis fiber、`ctx.effect` 和卸载清理流程。外部插件属于可信代码边界；当前没有权限沙箱，
+请只安装可信来源。已安装插件在启动时恢复，扫描到的新版本需先卸载再安装才能生效。
+
 ## 能力评估与后续优先级
 
 当前 API 已经足够支撑“构建期的桌面 UI 插件”：导航、顶层路由、设置页、Workspace Tab、命令与

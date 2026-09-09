@@ -32,11 +32,14 @@ import {
   IPC_EVENT_PREFIX,
   validateAssetPath,
   validateExternalUrl,
+  validatePluginDirectory,
+  validatePluginDirectoryList,
   validateUserStoreFile,
 } from "./ipc-contract.js";
 import { chatServerLaunchArgs, chatServerRuntimeRoot } from "./chat-server-launch.js";
 import { ComputerUseManager } from "./computer-use.js";
 import { performHttpRequest } from "./http-bridge.js";
+import { scanExternalPluginDirectories } from "./plugin-registry.js";
 import {
   chatServerProxyHeaders,
   chatServerProxyRequestInit,
@@ -789,6 +792,14 @@ function setupIpc() {
           { url: args.url, method: args.method, headers: args.headers, body: args.body },
           (input, init) => net.fetch(String(input), init),
         );
+      case "plugins_scan": {
+        const directories = validatePluginDirectoryList(args.directories);
+        const defaultRoot = join(userDataDirectory(), "plugins");
+        return { supported: true, plugins: await scanExternalPluginDirectories([defaultRoot, ...directories]) };
+      }
+      case "plugins_reveal":
+        shell.showItemInFolder(validatePluginDirectory(args.directory));
+        return undefined;
       default:
         throw new Error(`未知的宿主命令：${String(command)}`);
     }

@@ -18,6 +18,7 @@ export {
 export type { ChatServerConfigData } from "./chat-config.ts";
 export { ChatConfigStore } from "./chat-config.ts";
 export { type ClientToolOptions, closeClientTools, createClientTools } from "./client-tools.ts";
+export { CREATE_PLUGIN_TOOL_NAME, createLocalPlugin, createPluginTool } from "./create-plugin.ts";
 export { acquireDataDirectoryLock, type DataDirectoryLock } from "./data-directory-lock.ts";
 export {
   importDeveloperEnvironment,

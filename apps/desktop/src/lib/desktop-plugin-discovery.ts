@@ -1,3 +1,4 @@
+import { DESKTOP_UI_SLOTS } from "@chatdesk/shared";
 import type { DesktopPluginManifest, DesktopPluginModule, DesktopUiSlot } from "@/lib/desktop-ui";
 
 export type PluginValidationError = { code: string; message: string };
@@ -8,27 +9,13 @@ export type DiscoveredPlugin = {
   installed: boolean;
   errors: PluginValidationError[];
   module?: DesktopPluginModule;
+  source: "builtin" | "external";
+  directory?: string;
+  /** Icon key from an external plugin's `plugin.json`, resolved by the catalog. */
+  iconKey?: string;
 };
 
-const validSlots = new Set<DesktopUiSlot>([
-  "sidebar.navigation",
-  "settings.page",
-  "route",
-  "workspace.tab",
-  "action",
-  "shell.overlay",
-  "shell.before",
-  "shell.after",
-  "sidebar.before",
-  "sidebar.after",
-  "sidebar.footer",
-  "chat.header.action",
-  "chat.composer.tool",
-  "chat.messages.before",
-  "chat.messages.after",
-  "chat.composer.float",
-  "chat.message.action",
-]);
+const validSlots = new Set<string>(DESKTOP_UI_SLOTS);
 
 export function validateDesktopPluginManifest(manifest: unknown): PluginValidationError[] {
   const errors: PluginValidationError[] = [];
@@ -116,6 +103,7 @@ export function scanDesktopPlugins(installedIds: readonly string[] = []): Discov
         installed: !!manifest && (manifest.builtin === true || installedIds.includes(manifest.id)),
         errors,
         module: errors.length === 0 ? module : undefined,
+        source: "builtin" as const,
       };
     })
     .sort((a, b) => (a.manifest?.id ?? a.entry).localeCompare(b.manifest?.id ?? b.entry));
