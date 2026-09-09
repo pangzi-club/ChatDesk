@@ -76,6 +76,10 @@ const MIN_WINDOW_WIDTH = 480;
 const MIN_WINDOW_HEIGHT = 320;
 const MAX_WINDOW_DIMENSION = 10000;
 const WINDOW_SHOW_FALLBACK_MS = 5_000;
+const RENDERER_DEV_LOAD_RETRY_BASE_DELAY_MS = 500;
+const RENDERER_DEV_LOAD_RETRY_MAX_DELAY_MS = 3_000;
+// Chromium net error code for cancelled navigations (e.g. user reload); retrying it would fight the user.
+const NET_ERR_ABORTED = -3;
 const NOTIFICATION_RESULT_TIMEOUT_MS = 60_000;
 const NOTIFICATION_RETENTION_MS = 10 * 60_000;
 const APP_SHUTDOWN_TIMEOUT_MS = 5_000;
@@ -346,6 +350,35 @@ function createWindow() {
   window.webContents.on("will-navigate", (event, url) => {
     if (!isRendererNavigation(url, entry)) event.preventDefault();
   });
+  let devRendererRetryTimer: NodeJS.Timeout | undefined;
+  if (process.env.CHATDESK_RENDERER_URL) {
+    let retryDelay = RENDERER_DEV_LOAD_RETRY_BASE_DELAY_MS;
+    window.webContents.on(
+      "did-fail-load",
+      (_event, errorCode, _errorDescription, _validatedUrl, isMainFrame) => {
+        if (!isMainFrame || errorCode === NET_ERR_ABORTED) return;
+        if (devRendererRetryTimer) clearTimeout(devRendererRetryTimer);
+        devRendererRetryTimer = setTimeout(
+          () => {
+            devRendererRetryTimer = undefined;
+            if (window.isDestroyed()) return;
+            void window.loadURL(entry).catch((error) => {
+              console.error("Renderer load failed", error);
+            });
+          },
+          retryDelay,
+        );
+        retryDelay = Math.min(retryDelay * 2, RENDERER_DEV_LOAD_RETRY_MAX_DELAY_MS);
+      },
+    );
+    window.webContents.on("did-finish-load", () => {
+      retryDelay = RENDERER_DEV_LOAD_RETRY_BASE_DELAY_MS;
+      if (devRendererRetryTimer) {
+        clearTimeout(devRendererRetryTimer);
+        devRendererRetryTimer = undefined;
+      }
+    });
+  }
   let showFallbackTimer: NodeJS.Timeout | undefined;
   const showWindow = () => {
     if (showFallbackTimer) clearTimeout(showFallbackTimer);
@@ -369,6 +402,7 @@ function createWindow() {
   window.on("unmaximize", scheduleSaveWindowState);
   window.on("closed", () => {
     if (showFallbackTimer) clearTimeout(showFallbackTimer);
+    if (devRendererRetryTimer) clearTimeout(devRendererRetryTimer);
     if (mainWindow === window) mainWindow = null;
   });
   void window.loadURL(entry).catch((error) => {

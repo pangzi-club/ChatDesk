@@ -28,7 +28,9 @@ export default defineConfig(async () => ({
   server: {
     port: 1420,
     strictPort: true,
-    host: host || false,
+    // Bind a literal loopback IP: Node binds `localhost` to a single family
+    // (usually only [::1]), so any IPv4 attempt gets ERR_CONNECTION_REFUSED.
+    host: host || "127.0.0.1",
     hmr: host
       ? {
           protocol: "ws",

@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-const rendererUrl = process.env.CHATDESK_RENDERER_URL || "http://localhost:1420";
+const rendererUrl = process.env.CHATDESK_RENDERER_URL || "http://127.0.0.1:1420";
 const port = process.env.CHAT_SERVER_PORT || "14317";
 const token =
   process.env.CHATDESK_CHAT_SERVER_TOKEN || process.env.CHAT_SERVER_TOKEN || randomUUID();
