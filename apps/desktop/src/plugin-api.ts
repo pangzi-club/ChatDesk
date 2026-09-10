@@ -32,7 +32,9 @@ export { DESKTOP_PLUGIN_API_VERSION, defineDesktopPlugin } from "@chatdesk/deskt
 export type {
   ChatLayout,
   ChatLayoutComponent,
+  ChatLayoutContribution,
   ChatLayoutProps,
+  ChatLayoutScope,
 } from "@/lib/chat-layout";
 export { ChatLayoutService } from "@/lib/chat-layout";
 export { DesktopUiService } from "@/lib/desktop-ui";

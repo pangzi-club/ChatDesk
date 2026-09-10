@@ -15,7 +15,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { BrowserNavigationState } from "@/lib/browser-preview";
-import { type ChatLayout, ChatLayoutService } from "@/lib/chat-layout";
+import { type ChatLayout, type ChatLayoutContribution, ChatLayoutService } from "@/lib/chat-layout";
 import type { ContextDetailPromptInput } from "@/lib/context-detail-events";
 import {
   type DiscoveredPlugin,
@@ -58,7 +58,8 @@ export type DesktopUiSlot =
   | "chat.messages.before"
   | "chat.messages.after"
   | "chat.composer.float"
-  | "chat.message.action";
+  | "chat.message.action"
+  | "chat.layout";
 export type DesktopIcon = ComponentType<{ className?: string }>;
 
 export type DesktopShortcut = {
@@ -317,6 +318,7 @@ type SlotMap = {
   "chat.messages.after": ChatRegionContribution;
   "chat.composer.float": ChatRegionContribution;
   "chat.message.action": ChatMessageActionContribution;
+  "chat.layout": ChatLayoutContribution;
 };
 
 function sortContributions<T extends { order?: number }>(items: T[]) {
@@ -353,6 +355,7 @@ export class DesktopUiService extends Service {
     "chat.messages.after": new Map(),
     "chat.composer.float": new Map(),
     "chat.message.action": new Map(),
+    "chat.layout": new Map(),
   };
   private readonly listeners = new Set<() => void>();
   private readonly workspaceTabInstances = new Map<
@@ -373,6 +376,7 @@ export class DesktopUiService extends Service {
       | ChatComposerToolContribution
       | ChatRegionContribution
       | ChatMessageActionContribution
+      | ChatLayoutContribution
     )[]
   > = {
     "sidebar.navigation": [],
@@ -392,6 +396,7 @@ export class DesktopUiService extends Service {
     "chat.messages.after": [],
     "chat.composer.float": [],
     "chat.message.action": [],
+    "chat.layout": [],
   };
 
   constructor(ctx: Context) {

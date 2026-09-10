@@ -75,7 +75,8 @@ contribution 时，宿主会对该类型的已打开 Tab 调用 `onClose`，以�
 - `chat.composer.float`：使用只读对话 scope 在 Composer 上方浮层区（Git 摘要、待办面板旁）提供内容。
 - `chat.message.action`：在每条消息的操作行渲染插件按钮，scope 为只读对话 scope 加上 `message`
   （`id`、`role`、`text`），插件不得修改消息或读取 Chat 页面内部 React state。
-- `chatLayouts`：注册和激活 Chat layout。
+- `chat.layout`：注册可选择的完整 Chat layout；宿主同一时间只激活一个布局。布局组件接收 `children` 和只读 Chat scope。
+- `chatLayouts`：兼容旧版的布局注册和激活 service；新插件应优先使用 `desktopUi.register("chat.layout", ...)`。
 
 插件名和每个 contribution id 都必须全局唯一；重复项返回或抛出明确错误，不会覆盖旧注册。排序继续
 使用 `order`，相同顺序按注册先后排列。

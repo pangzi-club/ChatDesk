@@ -10,17 +10,30 @@ export const manifest = {
   version: "1.0.0",
   apiVersion: 1,
   entry: "plugins/chat-layout-standard",
-  contributes: [],
+  contributes: ["chat.layout"],
   permissions: [],
 } as const;
-export const inject: DesktopPluginModule["inject"] = ["chatLayouts"];
+export const inject: DesktopPluginModule["inject"] = ["desktopUi", "chatLayouts"];
 
 export function apply(ctx: Context) {
   ctx.effect(
     () =>
-      ctx.chatLayouts.register("standard", ({ children }: ChatLayoutProps) => (
-        <div className="chat-layout-root chat-layout-standard">{children}</div>
-      )),
+      (() => {
+        const disposeSlot = ctx.desktopUi.register("chat.layout", {
+          id: "standard",
+          label: "标准",
+          component: ({ children }: ChatLayoutProps) => (
+            <div className="chat-layout-root chat-layout-standard">{children}</div>
+          ),
+        });
+        const disposeLayout = ctx.chatLayouts.register("standard", ({ children }) => (
+          <div className="chat-layout-root chat-layout-standard">{children}</div>
+        ));
+        return () => {
+          disposeSlot();
+          disposeLayout();
+        };
+      })(),
     "standard chat layout",
   );
 }

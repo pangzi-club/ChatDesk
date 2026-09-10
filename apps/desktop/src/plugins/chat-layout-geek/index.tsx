@@ -10,10 +10,10 @@ export const manifest = {
   version: "1.0.0",
   apiVersion: 1,
   entry: "plugins/chat-layout-geek",
-  contributes: [],
+  contributes: ["chat.layout"],
   permissions: [],
 } as const;
-export const inject: DesktopPluginModule["inject"] = ["chatLayouts"];
+export const inject: DesktopPluginModule["inject"] = ["desktopUi", "chatLayouts"];
 
 const glyphs = [
   { id: "binary-a", text: "01" },
@@ -31,18 +31,30 @@ const glyphs = [
 export function apply(ctx: Context) {
   ctx.effect(
     () =>
-      ctx.chatLayouts.register("geek", ({ children }: ChatLayoutProps) => (
-        <div className="chat-layout-root chat-layout-geek">
-          <div aria-hidden="true" className="chat-geek-streams">
-            {glyphs.map((glyph, index) => (
-              <span className={`chat-geek-glyph is-${index + 1}`} key={glyph.id}>
-                {glyph.text}
-              </span>
-            ))}
+      (() => {
+        const component = ({ children }: ChatLayoutProps) => (
+          <div className="chat-layout-root chat-layout-geek">
+            <div aria-hidden="true" className="chat-geek-streams">
+              {glyphs.map((glyph, index) => (
+                <span className={`chat-geek-glyph is-${index + 1}`} key={glyph.id}>
+                  {glyph.text}
+                </span>
+              ))}
+            </div>
+            {children}
           </div>
-          {children}
-        </div>
-      )),
+        );
+        const disposeSlot = ctx.desktopUi.register("chat.layout", {
+          id: "geek",
+          label: "Geek",
+          component,
+        });
+        const disposeLayout = ctx.chatLayouts.register("geek", component);
+        return () => {
+          disposeSlot();
+          disposeLayout();
+        };
+      })(),
     "geek chat layout",
   );
 }

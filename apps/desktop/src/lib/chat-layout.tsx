@@ -8,13 +8,26 @@ import {
   useSyncExternalStore,
 } from "react";
 
-export type ChatLayout = "standard" | "cute" | "geek" | (string & {});
+export type ChatLayout = string;
 
-export type ChatLayoutProps = {
-  children: ReactNode;
+export type ChatLayoutScope = {
+  sessionId: string;
+  workspaceId: string;
+  cwd: string;
+  isGenerating: boolean;
+  isReadOnly: boolean;
 };
 
+export type ChatLayoutProps = { children: ReactNode; scope: ChatLayoutScope };
+
 export type ChatLayoutComponent = ComponentType<ChatLayoutProps>;
+
+export type ChatLayoutContribution = {
+  id: ChatLayout;
+  label: string;
+  order?: number;
+  component: ChatLayoutComponent;
+};
 
 type ChatLayoutSnapshot = {
   id: ChatLayout;
@@ -53,6 +66,10 @@ export class ChatLayoutService extends Service {
       }
       this.notify();
     };
+  }
+
+  registerContribution(contribution: ChatLayoutContribution) {
+    return this.register(contribution.id, contribution.component);
   }
 
   getSnapshot = () => this.snapshot;

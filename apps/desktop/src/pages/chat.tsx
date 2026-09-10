@@ -2512,8 +2512,16 @@ function ChatPage() {
 
   if (!ChatLayoutComponent) return null;
 
+  const chatLayoutScope = {
+    sessionId,
+    workspaceId: workspaceKey,
+    cwd: selectedCwd,
+    isGenerating,
+    isReadOnly,
+  };
+
   return (
-    <ChatLayoutComponent>
+    <ChatLayoutComponent scope={chatLayoutScope}>
       <section
         aria-label="Chat 对话区域"
         className="chat-page"

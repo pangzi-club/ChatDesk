@@ -5,7 +5,14 @@ import type { ComponentType, ReactNode } from "react";
 export const DESKTOP_PLUGIN_API_VERSION = 1 as const;
 export type DesktopUiSlot = (typeof DESKTOP_UI_SLOTS)[number];
 export type DesktopIcon = ComponentType<{ className?: string }>;
-export type ChatLayoutProps = { children: ReactNode };
+export type ChatLayoutScope = {
+  sessionId: string;
+  workspaceId: string;
+  cwd: string;
+  isGenerating: boolean;
+  isReadOnly: boolean;
+};
+export type ChatLayoutProps = { children: ReactNode; scope: ChatLayoutScope };
 export type ChatLayoutComponent = ComponentType<ChatLayoutProps>;
 export type ChatLayout = string;
 export type DesktopPluginManifest = {
@@ -171,12 +178,19 @@ export type DesktopContributionMap = {
   "chat.messages.after": ChatRegionContribution;
   "chat.composer.float": ChatRegionContribution;
   "chat.message.action": ChatMessageActionContribution;
+  "chat.layout": ChatLayoutContribution;
+};
+export type ChatLayoutContribution = {
+  id: string;
+  label: string;
+  order?: number;
+  component: ChatLayoutComponent;
 };
 export interface DesktopUiServiceContract {
   register<K extends DesktopUiSlot>(slot: K, contribution: DesktopContributionMap[K]): () => void;
 }
 export interface ChatLayoutServiceContract {
-  register(id: string, component: ComponentType<{ children: React.ReactNode }>): () => void;
+  register(id: string, component: ChatLayoutComponent): () => void;
 }
 export interface DesktopPluginContext {
   desktopUi: DesktopUiServiceContract;

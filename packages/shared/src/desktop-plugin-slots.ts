@@ -23,6 +23,7 @@ export const DESKTOP_UI_SLOTS = [
   "chat.messages.after",
   "chat.composer.float",
   "chat.message.action",
+  "chat.layout",
 ] as const;
 
 export type DesktopUiSlotName = (typeof DESKTOP_UI_SLOTS)[number];
