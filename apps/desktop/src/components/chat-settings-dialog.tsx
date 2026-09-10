@@ -36,21 +36,19 @@ export function ChatSettingsDialog({
           <DialogDescription>切换 Chat 主界面的组合方式，设置会自动保存。</DialogDescription>
         </DialogHeader>
         <RadioGroup
-          className="divide-y divide-border rounded-md border border-border"
+          className="flex flex-col gap-0 divide-y divide-border rounded-md border border-border"
           onValueChange={(value) => onSettingsChange({ layout: value as ChatLayout })}
           value={settings.layout}
         >
           {layouts.map((item) => (
-            <div className="flex items-center gap-3 px-3 py-3" key={item.value}>
+            <div className="flex min-h-16 items-center gap-3 px-3 py-3" key={item.value}>
               <RadioGroupItem id={`chat-layout-dialog-${item.value}`} value={item.value} />
               <Label
-                className="min-w-0 cursor-pointer"
+                className="min-w-0 cursor-pointer flex-col items-start gap-0.5"
                 htmlFor={`chat-layout-dialog-${item.value}`}
               >
                 <span className="block font-medium text-sm">{item.label}</span>
-                <span className="mt-0.5 block text-muted-foreground text-xs">
-                  {item.description}
-                </span>
+                <span className="block text-muted-foreground text-xs">{item.description}</span>
               </Label>
             </div>
           ))}
