@@ -261,9 +261,11 @@
   插件快捷键。应用和 Sidebar 附加内容使用 `desktop.shell.*` 与 `desktop.sidebar.*` 插槽，不接管
   Shell、标题栏、Workspace 列表或账户区的宿主状态。
 - Chat Header 操作、Composer 工具、消息区前后置（`desktop.chat.messages.before` / `desktop.chat.messages.after`）、
-  输入区浮层（`desktop.chat.composer.float`）与消息操作（`desktop.chat.message.action`）通过对应 Chat
-  插槽注册，只使用宿主提供的只读 scope（消息操作额外含只读的消息 `id`/`role`/`text`）和受控回调，
-  不读取 Chat 私有状态。
+  空屏替换（`desktop.chat.messages.empty`，受控 `setInput` / `focus`）、输入区浮层（`desktop.chat.composer.float`）、
+  消息操作与消息前后置/meta 行（`desktop.chat.message.action` / `.before` / `.after` / `.meta`）、
+  生成状态指示（`desktop.chat.generating`）、底部状态（`desktop.chat.status`）与主题变量（`desktop.chat.theme`）
+  通过对应 Chat 插槽注册，只使用宿主提供的只读 scope（消息类插槽额外含只读的消息 `id`/`role`/`text`，
+  meta 行含只读 `generationStatus`）和受控回调，不读取 Chat 私有状态。
 - 新增或重命名 Settings 页面时，必须在对应 `desktop.settings.page` descriptor 中同时维护当前标签、
   搜索关键词、图标和排序；Settings 导航与命令搜索均消费这份 descriptor，不再维护平行清单。
 - 当前 contribution 协议是 Desktop 内部边界，不作为第三方插件 ABI，也不负责插件安装、启停或加载。

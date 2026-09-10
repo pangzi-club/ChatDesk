@@ -72,9 +72,18 @@ contribution 时，宿主会对该类型的已打开 Tab 调用 `onClose`，以�
 - `chat.header.action`：使用只读对话 scope 渲染 Chat Header 操作。
 - `chat.composer.tool`：使用受控 value、`insertText` 和 `focus` 回调扩展 Composer 工具栏。
 - `chat.messages.before` / `chat.messages.after`：使用只读对话 scope 在消息列表上方/末尾插入内容。
+- `chat.messages.empty`：替换空屏问候与建议卡片；组件接收只读对话 scope 与受控 `setInput`、`focus` 回调，有贡献时隐藏内置空屏。
 - `chat.composer.float`：使用只读对话 scope 在 Composer 上方浮层区（Git 摘要、待办面板旁）提供内容。
 - `chat.message.action`：在每条消息的操作行渲染插件按钮，scope 为只读对话 scope 加上 `message`
   （`id`、`role`、`text`），插件不得修改消息或读取 Chat 页面内部 React state。
+- `chat.message.before` / `chat.message.after`：在每条消息气泡前后插入内容，scope 同 `chat.message.action`。
+- `chat.message.meta`：替换助手消息 meta 行（状态/耗时展示）；scope 额外含只读 `generationStatus`
+  （`phase`、`detail`、`elapsedLabel`），生成中与完成后均生效。
+- `chat.generating`：替换生成进行中的等待指示块；接收只读 `generation` 快照（`phase`、`detail`、`elapsedLabel`）。
+- `chat.status`：使用只读对话 scope 在 Composer 下方渲染底部状态条；无贡献时不占位。
+- `chat.theme`：声明式 CSS 变量贡献（`variables`，可选 `className`）；宿主按 order 合并全部贡献并内联到
+  Chat 根节点，可覆盖 `--chat-body-font`、`--chat-text-size`、`--chat-message-radius`、`--chat-message-border`
+  等既有聊天语义变量，无需编写完整 layout 插件。
 - `chat.layout`：注册可选择的完整 Chat layout；宿主同一时间只激活一个布局。布局组件接收 `children` 和只读 Chat scope。
 - `chatLayouts`：兼容旧版的布局注册和激活 service；新插件应优先使用 `desktopUi.register("chat.layout", ...)`。
 
@@ -128,7 +137,7 @@ slot，`permissions` 必须为空数组。入口使用 CommonJS 风格导出 `{ 
 
 当前 API 已经足够支撑“构建期的桌面 UI 插件”：导航、顶层路由、设置页、Workspace Tab、命令与
 快捷键、Shell/Sidebar 附加区域、Chat Header/Composer 工具、Chat 消息区前后置/输入区浮层/消息操作，
-以及 Chat layout 都可以通过公开 slot
+以及空屏替换、消息级前后置/meta 行、生成状态指示、底部状态条、主题变量和 Chat layout 都可以通过公开 slot
 注册。结合 `ctx.effect`、稳定 ID、排序、安装/卸载和 Tab `onClose`，内置功能模块化和常规 UI 扩展已经
 具备可用的生命周期基础。
 
@@ -150,7 +159,7 @@ session/chat 操作、workspace、Server API、文件系统和 Electron 能力�
 
 ### P1：补齐高价值 UI 扩展面
 
-- Chat 消息渲染替换、发送流程扩展（消息操作与消息区前后置/输入区浮层 slot 已提供）。
+- Chat 消息内容渲染替换、发送流程扩展（消息操作、消息前后置/meta 行与消息区前后置/输入区浮层/空屏/生成状态 slot 已提供）。
 - Workspace Tab toolbar、context menu、status bar，以及 Explorer/editor 扩展。
 - Modal/panel、通知中心等需要宿主协调状态的 UI surface。
 - 对高频扩展抽象通用 contribution 元数据，避免仅靠不断增加字符串 slot 导致协议碎片化。

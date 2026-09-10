@@ -1097,6 +1097,8 @@
   --chat-math-font: KaTeX_Main, "Times New Roman", serif;
   --chat-message-gap: 14px;
   --chat-message-block-gap: 42px;
+  --chat-message-radius: 17px 5px 17px 17px;
+  --chat-message-border: 1px solid var(--chat-line);
   --chat-content-padding-top: 16px;
   --chat-content-padding-bottom: 40px;
   --chat-ink: var(--foreground);
@@ -3036,8 +3038,8 @@
   max-width: 100%;
   margin-left: auto;
   overflow: hidden;
-  border: 1px solid var(--chat-line);
-  border-radius: 17px 5px 17px 17px;
+  border: var(--chat-message-border);
+  border-radius: var(--chat-message-radius);
   background: var(--muted);
   padding: 10px 15px;
   text-align: left;
@@ -3105,6 +3107,18 @@
   width: min(850px, calc(100% - 48px));
   margin: 0 auto;
   padding: 0 0 12px;
+}
+.chat-status-bar {
+  display: flex;
+  flex-shrink: 0;
+  width: min(850px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 0 0 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  color: var(--chat-muted);
+  font-size: 11px;
 }
 .chat-composer-floats {
   position: absolute;
@@ -4963,7 +4977,8 @@ button.chat-task-item-summary:focus-visible .chat-task-item-chevron,
     display: none;
   }
   .chat-content,
-  .chat-composer-wrap {
+  .chat-composer-wrap,
+  .chat-status-bar {
     width: calc(100% - 28px);
   }
   .chat-content {

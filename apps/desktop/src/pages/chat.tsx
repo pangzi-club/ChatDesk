@@ -68,7 +68,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { ChatAttachmentChips } from "@/components/chat-attachment-chips";
 import { ChatCommandPopup } from "@/components/chat-command-popup";
@@ -511,6 +511,22 @@ function ChatPage() {
   const messagesBeforeContributions = useDesktopUiSlot("chat.messages.before");
   const messagesAfterContributions = useDesktopUiSlot("chat.messages.after");
   const composerFloatContributions = useDesktopUiSlot("chat.composer.float");
+  const emptyStateContributions = useDesktopUiSlot("chat.messages.empty");
+  const generatingContributions = useDesktopUiSlot("chat.generating");
+  const chatStatusContributions = useDesktopUiSlot("chat.status");
+  const chatThemeContributions = useDesktopUiSlot("chat.theme");
+  const chatTheme = useMemo(() => {
+    const variables: Record<string, string> = {};
+    const classNames: string[] = [];
+    for (const { className, variables: contributionVariables } of chatThemeContributions) {
+      Object.assign(variables, contributionVariables);
+      if (className && !classNames.includes(className)) classNames.push(className);
+    }
+    return {
+      className: classNames.join(" ") || undefined,
+      style: variables as CSSProperties,
+    };
+  }, [chatThemeContributions]);
   const workspaceRef = useRef("");
   const sandboxModeRef = useRef<ChatSandboxMode>(DEFAULT_CHAT_SANDBOX_MODE);
   const planModeRef = useRef<ChatPlanMode>("apply");
@@ -2524,12 +2540,13 @@ function ChatPage() {
     <ChatLayoutComponent scope={chatLayoutScope}>
       <section
         aria-label="Chat 对话区域"
-        className="chat-page"
+        className={`chat-page${chatTheme.className ? ` ${chatTheme.className}` : ""}`}
         data-chat-empty={showEmptyState ? "true" : "false"}
         onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
+        style={chatTheme.style}
       >
         {isDragOver && (
           <div className="chat-drag-overlay">
@@ -2712,31 +2729,46 @@ function ChatPage() {
                       ))
                     : null}
                   {!showHydrateSkeleton && showEmptyState ? (
-                    <div className="chat-empty-state">
-                      <div aria-hidden="true" className="chat-empty-mark">
-                        <Sparkles className="size-8" strokeWidth={1.6} />
+                    emptyStateContributions.length ? (
+                      emptyStateContributions.map(({ id, component: Component }) => (
+                        <Component
+                          key={id}
+                          focus={() => inputRef.current?.focus()}
+                          scope={chatContributionScope}
+                          setInput={setInput}
+                        />
+                      ))
+                    ) : (
+                      <div className="chat-empty-state">
+                        <div aria-hidden="true" className="chat-empty-mark">
+                          <Sparkles className="size-8" strokeWidth={1.6} />
+                        </div>
+                        <h2>要在 {workspaceLabel} 内开发什么？</h2>
+                        <div className="chat-suggestion-grid">
+                          {EMPTY_CHAT_ACTIONS.map((action) => {
+                            const Icon = action.icon;
+                            return (
+                              <button
+                                className={`chat-suggestion-card is-${action.accent}`}
+                                key={action.label}
+                                onClick={() => {
+                                  setInput(action.prompt);
+                                  requestAnimationFrame(() => inputRef.current?.focus());
+                                }}
+                                type="button"
+                              >
+                                <Icon
+                                  aria-hidden="true"
+                                  className="size-[18px]"
+                                  strokeWidth={1.8}
+                                />
+                                <span>{action.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
-                      <h2>要在 {workspaceLabel} 内开发什么？</h2>
-                      <div className="chat-suggestion-grid">
-                        {EMPTY_CHAT_ACTIONS.map((action) => {
-                          const Icon = action.icon;
-                          return (
-                            <button
-                              className={`chat-suggestion-card is-${action.accent}`}
-                              key={action.label}
-                              onClick={() => {
-                                setInput(action.prompt);
-                                requestAnimationFrame(() => inputRef.current?.focus());
-                              }}
-                              type="button"
-                            >
-                              <Icon aria-hidden="true" className="size-[18px]" strokeWidth={1.8} />
-                              <span>{action.label}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
+                    )
                   ) : null}
                   {showHydrateSkeleton
                     ? null
@@ -2824,24 +2856,38 @@ function ChatPage() {
                       </div>
                     </div>
                   ) : null}
-                  {isGenerating && !hasAssistantMessage && (
-                    <div className="chat-message assistant-message">
-                      <div className="chat-message-body">
-                        <div className="chat-message-meta">
-                          <ChatGenerationStatus
-                            detail={generationDetail}
-                            elapsedLabel={generationElapsedLabel}
-                            phase={generationPhase}
-                          />
-                        </div>
-                        <div className="chat-thinking">
-                          <span />
-                          <span />
-                          <span />
+                  {isGenerating && !hasAssistantMessage ? (
+                    generatingContributions.length ? (
+                      generatingContributions.map(({ id, component: Component }) => (
+                        <Component
+                          generation={{
+                            phase: generationPhase,
+                            detail: generationDetail,
+                            elapsedLabel: generationElapsedLabel,
+                          }}
+                          key={id}
+                          scope={chatContributionScope}
+                        />
+                      ))
+                    ) : (
+                      <div className="chat-message assistant-message">
+                        <div className="chat-message-body">
+                          <div className="chat-message-meta">
+                            <ChatGenerationStatus
+                              detail={generationDetail}
+                              elapsedLabel={generationElapsedLabel}
+                              phase={generationPhase}
+                            />
+                          </div>
+                          <div className="chat-thinking">
+                            <span />
+                            <span />
+                            <span />
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )}
+                    )
+                  ) : null}
                   {messagesAfterContributions.map(({ id, component: Component }) => (
                     <Component key={id} scope={chatContributionScope} />
                   ))}
@@ -3398,6 +3444,13 @@ function ChatPage() {
             </div>
           )}
         </div>
+        {chatStatusContributions.length ? (
+          <div className="chat-status-bar" role="status">
+            {chatStatusContributions.map(({ id, component: Component }) => (
+              <Component key={id} scope={chatContributionScope} />
+            ))}
+          </div>
+        ) : null}
         <GitCommitDialog
           branch={workspaceGitQuery.data?.summary?.branch}
           hasChanges={Boolean(workspaceGitQuery.data?.summary?.filesChanged)}
@@ -3677,6 +3730,9 @@ const MessageBubble = memo(function MessageBubble({
   contributionScope: ChatContributionScope;
 }) {
   const messageActionContributions = useDesktopUiSlot("chat.message.action");
+  const messageBeforeContributions = useDesktopUiSlot("chat.message.before");
+  const messageAfterContributions = useDesktopUiSlot("chat.message.after");
+  const messageMetaContributions = useDesktopUiSlot("chat.message.meta");
   const text = messageText(message);
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
@@ -3724,10 +3780,27 @@ const MessageBubble = memo(function MessageBubble({
       className={`chat-message ${isUser ? "user-message" : "assistant-message"}`}
       data-message-id={message.id}
     >
+      {messageBeforeContributions.map(({ id, component: Component }) => (
+        <Component
+          key={`${id}:before`}
+          scope={{ ...contributionScope, message: { id: message.id, role: message.role, text } }}
+        />
+      ))}
       <div className="chat-message-body">
         {!isUser ? (
           <div className="chat-message-meta">
-            {generationStatus ? (
+            {messageMetaContributions.length ? (
+              messageMetaContributions.map(({ id, component: Component }) => (
+                <Component
+                  key={id}
+                  scope={{
+                    ...contributionScope,
+                    message: { id: message.id, role: message.role, text },
+                    generationStatus,
+                  }}
+                />
+              ))
+            ) : generationStatus ? (
               <ChatGenerationStatus {...generationStatus} />
             ) : (
               <span
@@ -3967,6 +4040,12 @@ const MessageBubble = memo(function MessageBubble({
           </div>
         ) : null}
       </div>
+      {messageAfterContributions.map(({ id, component: Component }) => (
+        <Component
+          key={`${id}:after`}
+          scope={{ ...contributionScope, message: { id: message.id, role: message.role, text } }}
+        />
+      ))}
     </div>
   );
 });

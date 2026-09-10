@@ -107,6 +107,29 @@ describe("DesktopUiService", () => {
     await ctx.fiber.dispose();
   });
 
+  it("orders chat theme contributions so later order wins the variable merge", async () => {
+    const ctx = new Context();
+    await ctx.plugin(DesktopUiService);
+    ctx.desktopUi.register("chat.theme", {
+      id: "theme.later",
+      order: 20,
+      className: "theme-later",
+      variables: { "--chat-text-size": "16px" },
+    });
+    ctx.desktopUi.register("chat.theme", {
+      id: "theme.earlier",
+      order: 10,
+      variables: { "--chat-text-size": "13px", "--chat-message-radius": "8px" },
+    });
+
+    const snapshot = ctx.desktopUi.getSnapshot("chat.theme");
+    expect(snapshot.map((item) => item.id)).toEqual(["theme.earlier", "theme.later"]);
+    const merged: Record<string, string> = {};
+    for (const { variables } of snapshot) Object.assign(merged, variables);
+    expect(merged).toEqual({ "--chat-text-size": "16px", "--chat-message-radius": "8px" });
+    await ctx.fiber.dispose();
+  });
+
   it("keeps route and workspace tab slots ordered and isolated", async () => {
     const ctx = new Context();
     await ctx.plugin(DesktopUiService);
@@ -254,8 +277,15 @@ describe("DesktopUiService", () => {
         "chat.composer.tool",
         "chat.messages.before",
         "chat.messages.after",
+        "chat.messages.empty",
         "chat.composer.float",
         "chat.message.action",
+        "chat.message.before",
+        "chat.message.after",
+        "chat.message.meta",
+        "chat.generating",
+        "chat.status",
+        "chat.theme",
       ]),
       inject: ["desktopUi", "chatLayouts"],
       apply(ctx) {
@@ -328,6 +358,34 @@ describe("DesktopUiService", () => {
               id: "plugin.chat-message-action",
               component: EmptyPage,
             }),
+            ctx.desktopUi.register("chat.messages.empty", {
+              id: "plugin.chat-messages-empty",
+              component: EmptyPage,
+            }),
+            ctx.desktopUi.register("chat.message.before", {
+              id: "plugin.chat-message-before",
+              component: EmptyPage,
+            }),
+            ctx.desktopUi.register("chat.message.after", {
+              id: "plugin.chat-message-after",
+              component: EmptyPage,
+            }),
+            ctx.desktopUi.register("chat.message.meta", {
+              id: "plugin.chat-message-meta",
+              component: EmptyPage,
+            }),
+            ctx.desktopUi.register("chat.generating", {
+              id: "plugin.chat-generating",
+              component: EmptyPage,
+            }),
+            ctx.desktopUi.register("chat.status", {
+              id: "plugin.chat-status",
+              component: EmptyPage,
+            }),
+            ctx.desktopUi.register("chat.theme", {
+              id: "plugin.chat-theme",
+              variables: { "--chat-message-radius": "10px" },
+            }),
             ctx.chatLayouts.register("plugin-layout", ({ children }) => children),
           ];
           return () =>
@@ -376,6 +434,27 @@ describe("DesktopUiService", () => {
     expect(runtime.service.getSnapshot("chat.message.action").map((item) => item.id)).toEqual([
       "plugin.chat-message-action",
     ]);
+    expect(runtime.service.getSnapshot("chat.messages.empty").map((item) => item.id)).toEqual([
+      "plugin.chat-messages-empty",
+    ]);
+    expect(runtime.service.getSnapshot("chat.message.before").map((item) => item.id)).toEqual([
+      "plugin.chat-message-before",
+    ]);
+    expect(runtime.service.getSnapshot("chat.message.after").map((item) => item.id)).toEqual([
+      "plugin.chat-message-after",
+    ]);
+    expect(runtime.service.getSnapshot("chat.message.meta").map((item) => item.id)).toEqual([
+      "plugin.chat-message-meta",
+    ]);
+    expect(runtime.service.getSnapshot("chat.generating").map((item) => item.id)).toEqual([
+      "plugin.chat-generating",
+    ]);
+    expect(runtime.service.getSnapshot("chat.status").map((item) => item.id)).toEqual([
+      "plugin.chat-status",
+    ]);
+    expect(runtime.service.getSnapshot("chat.theme").map((item) => item.id)).toEqual([
+      "plugin.chat-theme",
+    ]);
     expect(runtime.chatLayouts.getSnapshot().id).toBe("standard");
     runtime.chatLayouts.activate("plugin-layout");
     expect(runtime.chatLayouts.getSnapshot().id).toBe("plugin-layout");
@@ -405,6 +484,13 @@ describe("DesktopUiService", () => {
     expect(runtime.service.getSnapshot("chat.messages.after")).toEqual([]);
     expect(runtime.service.getSnapshot("chat.composer.float")).toEqual([]);
     expect(runtime.service.getSnapshot("chat.message.action")).toEqual([]);
+    expect(runtime.service.getSnapshot("chat.messages.empty")).toEqual([]);
+    expect(runtime.service.getSnapshot("chat.message.before")).toEqual([]);
+    expect(runtime.service.getSnapshot("chat.message.after")).toEqual([]);
+    expect(runtime.service.getSnapshot("chat.message.meta")).toEqual([]);
+    expect(runtime.service.getSnapshot("chat.generating")).toEqual([]);
+    expect(runtime.service.getSnapshot("chat.status")).toEqual([]);
+    expect(runtime.service.getSnapshot("chat.theme")).toEqual([]);
     expect(() => runtime.chatLayouts.activate("plugin-layout")).toThrow("unknown chat layout");
 
     await runtime.dispose();

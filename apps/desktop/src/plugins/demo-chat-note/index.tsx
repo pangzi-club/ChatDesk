@@ -147,13 +147,34 @@ function ChatNoteMessageAction({ scope }: { scope: ChatMessageScope }) {
   );
 }
 
+function ChatNoteMessageMarker({ scope }: { scope: ChatMessageScope }) {
+  const notes = usePinnedNotes();
+  if (!notes.some((note) => note.messageId === scope.message.id)) return null;
+  return (
+    <span className="mt-1 flex shrink-0 self-start items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-muted-foreground text-[10px]">
+      <Pin aria-hidden="true" className="size-3" />
+      已钉住
+    </span>
+  );
+}
+
+function ChatNoteStatusBar() {
+  const notes = usePinnedNotes();
+  return (
+    <span className="flex items-center gap-1.5">
+      <Pin aria-hidden="true" className="size-3" />
+      已钉住 {notes.length} 条便签
+    </span>
+  );
+}
+
 const plugin = defineDesktopPlugin({
   manifest: {
     id: "demo-chat-note",
     name: "Chat 便签",
     description:
-      "演示 Chat 页面新增插件插槽:消息区前后置、输入区浮层与消息操作,支持把多条消息钉到输入框上方并展开全文。",
-    version: "1.1.0",
+      "演示 Chat 页面插件插槽:消息区前后置、输入区浮层、消息操作、消息后置标记、底部状态与聊天主题变量,支持把多条消息钉到输入框上方并展开全文。",
+    version: "1.2.0",
     apiVersion: 1,
     entry: "plugins/demo-chat-note",
     contributes: [
@@ -161,6 +182,9 @@ const plugin = defineDesktopPlugin({
       "chat.messages.after",
       "chat.composer.float",
       "chat.message.action",
+      "chat.message.after",
+      "chat.status",
+      "chat.theme",
     ],
     permissions: [],
   },
@@ -184,6 +208,21 @@ const plugin = defineDesktopPlugin({
         ctx.desktopUi.register("chat.message.action", {
           id: "demo-chat-note.action",
           component: ChatNoteMessageAction,
+        }),
+        ctx.desktopUi.register("chat.message.after", {
+          id: "demo-chat-note.message-after",
+          component: ChatNoteMessageMarker,
+        }),
+        ctx.desktopUi.register("chat.status", {
+          id: "demo-chat-note.status",
+          component: ChatNoteStatusBar,
+        }),
+        ctx.desktopUi.register("chat.theme", {
+          id: "demo-chat-note.theme",
+          variables: {
+            "--chat-message-radius": "10px",
+            "--chat-message-border": "1px dashed var(--chat-line)",
+          },
         }),
       ];
       return () => {

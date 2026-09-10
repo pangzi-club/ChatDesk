@@ -88,6 +88,48 @@ export type ChatMessageActionContribution = {
   order?: number;
   component: ComponentType<{ scope: ChatMessageScope }>;
 };
+export type ChatEmptyStateProps = {
+  scope: ChatContributionScope;
+  setInput: (value: string) => void;
+  focus: () => void;
+};
+export type ChatEmptyStateContribution = {
+  id: string;
+  order?: number;
+  component: ComponentType<ChatEmptyStateProps>;
+};
+export type ChatGenerationSnapshot = {
+  phase: string;
+  detail: string;
+  elapsedLabel: string;
+};
+export type ChatGeneratingContribution = {
+  id: string;
+  order?: number;
+  component: ComponentType<{
+    scope: ChatContributionScope;
+    generation: ChatGenerationSnapshot;
+  }>;
+};
+export type ChatMessageRegionContribution = {
+  id: string;
+  order?: number;
+  component: ComponentType<{ scope: ChatMessageScope }>;
+};
+export type ChatMessageMetaScope = ChatMessageScope & {
+  generationStatus?: ChatGenerationSnapshot;
+};
+export type ChatMessageMetaContribution = {
+  id: string;
+  order?: number;
+  component: ComponentType<{ scope: ChatMessageMetaScope }>;
+};
+export type ChatThemeContribution = {
+  id: string;
+  order?: number;
+  className?: string;
+  variables: Record<string, string>;
+};
 export type SidebarNavigationContribution = {
   id: string;
   path: string;
@@ -176,8 +218,15 @@ export type DesktopContributionMap = {
   "chat.composer.tool": ChatComposerToolContribution;
   "chat.messages.before": ChatRegionContribution;
   "chat.messages.after": ChatRegionContribution;
+  "chat.messages.empty": ChatEmptyStateContribution;
   "chat.composer.float": ChatRegionContribution;
   "chat.message.action": ChatMessageActionContribution;
+  "chat.message.before": ChatMessageRegionContribution;
+  "chat.message.after": ChatMessageRegionContribution;
+  "chat.message.meta": ChatMessageMetaContribution;
+  "chat.generating": ChatGeneratingContribution;
+  "chat.status": ChatRegionContribution;
+  "chat.theme": ChatThemeContribution;
   "chat.layout": ChatLayoutContribution;
 };
 export type ChatLayoutContribution = {

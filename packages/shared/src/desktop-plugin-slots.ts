@@ -21,8 +21,15 @@ export const DESKTOP_UI_SLOTS = [
   "chat.composer.tool",
   "chat.messages.before",
   "chat.messages.after",
+  "chat.messages.empty",
   "chat.composer.float",
   "chat.message.action",
+  "chat.message.before",
+  "chat.message.after",
+  "chat.message.meta",
+  "chat.generating",
+  "chat.status",
+  "chat.theme",
   "chat.layout",
 ] as const;
 

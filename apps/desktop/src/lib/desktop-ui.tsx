@@ -57,8 +57,15 @@ export type DesktopUiSlot =
   | "chat.composer.tool"
   | "chat.messages.before"
   | "chat.messages.after"
+  | "chat.messages.empty"
   | "chat.composer.float"
   | "chat.message.action"
+  | "chat.message.before"
+  | "chat.message.after"
+  | "chat.message.meta"
+  | "chat.generating"
+  | "chat.status"
+  | "chat.theme"
   | "chat.layout";
 export type DesktopIcon = ComponentType<{ className?: string }>;
 
@@ -139,6 +146,56 @@ export type ChatMessageActionContribution = {
   id: string;
   order?: number;
   component: ComponentType<{ scope: ChatMessageScope }>;
+};
+
+export type ChatEmptyStateProps = {
+  scope: ChatContributionScope;
+  setInput: (value: string) => void;
+  focus: () => void;
+};
+
+export type ChatEmptyStateContribution = {
+  id: string;
+  order?: number;
+  component: ComponentType<ChatEmptyStateProps>;
+};
+
+export type ChatGenerationSnapshot = {
+  phase: string;
+  detail: string;
+  elapsedLabel: string;
+};
+
+export type ChatGeneratingContribution = {
+  id: string;
+  order?: number;
+  component: ComponentType<{
+    scope: ChatContributionScope;
+    generation: ChatGenerationSnapshot;
+  }>;
+};
+
+export type ChatMessageRegionContribution = {
+  id: string;
+  order?: number;
+  component: ComponentType<{ scope: ChatMessageScope }>;
+};
+
+export type ChatMessageMetaScope = ChatMessageScope & {
+  generationStatus?: ChatGenerationSnapshot;
+};
+
+export type ChatMessageMetaContribution = {
+  id: string;
+  order?: number;
+  component: ComponentType<{ scope: ChatMessageMetaScope }>;
+};
+
+export type ChatThemeContribution = {
+  id: string;
+  order?: number;
+  className?: string;
+  variables: Record<string, string>;
 };
 
 export type SidebarNavigationContribution = {
@@ -316,8 +373,15 @@ type SlotMap = {
   "chat.composer.tool": ChatComposerToolContribution;
   "chat.messages.before": ChatRegionContribution;
   "chat.messages.after": ChatRegionContribution;
+  "chat.messages.empty": ChatEmptyStateContribution;
   "chat.composer.float": ChatRegionContribution;
   "chat.message.action": ChatMessageActionContribution;
+  "chat.message.before": ChatMessageRegionContribution;
+  "chat.message.after": ChatMessageRegionContribution;
+  "chat.message.meta": ChatMessageMetaContribution;
+  "chat.generating": ChatGeneratingContribution;
+  "chat.status": ChatRegionContribution;
+  "chat.theme": ChatThemeContribution;
   "chat.layout": ChatLayoutContribution;
 };
 
@@ -353,8 +417,15 @@ export class DesktopUiService extends Service {
     "chat.composer.tool": new Map(),
     "chat.messages.before": new Map(),
     "chat.messages.after": new Map(),
+    "chat.messages.empty": new Map(),
     "chat.composer.float": new Map(),
     "chat.message.action": new Map(),
+    "chat.message.before": new Map(),
+    "chat.message.after": new Map(),
+    "chat.message.meta": new Map(),
+    "chat.generating": new Map(),
+    "chat.status": new Map(),
+    "chat.theme": new Map(),
     "chat.layout": new Map(),
   };
   private readonly listeners = new Set<() => void>();
@@ -376,6 +447,11 @@ export class DesktopUiService extends Service {
       | ChatComposerToolContribution
       | ChatRegionContribution
       | ChatMessageActionContribution
+      | ChatEmptyStateContribution
+      | ChatGeneratingContribution
+      | ChatMessageRegionContribution
+      | ChatMessageMetaContribution
+      | ChatThemeContribution
       | ChatLayoutContribution
     )[]
   > = {
@@ -394,8 +470,15 @@ export class DesktopUiService extends Service {
     "chat.composer.tool": [],
     "chat.messages.before": [],
     "chat.messages.after": [],
+    "chat.messages.empty": [],
     "chat.composer.float": [],
     "chat.message.action": [],
+    "chat.message.before": [],
+    "chat.message.after": [],
+    "chat.message.meta": [],
+    "chat.generating": [],
+    "chat.status": [],
+    "chat.theme": [],
     "chat.layout": [],
   };
 
