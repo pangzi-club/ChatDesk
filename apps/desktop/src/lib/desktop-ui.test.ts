@@ -434,9 +434,14 @@ describe("DesktopUiService", () => {
     expect(runtime.service.getSnapshot("chat.message.action").map((item) => item.id)).toEqual([
       "plugin.chat-message-action",
     ]);
-    expect(runtime.service.getSnapshot("chat.messages.empty").map((item) => item.id)).toEqual([
-      "plugin.chat-messages-empty",
-    ]);
+    expect(runtime.service.getSnapshot("chat.messages.empty").map((item) => item.id)).toEqual(
+      expect.arrayContaining([
+        "standard.empty",
+        "cute.empty",
+        "geek.empty",
+        "plugin.chat-messages-empty",
+      ]),
+    );
     expect(runtime.service.getSnapshot("chat.message.before").map((item) => item.id)).toEqual([
       "plugin.chat-message-before",
     ]);
@@ -446,12 +451,22 @@ describe("DesktopUiService", () => {
     expect(runtime.service.getSnapshot("chat.message.meta").map((item) => item.id)).toEqual([
       "plugin.chat-message-meta",
     ]);
-    expect(runtime.service.getSnapshot("chat.generating").map((item) => item.id)).toEqual([
-      "plugin.chat-generating",
-    ]);
-    expect(runtime.service.getSnapshot("chat.status").map((item) => item.id)).toEqual([
-      "plugin.chat-status",
-    ]);
+    expect(runtime.service.getSnapshot("chat.generating").map((item) => item.id)).toEqual(
+      expect.arrayContaining([
+        "standard.generating",
+        "cute.generating",
+        "geek.generating",
+        "plugin.chat-generating",
+      ]),
+    );
+    expect(runtime.service.getSnapshot("chat.status").map((item) => item.id)).toEqual(
+      expect.arrayContaining([
+        "standard.status",
+        "cute.status",
+        "geek.status",
+        "plugin.chat-status",
+      ]),
+    );
     expect(runtime.service.getSnapshot("chat.theme").map((item) => item.id)).toEqual([
       "plugin.chat-theme",
     ]);
@@ -484,12 +499,24 @@ describe("DesktopUiService", () => {
     expect(runtime.service.getSnapshot("chat.messages.after")).toEqual([]);
     expect(runtime.service.getSnapshot("chat.composer.float")).toEqual([]);
     expect(runtime.service.getSnapshot("chat.message.action")).toEqual([]);
-    expect(runtime.service.getSnapshot("chat.messages.empty")).toEqual([]);
+    expect(runtime.service.getSnapshot("chat.messages.empty").map((item) => item.id)).toEqual([
+      "standard.empty",
+      "cute.empty",
+      "geek.empty",
+    ]);
     expect(runtime.service.getSnapshot("chat.message.before")).toEqual([]);
     expect(runtime.service.getSnapshot("chat.message.after")).toEqual([]);
     expect(runtime.service.getSnapshot("chat.message.meta")).toEqual([]);
-    expect(runtime.service.getSnapshot("chat.generating")).toEqual([]);
-    expect(runtime.service.getSnapshot("chat.status")).toEqual([]);
+    expect(runtime.service.getSnapshot("chat.generating").map((item) => item.id)).toEqual([
+      "standard.generating",
+      "cute.generating",
+      "geek.generating",
+    ]);
+    expect(runtime.service.getSnapshot("chat.status").map((item) => item.id)).toEqual([
+      "standard.status",
+      "cute.status",
+      "geek.status",
+    ]);
     expect(runtime.service.getSnapshot("chat.theme")).toEqual([]);
     expect(() => runtime.chatLayouts.activate("plugin-layout")).toThrow("unknown chat layout");
 
