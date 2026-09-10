@@ -5135,7 +5135,8 @@ button.chat-task-item-summary:focus-visible .chat-task-item-chevron,
 }
 
 .chat-content,
-.chat-composer-wrap {
+.chat-composer-wrap,
+.chat-status-bar {
   width: min(820px, calc(100% - 48px));
 }
 
