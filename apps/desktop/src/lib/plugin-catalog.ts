@@ -43,6 +43,7 @@ const contributionLabels: Record<string, { label: string; description: string }>
   "chat.messages.after": { label: "消息区后置", description: "在聊天消息列表末尾插入内容" },
   "chat.composer.float": { label: "输入区浮层", description: "在聊天输入框上方提供浮层内容" },
   "chat.message.action": { label: "消息操作", description: "为每条聊天消息提供操作按钮" },
+  "chat.layout": { label: "聊天布局", description: "为聊天页面提供整体布局方案" },
   route: { label: "页面", description: "提供一个可从应用导航打开的页面" },
   "settings.page": { label: "设置页面", description: "向设置中心添加一个页面" },
   "sidebar.navigation": { label: "侧边栏", description: "在应用侧边栏添加导航入口" },
