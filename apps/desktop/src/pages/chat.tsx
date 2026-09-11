@@ -72,7 +72,11 @@ import { type CSSProperties, memo, useCallback, useEffect, useMemo, useRef, useS
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { ChatAttachmentChips } from "@/components/chat-attachment-chips";
 import { ChatCommandPopup } from "@/components/chat-command-popup";
-import { ChatComposerInput, type ChatComposerInputHandle } from "@/components/chat-composer-input";
+import {
+  type ChatComposerChange,
+  ChatComposerInput,
+  type ChatComposerInputHandle,
+} from "@/components/chat-composer-input";
 import { ChatContextDialog } from "@/components/chat-context-dialog";
 import { ChatContextPopover } from "@/components/chat-context-popover";
 import {
@@ -424,12 +428,15 @@ function ChatPage() {
   toolsRef.current = chatTools;
   const skillsRef = useRef<SkillDefinition[]>(availableSkills);
   skillsRef.current = availableSkills;
-  const models = configuredModels ?? [];
-  const sortedModels = sortModelsByName(models);
+  const models = useMemo(() => configuredModels ?? [], [configuredModels]);
+  const sortedModels = useMemo(() => sortModelsByName(models), [models]);
   const [selectedModelId, setSelectedModelId] = useState("");
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const modeSelectionRef = useRef(false);
-  const [input, setInput] = useState("");
+  // The composer owns its text (see ChatComposerInputHandle); the page only
+  // tracks the derived bits it actually renders, so typing does not re-render
+  // this component on every keystroke.
+  const [composerHasText, setComposerHasText] = useState(false);
   const [selectionToolbar, setSelectionToolbar] = useState<{ left: number; top: number } | null>(
     null,
   );
@@ -450,11 +457,24 @@ function ChatPage() {
   const [forkingMessageId, setForkingMessageId] = useState<string | null>(null);
   const [isRenamingTitle, setIsRenamingTitle] = useState(false);
   const inputRef = useRef<ChatComposerInputHandle>(null);
+  // Last markdown the composer reported, used to restore the draft when the
+  // editor remounts (task sessions do not render the composer).
+  const composerDraftRef = useRef("");
+  const composerTriggerActiveRef = useRef(false);
 
   const selectedSnippetRef = useRef("");
   const selectionToolbarTimerRef = useRef<number | null>(null);
   const [composerPlain, setComposerPlain] = useState("");
   const [commandCaret, setCommandCaret] = useState(0);
+  const clearComposer = useCallback(() => {
+    composerDraftRef.current = "";
+    composerTriggerActiveRef.current = false;
+    setComposerHasText(false);
+    setComposerPlain("");
+    setCommandCaret(0);
+    // No-op when the composer is unmounted; the ref resets above still apply.
+    inputRef.current?.clear();
+  }, []);
   const [commandIndex, setCommandIndex] = useState(0);
   const [commandDismissed, setCommandDismissed] = useState(false);
   const [mentionIndex, setMentionIndex] = useState(0);
@@ -533,6 +553,11 @@ function ChatPage() {
   } = useChatLayout();
   const headerActionContributions = useDesktopUiSlot("chat.header.action");
   const composerToolContributions = useDesktopUiSlot("chat.composer.tool");
+  // `chat.composer.tool` contributions receive the live composer value, so the
+  // page mirrors it only while a contribution is actually registered.
+  const [composerToolValue, setComposerToolValue] = useState("");
+  const composerToolsActiveRef = useRef(composerToolContributions.length > 0);
+  composerToolsActiveRef.current = composerToolContributions.length > 0;
   const messagesBeforeContributions = useDesktopUiSlot("chat.messages.before");
   const messagesAfterContributions = useDesktopUiSlot("chat.messages.after");
   const composerFloatContributions = useDesktopUiSlot("chat.composer.float");
@@ -632,14 +657,18 @@ function ChatPage() {
       toolNames: activeTools.toolNames,
     } satisfies Pick<RunStartInput, "system" | "memory" | "cwd" | "workspaceId" | "toolNames">;
   }, [allowedSkillIds, selectedSkillIds, workspaceKey]);
-  const promptKey = [
-    selectedCwd,
-    workspaceKey,
-    selectedModel?.id ?? "",
-    selectedSkillIds.join(","),
-    JSON.stringify(chatMemory),
-    JSON.stringify(chatTools),
-  ].join("|");
+  const promptKey = useMemo(
+    () =>
+      [
+        selectedCwd,
+        workspaceKey,
+        selectedModel?.id ?? "",
+        selectedSkillIds.join(","),
+        JSON.stringify(chatMemory),
+        JSON.stringify(chatTools),
+      ].join("|"),
+    [selectedCwd, workspaceKey, selectedModel?.id, selectedSkillIds, chatMemory, chatTools],
+  );
   const selectedMcpIds = useMemo(
     () => mcpServers.filter((server) => server.enabledByDefault).map((server) => server.id),
     [mcpServers],
@@ -912,9 +941,17 @@ function ChatPage() {
       extractedFingerprintRef.current = "";
       suppressSaveRef.current = false;
       setMessages([]);
-      setInput("");
+      clearComposer();
     },
-    [allowedSkillIds, location.pathname, location.search, navigate, setMessages, workspaceProjects],
+    [
+      allowedSkillIds,
+      clearComposer,
+      location.pathname,
+      location.search,
+      navigate,
+      setMessages,
+      workspaceProjects,
+    ],
   );
 
   const promoteDraftSession = useCallback(() => {
@@ -1355,7 +1392,7 @@ function ChatPage() {
     planTransition === "idle" &&
     !isGenerating &&
     Boolean(selectedModel) &&
-    !input.trim() &&
+    !composerHasText &&
     pendingAttachments.length === 0;
   const showPlanStartAction = canExecutePlan;
   const showPlanAttachment = Boolean(
@@ -1387,6 +1424,34 @@ function ChatPage() {
       )
       .catch((error) => console.error("Failed to open chat plan", error));
   }, [activePlan, canExecutePlan, livePlanDraft, sessionId]);
+
+  // MessageBubble is memoized, so these per-message props must keep a stable
+  // identity: an object literal rebuilt on every keystroke would re-render the
+  // anchored and streaming bubbles for no reason. Building them once means only
+  // the bubble that actually owns them re-renders.
+  const planAttachmentValue = useMemo(
+    () =>
+      showPlanAttachment && activePlan && latestPlanWriteAnchor
+        ? {
+            fileName: activePlan.fileName,
+            isGenerating: isGenerating && planMode === "plan",
+            onOpen: openActivePlan,
+            toolCallId: latestPlanWriteAnchor.toolCallId,
+          }
+        : undefined,
+    [showPlanAttachment, activePlan, latestPlanWriteAnchor, isGenerating, planMode, openActivePlan],
+  );
+  const generationStatusValue = useMemo(
+    () =>
+      isGenerating && lastMessage
+        ? {
+            detail: generationDetail,
+            elapsedLabel: generationElapsedLabel,
+            phase: generationPhase,
+          }
+        : undefined,
+    [isGenerating, lastMessage, generationDetail, generationElapsedLabel, generationPhase],
+  );
 
   useEffect(() => {
     if (!activePlan) return;
@@ -1913,7 +1978,7 @@ function ChatPage() {
   ) {
     if (sessionKindRef.current === "task" || isReadOnly) return;
     if (!text && pending.length === 0) return;
-    const clearComposer = options.clearComposer ?? true;
+    const shouldClearComposer = options.clearComposer ?? true;
     promoteDraftSession();
     const readyPending = pending.filter((item) => item.status === "ready");
     if (readyPending.length > 0) {
@@ -1936,10 +2001,10 @@ function ChatPage() {
     for (const item of pending) {
       if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
     }
-    if (clearComposer) {
+    if (shouldClearComposer) {
       setPendingAttachments([]);
       pendingAttachmentsRef.current = [];
-      setInput("");
+      clearComposer();
     }
     setContextCompaction(null);
     setPlanModeError("");
@@ -1983,7 +2048,7 @@ function ChatPage() {
     ];
     queuedMessagesRef.current = nextMessages;
     setQueuedMessages(nextMessages);
-    setInput("");
+    clearComposer();
     setPendingAttachments([]);
     pendingAttachmentsRef.current = [];
     setContextCompaction(null);
@@ -2002,7 +2067,7 @@ function ChatPage() {
   }
 
   async function sendFollowUpMessage() {
-    const text = input.trim();
+    const text = (inputRef.current?.getValue() ?? "").trim();
     const pending = pendingAttachmentsRef.current;
     const hasUploading = pending.some((item) => item.status === "uploading");
     if (
@@ -2093,7 +2158,7 @@ function ChatPage() {
       setPlanModeError("请先配置并选择一个模型。");
       return;
     }
-    if (input.trim()) {
+    if ((inputRef.current?.getValue() ?? "").trim()) {
       setPlanModeError("执行计划前请先发送或清空 Composer 中的补充说明。");
       return;
     }
@@ -2119,7 +2184,9 @@ function ChatPage() {
     const snippet = selectedSnippetRef.current;
     if (!snippet) return;
     setSelectionToolbar(null);
-    setInput((current) => appendComposerSelection(current, snippet));
+    inputRef.current?.setValue(
+      appendComposerSelection(inputRef.current?.getValue() ?? "", snippet),
+    );
     requestAnimationFrame(() => inputRef.current?.focus());
   }
 
@@ -2199,29 +2266,26 @@ function ChatPage() {
 
   function submitMessage() {
     if (sessionKindRef.current === "task" || isReadOnly) return;
-    const text = input.trim();
+    const text = (inputRef.current?.getValue() ?? "").trim();
     const pending = pendingAttachmentsRef.current;
     const hasUploading = pending.some((item) => item.status === "uploading");
     if (isGenerating || hasUploading || planTransitionRef.current !== "idle") return;
     if (text === "/plan") {
-      setInput("");
-      setCommandCaret(0);
+      clearComposer();
       setCommandDismissed(true);
       void enterPlanMode();
       return;
     }
     if (text.startsWith("/plan ")) {
       const remaining = text.slice("/plan ".length).trim();
-      setInput("");
-      setCommandCaret(0);
+      clearComposer();
       setCommandDismissed(true);
       void enterPlanMode().then((entered) => {
         if (entered) {
           void sendPreparedMessage(remaining, pending);
           return;
         }
-        setInput(remaining);
-        setCommandCaret(remaining.length);
+        inputRef.current?.setValue(remaining);
         requestAnimationFrame(() => inputRef.current?.focus());
       });
       return;
@@ -2310,22 +2374,28 @@ function ChatPage() {
     }
   }
 
-  async function forkConversation(messageId: string) {
-    if (sessionKindRef.current === "task" || isGenerating || forkingMessageId) return;
-    setForkError("");
-    setForkingMessageId(messageId);
-    try {
-      const forked = await forkChatServerSession(sessionId, { messageId });
-      await queryClient.invalidateQueries({ queryKey: ["chat-index"] });
-      navigate(chatSessionPath(forked.id));
-    } catch (error) {
-      setForkError(error instanceof Error ? error.message : "创建对话分支失败，请重试。");
-    } finally {
-      setForkingMessageId(null);
-    }
-  }
+  const forkConversation = useCallback(
+    async (messageId: string) => {
+      if (sessionKindRef.current === "task" || isGenerating || forkingMessageId) return;
+      setForkError("");
+      setForkingMessageId(messageId);
+      try {
+        const forked = await forkChatServerSession(sessionId, { messageId });
+        await queryClient.invalidateQueries({ queryKey: ["chat-index"] });
+        navigate(chatSessionPath(forked.id));
+      } catch (error) {
+        setForkError(error instanceof Error ? error.message : "创建对话分支失败，请重试。");
+      } finally {
+        setForkingMessageId(null);
+      }
+    },
+    [forkingMessageId, isGenerating, navigate, queryClient, sessionId],
+  );
 
-  const canCopyConversationMarkdown = canFormatChatConversationMarkdown(messages);
+  const canCopyConversationMarkdown = useMemo(
+    () => canFormatChatConversationMarkdown(messages),
+    [messages],
+  );
 
   const canEditConversationTitle = !isGenerating && !isRenamingTitle;
   const canRegenerateConversationTitle =
@@ -2472,6 +2542,29 @@ function ChatPage() {
     inputRef.current?.replaceRange(trigger.start, commandCaret, `${command.name} `);
   }
 
+  const setComposerInput = useCallback((value: string) => {
+    inputRef.current?.setValue(value);
+  }, []);
+  const handleComposerChange = useCallback((next: ChatComposerChange) => {
+    composerDraftRef.current = next.markdown;
+    if (next.fromEdit) setMentionDismissed(false);
+    const hasText = next.markdown.trim().length > 0;
+    setComposerHasText((current) => (current === hasText ? current : hasText));
+    if (composerToolsActiveRef.current) setComposerToolValue(next.markdown);
+    const triggerActive = Boolean(
+      findActiveCommandTrigger(next.plain, next.caret) ??
+        findActiveMentionTrigger(next.plain, next.caret),
+    );
+    // Command/mention triggers are the only consumers of the plain text and
+    // caret offset, so publish them only when a trigger starts or ends. Typing
+    // ordinary text then leaves this page untouched.
+    if (triggerActive || composerTriggerActiveRef.current) {
+      composerTriggerActiveRef.current = triggerActive;
+      setComposerPlain(next.plain);
+      setCommandCaret(next.caret);
+    }
+  }, []);
+
   function handleComposerKeyDown(event: KeyboardEvent) {
     if (commandPopupOpen && !event.isComposing && event.keyCode !== 229) {
       if (
@@ -2532,7 +2625,10 @@ function ChatPage() {
         return true;
       }
       if (action === "queue") {
-        queuePreparedMessage(input.trim(), pendingAttachmentsRef.current);
+        queuePreparedMessage(
+          (inputRef.current?.getValue() ?? "").trim(),
+          pendingAttachmentsRef.current,
+        );
         return true;
       }
       submitMessage();
@@ -2759,7 +2855,7 @@ function ChatPage() {
                           key={id}
                           focus={() => inputRef.current?.focus()}
                           scope={chatContributionScope}
-                          setInput={setInput}
+                          setInput={setComposerInput}
                         />
                       ))
                     ) : (
@@ -2776,7 +2872,7 @@ function ChatPage() {
                                 className={`chat-suggestion-card is-${action.accent}`}
                                 key={action.label}
                                 onClick={() => {
-                                  setInput(action.prompt);
+                                  inputRef.current?.setValue(action.prompt);
                                   requestAnimationFrame(() => inputRef.current?.focus());
                                 }}
                                 type="button"
@@ -2808,26 +2904,13 @@ function ChatPage() {
                           onPlanUserInputResponse={respondToPlanUserInput}
                           planInputEnabled={planMode === "plan" && planTransition === "idle"}
                           planAttachment={
-                            showPlanAttachment &&
-                            activePlan &&
                             latestPlanWriteAnchor?.messageId === message.id
-                              ? {
-                                  fileName: activePlan.fileName,
-                                  isGenerating: isGenerating && planMode === "plan",
-                                  onOpen: openActivePlan,
-                                  toolCallId: latestPlanWriteAnchor.toolCallId,
-                                }
+                              ? planAttachmentValue
                               : undefined
                           }
                           generationStatus={
-                            isGenerating &&
-                            message.role === "assistant" &&
-                            message.id === lastMessage?.id
-                              ? {
-                                  detail: generationDetail,
-                                  elapsedLabel: generationElapsedLabel,
-                                  phase: generationPhase,
-                                }
+                            message.role === "assistant" && message.id === lastMessage?.id
+                              ? generationStatusValue
                               : undefined
                           }
                           isStreaming={
@@ -3145,19 +3228,14 @@ function ChatPage() {
                 ariaExpanded={commandPopupOpen || mentionPopupOpen}
                 disabled={isReadOnly || planTransition !== "idle" || followUpPending || stopPending}
                 onBlur={() => setCommandDismissed(true)}
-                onChange={(next) => {
-                  setInput(next.markdown);
-                  setComposerPlain(next.plain);
-                  setCommandCaret(next.caret);
-                  if (next.fromEdit) setMentionDismissed(false);
-                }}
+                onChange={handleComposerChange}
                 onKeyDown={handleComposerKeyDown}
                 onPasteFiles={(files) => {
                   void addFiles(files);
                 }}
+                initialValue={composerDraftRef.current}
                 placeholder="问问你的工作空间..."
                 ref={inputRef}
-                value={input}
               />
               <div className="chat-composer-footer">
                 <div className="chat-composer-tools">
@@ -3415,12 +3493,12 @@ function ChatPage() {
                       disabled={isReadOnly || planTransition !== "idle"}
                       focus={() => inputRef.current?.focus()}
                       insertText={(text) => {
-                        inputRef.current?.replaceRange(commandCaret, commandCaret, text);
+                        inputRef.current?.insertText(text);
                         inputRef.current?.focus();
                       }}
                       key={id}
                       scope={chatContributionScope}
-                      value={input}
+                      value={composerToolValue}
                     />
                   ))}
                   {configuredModels?.length === 0 && (
@@ -3444,7 +3522,8 @@ function ChatPage() {
                     disabled={
                       isReadOnly ||
                       stopPending ||
-                      (((!input.trim() && !pendingAttachments.some((a) => a.status === "ready")) ||
+                      (((!composerHasText &&
+                        !pendingAttachments.some((a) => a.status === "ready")) ||
                         (!selectedModel && !developerSettings.mockLongResponse) ||
                         pendingAttachments.some((a) => a.status === "uploading") ||
                         planTransition !== "idle") &&

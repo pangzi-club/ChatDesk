@@ -13,6 +13,13 @@ export type ChatComposerInputHandle = {
   focus: () => void;
   replaceRange: (start: number, end: number, text: string) => void;
   setCaret: (offset: number) => void;
+  /** Current markdown content. Lets an owner read the composer without owning it. */
+  getValue: () => string;
+  /** Replace the whole content (supports the uncontrolled mode used by ChatPage). */
+  setValue: (value: string) => void;
+  /** Insert text at the caret, which keeps the owner out of the update path. */
+  insertText: (text: string) => void;
+  clear: () => void;
 };
 
 export type ChatComposerChange = {
@@ -23,7 +30,14 @@ export type ChatComposerChange = {
 };
 
 type ChatComposerInputProps = {
-  value: string;
+  /**
+   * Controlled markdown value. Omit it to let the editor own its content: the
+   * owner then reads it through `ChatComposerInputHandle` instead of
+   * re-rendering on every keystroke.
+   */
+  value?: string;
+  /** Seed content for the uncontrolled mode; read once, when the editor mounts. */
+  initialValue?: string;
   disabled?: boolean;
   placeholder?: string;
   ariaControls: string;
@@ -38,6 +52,7 @@ export const ChatComposerInput = forwardRef<ChatComposerInputHandle, ChatCompose
   function ChatComposerInput(
     {
       value,
+      initialValue,
       disabled = false,
       placeholder = "问问你的工作空间...",
       ariaControls,
@@ -55,7 +70,7 @@ export const ChatComposerInput = forwardRef<ChatComposerInputHandle, ChatCompose
     const onPasteFilesRef = useRef(onPasteFiles);
     const onBlurRef = useRef(onBlur);
     const composingRef = useRef(false);
-    const lastEmittedRef = useRef(value);
+    const lastEmittedRef = useRef(value ?? initialValue ?? "");
     const placeholderRef = useRef(placeholder);
     onChangeRef.current = onChange;
     onKeyDownRef.current = onKeyDown;
@@ -90,7 +105,7 @@ export const ChatComposerInput = forwardRef<ChatComposerInputHandle, ChatCompose
     const editor = useEditor({
       immediatelyRender: true,
       extensions,
-      content: parseComposerMarkdown(value) as JSONContent,
+      content: parseComposerMarkdown(value ?? initialValue ?? "") as JSONContent,
       editable: !disabled,
       editorProps: {
         attributes: {
@@ -169,6 +184,7 @@ export const ChatComposerInput = forwardRef<ChatComposerInputHandle, ChatCompose
     }, [ariaControls, ariaExpanded, editor]);
 
     useEffect(() => {
+      if (value === undefined) return;
       if (editor.view.composing || composingRef.current) return;
       if (value === lastEmittedRef.current) return;
       editor.commands.setContent(parseComposerMarkdown(value) as JSONContent);
@@ -192,6 +208,19 @@ export const ChatComposerInput = forwardRef<ChatComposerInputHandle, ChatCompose
       setCaret(offset) {
         const pos = mapPlainOffsetToPmPos(editor.state.doc, offset);
         editor.chain().focus().setTextSelection(pos).run();
+      },
+      getValue: () => serializeComposerMarkdown(editor.getJSON()),
+      setValue(next) {
+        editor.commands.setContent(parseComposerMarkdown(next) as JSONContent);
+        lastEmittedRef.current = serializeComposerMarkdown(editor.getJSON());
+      },
+      insertText(text) {
+        if (!text) return;
+        editor.chain().focus().insertContent(text).run();
+      },
+      clear() {
+        editor.commands.clearContent(true);
+        lastEmittedRef.current = serializeComposerMarkdown(editor.getJSON());
       },
     }));
 

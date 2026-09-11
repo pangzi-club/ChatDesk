@@ -1637,21 +1637,19 @@ function SandboxSettingsPage() {
     queryKey: ["chat-server-chat-config"],
     queryFn: () => loadChatServerConfig(),
   });
-  const [draft, setDraft] = useState<string[]>([]);
+  // The saved list is the source of truth: deriving it from the query instead
+  // of mirroring it into local state keeps a background refetch from
+  // clobbering what the user is editing.
+  const draft = configQuery.data?.sandboxReadablePaths ?? [];
   const [newPath, setNewPath] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (configQuery.data) setDraft(configQuery.data.sandboxReadablePaths ?? []);
-  }, [configQuery.data]);
 
   async function save(paths: string[]) {
     setError("");
     try {
       const config = await saveChatServerConfig({ sandboxReadablePaths: paths });
       queryClient.setQueryData(["chat-server-chat-config"], config);
-      setDraft(config.sandboxReadablePaths ?? paths);
       setNotice("已保存。新的 Bash 任务会使用这组读取目录。");
     } catch (cause) {
       setError(describeError(cause));
@@ -1841,22 +1839,19 @@ function EnvironmentSettingsPage() {
     queryKey: ["developer-environment"],
     queryFn: () => loadDeveloperEnvironment(),
   });
-  const [draft, setDraft] = useState<string[]>([]);
+  // Derived from the query instead of mirrored into local state: a background
+  // refetch must not overwrite the list the user is editing.
+  const draft = configQuery.data?.developerToolPaths ?? [];
   const [newPath, setNewPath] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [importOpen, setImportOpen] = useState(false);
   const [showUnavailable, setShowUnavailable] = useState(false);
 
-  useEffect(() => {
-    if (configQuery.data) setDraft(configQuery.data.developerToolPaths ?? []);
-  }, [configQuery.data]);
-
   async function save(paths: string[], message: string) {
     setError("");
     const config = await saveChatServerConfig({ developerToolPaths: paths });
     queryClient.setQueryData(["chat-server-chat-config"], config);
-    setDraft(config.developerToolPaths ?? paths);
     await queryClient.invalidateQueries({ queryKey: ["developer-environment"] });
     const rejected = paths.filter((directory) => !config.developerToolPaths.includes(directory));
     if (rejected.length > 0) {
@@ -2129,15 +2124,22 @@ function McpSettingsPage() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<"store" | "installed">("store");
   const [search, setSearch] = useState("");
+  // The registry lookup is a remote search, so debounce it: keying the query on
+  // the raw input fired one network request per keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [notice, setNotice] = useState("");
   const [testing, setTesting] = useState<string | null>(null);
   const [confirmServer, setConfirmServer] = useState<McpServerConfig | null>(null);
   const [serverToDelete, setServerToDelete] = useState<McpServerConfig | null>(null);
   const [selectedEntry, setSelectedEntry] = useState<McpRegistryEntry | null>(null);
   const serversQuery = useQuery({ queryKey: ["mcp-servers"], queryFn: loadMcpServers });
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search), 500);
+    return () => window.clearTimeout(timer);
+  }, [search]);
   const registryQuery = useQuery({
-    queryKey: ["mcp-registry", search],
-    queryFn: () => fetchMcpRegistry(search),
+    queryKey: ["mcp-registry", debouncedSearch],
+    queryFn: () => fetchMcpRegistry(debouncedSearch),
     enabled: tab === "store",
   });
   const servers = serversQuery.data ?? [];
@@ -2619,16 +2621,18 @@ function ChatServerSettingsPage() {
       }
     },
   });
-  const [port, setPort] = useState(CHAT_SERVER_DEFAULT_PORT);
+  // Only the unsaved edit lives in state: the query stays the source of truth
+  // so a background refetch (for example after the server supervisor restarts)
+  // cannot silently reset what the user typed.
+  const [portDraft, setPortDraft] = useState<number | null>(null);
   const [notice, setNotice] = useState("");
 
-  useEffect(() => {
-    if (configQuery.data) setPort(configQuery.data.port);
-  }, [configQuery.data]);
+  const port = portDraft ?? configQuery.data?.port ?? CHAT_SERVER_DEFAULT_PORT;
 
   const saveMutation = useMutation({
     mutationFn: () => updateChatServerPort(port),
     onSuccess: (result) => {
+      setPortDraft(null);
       setNotice(result.restartRequired ? "端口已保存，重启 Chat Server 后生效。" : "端口已保存。 ");
       void queryClient.invalidateQueries({ queryKey: ["chat-server-config"] });
     },
@@ -2659,7 +2663,7 @@ function ChatServerSettingsPage() {
             className="w-32 font-mono"
             max={65535}
             min={1024}
-            onChange={(event) => setPort(Number(event.target.value))}
+            onChange={(event) => setPortDraft(Number(event.target.value))}
             type="number"
             value={port}
           />

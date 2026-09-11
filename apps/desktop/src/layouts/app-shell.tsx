@@ -37,6 +37,7 @@ import {
   type ComponentType,
   type CSSProperties,
   type KeyboardEvent,
+  memo,
   type DragEvent as ReactDragEvent,
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
@@ -415,7 +416,16 @@ function AppShell() {
       ].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
     [routeContributions, sidebarContributions],
   );
-  const [feishuUnreadCount, setFeishuUnreadCount] = useState(0);
+  // The unread badge shares the `["feishu-unread"]` query with the channels
+  // page instead of keeping a parallel copy in local state.
+  const feishuUnreadQuery = useQuery({
+    queryKey: ["feishu-unread"],
+    queryFn: () => loadFeishuUnread(),
+  });
+  const feishuUnreadCount = useMemo(
+    () => (feishuUnreadQuery.data ?? []).reduce((sum, item) => sum + item.unreadCount, 0),
+    [feishuUnreadQuery.data],
+  );
   const [isCommandMenuOpen, setIsCommandMenuOpen] = useState(false);
   const [isChatSearchOpen, setIsChatSearchOpen] = useState(false);
   const [sidebarConversationView, setSidebarConversationView] = useState<SidebarConversationView>(
@@ -433,14 +443,10 @@ function AppShell() {
   useEffect(() => {
     let active = true;
     let cleanup: (() => void) | undefined;
-    const refresh = () =>
-      void loadFeishuUnread()
-        .then((items) =>
-          setFeishuUnreadCount(items.reduce((sum, item) => sum + item.unreadCount, 0)),
-        )
-        .catch(() => undefined);
-    refresh();
-    const handleLocalUnreadUpdate = () => refresh();
+    const refreshUnread = () => {
+      void queryClient.invalidateQueries({ queryKey: ["feishu-unread"] });
+    };
+    const handleLocalUnreadUpdate = () => refreshUnread();
     window.addEventListener("chatdesk:feishu-unread-updated", handleLocalUnreadUpdate);
     // The port is user configurable, so subscribe on the resolved port instead of
     // a hardcoded default; otherwise unread badges and notifications go silent
@@ -449,8 +455,7 @@ function AppShell() {
       if (!active) return;
       cleanup = subscribeChatServerEvents(port, {
         onChannelMessageReceived: (event) => {
-          void queryClient.invalidateQueries({ queryKey: ["feishu-unread"] });
-          refresh();
+          refreshUnread();
           const message = event.channelMessage;
           if (message)
             void loadGeneralSettings().then((settings) => {
@@ -464,8 +469,7 @@ function AppShell() {
             });
         },
         onChannelUnreadUpdated: () => {
-          void queryClient.invalidateQueries({ queryKey: ["feishu-unread"] });
-          refresh();
+          refreshUnread();
         },
       });
     });
@@ -1742,7 +1746,7 @@ type ConversationSidebarRowProps = {
   onRegenerateTitle: (session: ChatIndexItem) => void;
 };
 
-function ConversationSidebarRow({
+const ConversationSidebarRow = memo(function ConversationSidebarRow({
   session,
   workspaceId,
   workspaceLabel,
@@ -1877,7 +1881,7 @@ function ConversationSidebarRow({
       </ContextMenu>
     </motion.div>
   );
-}
+});
 
 function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }) {
   const navigate = useNavigate();
@@ -2054,7 +2058,13 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
             return next;
           });
         }
-        void queryClient.invalidateQueries({ queryKey: ["chat-index"] });
+        // The sidebar derives its running indicator from `serverStatuses`
+        // above, so refetching the index on `submitted`/`streaming` only
+        // churns the conversation list. Titles and timestamps change when a
+        // run settles, which is the only point that needs a fresh index.
+        if (status === "ready" || status === "error") {
+          void queryClient.invalidateQueries({ queryKey: ["chat-index"] });
+        }
       },
     });
     return cleanup;
@@ -2118,20 +2128,23 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
     if (!addWorkspaceMutation.isPending) void addWorkspaceMutation.mutateAsync();
   }
 
-  function openSession(sessionId: string) {
-    setUnreadSessionIds((current) => {
-      if (!current.has(sessionId)) return current;
-      const next = new Set(current);
-      next.delete(sessionId);
-      void saveUnreadChatIds(next).catch((error) =>
-        console.error("Failed to save unread chat state", error),
-      );
-      return next;
-    });
-    navigate(chatSessionPath(sessionId));
-  }
+  const openSession = useCallback(
+    (sessionId: string) => {
+      setUnreadSessionIds((current) => {
+        if (!current.has(sessionId)) return current;
+        const next = new Set(current);
+        next.delete(sessionId);
+        void saveUnreadChatIds(next).catch((error) =>
+          console.error("Failed to save unread chat state", error),
+        );
+        return next;
+      });
+      navigate(chatSessionPath(sessionId));
+    },
+    [navigate],
+  );
 
-  function markCopiedConversation(id: string, kind: "id" | "markdown") {
+  const markCopiedConversation = useCallback((id: string, kind: "id" | "markdown") => {
     setCopiedConversation({ id, kind });
     if (copiedResetTimerRef.current !== null) {
       window.clearTimeout(copiedResetTimerRef.current);
@@ -2140,31 +2153,48 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
       setCopiedConversation(null);
       copiedResetTimerRef.current = null;
     }, 1500);
-  }
+  }, []);
 
-  async function copyConversationId(sessionId: string) {
-    const copied = await copyChatConversationId(sessionId);
-    if (!copied) {
-      setCopiedConversation(null);
-      return;
-    }
-    markCopiedConversation(sessionId, "id");
-  }
+  const copyConversationId = useCallback(
+    async (sessionId: string) => {
+      const copied = await copyChatConversationId(sessionId);
+      if (!copied) {
+        setCopiedConversation(null);
+        return;
+      }
+      markCopiedConversation(sessionId, "id");
+    },
+    [markCopiedConversation],
+  );
 
-  async function copyConversationMarkdown(session: ChatIndexItem) {
-    const loaded = await loadChatSession(session.id);
-    const copied = loaded
-      ? await copyChatConversationMarkdown({
-          title: loaded.title,
-          messages: loaded.messages,
-        })
-      : false;
-    if (!copied) {
-      setCopiedConversation(null);
-      return;
-    }
-    markCopiedConversation(session.id, "markdown");
-  }
+  const copyConversationMarkdown = useCallback(
+    async (session: ChatIndexItem) => {
+      const loaded = await loadChatSession(session.id);
+      const copied = loaded
+        ? await copyChatConversationMarkdown({
+            title: loaded.title,
+            messages: loaded.messages,
+          })
+        : false;
+      if (!copied) {
+        setCopiedConversation(null);
+        return;
+      }
+      markCopiedConversation(session.id, "markdown");
+    },
+    [markCopiedConversation],
+  );
+
+  // ConversationSidebarRow is memoized, so the handlers it receives must keep a
+  // stable identity across sidebar re-renders.
+  const handleCopyConversationId = useCallback(
+    (sessionId: string) => void copyConversationId(sessionId),
+    [copyConversationId],
+  );
+  const handleCopyConversationMarkdown = useCallback(
+    (session: ChatIndexItem) => void copyConversationMarkdown(session),
+    [copyConversationMarkdown],
+  );
 
   async function saveConversationTitle(title: string) {
     if (!titleDialogSession) return;
@@ -2337,8 +2367,8 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
                         isUnread={unreadSessionIds.has(session.id)}
                         key={session.id}
                         nested={nested}
-                        onCopyId={(sessionId) => void copyConversationId(sessionId)}
-                        onCopyMarkdown={(item) => void copyConversationMarkdown(item)}
+                        onCopyId={handleCopyConversationId}
+                        onCopyMarkdown={handleCopyConversationMarkdown}
                         onDelete={setSessionToDelete}
                         onOpen={openSession}
                         onRegenerateTitle={setTitleDialogSession}
@@ -2482,8 +2512,8 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
                                 isUnread={unreadSessionIds.has(session.id)}
                                 key={session.id}
                                 nested={nested}
-                                onCopyId={(sessionId) => void copyConversationId(sessionId)}
-                                onCopyMarkdown={(item) => void copyConversationMarkdown(item)}
+                                onCopyId={handleCopyConversationId}
+                                onCopyMarkdown={handleCopyConversationMarkdown}
                                 onDelete={setSessionToDelete}
                                 onOpen={openSession}
                                 onRegenerateTitle={setTitleDialogSession}
@@ -3236,15 +3266,22 @@ function ChatWorkspaceWindow({
   }
 
   const canOpenExplorer = Boolean(workspaceId) && !(isDefaultWorkspaceId(workspaceId) && !cwd);
-  const tabScope: WorkspaceTabScope = {
-    workspaceId,
-    cwd,
-    sessionId,
-    messages,
-    sideChatOpening,
-    openSideChat: onOpenSideChat,
-  };
-  desktopUi.trackWorkspaceTabs(state.tabs, tabScope);
+  const tabScope = useMemo<WorkspaceTabScope>(
+    () => ({
+      workspaceId,
+      cwd,
+      sessionId,
+      messages,
+      sideChatOpening,
+      openSideChat: onOpenSideChat,
+    }),
+    [workspaceId, cwd, sessionId, messages, sideChatOpening, onOpenSideChat],
+  );
+  // Registering tab instances mutates the desktop UI service, so it belongs in
+  // an effect rather than the render body.
+  useEffect(() => {
+    desktopUi.trackWorkspaceTabs(state.tabs, tabScope);
+  }, [desktopUi, state.tabs, tabScope]);
   const createContributions = tabContributions.filter((contribution) => contribution.create);
 
   async function addContributionTab(contribution: AnyWorkspaceTabContribution) {
