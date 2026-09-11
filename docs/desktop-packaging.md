@@ -111,6 +111,19 @@ SHA-256 in `scripts/cua-driver.mjs`; set `CHATDESK_CUA_DRIVER_FETCH=0` to skip
 the download and leave Computer Use unavailable. A missing driver only disables
 Computer Use — it never fails `pnpm dev` or a package build.
 
+Computer Use runs the driver in embedded mode, so macOS charges both grants to
+the **host app**, never to `cua-driver`: a packaged build needs ChatDesk
+(`org.bohao.mdashboard`) enabled under Accessibility and Screen Recording, while
+`pnpm dev` needs whichever process macOS holds responsible for Electron —
+usually the terminal that started it, otherwise `com.github.Electron`. Embedded
+drivers never raise their own prompts, so the settings page requests both grants
+as the host, opens the pane for one permission at a time (each unfulfilled row
+has its own button, because System Settings navigates to whichever pane opens
+last), then restarts the embedded driver and republishes the MCP descriptor so
+the cached TCC answers are re-read. Granting `CuaDriver.app` itself only helps
+standalone runs such as `cua-driver permissions grant`; embedded children
+inherit the host's grants.
+
 For a packaged build, stage the signed executable while building sidecars:
 
 ```sh

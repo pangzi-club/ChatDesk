@@ -32,13 +32,14 @@ import {
   IPC_CHANNEL,
   IPC_EVENT_PREFIX,
   validateAssetPath,
+  validateComputerUsePermissionTarget,
   validateExternalUrl,
   validatePluginDirectory,
   validatePluginDirectoryList,
   validateUserStoreFile,
 } from "./ipc-contract.js";
 import { chatServerLaunchArgs, chatServerRuntimeRoot } from "./chat-server-launch.js";
-import { ComputerUseManager } from "./computer-use.js";
+import { ComputerUseManager, type ComputerUseStatus } from "./computer-use.js";
 import { performHttpRequest } from "./http-bridge.js";
 import { scanExternalPluginDirectories } from "./plugin-registry.js";
 import {
@@ -636,6 +637,24 @@ async function setComputerUseEnabled(enabled: boolean) {
   return computerUseManager.status();
 }
 
+/**
+ * Re-read TCC after the user visited the Privacy panes: restart the embedded
+ * driver (macOS caches permission answers per process), then republish the MCP
+ * descriptor to the Chat Server only when it actually changed.
+ */
+async function refreshComputerUseHost(): Promise<ComputerUseStatus> {
+  const status = await computerUseManager.refresh();
+  if (!chatServerEnvironment) return status;
+  const config = status.enabled && status.hostRunning ? computerUseManager.mcpConfig() : null;
+  const next = config ? JSON.stringify(config) : null;
+  const previous = chatServerEnvironment.CHATDESK_CUA_MCP_CONFIG ?? null;
+  if (next === previous) return status;
+  if (next) chatServerEnvironment.CHATDESK_CUA_MCP_CONFIG = next;
+  else delete chatServerEnvironment.CHATDESK_CUA_MCP_CONFIG;
+  await supervisor?.restart();
+  return status;
+}
+
 function ensureUserDataDirectory() {
   mkdirSync(userDataDirectory(), { recursive: true, mode: 0o700 });
   if (process.platform !== "win32") chmodSync(userDataDirectory(), 0o700);
@@ -769,9 +788,11 @@ function setupIpc() {
       case "computer_use_set_enabled":
         if (typeof args.enabled !== "boolean") throw new Error("Computer Use 开关参数无效");
         return setComputerUseEnabled(args.enabled);
-      case "computer_use_open_permissions":
-        await computerUseManager.openPermissions();
-        return computerUseManager.status();
+      case "computer_use_open_permissions": {
+        const target = validateComputerUsePermissionTarget(args.target);
+        await computerUseManager.openPermissions(target);
+        return await refreshComputerUseHost();
+      }
       case "terminal_spawn":
         return terminalManager.spawnSession({
           id: args.id,

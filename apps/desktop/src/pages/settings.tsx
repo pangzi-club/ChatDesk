@@ -1,4 +1,4 @@
-import type { ComputerUseStatus } from "@chatdesk/shared";
+import type { ComputerUsePermissionTarget, ComputerUseStatus } from "@chatdesk/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bot,
@@ -31,7 +31,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 import { AgentAvatar, AgentAvatarPicker } from "@/components/agent-avatar";
 import { useChatLayout } from "@/components/chat-layout-provider";
 import { ChatMarkdown } from "@/components/chat-markdown";
@@ -468,7 +468,7 @@ export function ComputerUseSettingsPage() {
     onSuccess: (value) => queryClient.setQueryData(["computer-use-status"], value),
   });
   const permissionMutation = useMutation({
-    mutationFn: () => openComputerUsePermissions(),
+    mutationFn: (target?: ComputerUsePermissionTarget) => openComputerUsePermissions(target),
     onSuccess: (value) => queryClient.setQueryData(["computer-use-status"], value),
   });
   const status = statusQuery.data;
@@ -527,11 +527,37 @@ export function ComputerUseSettingsPage() {
                 detail={status.driverPath ?? "未找到可执行文件"}
               />
               <PermissionRow
+                action={
+                  status.permissions.accessibility ? null : (
+                    <Button
+                      disabled={permissionMutation.isPending}
+                      onClick={() => permissionMutation.mutate("accessibility")}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      打开设置
+                    </Button>
+                  )
+                }
                 label="辅助功能"
                 ok={status.permissions.accessibility}
                 detail="允许 ChatDesk / CuaDriver 控制电脑"
               />
               <PermissionRow
+                action={
+                  status.permissions.screenRecording ? null : (
+                    <Button
+                      disabled={permissionMutation.isPending}
+                      onClick={() => permissionMutation.mutate("screenRecording")}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      打开设置
+                    </Button>
+                  )
+                }
                 label="屏幕与系统音频录制"
                 ok={status.permissions.screenRecording}
                 detail="允许 agent 读取页面画面和系统声音"
@@ -542,27 +568,11 @@ export function ComputerUseSettingsPage() {
                 detail={status.hostRunning ? "正在运行" : "未运行"}
               />
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                disabled={permissionMutation.isPending}
-                onClick={() => permissionMutation.mutate()}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                <ExternalLink className="size-3.5" /> 打开系统权限设置
-              </Button>
-              <Button
-                aria-label="刷新 Computer Use 状态"
-                disabled={statusQuery.isFetching}
-                onClick={() => void statusQuery.refetch()}
-                size="icon"
-                type="button"
-                variant="ghost"
-              >
-                <RefreshCw className={statusQuery.isFetching ? "size-4 animate-spin" : "size-4"} />
-              </Button>
-            </div>
+            <p className="text-muted-foreground text-xs">
+              {status.permissionOwner.packaged
+                ? `macOS 把这两项权限记在 ${status.permissionOwner.name}（${status.permissionOwner.bundleId}）上：点击对应行的「打开设置」授权，授权后请完全退出并重新打开应用。`
+                : "开发模式下 macOS 把权限记在启动应用的进程上（通常是 Terminal/iTerm），而不是 ChatDesk。点击对应行的「打开设置」，列表里没有它时用「+」添加，然后完全重启应用。"}
+            </p>
             {status.error || enableMutation.error || permissionMutation.error ? (
               <p className="text-destructive text-xs">
                 {status.error ?? describeError(enableMutation.error ?? permissionMutation.error)}
@@ -575,7 +585,17 @@ export function ComputerUseSettingsPage() {
   );
 }
 
-function PermissionRow({ label, detail, ok }: { label: string; detail: string; ok: boolean }) {
+function PermissionRow({
+  label,
+  detail,
+  ok,
+  action,
+}: {
+  label: string;
+  detail: string;
+  ok: boolean;
+  action?: ReactNode;
+}) {
   return (
     <div className="flex items-center justify-between gap-3 px-4 py-3">
       <div className="min-w-0">
@@ -584,9 +604,12 @@ function PermissionRow({ label, detail, ok }: { label: string; detail: string; o
           {detail}
         </p>
       </div>
-      <span className={ok ? "text-emerald-600 text-xs" : "text-amber-600 text-xs"}>
-        {ok ? "已就绪" : "需要处理"}
-      </span>
+      <div className="flex shrink-0 items-center gap-2">
+        <span className={ok ? "text-emerald-600 text-xs" : "text-amber-600 text-xs"}>
+          {ok ? "已就绪" : "需要处理"}
+        </span>
+        {action}
+      </div>
     </div>
   );
 }

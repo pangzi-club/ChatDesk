@@ -1,4 +1,4 @@
-import type { ComputerUseStatus } from "@chatdesk/shared";
+import type { ComputerUsePermissionTarget, ComputerUseStatus } from "@chatdesk/shared";
 import { getDesktopBridge, subscribeBridgeEvent } from "@/lib/runtime/desktop-bridge";
 
 const COMPUTER_USE_STATUS_EVENT = "computer-use-status";
@@ -11,6 +11,7 @@ const UNSUPPORTED_STATUS: ComputerUseStatus = {
   driverPath: null,
   hostRunning: false,
   permissions: { accessibility: false, screenRecording: false },
+  permissionOwner: { name: "未知", bundleId: "", packaged: false },
   error: null,
 };
 
@@ -26,10 +27,12 @@ export async function setComputerUseEnabled(enabled: boolean): Promise<ComputerU
   return bridge.setComputerUseEnabled(enabled);
 }
 
-export async function openComputerUsePermissions(): Promise<ComputerUseStatus> {
+export async function openComputerUsePermissions(
+  target?: ComputerUsePermissionTarget,
+): Promise<ComputerUseStatus> {
   const bridge = getDesktopBridge();
   if (!bridge?.openComputerUsePermissions) throw new Error("当前运行环境不支持权限设置");
-  return bridge.openComputerUsePermissions();
+  return bridge.openComputerUsePermissions(target);
 }
 
 export function subscribeComputerUseStatus(

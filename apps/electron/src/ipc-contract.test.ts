@@ -1,10 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { validateAssetPath, validateExternalUrl, validateUserStoreFile } from "./ipc-contract.js";
+import {
+  validateAssetPath,
+  validateComputerUsePermissionTarget,
+  validateExternalUrl,
+  validateUserStoreFile,
+} from "./ipc-contract.js";
 
 describe("Electron IPC validation", () => {
   it("allows only the desktop user stores", () => {
     expect(validateUserStoreFile("settings.json")).toBe("settings.json");
     expect(() => validateUserStoreFile("../secrets.json")).toThrow();
+  });
+
+  it("allows only the known Computer Use permission panes", () => {
+    expect(validateComputerUsePermissionTarget(undefined)).toBeUndefined();
+    expect(validateComputerUsePermissionTarget("accessibility")).toBe("accessibility");
+    expect(validateComputerUsePermissionTarget("screenRecording")).toBe("screenRecording");
+    expect(() => validateComputerUsePermissionTarget("camera")).toThrow();
+    expect(() => validateComputerUsePermissionTarget(1)).toThrow();
   });
 
   it("allows HTTP(S) URLs and rejects privileged protocols", () => {

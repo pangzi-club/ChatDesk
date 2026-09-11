@@ -4,12 +4,23 @@ export const IPC_CHANNEL = "chatdesk:invoke";
 export const IPC_EVENT_PREFIX = "chatdesk:event:";
 
 const USER_STORE_FILES = new Set(["settings.json", "bookmarks.json"]);
+const COMPUTER_USE_PERMISSION_TARGETS = new Set(["accessibility", "screenRecording"]);
 
 export function validateUserStoreFile(fileName: unknown): "settings.json" | "bookmarks.json" {
   if (typeof fileName !== "string" || !USER_STORE_FILES.has(fileName)) {
     throw new Error("不允许访问该用户数据文件");
   }
   return fileName as "settings.json" | "bookmarks.json";
+}
+
+export function validateComputerUsePermissionTarget(
+  value: unknown,
+): "accessibility" | "screenRecording" | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string" || !COMPUTER_USE_PERMISSION_TARGETS.has(value)) {
+    throw new Error("权限设置目标无效");
+  }
+  return value as "accessibility" | "screenRecording";
 }
 
 export function validateExternalUrl(value: unknown): string {

@@ -6,6 +6,10 @@ import {
 import { currentMacOsPermissionStatus } from "@trycua/cua-driver";
 import { EmbeddedCuaDriverHost, EmbeddedDriverHostState } from "@trycua/cua-driver/embedded";
 import { app, shell } from "electron";
+import type {
+  ComputerUsePermissionOwner,
+  ComputerUsePermissionTarget,
+} from "@chatdesk/shared";
 import { kill } from "node:process";
 import { accessSync, constants, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -25,6 +29,7 @@ export type ComputerUseStatus = {
   driverPath: string | null;
   hostRunning: boolean;
   permissions: ComputerUsePermissionStatus;
+  permissionOwner: ComputerUsePermissionOwner;
   error: string | null;
 };
 
@@ -40,8 +45,30 @@ export type ComputerUseMcpConfig = {
   enabledByDefault: true;
 };
 
-const MACOS_HOST_BUNDLE_ID = "org.bohao.mdashboard";
+const PACKAGED_BUNDLE_ID = "org.bohao.mdashboard";
+/** Development runs the stock Electron bundle, not a signed ChatDesk app. */
+const DEVELOPMENT_BUNDLE_ID = "com.github.Electron";
+const ACCESSIBILITY_PANE =
+  "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
 const STOP_TIMEOUT_MS = 2_000;
+
+/**
+ * macOS TCC charges Accessibility and Screen Recording to the responsible
+ * process, not to an executable path, and the embedded driver deliberately
+ * stays inside the host's responsibility chain. The packaged ChatDesk bundle is
+ * therefore the identity users must authorize; in development that identity is
+ * whichever app launched Electron — the terminal for `pnpm dev`, or the stock
+ * Electron bundle otherwise.
+ */
+export function computerUsePermissionOwner(packaged: boolean): ComputerUsePermissionOwner {
+  return packaged
+    ? { name: "ChatDesk", bundleId: PACKAGED_BUNDLE_ID, packaged: true }
+    : { name: "开发环境宿主（Terminal / Electron）", bundleId: DEVELOPMENT_BUNDLE_ID, packaged: false };
+}
+
+function hostBundleId() {
+  return app.isPackaged ? PACKAGED_BUNDLE_ID : DEVELOPMENT_BUNDLE_ID;
+}
 
 type CuaDriverCandidatesInput = {
   platform: NodeJS.Platform;
@@ -116,6 +143,7 @@ export class ComputerUseManager {
   private host: EmbeddedCuaDriverHost | null = null;
   private connection: Awaited<ReturnType<EmbeddedCuaDriverHost["start"]>> | null = null;
   private exitController: AbortController | null = null;
+  private watchToken = 0;
   private enabled = false;
   private error: string | null = null;
 
@@ -136,6 +164,7 @@ export class ComputerUseManager {
       driverPath,
       hostRunning: this.host?.state() === EmbeddedDriverHostState.Ready,
       permissions,
+      permissionOwner: computerUsePermissionOwner(app.isPackaged),
       error: this.error,
     };
   }
@@ -154,31 +183,14 @@ export class ComputerUseManager {
       return this.connection;
     }
 
-    const host = new EmbeddedCuaDriverHost(driverPath, MACOS_HOST_BUNDLE_ID);
+    const host = new EmbeddedCuaDriverHost(driverPath, hostBundleId());
     try {
       const connection = await host.start();
       this.host = host;
       this.connection = connection;
       this.error = null;
-      const exitController = new AbortController();
-      this.exitController = exitController;
+      this.watchGeneration(host, connection);
       this.emitStatus?.(this.status());
-      void host.waitForExit(connection.generation, { signal: exitController.signal }).then((exit) => {
-        if (this.host !== host || this.connection?.generation !== connection.generation) return;
-        this.host = null;
-        this.connection = null;
-        this.error = exit.success ? null : `cua-driver 已退出${exit.code === undefined ? "" : `（${exit.code}）`}`;
-        host.uniffiDestroy();
-        this.emitStatus?.(this.status());
-      }).catch((error) => {
-        if (exitController.signal.aborted) return;
-        if (this.host !== host || this.connection?.generation !== connection.generation) return;
-        this.host = null;
-        this.connection = null;
-        this.error = error instanceof Error ? error.message : String(error);
-        host.uniffiDestroy();
-        this.emitStatus?.(this.status());
-      });
       return connection;
     } catch (error) {
       host.uniffiDestroy();
@@ -186,6 +198,69 @@ export class ComputerUseManager {
       this.emitStatus?.(this.status());
       throw error;
     }
+  }
+
+  /**
+   * Restart the embedded driver so it re-reads TCC. macOS caches permission
+   * answers per process, so a grant made while the driver is running stays
+   * invisible until the child is replaced.
+   */
+  async refresh(): Promise<ComputerUseStatus> {
+    const host = this.host;
+    const connection = this.connection;
+    if (process.platform !== "darwin" || !this.enabled || !host || !connection) {
+      return this.status();
+    }
+    this.exitController?.abort();
+    this.exitController = null;
+    this.watchToken += 1;
+    try {
+      const next = await host.restart();
+      if (this.host !== host) {
+        // A concurrent stop() won the race; never resurrect a disposed host.
+        return this.status();
+      }
+      this.connection = next;
+      this.error = null;
+      this.watchGeneration(host, next);
+    } catch (error) {
+      if (this.host === host) {
+        this.host = null;
+        this.connection = null;
+        host.uniffiDestroy();
+      }
+      this.error = error instanceof Error ? error.message : String(error);
+    }
+    this.emitStatus?.(this.status());
+    return this.status();
+  }
+
+  private watchGeneration(
+    host: EmbeddedCuaDriverHost,
+    connection: Awaited<ReturnType<EmbeddedCuaDriverHost["start"]>>,
+  ) {
+    const token = (this.watchToken += 1);
+    const exitController = new AbortController();
+    this.exitController = exitController;
+    const settle = (error: string | null) => {
+      if (token !== this.watchToken) return;
+      if (this.host !== host) return;
+      this.host = null;
+      this.connection = null;
+      this.exitController = null;
+      this.error = error;
+      host.uniffiDestroy();
+      this.emitStatus?.(this.status());
+    };
+    void host
+      .waitForExit(connection.generation, { signal: exitController.signal })
+      .then((exit) => {
+        settle(exit.success ? null : `cua-driver 已退出${exit.code === undefined ? "" : `（${exit.code}）`}`);
+      })
+      .catch((error) => {
+        if (exitController.signal.aborted) return;
+        settle(error instanceof Error ? error.message : String(error));
+      });
   }
 
   async stop() {
@@ -231,16 +306,32 @@ export class ComputerUseManager {
     };
   }
 
-  async openPermissions() {
+  /**
+   * Ask macOS for both grants — the request itself is what registers the host
+   * app in the Privacy panes — then open the pane the caller asked for. Without
+   * a target, open the first pane that is still missing instead of opening both
+   * at once, because System Settings navigates to whichever pane opens last.
+   */
+  async openPermissions(target?: ComputerUsePermissionTarget) {
     if (process.platform !== "darwin") return;
     const permissions = requestMacOSPermissions();
+    if (target === "accessibility") {
+      await shell.openExternal(ACCESSIBILITY_PANE);
+      return;
+    }
+    if (target === "screenRecording") {
+      await openMacOSScreenRecordingSettings();
+      return;
+    }
     if (!permissions.screenRecording) {
       await openMacOSScreenRecordingSettings();
-    } else if (!permissions.accessibility) {
-      await shell.openExternal(
-        "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
-      );
+      return;
     }
+    if (!permissions.accessibility) {
+      await shell.openExternal(ACCESSIBILITY_PANE);
+      return;
+    }
+    await openMacOSScreenRecordingSettings();
   }
 
   async dispose() {

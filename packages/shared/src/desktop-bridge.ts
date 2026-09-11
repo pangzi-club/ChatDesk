@@ -32,6 +32,20 @@ export type ComputerUsePermissionStatus = {
   screenRecording: boolean;
 };
 
+/** Which macOS settings pane a permission request should open. */
+export type ComputerUsePermissionTarget = "accessibility" | "screenRecording";
+
+/**
+ * The macOS identity that currently owns the Accessibility and Screen Recording
+ * grants. Embedded drivers never prompt and never own a grant row, so the host
+ * app is what the user has to authorize.
+ */
+export type ComputerUsePermissionOwner = {
+  name: string;
+  bundleId: string;
+  packaged: boolean;
+};
+
 export type ComputerUseStatus = {
   supported: boolean;
   enabled: boolean;
@@ -39,6 +53,7 @@ export type ComputerUseStatus = {
   driverPath: string | null;
   hostRunning: boolean;
   permissions: ComputerUsePermissionStatus;
+  permissionOwner: ComputerUsePermissionOwner;
   error: string | null;
 };
 
@@ -79,7 +94,7 @@ export type DesktopBridge = {
   toggleWindowMaximize(): Promise<void>;
   computerUseStatus?(): Promise<ComputerUseStatus>;
   setComputerUseEnabled?(enabled: boolean): Promise<ComputerUseStatus>;
-  openComputerUsePermissions?(): Promise<ComputerUseStatus>;
+  openComputerUsePermissions?(target?: ComputerUsePermissionTarget): Promise<ComputerUseStatus>;
   httpRequest(request: DesktopHttpRequest): Promise<DesktopHttpResponse>;
   scanExternalPlugins?(directories: string[]): Promise<ExternalPluginScanResult>;
   revealPluginDirectory?(directory: string): Promise<void>;

@@ -5,6 +5,7 @@ const IPC_CHANNEL = "chatdesk:invoke";
 const IPC_EVENT_PREFIX = "chatdesk:event:";
 
 type DesktopUserStoreFile = "settings.json" | "bookmarks.json";
+type ComputerUsePermissionTarget = "accessibility" | "screenRecording";
 type ComputerUseStatus = {
   supported: boolean;
   enabled: boolean;
@@ -12,6 +13,7 @@ type ComputerUseStatus = {
   driverPath: string | null;
   hostRunning: boolean;
   permissions: { accessibility: boolean; screenRecording: boolean };
+  permissionOwner: { name: string; bundleId: string; packaged: boolean };
   error: string | null;
 };
 
@@ -34,7 +36,7 @@ type DesktopBridge = {
   toggleWindowMaximize(): Promise<void>;
   computerUseStatus(): Promise<ComputerUseStatus>;
   setComputerUseEnabled(enabled: boolean): Promise<ComputerUseStatus>;
-  openComputerUsePermissions(): Promise<ComputerUseStatus>;
+  openComputerUsePermissions(target?: ComputerUsePermissionTarget): Promise<ComputerUseStatus>;
   httpRequest(request: {
     url: string;
     method: string;
@@ -100,8 +102,8 @@ const bridge: DesktopBridge = {
       command: "computer_use_set_enabled",
       args: { enabled },
     }),
-  openComputerUsePermissions: () =>
-    ipcRenderer.invoke(IPC_CHANNEL, { command: "computer_use_open_permissions", args: {} }),
+  openComputerUsePermissions: (target?: ComputerUsePermissionTarget) =>
+    ipcRenderer.invoke(IPC_CHANNEL, { command: "computer_use_open_permissions", args: { target } }),
   httpRequest: (request) => ipcRenderer.invoke(IPC_CHANNEL, { command: "http_request", args: request }),
   scanExternalPlugins: (directories: string[]) =>
     ipcRenderer.invoke(IPC_CHANNEL, { command: "plugins_scan", args: { directories } }),
