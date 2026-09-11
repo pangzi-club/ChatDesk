@@ -998,11 +998,6 @@
   color: var(--foreground);
 }
 
-.history-page-root {
-  background: var(--background);
-  color: var(--foreground);
-}
-
 .app-page-container {
   width: min(100%, 960px);
 }
@@ -1059,8 +1054,7 @@
 }
 
 .dark .app-page-root,
-.dark .app-settings-page,
-.dark .history-page-root {
+.dark .app-settings-page {
   background: #212124;
   color: #f1f1f2;
 }

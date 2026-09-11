@@ -1,24 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { getToolName, isToolUIPart, type UIMessage } from "ai";
 import {
   ArrowLeft,
   ChevronDown,
   ChevronUp,
   FileIcon,
-  History as HistoryIcon,
   ImageIcon,
-  Import,
   MessageCircle,
-  Search,
   Trash2,
 } from "lucide-react";
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { ChatToolCallGroup } from "@/components/chat-tool-call-card";
-import { HistoryImportDialog } from "@/components/history-import-dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,15 +26,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   type ArchiveAsset,
-  type ArchiveIndexItem,
   type ArchiveMessage,
   type ArchiveSource,
   type ArchiveToolCall,
   deleteArchiveSession,
-  loadArchiveIndex,
   loadArchiveSession,
   pathExists,
   sourceLabel,
@@ -53,441 +45,11 @@ import {
   readImageGenerationOutput,
 } from "@/lib/chat/chat-image-generation";
 import { chatSessionPath } from "@/lib/chat/chat-routes";
-import {
-  type ChatIndexItem,
-  deleteChatSession,
-  loadChatIndex,
-  loadChatSession,
-} from "@/lib/chat/chat-store";
+import { deleteChatSession, loadChatSession } from "@/lib/chat/chat-store";
 import { assetUrl } from "@/lib/runtime/platform";
 
 const MESSAGE_COLLAPSE_CHARS = 700;
 const MESSAGE_COLLAPSE_LINES = 12;
-const HISTORY_ROW_ESTIMATE = 88;
-
-type SourceFilter = "all" | ArchiveSource;
-
-type HistoryListViewState = {
-  scrollTop: number;
-  measurements: VirtualItem[];
-  search: string;
-  sourceFilter: SourceFilter;
-};
-
-const historyListViewState: HistoryListViewState = {
-  scrollTop: 0,
-  measurements: [],
-  search: "",
-  sourceFilter: "all",
-};
-
-function saveHistoryListScroll(scrollTop: number, measurements?: VirtualItem[]) {
-  historyListViewState.scrollTop = scrollTop;
-  if (measurements) historyListViewState.measurements = measurements;
-}
-
-function saveHistoryListFilters(search: string, sourceFilter: SourceFilter) {
-  historyListViewState.search = search;
-  historyListViewState.sourceFilter = sourceFilter;
-}
-
-type UnifiedItem = {
-  id: string;
-  source: ArchiveSource;
-  title: string;
-  updatedAt: string;
-  createdAt: string;
-  messageCount: number;
-  assetCount: number;
-  cwd?: string;
-  externalId?: string;
-};
-
-function historyItemKey(item: UnifiedItem) {
-  return `${item.source}:${item.id}`;
-}
-
-function HistoryPage({ embedded = false }: { embedded?: boolean }) {
-  const queryClient = useQueryClient();
-  const navigate = useNavigate();
-  const listScrollRef = useRef<HTMLDivElement>(null);
-  const restoreScrollPendingRef = useRef(historyListViewState.scrollTop > 0);
-  const restoredScrollRef = useRef({
-    offset: historyListViewState.scrollTop,
-    measurements: historyListViewState.measurements,
-  });
-  const [search, setSearch] = useState(historyListViewState.search);
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>(historyListViewState.sourceFilter);
-  const [importOpen, setImportOpen] = useState(false);
-  const [itemToDelete, setItemToDelete] = useState<ArchiveIndexItem | null>(null);
-
-  const nativeQuery = useQuery({
-    queryKey: ["chat-index"],
-    queryFn: loadChatIndex,
-  });
-  const archiveQuery = useQuery({
-    queryKey: ["chat-archive-index"],
-    queryFn: loadArchiveIndex,
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: deleteArchiveSession,
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["chat-archive-index"] });
-      await queryClient.invalidateQueries({ queryKey: ["ai-usage-statistics"] });
-      setItemToDelete(null);
-    },
-  });
-
-  const isPending = nativeQuery.isPending || archiveQuery.isPending;
-  const error = nativeQuery.error ?? archiveQuery.error;
-
-  const items = useMemo(() => {
-    const nativeItems: UnifiedItem[] = (nativeQuery.data ?? []).map((item: ChatIndexItem) => ({
-      id: item.id,
-      source: "native",
-      title: item.title,
-      updatedAt: item.updatedAt,
-      createdAt: item.createdAt,
-      messageCount: item.messageCount,
-      assetCount: item.attachmentCount,
-    }));
-    const archiveItems: UnifiedItem[] = (archiveQuery.data ?? []).map((item) => ({
-      id: item.id,
-      source: item.source,
-      title: item.title,
-      updatedAt: item.updatedAt,
-      createdAt: item.createdAt,
-      messageCount: item.messageCount,
-      assetCount: item.assetCount,
-      cwd: item.cwd,
-      externalId: item.externalId,
-    }));
-    return [...nativeItems, ...archiveItems].sort((left, right) =>
-      right.updatedAt.localeCompare(left.updatedAt),
-    );
-  }, [archiveQuery.data, nativeQuery.data]);
-
-  const filtered = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
-    return items.filter((item) => {
-      if (sourceFilter !== "all" && item.source !== sourceFilter) return false;
-      if (!keyword) return true;
-      return (
-        item.title.toLowerCase().includes(keyword) ||
-        (item.cwd?.toLowerCase().includes(keyword) ?? false) ||
-        (item.externalId?.toLowerCase().includes(keyword) ?? false)
-      );
-    });
-  }, [items, search, sourceFilter]);
-
-  const archiveById = useMemo(() => {
-    const map = new Map<string, ArchiveIndexItem>();
-    for (const item of archiveQuery.data ?? []) {
-      map.set(item.id, item);
-    }
-    return map;
-  }, [archiveQuery.data]);
-
-  const showVirtualList = !isPending && filtered.length > 0;
-
-  const rowVirtualizer = useVirtualizer({
-    count: showVirtualList ? filtered.length : 0,
-    getScrollElement: () => listScrollRef.current,
-    estimateSize: () => HISTORY_ROW_ESTIMATE,
-    overscan: 12,
-    initialOffset: restoredScrollRef.current.offset,
-    initialMeasurementsCache: restoredScrollRef.current.measurements,
-    getItemKey: (index) => {
-      const item = filtered[index];
-      return item ? historyItemKey(item) : index;
-    },
-  });
-
-  useEffect(() => {
-    saveHistoryListFilters(search, sourceFilter);
-  }, [search, sourceFilter]);
-
-  useLayoutEffect(() => {
-    if (!showVirtualList || !restoreScrollPendingRef.current) return;
-    const offset = restoredScrollRef.current.offset;
-    if (offset > 0) {
-      rowVirtualizer.scrollToOffset(offset);
-      const node = listScrollRef.current;
-      if (node) node.scrollTop = offset;
-    }
-    // 等一帧后再放开 onScroll 写入，避免挂载阶段的 scrollTop=0 覆盖已保存位置
-    const frame = requestAnimationFrame(() => {
-      restoreScrollPendingRef.current = false;
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [showVirtualList, rowVirtualizer]);
-
-  useEffect(() => {
-    return () => {
-      saveHistoryListScroll(
-        rowVirtualizer.scrollOffset ??
-          listScrollRef.current?.scrollTop ??
-          historyListViewState.scrollTop,
-        rowVirtualizer.takeSnapshot(),
-      );
-    };
-  }, [rowVirtualizer]);
-
-  function persistListScroll() {
-    saveHistoryListScroll(
-      listScrollRef.current?.scrollTop ?? rowVirtualizer.scrollOffset ?? 0,
-      rowVirtualizer.takeSnapshot(),
-    );
-  }
-
-  function resetListScroll() {
-    saveHistoryListScroll(0, []);
-    restoredScrollRef.current = { offset: 0, measurements: [] };
-    restoreScrollPendingRef.current = false;
-    if (listScrollRef.current) listScrollRef.current.scrollTop = 0;
-    rowVirtualizer.scrollToOffset(0);
-  }
-
-  function openHistoryItem(item: UnifiedItem) {
-    persistListScroll();
-    void navigate(`/settings/history/${item.source}/${item.id}`);
-  }
-
-  return (
-    <div
-      className={
-        embedded
-          ? "history-page-root space-y-4"
-          : "history-page-root flex h-full min-h-0 flex-col overflow-hidden"
-      }
-    >
-      <header
-        className={
-          embedded
-            ? "rounded-lg border border-border bg-card px-5 py-5"
-            : "shrink-0 border-border border-b bg-background px-4 pt-12 pb-4 sm:px-6 lg:px-8"
-        }
-      >
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="font-medium text-muted-foreground text-xs uppercase tracking-[0.16em]">
-              Chat
-            </p>
-            <h1 className="mt-2 font-semibold text-2xl tracking-tight">History</h1>
-            <p className="mt-2 text-muted-foreground text-sm">
-              浏览本机对话，并导入 Codex、Claude Code、Cursor、Kimi 归档。
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button onClick={() => setImportOpen(true)} type="button">
-              <Import className="size-4" /> 导入
-            </Button>
-          </div>
-        </div>
-
-        <div className="mt-5 flex flex-wrap items-center gap-3">
-          <div className="relative min-w-[220px] flex-1">
-            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              className="pl-9"
-              onChange={(event) => {
-                setSearch(event.target.value);
-                resetListScroll();
-              }}
-              placeholder="搜索标题、路径…"
-              value={search}
-            />
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {(
-              [
-                ["all", "全部"],
-                ["native", "本机"],
-                ["codex", "Codex"],
-                ["claude-code", "Claude Code"],
-                ["cursor", "Cursor"],
-                ["kimi", "Kimi"],
-              ] as const
-            ).map(([value, label]) => (
-              <Button
-                key={value}
-                onClick={() => {
-                  setSourceFilter(value);
-                  resetListScroll();
-                }}
-                size="sm"
-                type="button"
-                variant={sourceFilter === value ? "default" : "outline"}
-              >
-                {label}
-              </Button>
-            ))}
-          </div>
-        </div>
-      </header>
-
-      <div
-        className={
-          embedded
-            ? "flex min-h-0 flex-col"
-            : "flex min-h-0 flex-1 flex-col px-4 py-6 sm:px-6 lg:px-8"
-        }
-      >
-        {error ? (
-          <p className="mb-4 shrink-0 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-destructive text-sm">
-            {error instanceof Error ? error.message : String(error)}
-          </p>
-        ) : null}
-
-        {isPending ? (
-          <div className={embedded ? "min-h-0" : "min-h-0 flex-1 overflow-y-auto"}>
-            <HistoryListSkeleton />
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className={embedded ? "min-h-0" : "min-h-0 flex-1 overflow-y-auto"}>
-            <EmptyHistory hasAny={items.length > 0} onImport={() => setImportOpen(true)} />
-          </div>
-        ) : (
-          <section
-            className={`flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card ${embedded ? "h-[32rem] max-h-[70vh] min-h-[24rem]" : "flex-1"}`}
-          >
-            <div className="shrink-0 border-border border-b px-5 py-4">
-              <h2 className="font-medium text-sm">
-                对话列表 <span className="ml-1 text-muted-foreground">{filtered.length}</span>
-              </h2>
-            </div>
-            <div
-              className="min-h-0 flex-1 overflow-y-auto"
-              onScroll={(event) => {
-                if (restoreScrollPendingRef.current) return;
-                saveHistoryListScroll(event.currentTarget.scrollTop);
-              }}
-              ref={listScrollRef}
-            >
-              <div
-                className="relative w-full"
-                style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
-              >
-                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                  const item = filtered[virtualRow.index];
-                  if (!item) return null;
-                  return (
-                    <div
-                      key={virtualRow.key}
-                      className="absolute top-0 left-0 w-full border-border border-b"
-                      data-index={virtualRow.index}
-                      ref={rowVirtualizer.measureElement}
-                      style={{
-                        transform: `translateY(${virtualRow.start}px)`,
-                      }}
-                    >
-                      <HistoryRow
-                        item={item}
-                        onDelete={
-                          item.source === "native"
-                            ? undefined
-                            : () => {
-                                const archiveItem = archiveById.get(item.id);
-                                if (archiveItem) setItemToDelete(archiveItem);
-                              }
-                        }
-                        onOpen={() => openHistoryItem(item)}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </section>
-        )}
-      </div>
-
-      <HistoryImportDialog
-        archiveIndex={archiveQuery.data ?? []}
-        onImported={() => {
-          void queryClient.invalidateQueries({ queryKey: ["chat-archive-index"] });
-          void queryClient.invalidateQueries({ queryKey: ["ai-usage-statistics"] });
-        }}
-        onOpenChange={setImportOpen}
-        open={importOpen}
-      />
-
-      <AlertDialog
-        open={Boolean(itemToDelete)}
-        onOpenChange={(open) => {
-          if (!open) setItemToDelete(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>删除归档对话？</AlertDialogTitle>
-            <AlertDialogDescription>
-              将删除「{itemToDelete?.title}」。源文件不会被修改，之后可重新导入。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleteMutation.isPending}>取消</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={deleteMutation.isPending || !itemToDelete}
-              onClick={(event) => {
-                event.preventDefault();
-                if (itemToDelete) void deleteMutation.mutateAsync(itemToDelete.id);
-              }}
-            >
-              删除
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
-  );
-}
-
-const HistoryRow = memo(function HistoryRow({
-  item,
-  onOpen,
-  onDelete,
-}: {
-  item: UnifiedItem;
-  onOpen: () => void;
-  onDelete?: () => void;
-}) {
-  return (
-    <article className="flex flex-wrap items-center gap-3 px-5 py-4 transition-colors hover:bg-accent/30">
-      <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-accent text-muted-foreground">
-        {item.source === "native" ? (
-          <MessageCircle className="size-4" />
-        ) : (
-          <HistoryIcon className="size-4" />
-        )}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="font-medium text-sm">{item.title}</h3>
-          <Badge variant="secondary">{sourceLabel(item.source)}</Badge>
-        </div>
-        <p className="mt-1 text-muted-foreground text-xs">
-          {formatDateTime(item.updatedAt)} · {item.messageCount} 条消息
-          {item.assetCount > 0 ? ` · ${item.assetCount} 个资源` : ""}
-        </p>
-        {item.cwd ? (
-          <p className="mt-1 break-all font-mono text-muted-foreground text-xs">{item.cwd}</p>
-        ) : null}
-      </div>
-      <div className="flex items-center gap-2">
-        <Button onClick={onOpen} size="sm" type="button" variant="outline">
-          查看
-        </Button>
-        {onDelete ? (
-          <Button onClick={onDelete} size="sm" type="button" variant="ghost">
-            <Trash2 className="size-4" />
-          </Button>
-        ) : null}
-      </div>
-    </article>
-  );
-});
 
 type HistoryDetailView = {
   source: ArchiveSource;
@@ -947,47 +509,6 @@ function ArchiveAssetView({ asset }: { asset: ArchiveAsset }) {
   );
 }
 
-function EmptyHistory({ hasAny, onImport }: { hasAny: boolean; onImport: () => void }) {
-  return (
-    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border px-6 py-16 text-center">
-      <HistoryIcon className="size-8 text-muted-foreground" />
-      <h2 className="mt-4 font-medium text-base">{hasAny ? "没有匹配的对话" : "还没有对话历史"}</h2>
-      <p className="mt-2 max-w-md text-muted-foreground text-sm">
-        {hasAny
-          ? "试试调整搜索词或来源筛选。"
-          : "在 Chat 中开始对话，或从 Codex、Claude Code、Cursor、Kimi 导入归档。"}
-      </p>
-      {!hasAny ? (
-        <Button className="mt-5" onClick={onImport} type="button">
-          <Import className="size-4" /> 导入对话
-        </Button>
-      ) : null}
-    </div>
-  );
-}
-
-function HistoryListSkeleton() {
-  return (
-    <section className="overflow-hidden rounded-lg border border-border bg-card">
-      <div className="border-border border-b px-5 py-4">
-        <div className="h-4 w-28 animate-pulse rounded bg-muted" />
-      </div>
-      <div className="divide-y divide-border">
-        {["one", "two", "three", "four", "five", "six"].map((key) => (
-          <div key={key} className="flex items-center gap-3 px-5 py-4">
-            <div className="size-9 animate-pulse rounded-md bg-muted" />
-            <div className="min-w-0 flex-1 space-y-2">
-              <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
-              <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
-            </div>
-            <div className="h-8 w-16 animate-pulse rounded-md bg-muted" />
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function HistoryDetailSkeleton() {
   return (
     <div className="w-full space-y-4">
@@ -1038,4 +559,4 @@ function formatDateTime(value: string) {
   return date.toLocaleString("zh-CN");
 }
 
-export { HistoryDetailPage, HistoryPage };
+export { HistoryDetailPage };

@@ -135,7 +135,7 @@ import {
   type WorkspaceTabType,
 } from "@/lib/plugins/desktop-ui";
 import { rememberReturnPath } from "@/lib/runtime/app-return-path";
-import { getDesktopBridge, isDesktop } from "@/lib/runtime/desktop-bridge";
+import { getDesktopBridge, isDesktop, subscribeBridgeEvent } from "@/lib/runtime/desktop-bridge";
 import {
   DEFAULT_SHORTCUTS,
   formatShortcut,
@@ -145,6 +145,7 @@ import {
   subscribeShortcutSettings,
 } from "@/lib/runtime/shortcuts";
 import {
+  CHAT_SERVER_DEFAULT_PORT,
   type ChatServerSession,
   canMonitorChatServer,
   canRestartChatServer,
@@ -430,6 +431,8 @@ function AppShell() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   useEffect(() => {
+    let active = true;
+    let cleanup: (() => void) | undefined;
     const refresh = () =>
       void loadFeishuUnread()
         .then((items) =>
@@ -439,28 +442,35 @@ function AppShell() {
     refresh();
     const handleLocalUnreadUpdate = () => refresh();
     window.addEventListener("chatdesk:feishu-unread-updated", handleLocalUnreadUpdate);
-    const cleanup = subscribeChatServerEvents(14317, {
-      onChannelMessageReceived: (event) => {
-        void queryClient.invalidateQueries({ queryKey: ["feishu-unread"] });
-        refresh();
-        const message = event.channelMessage;
-        if (message)
-          void loadGeneralSettings().then((settings) => {
-            if (settings.notifyOnFeishuMessage)
-              return notifyFeishuMessage(
-                "飞书消息",
-                `${message.senderName ?? "联系人"}：${message.text.slice(0, 80)}`,
-                settings.notifyOnlyWhenWindowUnfocused,
-              );
-            return undefined;
-          });
-      },
-      onChannelUnreadUpdated: () => {
-        void queryClient.invalidateQueries({ queryKey: ["feishu-unread"] });
-        refresh();
-      },
+    // The port is user configurable, so subscribe on the resolved port instead of
+    // a hardcoded default; otherwise unread badges and notifications go silent
+    // after the user changes it.
+    void loadChatServerPort().then((port) => {
+      if (!active) return;
+      cleanup = subscribeChatServerEvents(port, {
+        onChannelMessageReceived: (event) => {
+          void queryClient.invalidateQueries({ queryKey: ["feishu-unread"] });
+          refresh();
+          const message = event.channelMessage;
+          if (message)
+            void loadGeneralSettings().then((settings) => {
+              if (settings.notifyOnFeishuMessage)
+                return notifyFeishuMessage(
+                  "飞书消息",
+                  `${message.senderName ?? "联系人"}：${message.text.slice(0, 80)}`,
+                  settings.notifyOnlyWhenWindowUnfocused,
+                );
+              return undefined;
+            });
+        },
+        onChannelUnreadUpdated: () => {
+          void queryClient.invalidateQueries({ queryKey: ["feishu-unread"] });
+          refresh();
+        },
+      });
     });
     return () => {
+      active = false;
       window.removeEventListener("chatdesk:feishu-unread-updated", handleLocalUnreadUpdate);
       cleanup?.();
     };
@@ -684,30 +694,20 @@ function AppShell() {
   }, []);
 
   useEffect(() => {
-    const bridge = getDesktopBridge();
-    if (!bridge) return;
-
-    let active = true;
-    const unlisteners: Array<() => void> = [];
-    const listen = (event: string, listener: (payload: unknown) => void) => {
-      void bridge.subscribe(event, listener).then((cleanup) => {
-        if (!active) cleanup();
-        else unlisteners.push(cleanup);
-      });
-    };
     const openTrayPath = (path: string) => {
       navigate(path === "/chat" ? chatNewPath() : path);
     };
-    listen("tray-chat", () => openTrayPath("/chat"));
-    listen("tray-open", (payload) => {
-      if (!payload || typeof payload !== "object") return;
-      const path = (payload as { path?: unknown }).path;
-      if (typeof path === "string" && path.startsWith("/")) openTrayPath(path);
-    });
+    const disposers = [
+      subscribeBridgeEvent("tray-chat", () => openTrayPath("/chat")),
+      subscribeBridgeEvent("tray-open", (payload) => {
+        if (!payload || typeof payload !== "object") return;
+        const path = (payload as { path?: unknown }).path;
+        if (typeof path === "string" && path.startsWith("/")) openTrayPath(path);
+      }),
+    ];
 
     return () => {
-      active = false;
-      for (const unlisten of unlisteners) unlisten();
+      for (const dispose of disposers) dispose();
     };
   }, [navigate]);
 
@@ -715,39 +715,31 @@ function AppShell() {
     const bridge = getDesktopBridge();
     if (bridge?.runtime !== "electron") return;
 
-    let active = true;
-    const unlisteners: Array<() => void> = [];
-    const subscribe = (event: string, listener: (payload: Record<string, unknown>) => void) => {
-      void bridge
-        .subscribe(event, (payload) => {
-          if (payload && typeof payload === "object") {
-            listener(payload as Record<string, unknown>);
-          }
-        })
-        .then((cleanup) => {
-          if (active) unlisteners.push(cleanup);
-          else cleanup();
-        });
-    };
-
-    subscribe("browser-preview-open", (payload) => {
-      if (typeof payload.url === "string") {
-        openBrowserPreview({ newTab: true, url: payload.url });
-      }
-    });
-    subscribe("browser-frame-navigate", (payload) => {
-      if (typeof payload.url === "string" && typeof payload.frameName === "string") {
-        openBrowserPreview({
-          frameName: payload.frameName,
-          source: "frame",
-          url: payload.url,
-        });
-      }
-    });
+    const listen = (event: string, listener: (payload: Record<string, unknown>) => void) =>
+      subscribeBridgeEvent(event, (payload) => {
+        if (payload && typeof payload === "object") {
+          listener(payload as Record<string, unknown>);
+        }
+      });
+    const disposers = [
+      listen("browser-preview-open", (payload) => {
+        if (typeof payload.url === "string") {
+          openBrowserPreview({ newTab: true, url: payload.url });
+        }
+      }),
+      listen("browser-frame-navigate", (payload) => {
+        if (typeof payload.url === "string" && typeof payload.frameName === "string") {
+          openBrowserPreview({
+            frameName: payload.frameName,
+            source: "frame",
+            url: payload.url,
+          });
+        }
+      }),
+    ];
 
     return () => {
-      active = false;
-      for (const unlisten of unlisteners) unlisten();
+      for (const dispose of disposers) dispose();
     };
   }, []);
 
@@ -1902,7 +1894,7 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
     {},
   );
   const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(loadUnreadChatIds);
-  const [serverPort, setServerPort] = useState(14317);
+  const [serverPort, setServerPort] = useState(CHAT_SERVER_DEFAULT_PORT);
   const [sessionToDelete, setSessionToDelete] = useState<ChatIndexItem | null>(null);
   const [copiedConversation, setCopiedConversation] = useState<{
     id: string;

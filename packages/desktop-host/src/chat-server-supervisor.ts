@@ -29,11 +29,17 @@ type SpawnProcess = (
 
 export type ChatServerSupervisorOptions = {
   command: string;
+  /**
+   * Loopback port the supervised Chat Server binds to. The port is user
+   * configurable, so the host must resolve it (from
+   * `@chatdesk/shared/chat-server` when nothing else is configured) instead of
+   * letting this package keep a second default.
+   */
+  port: number;
   args?: string[];
   cwd?: string;
   dataDir?: string;
   host?: string;
-  port?: number;
   token?: string;
   production?: boolean;
   maxRestartAttempts?: number;
@@ -50,7 +56,6 @@ export type ChatServerSupervisorOptions = {
 type StateListener = (info: ChatServerHostInfo) => void;
 
 const DEFAULT_HOST = "127.0.0.1";
-const DEFAULT_PORT = 14317;
 
 export class ChatServerSupervisor {
   private child: HostProcess | null = null;
@@ -65,7 +70,7 @@ export class ChatServerSupervisor {
   constructor(private readonly options: ChatServerSupervisorOptions) {
     this.current = {
       host: options.host ?? DEFAULT_HOST,
-      port: options.port ?? DEFAULT_PORT,
+      port: options.port,
       token: options.token ?? randomUUID(),
       managed: true,
       running: false,

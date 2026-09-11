@@ -260,6 +260,7 @@ import {
   sortModelsByName,
 } from "@/lib/server/models";
 import {
+  availableSkillsQueryKey,
   filterAllowedSkills,
   formatSkillsSystemHint,
   loadAvailableSkills,
@@ -388,7 +389,7 @@ function ChatPage() {
     queryFn: loadMcpServers,
   });
   const { data: availableSkills = [], isPending: isSkillsPending } = useQuery({
-    queryKey: ["skills-available"],
+    queryKey: availableSkillsQueryKey,
     queryFn: loadAvailableSkills,
   });
   const disabledSkillsQuery = useQuery({
@@ -1055,8 +1056,7 @@ function ChatPage() {
         },
         onRunFinished: ({ sessionId: eventSessionId, runSummary }) => {
           if (runSummary.touchedPaths?.some((file) => file.includes("/.agents/skills/"))) {
-            void queryClient.invalidateQueries({ queryKey: ["skills-available"] });
-            void queryClient.invalidateQueries({ queryKey: ["available-skills"] });
+            void queryClient.invalidateQueries({ queryKey: availableSkillsQueryKey });
           }
           liveDraftRenderBatcher.flush(eventSessionId);
           if (activeSessionRef.current === eventSessionId) {

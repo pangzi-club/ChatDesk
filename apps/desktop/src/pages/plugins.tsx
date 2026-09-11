@@ -12,6 +12,16 @@ import {
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDesktopUi } from "@/components/desktop-ui-provider";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -57,6 +67,10 @@ export function PluginsPage() {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<PluginFilter>("all");
+  const [pluginToUninstall, setPluginToUninstall] = useState<{ id: string; name: string } | null>(
+    null,
+  );
+  const [directoryToRemove, setDirectoryToRemove] = useState<string | null>(null);
   const developerSettingsQuery = useQuery({
     queryKey: ["developer-settings"],
     queryFn: loadDeveloperSettings,
@@ -287,7 +301,7 @@ export function PluginsPage() {
                   <button
                     aria-label={`移除目录 ${directory}`}
                     className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    onClick={() => void removeDirectory(directory)}
+                    onClick={() => setDirectoryToRemove(directory)}
                     type="button"
                   >
                     <X className="size-3" />
@@ -386,7 +400,16 @@ export function PluginsPage() {
                               {plugin.installable && manifest && !manifest.builtin ? (
                                 <DropdownMenuItem
                                   disabled={busy === manifest.id}
-                                  onClick={() => void toggle(manifest.id, plugin.installed)}
+                                  onClick={() => {
+                                    if (plugin.installed) {
+                                      setPluginToUninstall({
+                                        id: manifest.id,
+                                        name: manifest.name ?? manifest.id,
+                                      });
+                                      return;
+                                    }
+                                    void toggle(manifest.id, false);
+                                  }}
                                 >
                                   {plugin.installed ? "卸载" : "安装"}
                                 </DropdownMenuItem>
@@ -406,6 +429,64 @@ export function PluginsPage() {
           {externalQuery.isPending ? <ExternalPluginsSkeleton /> : null}
         </div>
       </div>
+
+      <AlertDialog
+        open={pluginToUninstall !== null}
+        onOpenChange={(open) => {
+          if (!open) setPluginToUninstall(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>卸载插件？</AlertDialogTitle>
+            <AlertDialogDescription>
+              {`将卸载「${pluginToUninstall?.name ?? ""}」并移除它提供的界面与能力。插件文件仍保留在磁盘上，可以重新安装。`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                const target = pluginToUninstall;
+                setPluginToUninstall(null);
+                if (target) void toggle(target.id, true);
+              }}
+            >
+              卸载
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={directoryToRemove !== null}
+        onOpenChange={(open) => {
+          if (!open) setDirectoryToRemove(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>移除外部插件目录？</AlertDialogTitle>
+            <AlertDialogDescription>
+              将不再扫描「{directoryToRemove}」。目录中的文件不会被删除，之后可以重新添加。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                const directory = directoryToRemove;
+                setDirectoryToRemove(null);
+                if (directory) void removeDirectory(directory);
+              }}
+            >
+              移除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   );
 }

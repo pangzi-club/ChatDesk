@@ -17,6 +17,14 @@ export {
 } from "./browser-runtime.ts";
 export type { ChatServerConfigData } from "./chat-config.ts";
 export { ChatConfigStore } from "./chat-config.ts";
+export {
+  buildMemoryCompactPrompt,
+  buildMemoryExtractPrompt,
+  MEMORY_COMPACT_SYSTEM,
+  MEMORY_COMPACT_TARGET_ITEMS,
+  MEMORY_EXTRACT_SYSTEM,
+  parseMemoryFacts,
+} from "./chat-memory.ts";
 export { type ClientToolOptions, closeClientTools, createClientTools } from "./client-tools.ts";
 export { CREATE_PLUGIN_TOOL_NAME, createLocalPlugin, createPluginTool } from "./create-plugin.ts";
 export { acquireDataDirectoryLock, type DataDirectoryLock } from "./data-directory-lock.ts";

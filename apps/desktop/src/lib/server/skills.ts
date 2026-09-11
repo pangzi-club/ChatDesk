@@ -15,6 +15,13 @@ export type SkillDefinition = {
   content: string;
 };
 
+/**
+ * Shared react-query key for `loadAvailableSkills`. Every caller must use this
+ * single key so the list has one cache entry; separate keys duplicate requests
+ * and leave stale copies behind after a skill is added or removed.
+ */
+export const availableSkillsQueryKey = ["skills-available"] as const;
+
 function isSkill(value: unknown): value is SkillDefinition {
   if (!value || typeof value !== "object") return false;
   const skill = value as Partial<SkillDefinition>;

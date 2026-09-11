@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { normalizeChatServerPort } from "@chatdesk/shared";
 
 export type ServerConfig = {
   host: string;
@@ -10,13 +11,6 @@ export type ServerConfig = {
   token: string;
   version: string;
 };
-
-const DEFAULT_PORT = 14317;
-
-function parsePort(value: string | undefined) {
-  const port = Number(value);
-  return Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : DEFAULT_PORT;
-}
 
 export async function loadServerConfig(): Promise<ServerConfig> {
   const defaultDataDir =
@@ -33,7 +27,7 @@ export async function loadServerConfig(): Promise<ServerConfig> {
     .catch(() => ({}));
   return {
     host: process.env.CHAT_SERVER_HOST || "127.0.0.1",
-    port: parsePort(process.env.CHAT_SERVER_PORT || String(persisted.port ?? DEFAULT_PORT)),
+    port: normalizeChatServerPort(process.env.CHAT_SERVER_PORT ?? persisted.port),
     dataDir,
     token: process.env.CHAT_SERVER_TOKEN || randomUUID(),
     version: "0.4.0",

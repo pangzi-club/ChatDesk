@@ -85,7 +85,7 @@ import {
   saveChatToolsSettings,
 } from "@/lib/chat/chat-tools";
 import { clearKieApiKey, loadKieApiKey, saveKieApiKey } from "@/lib/image-generation";
-import { getDesktopBridge, isDesktop } from "@/lib/runtime/desktop-bridge";
+import { getDesktopBridge, isDesktop, subscribeBridgeEvent } from "@/lib/runtime/desktop-bridge";
 import { pickDirectory } from "@/lib/runtime/platform";
 import {
   DEFAULT_SHORTCUTS,
@@ -107,6 +107,7 @@ import {
 } from "@/lib/server/agents";
 import type { ChatServerProviderModel, FeishuChannelStatus } from "@/lib/server/chat-server";
 import {
+  CHAT_SERVER_DEFAULT_PORT,
   canRestartChatServer,
   checkChatServer,
   deleteFeishuChannelConfig,
@@ -141,6 +142,7 @@ import {
   sortModelsByName,
 } from "@/lib/server/models";
 import {
+  availableSkillsQueryKey,
   loadAvailableSkills,
   loadDisabledSkillIds,
   type SkillDefinition,
@@ -489,15 +491,9 @@ export function ComputerUseSettingsPage() {
 
   useEffect(() => {
     if (!bridge?.subscribe) return;
-    let unsubscribe: (() => void) | undefined;
-    void bridge
-      .subscribe("computer-use-status", (value) => {
-        queryClient.setQueryData(["computer-use-status"], value);
-      })
-      .then((dispose) => {
-        unsubscribe = dispose;
-      });
-    return () => unsubscribe?.();
+    return subscribeBridgeEvent("computer-use-status", (value) => {
+      queryClient.setQueryData(["computer-use-status"], value);
+    });
   }, [bridge, queryClient]);
 
   return (
@@ -2136,6 +2132,7 @@ function McpSettingsPage() {
   const [notice, setNotice] = useState("");
   const [testing, setTesting] = useState<string | null>(null);
   const [confirmServer, setConfirmServer] = useState<McpServerConfig | null>(null);
+  const [serverToDelete, setServerToDelete] = useState<McpServerConfig | null>(null);
   const [selectedEntry, setSelectedEntry] = useState<McpRegistryEntry | null>(null);
   const serversQuery = useQuery({ queryKey: ["mcp-servers"], queryFn: loadMcpServers });
   const registryQuery = useQuery({
@@ -2151,7 +2148,12 @@ function McpSettingsPage() {
     const normalized = servers.some((server) => server.id === next.id)
       ? servers.map((server) => (server.id === next.id ? next : server))
       : [...servers, next];
-    await saveMcpServers(normalized);
+    try {
+      await saveMcpServers(normalized);
+    } catch (error) {
+      setNotice(`添加 ${entry.name} 失败：${describeError(error)}`);
+      return;
+    }
     queryClient.setQueryData(["mcp-servers"], normalized);
     setNotice(`已添加 ${entry.name}，首次启用时才会连接。`);
     setTab("installed");
@@ -2159,15 +2161,28 @@ function McpSettingsPage() {
 
   async function remove(server: McpServerConfig) {
     const next = servers.filter((item) => item.id !== server.id);
-    await saveMcpServers(next);
+    try {
+      await saveMcpServers(next);
+    } catch (error) {
+      setNotice(`删除 ${server.name} 失败：${describeError(error)}`);
+      setServerToDelete(null);
+      return;
+    }
     queryClient.setQueryData(["mcp-servers"], next);
+    setNotice(`已删除 ${server.name}。`);
+    setServerToDelete(null);
   }
 
   async function toggleDefault(server: McpServerConfig, enabled: boolean) {
     const next = servers.map((item) =>
       item.id === server.id ? { ...item, enabledByDefault: enabled } : item,
     );
-    await saveMcpServers(next);
+    try {
+      await saveMcpServers(next);
+    } catch (error) {
+      setNotice(`更新 ${server.name} 失败：${describeError(error)}`);
+      return;
+    }
     queryClient.setQueryData(["mcp-servers"], next);
   }
 
@@ -2344,7 +2359,7 @@ function McpSettingsPage() {
                   </Button>
                   <Button
                     className="text-destructive"
-                    onClick={() => void remove(server)}
+                    onClick={() => setServerToDelete(server)}
                     size="sm"
                     type="button"
                     variant="ghost"
@@ -2422,6 +2437,32 @@ function McpSettingsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <AlertDialog
+        open={serverToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setServerToDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除 MCP 服务器？</AlertDialogTitle>
+            <AlertDialogDescription>
+              {`将移除「${serverToDelete?.name ?? ""}」。该服务器会同时从已启用列表中消失，之后可从商店重新添加。`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                if (serverToDelete) void remove(serverToDelete);
+              }}
+            >
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
@@ -2430,7 +2471,7 @@ function SkillsSettingsPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [viewingSkill, setViewingSkill] = useState<SkillDefinition | null>(null);
-  const skillsQuery = useQuery({ queryKey: ["skills-available"], queryFn: loadAvailableSkills });
+  const skillsQuery = useQuery({ queryKey: availableSkillsQueryKey, queryFn: loadAvailableSkills });
   const disabledQuery = useQuery({
     queryKey: ["skills-disabled"],
     queryFn: loadDisabledSkillIds,
@@ -2578,7 +2619,7 @@ function ChatServerSettingsPage() {
       }
     },
   });
-  const [port, setPort] = useState(14317);
+  const [port, setPort] = useState(CHAT_SERVER_DEFAULT_PORT);
   const [notice, setNotice] = useState("");
 
   useEffect(() => {
@@ -2610,7 +2651,9 @@ function ChatServerSettingsPage() {
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="font-medium text-sm">监听端口</p>
-            <p className="mt-1 text-muted-foreground text-xs">默认端口为 14317。</p>
+            <p className="mt-1 text-muted-foreground text-xs">
+              默认端口为 {CHAT_SERVER_DEFAULT_PORT}。
+            </p>
           </div>
           <Input
             className="w-32 font-mono"
@@ -3016,7 +3059,7 @@ function AgentsSettingsPage() {
   const agentsQuery = useQuery({ queryKey: ["agents"], queryFn: loadAgents });
   const modelsQuery = useQuery({ queryKey: ["models"], queryFn: loadModels });
   const mcpQuery = useQuery({ queryKey: ["mcp-servers"], queryFn: loadMcpServers });
-  const skillsQuery = useQuery({ queryKey: ["available-skills"], queryFn: loadAvailableSkills });
+  const skillsQuery = useQuery({ queryKey: availableSkillsQueryKey, queryFn: loadAvailableSkills });
   const channelQuery = useQuery({
     queryKey: ["feishu-status"],
     queryFn: () => loadFeishuChannelStatuses(),

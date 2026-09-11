@@ -1,4 +1,5 @@
 import { ChatServerSupervisor } from "@chatdesk/desktop-host";
+import { CHAT_SERVER_DEFAULT_PORT } from "@chatdesk/shared/chat-server";
 import {
   app,
   BrowserWindow,
@@ -603,7 +604,7 @@ async function setupSupervisor() {
       const write = stream === "stderr" ? console.error : console.log;
       write(`[Chat Server] ${text.trimEnd()}`);
     },
-    ...(supervisorPort() ? { port: supervisorPort() } : {}),
+    port: supervisorPort() ?? CHAT_SERVER_DEFAULT_PORT,
     ...(supervisorToken() ? { token: supervisorToken() } : {}),
   });
   supervisor.subscribe((info) => {
@@ -820,7 +821,7 @@ function setupRendererProtocol() {
         if (!info?.running && supervisor) {
           info = await supervisor.start();
         }
-        const port = info?.port ?? supervisorPort() ?? 14317;
+        const port = info?.port ?? supervisorPort() ?? CHAT_SERVER_DEFAULT_PORT;
         const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
         // This is a loopback-only request. Node's fetch avoids Electron 43's
         // net.fetch rejection when a custom-protocol request has a body, while

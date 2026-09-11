@@ -148,14 +148,16 @@ Server 负责「何时调工具、如何把结果写回模型」；工具的真�
 - `packages/agent-core/src/engine.ts`：agent harness 组合根，供 HTTP Server、CLI 与日后 TUI 共用。
 - `apps/cli/src/cli.ts`：进程内 CLI 入口。无参数或 `-i` 进入 Ink 交互模式；`chatdesk -p` 单次非交互输出。优先复用已运行的桌面端 Chat Server，否则回退到本地 `createAgentCore`。默认 workspace 为当前工作目录。
 - `packages/agent-core/src/run-registry.ts`：Run 真相源——多路生成、abort、status 状态机、toolApproval、上下文压缩、崩溃恢复。
+- `packages/agent-core/src/chat-memory.ts`：长期记忆抽取/整理的 prompt 与解析；HTTP 侧 `POST /v1/memory/facts/extract|compact` 复用它们，使记忆模型调用与其它模型调用一样进入 `AiUsageLogStore`。
 - `packages/agent-core/src/job-registry.ts` / `job-store.ts`：Bash 后台 Job 的进程组托管、有限输出缓冲、session 归属和重启中断恢复。
 - `packages/agent-core/src/store.ts`：Session Store，per-session 持久化。
 - `packages/agent-core/src/sandbox-exec.ts`：Seatbelt 沙箱执行，deny-by-default profile。
 - `packages/chat-server-client/src/index.ts`：运行时无关的 Chat Server HTTP/SSE 客户端。
+- `packages/shared/src/chat-server.ts`：Chat Server 默认端口与端口规范化的唯一来源；渲染进程、Node 服务、Electron 宿主与 supervisor 共用，端口可配置时不要各留一份默认值。
 - `apps/desktop/src/lib/server/chat-server.ts`：桌面端适配层，注入端口、token 与宿主 fetch。
 - `apps/desktop/src/pages/chat.tsx`：Chat 页面，消费 HTTP 客户端，切页不中断生成。
 - `apps/desktop/src/lib/chat/chat-routes.ts`：桌面 Chat URL 身份（`/chat/new` 草稿与 `/chat/:sessionId` 会话）。
-- `packages/desktop-host/src/chat-server-supervisor.ts`：Electron 侧进程拉起、token 注入、优雅退出。
+- `packages/desktop-host/src/chat-server-supervisor.ts`：Electron 侧进程拉起、token 注入、优雅退出；监听端口由宿主传入（`port` 为必填），包内不再保留默认端口。
 
 ### 4.1 桌面 Chat URL
 

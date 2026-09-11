@@ -4,6 +4,8 @@ import { mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/pro
 import path from "node:path";
 import { promisify } from "node:util";
 import {
+  buildMemoryCompactPrompt,
+  buildMemoryExtractPrompt,
   buildSessionTitlePrompt,
   buildSystemPrompt,
   type ChatSession,
@@ -19,11 +21,14 @@ import {
   listProviderModels,
   loadBuiltinSkillsCatalog,
   MAX_ATTACHMENT_BYTES,
+  MEMORY_COMPACT_SYSTEM,
+  MEMORY_EXTRACT_SYSTEM,
   nodePlatform,
   normalizeAiUsage,
   normalizeGeneratedCommitMessage,
   normalizeGeneratedSessionTitle,
   type PlanStore,
+  parseMemoryFacts,
   type RunRegistry,
   type RunStartInput,
   replaceImageFileName,
@@ -115,6 +120,19 @@ const modelListSchema = z.object({
       message: "接口地址必须是合法的 http 或 https URL",
     }),
   apiKey: z.string().min(1),
+});
+
+const memoryExtractSchema = z.object({
+  modelId: z.string().optional(),
+  items: z.array(z.string()).max(500),
+  workspacePath: z.string().optional(),
+  userText: z.string(),
+  assistantText: z.string(),
+});
+
+const memoryCompactSchema = z.object({
+  modelId: z.string().optional(),
+  items: z.array(z.string()).max(500),
 });
 
 const execFileAsync = promisify(execFile);
@@ -494,6 +512,21 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
     source: "Chat Server",
     message: "Chat Server 已启动",
   });
+  async function recordModelUsage(
+    operation: string,
+    model: { id?: string; name: string; provider?: string },
+    rawUsage: unknown,
+  ) {
+    const usage = normalizeAiUsage(rawUsage);
+    if (!usage) return;
+    await aiUsageLogs.append({
+      operation,
+      modelId: model.id || model.name,
+      provider: model.provider,
+      model: model.name,
+      usage,
+    });
+  }
   const automations = new AutomationStore(config.dataDir);
   const channels = new ChannelStore(config.dataDir);
   const feishu = new Map<string, FeishuChannelManager>();
@@ -1416,6 +1449,44 @@ export async function createChatServer(config: ServerConfig): Promise<ChatServer
   app.put("/v1/memory", async (c) => {
     try {
       return c.json(await memory.save(await c.req.json()));
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+  // Memory model calls run here (not in the renderer) so their token usage is
+  // recorded through `AiUsageLogStore` like every other model invocation.
+  app.post("/v1/memory/facts/extract", async (c) => {
+    try {
+      const body = parseJson(await c.req.json().catch(() => ({})), memoryExtractSchema);
+      const model = resolveSessionTitleModel(chatConfig.get(), body.modelId);
+      if (!model) return jsonError("未配置可用模型，无法整理长期记忆");
+      const { generateText } = await import("ai");
+      const result = await generateText({
+        model: createConfiguredLanguageModel(model),
+        system: MEMORY_EXTRACT_SYSTEM,
+        prompt: buildMemoryExtractPrompt(body),
+        maxRetries: 0,
+      });
+      await recordModelUsage("memory-extract", model, result.usage);
+      return c.json({ facts: parseMemoryFacts(result.text) });
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : String(error));
+    }
+  });
+  app.post("/v1/memory/facts/compact", async (c) => {
+    try {
+      const body = parseJson(await c.req.json().catch(() => ({})), memoryCompactSchema);
+      const model = resolveSessionTitleModel(chatConfig.get(), body.modelId);
+      if (!model) return jsonError("未配置可用模型，无法整理长期记忆");
+      const { generateText } = await import("ai");
+      const result = await generateText({
+        model: createConfiguredLanguageModel(model),
+        system: MEMORY_COMPACT_SYSTEM,
+        prompt: buildMemoryCompactPrompt(body.items),
+        maxRetries: 0,
+      });
+      await recordModelUsage("memory-compact", model, result.usage);
+      return c.json({ facts: parseMemoryFacts(result.text) });
     } catch (error) {
       return jsonError(error instanceof Error ? error.message : String(error));
     }

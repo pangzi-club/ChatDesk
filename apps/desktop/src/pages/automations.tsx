@@ -11,6 +11,16 @@ import {
   Trash2,
 } from "lucide-react";
 import { type FormEvent, useMemo, useState } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -488,32 +498,31 @@ function AutomationsPage() {
           </form>
         </DialogContent>
       </Dialog>
-      <Dialog
+      <AlertDialog
         onOpenChange={(open) => !open && setPendingDeleteTask(null)}
         open={pendingDeleteTask !== null}
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>删除自动任务？</DialogTitle>
-            <DialogDescription>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除自动任务？</AlertDialogTitle>
+            <AlertDialogDescription>
               确定删除“{pendingDeleteTask?.name}”吗？删除后将停止执行且无法恢复。
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button onClick={() => setPendingDeleteTask(null)} type="button" variant="outline">
-              取消
-            </Button>
-            <Button
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
               disabled={saveMutation.isPending}
-              onClick={() => void confirmDeleteTask()}
-              type="button"
-              variant="destructive"
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmDeleteTask();
+              }}
             >
               删除任务
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <Dialog onOpenChange={(open) => !open && setViewingTask(null)} open={viewingTask !== null}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>

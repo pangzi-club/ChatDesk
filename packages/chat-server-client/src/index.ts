@@ -540,6 +540,36 @@ export class ChatServerClient {
     );
   }
 
+  extractMemoryFacts(input: {
+    modelId?: string;
+    items: string[];
+    workspacePath?: string;
+    userText: string;
+    assistantText: string;
+  }) {
+    return this.json<{ facts: string[] }>(
+      "/v1/memory/facts/extract",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      },
+      "长期记忆抽取失败",
+    );
+  }
+
+  compactMemoryFacts(input: { modelId?: string; items: string[] }) {
+    return this.json<{ facts: string[] }>(
+      "/v1/memory/facts/compact",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      },
+      "长期记忆整理失败",
+    );
+  }
+
   getSkills() {
     return this.json<unknown>("/v1/skills", undefined, "Chat Server Skills 加载失败");
   }

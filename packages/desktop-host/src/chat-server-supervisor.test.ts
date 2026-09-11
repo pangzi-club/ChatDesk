@@ -2,6 +2,8 @@ import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 import { ChatServerSupervisor } from "./chat-server-supervisor.js";
 
+const TEST_PORT = 14317;
+
 class FakeHostProcess extends EventEmitter {
   readonly signals: NodeJS.Signals[] = [];
 
@@ -24,6 +26,7 @@ describe("ChatServerSupervisor", () => {
       command: "node",
       args: ["chat-server.cjs"],
       dataDir: "/tmp/chatdesk-test",
+      port: TEST_PORT,
       token: "test-token",
       spawnImpl,
       fetchImpl,
@@ -33,7 +36,7 @@ describe("ChatServerSupervisor", () => {
 
     expect(info).toMatchObject({
       host: "127.0.0.1",
-      port: 14317,
+      port: TEST_PORT,
       token: "test-token",
       managed: true,
       running: true,
@@ -46,13 +49,13 @@ describe("ChatServerSupervisor", () => {
         env: expect.objectContaining({
           CHAT_SERVER_DATA_DIR: "/tmp/chatdesk-test",
           CHAT_SERVER_HOST: "127.0.0.1",
-          CHAT_SERVER_PORT: "14317",
+          CHAT_SERVER_PORT: String(TEST_PORT),
           CHAT_SERVER_PRODUCTION: "1",
           CHAT_SERVER_TOKEN: "test-token",
         }),
       }),
     );
-    expect(fetchImpl).toHaveBeenCalledWith("http://127.0.0.1:14317/v1/sessions", {
+    expect(fetchImpl).toHaveBeenCalledWith(`http://127.0.0.1:${TEST_PORT}/v1/sessions`, {
       headers: { Authorization: "Bearer test-token" },
       signal: expect.any(AbortSignal),
     });
@@ -67,6 +70,7 @@ describe("ChatServerSupervisor", () => {
       command: "node",
       args: ["--watch", "server.ts"],
       production: false,
+      port: TEST_PORT,
       spawnImpl,
       fetchImpl: async () => new Response(null, { status: 200 }),
     });
@@ -89,6 +93,7 @@ describe("ChatServerSupervisor", () => {
       command: "node",
       args: ["chat-server.cjs"],
       token: "new-server-token",
+      port: TEST_PORT,
       startupTimeoutMs: 250,
       spawnImpl: () => child,
       fetchImpl: async (_input, init) =>
@@ -120,6 +125,7 @@ describe("ChatServerSupervisor", () => {
       command: "node",
       maxRestartAttempts: 1,
       restartDelayMs: 0,
+      port: TEST_PORT,
       spawnImpl,
       fetchImpl: async () => new Response(null, { status: 200 }),
     });
@@ -147,6 +153,7 @@ describe("ChatServerSupervisor", () => {
     const supervisor = new ChatServerSupervisor({
       command: "node",
       restartDelayMs: 0,
+      port: TEST_PORT,
       spawnImpl,
       fetchImpl: async () => new Response(null, { status: 200 }),
     });

@@ -2,6 +2,16 @@ import { ArrowLeft, ExternalLink, FolderOpen, MoreHorizontal, TriangleAlert } fr
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useDesktopUi, useDesktopUiSlot } from "@/components/desktop-ui-provider";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -27,6 +37,7 @@ export function PluginDetailPage() {
   const plugin = runtime.scanPlugins().find((item) => item.manifest?.id === id);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmUninstall, setConfirmUninstall] = useState(false);
 
   if (!plugin?.manifest) {
     return (
@@ -88,7 +99,12 @@ export function PluginDetailPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => void installOrUninstall()}>
+                <DropdownMenuItem
+                  onClick={() => {
+                    if (plugin.installed) setConfirmUninstall(true);
+                    else void installOrUninstall();
+                  }}
+                >
                   {plugin.installed ? "卸载插件" : "安装插件"}
                 </DropdownMenuItem>
                 {discoveredPlugin.source === "external" && discoveredPlugin.directory ? (
@@ -242,6 +258,29 @@ export function PluginDetailPage() {
           </dl>
         </section>
       </div>
+
+      <AlertDialog open={confirmUninstall} onOpenChange={setConfirmUninstall}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>卸载插件？</AlertDialogTitle>
+            <AlertDialogDescription>
+              {`将卸载「${manifest.name ?? manifest.id}」并移除它提供的界面与能力。插件文件仍保留在磁盘上，可以重新安装。`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                setConfirmUninstall(false);
+                void installOrUninstall();
+              }}
+            >
+              卸载
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   );
 }

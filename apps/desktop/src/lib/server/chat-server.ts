@@ -1,40 +1,43 @@
 import { ChatServerClient, ChatServerError } from "@chatdesk/chat-server-client";
-import type {
-  ChannelContact,
-  ChannelMessage,
-  ChannelUnreadState,
-  ChatContextCompaction,
-  ChatContextUsage,
-  ChatIndexItem,
-  ChatJobOutputPage,
-  ChatJobSummary,
-  ChatPlanMode,
-  ChatPlanSummary,
-  ChatRunProgress,
-  ChatRunSummary,
-  ChatServerAiUsageLog,
-  ChatServerConfigData,
-  ChatServerProviderModel,
-  ChatServerReviewerLog,
-  ChatSession,
-  DeveloperEnvironmentStatus,
-  FeishuChannelStatus,
-  HealthResponse,
-  RunStartInput,
-  ServerEvent,
-  SessionIndexItem,
-  SystemPromptSnapshot,
-  WorkspaceGitCommitResult,
-  WorkspaceGitDiff,
-  WorkspaceListResult,
-  WorkspacePathSuggestionResult,
+import {
+  CHAT_SERVER_DEFAULT_PORT,
+  type ChannelContact,
+  type ChannelMessage,
+  type ChannelUnreadState,
+  type ChatContextCompaction,
+  type ChatContextUsage,
+  type ChatIndexItem,
+  type ChatJobOutputPage,
+  type ChatJobSummary,
+  type ChatPlanMode,
+  type ChatPlanSummary,
+  type ChatRunProgress,
+  type ChatRunSummary,
+  type ChatServerAiUsageLog,
+  type ChatServerConfigData,
+  type ChatServerProviderModel,
+  type ChatServerReviewerLog,
+  type ChatSession,
+  type DeveloperEnvironmentStatus,
+  type FeishuChannelStatus,
+  type HealthResponse,
+  normalizeChatServerPort,
+  type RunStartInput,
+  type ServerEvent,
+  type SessionIndexItem,
+  type SystemPromptSnapshot,
+  type WorkspaceGitCommitResult,
+  type WorkspaceGitDiff,
+  type WorkspaceListResult,
+  type WorkspacePathSuggestionResult,
 } from "@chatdesk/shared";
 import type { UIMessage } from "ai";
 import { getDesktopBridge, isDesktop } from "@/lib/runtime/desktop-bridge";
 import { desktopFetch } from "@/lib/runtime/desktop-fetch";
 import { settingsStore } from "@/lib/settings/settings-store";
 
-export const CHAT_SERVER_DEFAULT_PORT = 14317;
+export { CHAT_SERVER_DEFAULT_PORT };
+
 const CHAT_SERVER_PORT_KEY = "chatServerPort";
 const CHAT_SERVER_PORT_STORAGE_KEY = "m-dashboard-chat-server-port-v1";
 const runtimeConfig: { port: number; token: string; managed: boolean } = {
@@ -126,8 +129,7 @@ export type ChatPlan = ChatPlanSummary & { content: string };
 export type ChatJob = ChatJobSummary;
 
 function normalizePort(value: unknown) {
-  const port = typeof value === "number" ? value : Number(value);
-  return Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : CHAT_SERVER_DEFAULT_PORT;
+  return normalizeChatServerPort(value);
 }
 
 async function runtimeFetch(input: RequestInfo | URL, init: RequestInit | undefined) {
@@ -711,6 +713,26 @@ export async function loadChatServerMemory(port = CHAT_SERVER_DEFAULT_PORT) {
 
 export async function saveChatServerMemory(value: unknown, port = CHAT_SERVER_DEFAULT_PORT) {
   return createClient(port).saveMemory(value);
+}
+
+export async function extractChatServerMemoryFacts(
+  input: {
+    modelId?: string;
+    items: string[];
+    workspacePath?: string;
+    userText: string;
+    assistantText: string;
+  },
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  return createClient(port).extractMemoryFacts(input);
+}
+
+export async function compactChatServerMemoryFacts(
+  input: { modelId?: string; items: string[] },
+  port = CHAT_SERVER_DEFAULT_PORT,
+) {
+  return createClient(port).compactMemoryFacts(input);
 }
 
 export async function loadChatServerSkills(port = CHAT_SERVER_DEFAULT_PORT) {

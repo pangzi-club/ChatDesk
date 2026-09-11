@@ -490,6 +490,82 @@ describe("chat server", () => {
     );
   });
 
+  it("records usage for long-term memory model calls on the Chat Server", async () => {
+    generateTextMock.mockResolvedValue({
+      text: '["偏好中文回答"]',
+      usage: { inputTokens: 12, outputTokens: 4, totalTokens: 16 },
+    });
+    const server = await createTestServer();
+    const configured = await server.app.request("http://localhost/v1/chat-config", {
+      method: "PATCH",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({
+        models: [
+          {
+            id: "memory-model",
+            name: "memory-model",
+            baseUrl: "https://example.com/v1",
+            apiKey: "test-key",
+          },
+        ],
+      }),
+    });
+    assert.equal(configured.status, 200);
+
+    const extracted = await server.app.request("http://localhost/v1/memory/facts/extract", {
+      method: "POST",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({
+        modelId: "memory-model",
+        items: ["已有记忆"],
+        workspacePath: "/tmp/project",
+        userText: "记住我用 pnpm",
+        assistantText: "好的",
+      }),
+    });
+    assert.equal(extracted.status, 200);
+    assert.deepEqual(await extracted.json(), { facts: ["偏好中文回答"] });
+
+    const compacted = await server.app.request("http://localhost/v1/memory/facts/compact", {
+      method: "POST",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ modelId: "memory-model", items: ["偏好中文回答"] }),
+    });
+    assert.equal(compacted.status, 200);
+    assert.deepEqual(await compacted.json(), { facts: ["偏好中文回答"] });
+
+    const usageResponse = await server.app.request("http://localhost/v1/ai-usage", {
+      headers: auth(),
+    });
+    assert.equal(usageResponse.status, 200);
+    const usage = (await usageResponse.json()) as Array<{
+      operation: string;
+      modelId?: string;
+      usage: { inputTokens?: number; outputTokens?: number };
+    }>;
+    assert.deepEqual(
+      usage.map((entry) => entry.operation),
+      ["memory-compact", "memory-extract"],
+    );
+    assert.equal(usage[0]?.modelId, "memory-model");
+    assert.deepEqual(usage[0]?.usage, {
+      inputTokens: 12,
+      outputTokens: 4,
+      totalTokens: 16,
+    });
+  });
+
+  it("rejects long-term memory model calls when no model is configured", async () => {
+    const server = await createTestServer();
+    const response = await server.app.request("http://localhost/v1/memory/facts/compact", {
+      method: "POST",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ items: ["偏好中文回答"] }),
+    });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /未配置可用模型/);
+  });
+
   it("updates a session title manually without changing session recency", async () => {
     const server = await createTestServer();
     await server.store.save({

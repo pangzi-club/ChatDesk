@@ -4,7 +4,6 @@ export const CHAT_MEMORY_SCHEMA_VERSION = 1;
 
 export const MEMORY_ITEM_SOFT_LIMIT = 50;
 export const MEMORY_INJECT_CHAR_SOFT_LIMIT = 2000;
-export const MEMORY_COMPACT_TARGET_ITEMS = 30;
 export const MEMORY_COMPACT_TARGET_CHARS = 1200;
 
 export type ChatMemoryItem = {
