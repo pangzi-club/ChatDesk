@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useDesktopUi } from "@/components/desktop-ui-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,21 +22,20 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { DiscoveredPlugin } from "@/lib/desktop-plugin-discovery";
-import { useDesktopUi } from "@/lib/desktop-ui";
-import { loadDeveloperSettings } from "@/lib/developer-settings";
+import type { DiscoveredPlugin } from "@/lib/plugins/desktop-plugin-discovery";
 import {
   externalPluginsSupported,
   loadExternalPluginDirectories,
   saveExternalPluginDirectories,
-} from "@/lib/external-plugins";
-import { pickDirectory } from "@/lib/platform";
+} from "@/lib/plugins/external-plugins";
 import {
   getPluginCategory,
   getPluginIcon,
   getPluginSearchText,
   shouldShowPlugin,
-} from "@/lib/plugin-catalog";
+} from "@/lib/plugins/plugin-catalog";
+import { pickDirectory } from "@/lib/runtime/platform";
+import { loadDeveloperSettings } from "@/lib/settings/developer-settings";
 
 type PluginFilter = "all" | "installed";
 

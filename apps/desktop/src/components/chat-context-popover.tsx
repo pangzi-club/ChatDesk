@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { calculateContextCacheHitRate } from "@/lib/chat-usage";
+import { calculateContextCacheHitRate } from "@/lib/usage/chat-usage";
 
 type ChatContextPopoverProps = {
   cacheReadTokens?: number;

@@ -1,9 +1,9 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
-import { initializeChatServer } from "./lib/chat-server";
-import { loadChatDisplaySettings } from "./lib/chat-settings";
-import { createDesktopUiRuntime } from "./lib/desktop-ui";
+import { createDesktopUiRuntime } from "./lib/plugins/desktop-ui";
+import { initializeChatServer } from "./lib/server/chat-server";
+import { loadChatDisplaySettings } from "./lib/settings/chat-settings";
 
 await initializeChatServer();
 const { layout } = await loadChatDisplaySettings();

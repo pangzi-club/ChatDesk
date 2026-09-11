@@ -7,7 +7,7 @@ import {
   mapPlainOffsetToPmPos,
   parseComposerMarkdown,
   serializeComposerMarkdown,
-} from "@/lib/chat-composer-markdown";
+} from "@/lib/chat/composer/chat-composer-markdown";
 
 export type ChatComposerInputHandle = {
   focus: () => void;

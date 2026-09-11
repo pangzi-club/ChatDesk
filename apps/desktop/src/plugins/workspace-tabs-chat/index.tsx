@@ -2,8 +2,8 @@ import type { DesktopPluginModule } from "@chatdesk/desktop-plugin-sdk";
 import type { Context } from "cordis";
 import { MessageSquarePlus } from "lucide-react";
 import { SideChatTabRenderer } from "@/components/workspace-tab-renderers";
-import { deleteChatServerSession, stopChatServerRun } from "@/lib/chat-server";
-import type { WorkspaceTabContribution } from "@/lib/desktop-ui";
+import type { WorkspaceTabContribution } from "@/lib/plugins/desktop-ui";
+import { deleteChatServerSession, stopChatServerRun } from "@/lib/server/chat-server";
 
 export const manifest = {
   id: "workspace-tabs-chat",

@@ -9,8 +9,8 @@ import type {
 import type { Context } from "cordis";
 import { Bug, Hammer, RefreshCw, SearchCode } from "lucide-react";
 import type { ReactNode } from "react";
-import type { ChatLayoutProps } from "@/lib/chat-layout";
-import { useChatLayoutId } from "@/lib/chat-layout";
+import { useChatLayoutId } from "@/components/chat-layout-provider";
+import type { ChatLayoutProps } from "@/lib/plugins/chat-layout";
 
 export const manifest = {
   id: "chat-layout-standard",

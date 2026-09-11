@@ -1,4 +1,4 @@
-import { getDesktopBridge } from "@/lib/desktop-bridge";
+import { getDesktopBridge } from "@/lib/runtime/desktop-bridge";
 
 /** 窗口拖拽区，双击切换最大化 */
 function TitlebarDragRegion({ className = "" }: { className?: string }) {

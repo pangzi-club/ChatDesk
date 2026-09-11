@@ -1,5 +1,5 @@
 import { Fish, Terminal } from "lucide-react";
-import { useChatLayoutId } from "@/lib/chat-layout";
+import { useChatLayoutId } from "@/components/chat-layout-provider";
 
 /** Portal-safe, non-interactive ornaments for the active Chat layout. */
 export function ChatLayoutThemeLayer() {

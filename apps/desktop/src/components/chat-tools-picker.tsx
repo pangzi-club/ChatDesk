@@ -15,8 +15,8 @@ import {
   CHAT_TOOL_PACKS,
   type ChatToolPackId,
   type ChatToolsSettings,
-} from "@/lib/chat-tools";
-import type { McpServerConfig } from "@/lib/mcp";
+} from "@/lib/chat/chat-tools";
+import type { McpServerConfig } from "@/lib/server/mcp";
 
 type ChatToolsPickerProps = {
   disabled?: boolean;

@@ -8,7 +8,7 @@ import {
   CHAT_TOOL_PACKS,
   type ChatToolPackId,
   type ChatToolsSettings as ChatToolsSettingsValue,
-} from "@/lib/chat-tools";
+} from "@/lib/chat/chat-tools";
 import { loadKieApiKey } from "@/lib/image-generation";
 
 type ChatToolsSettingsProps = {

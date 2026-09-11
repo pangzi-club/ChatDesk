@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
-import { isBuiltinSkill, type SkillDefinition } from "@/lib/skills";
+import { isBuiltinSkill, type SkillDefinition } from "@/lib/server/skills";
 
 type ChatSkillsPickerProps = {
   disabled?: boolean;

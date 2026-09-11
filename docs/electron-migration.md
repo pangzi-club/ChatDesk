@@ -40,7 +40,7 @@ Renderer 不直接调用 Electron 或 Node API。所有宿主能力通过 bridge
 
 ### 1. 抽离 renderer 宿主边界（已完成）
 
-- 使用 `apps/desktop/src/lib/desktop-bridge.ts` 定义统一 bridge。
+- 使用 `apps/desktop/src/lib/runtime/desktop-bridge.ts` 定义统一 bridge。
 - 先迁移设置、文件选择、外链、图片保存、托盘和事件订阅。
 - Electron bridge 通过 `contextBridge` 注入。
 - renderer 不再依赖 Tauri 宿主实现。

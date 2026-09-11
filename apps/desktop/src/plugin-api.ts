@@ -43,6 +43,6 @@ export type {
   ChatLayoutContribution,
   ChatLayoutProps,
   ChatLayoutScope,
-} from "@/lib/chat-layout";
-export { ChatLayoutService } from "@/lib/chat-layout";
-export { DesktopUiService } from "@/lib/desktop-ui";
+} from "@/lib/plugins/chat-layout";
+export { ChatLayoutService } from "@/lib/plugins/chat-layout";
+export { DesktopUiService } from "@/lib/plugins/desktop-ui";

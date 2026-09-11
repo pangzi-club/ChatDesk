@@ -9,8 +9,8 @@ import {
   FolderOpen,
   GitBranch,
 } from "lucide-react";
-import type { ExplorerFileIconKind } from "@/lib/explorer-file-icon";
 import { cn } from "@/lib/utils";
+import type { ExplorerFileIconKind } from "@/lib/workspace/explorer-file-icon";
 
 const ICONS = {
   folder: Folder,

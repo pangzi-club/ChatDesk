@@ -17,10 +17,10 @@ import {
   getBrowserPreviewTitle,
   moveBrowserNavigation,
   pushBrowserNavigation,
-} from "@/lib/browser-preview";
-import { loadChatPlan, loadChatPlans } from "@/lib/chat-server";
-import type { WorkspaceTabRenderProps } from "@/lib/desktop-ui";
-import { requestPlanExecution } from "@/lib/plan-viewer-events";
+} from "@/lib/browser/browser-preview";
+import { requestPlanExecution } from "@/lib/chat/plan-viewer-events";
+import type { WorkspaceTabRenderProps } from "@/lib/plugins/desktop-ui";
+import { loadChatPlan, loadChatPlans } from "@/lib/server/chat-server";
 
 export function TerminalTabRenderer({ tab, scope }: WorkspaceTabRenderProps<"terminal">) {
   return <ChatTerminal cwd={tab.data.cwd ?? scope.cwd} sessionKey={tab.id} />;

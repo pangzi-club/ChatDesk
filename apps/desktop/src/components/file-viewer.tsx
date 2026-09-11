@@ -12,7 +12,7 @@ import {
   createDiffEditorOptions,
   type DiffViewerLayout,
   fileViewerEditorOptions,
-} from "@/lib/file-viewer-options";
+} from "@/lib/workspace/file-viewer-options";
 
 export type FileViewerMode = "source" | "diff";
 

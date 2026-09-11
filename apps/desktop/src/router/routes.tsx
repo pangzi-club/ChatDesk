@@ -10,7 +10,7 @@ import { DesktopRouteHost } from "@/components/desktop-route-host";
 import { SettingsRouteHost } from "@/components/settings-route-host";
 import { AppShell } from "@/layouts/app-shell";
 import { SettingsLayout } from "@/layouts/settings-layout";
-import { chatIndexRedirectPath } from "@/lib/chat-routes";
+import { chatIndexRedirectPath } from "@/lib/chat/chat-routes";
 import { ChatPage } from "@/pages/chat";
 import { HistoryDetailPage } from "@/pages/history";
 import { PluginDetailPage } from "@/pages/plugin-detail";

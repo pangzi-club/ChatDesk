@@ -72,7 +72,7 @@ type ChatAttachment = {
 
 ```text
 用户文件 / 生成图片
-  → uploadChatServerAttachment(sessionId, attachmentId, fileName, bytes)   # apps/desktop/src/lib/chat-server.ts
+  → uploadChatServerAttachment(sessionId, attachmentId, fileName, bytes)   # apps/desktop/src/lib/server/chat-server.ts
   → ChatServerClient.uploadAttachment                                       # packages/chat-server-client（base64 POST）
   → POST /v1/sessions/:id/attachments                                       # Sharp 压缩后落盘，返回 { path, size, mediaType?, ... }
   → GET /attachments/:id                                                    # 取压缩后的字节，构造发给模型的 file part
@@ -90,9 +90,9 @@ type ChatAttachment = {
 
 ## 7. 现有调用方
 
-- **image_generation（首个调用方）**：`apps/desktop/src/lib/chat-image-generation.ts` 的 `materializeGeneratedImages` 把生成图片经同一 `POST /attachments` 落盘为 `source: "generated"` 的附件（因此也会走 Sharp 压缩），并用 `mergeAttachments` 回填 `session.attachments`、改写消息 parts。这是「落盘 + 回填元数据 + 改写 parts」的完整范式。
-- **browser_screenshot**：Chat Server 在工具执行时先把截图写到 `sessions/<sessionId>/attachments/`（内部 path，不进入工具 schema），再经同一套 Sharp 压缩；输出可能是 WebP，不再保证 PNG。前端 `apps/desktop/src/lib/chat-browser-screenshots.ts` 的 `materializeBrowserScreenshots` 只回填 `session.attachments`（`source: "generated"`），不再次上传。聊天卡片按 tool output 的 `data.path` 预览。若助手把同一绝对路径写进 Markdown `![](/Users/...png)`，`ChatMarkdown` 会把它转成 `assetUrl`（桌面端 `convertFileSrc`），不能当网站相对路径加载。
-- **用户文件输入**：composer 附件按钮与拖拽上传复用同一链路，`source: "upload"`。实现见 `apps/desktop/src/lib/chat-attachments.ts` 与 `apps/desktop/src/pages/chat.tsx`。
+- **image_generation（首个调用方）**：`apps/desktop/src/lib/chat/chat-image-generation.ts` 的 `materializeGeneratedImages` 把生成图片经同一 `POST /attachments` 落盘为 `source: "generated"` 的附件（因此也会走 Sharp 压缩），并用 `mergeAttachments` 回填 `session.attachments`、改写消息 parts。这是「落盘 + 回填元数据 + 改写 parts」的完整范式。
+- **browser_screenshot**：Chat Server 在工具执行时先把截图写到 `sessions/<sessionId>/attachments/`（内部 path，不进入工具 schema），再经同一套 Sharp 压缩；输出可能是 WebP，不再保证 PNG。前端 `apps/desktop/src/lib/chat/chat-browser-screenshots.ts` 的 `materializeBrowserScreenshots` 只回填 `session.attachments`（`source: "generated"`），不再次上传。聊天卡片按 tool output 的 `data.path` 预览。若助手把同一绝对路径写进 Markdown `![](/Users/...png)`，`ChatMarkdown` 会把它转成 `assetUrl`（桌面端 `convertFileSrc`），不能当网站相对路径加载。
+- **用户文件输入**：composer 附件按钮与拖拽上传复用同一链路，`source: "upload"`。实现见 `apps/desktop/src/lib/chat/chat-attachments.ts` 与 `apps/desktop/src/pages/chat.tsx`。
 
 ## 8. 限制、压缩与清理
 
@@ -111,8 +111,8 @@ type ChatAttachment = {
 - `packages/agent-core/src/image-compress.ts`：Sharp 图片压缩。
 - `packages/agent-core/src/store.ts`：`saveAttachment / readAttachment / deleteAttachment / attachmentPath`。
 - `packages/chat-server-client/src/index.ts`：`ChatServerClient.uploadAttachment`。
-- `apps/desktop/src/lib/chat-server.ts`：`uploadChatServerAttachment` 封装。
-- `apps/desktop/src/lib/chat-image-generation.ts`：现有「落盘 + 回填 + 改写 parts」范式（`mergeAttachments` / `materializeGeneratedImages`）。
-- `apps/desktop/src/lib/chat-browser-screenshots.ts`：浏览器截图「已落盘 + 回填 session.attachments」。
-- `apps/desktop/src/lib/chat-markdown-images.ts`：Markdown 本地文件图片 src 转 `assetUrl`。
+- `apps/desktop/src/lib/server/chat-server.ts`：`uploadChatServerAttachment` 封装。
+- `apps/desktop/src/lib/chat/chat-image-generation.ts`：现有「落盘 + 回填 + 改写 parts」范式（`mergeAttachments` / `materializeGeneratedImages`）。
+- `apps/desktop/src/lib/chat/chat-browser-screenshots.ts`：浏览器截图「已落盘 + 回填 session.attachments」。
+- `apps/desktop/src/lib/chat/message/chat-markdown-images.ts`：Markdown 本地文件图片 src 转 `assetUrl`。
 - `packages/agent-core/src/browser-screenshot.ts`：截图附件路径与 tool output 字段。

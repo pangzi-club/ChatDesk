@@ -152,9 +152,9 @@ Server 负责「何时调工具、如何把结果写回模型」；工具的真�
 - `packages/agent-core/src/store.ts`：Session Store，per-session 持久化。
 - `packages/agent-core/src/sandbox-exec.ts`：Seatbelt 沙箱执行，deny-by-default profile。
 - `packages/chat-server-client/src/index.ts`：运行时无关的 Chat Server HTTP/SSE 客户端。
-- `apps/desktop/src/lib/chat-server.ts`：桌面端适配层，注入端口、token 与宿主 fetch。
+- `apps/desktop/src/lib/server/chat-server.ts`：桌面端适配层，注入端口、token 与宿主 fetch。
 - `apps/desktop/src/pages/chat.tsx`：Chat 页面，消费 HTTP 客户端，切页不中断生成。
-- `apps/desktop/src/lib/chat-routes.ts`：桌面 Chat URL 身份（`/chat/new` 草稿与 `/chat/:sessionId` 会话）。
+- `apps/desktop/src/lib/chat/chat-routes.ts`：桌面 Chat URL 身份（`/chat/new` 草稿与 `/chat/:sessionId` 会话）。
 - `packages/desktop-host/src/chat-server-supervisor.ts`：Electron 侧进程拉起、token 注入、优雅退出。
 
 ### 4.1 桌面 Chat URL

@@ -3,9 +3,9 @@ import { CalendarClock, FolderGit2, GitBranch } from "lucide-react";
 import type { ReactElement } from "react";
 import { useState } from "react";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
-import { loadServerWorkspaceGit } from "@/lib/chat-server";
-import type { ChatIndexItem } from "@/lib/chat-store";
-import { type WorkspaceGitInfo, workspaceGitQueryKey } from "@/lib/workspaces";
+import type { ChatIndexItem } from "@/lib/chat/chat-store";
+import { loadServerWorkspaceGit } from "@/lib/server/chat-server";
+import { type WorkspaceGitInfo, workspaceGitQueryKey } from "@/lib/workspace/workspaces";
 
 type ChatConversationHoverCardProps = {
   children: ReactElement;

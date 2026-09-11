@@ -1,6 +1,7 @@
 import { ArrowLeft, ExternalLink, FolderOpen, MoreHorizontal, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useDesktopUi, useDesktopUiSlot } from "@/components/desktop-ui-provider";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -9,14 +10,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
-import { useDesktopUi, useDesktopUiSlot } from "@/lib/desktop-ui";
-import { revealExternalPluginDirectory } from "@/lib/external-plugins";
+import { revealExternalPluginDirectory } from "@/lib/plugins/external-plugins";
 import {
   getContributionInfo,
   getPluginCategory,
   getPluginExamples,
   getPluginIcon,
-} from "@/lib/plugin-catalog";
+} from "@/lib/plugins/plugin-catalog";
 
 export function PluginDetailPage() {
   const runtime = useDesktopUi();

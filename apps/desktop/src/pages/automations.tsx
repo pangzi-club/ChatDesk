@@ -30,19 +30,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { loadAgents } from "@/lib/agents";
+import { loadAgents } from "@/lib/server/agents";
 import {
   type AutomationTask,
   loadAutomationRuns,
   loadAutomationTasks,
   saveAutomationTasks,
-} from "@/lib/automation";
+} from "@/lib/server/automation";
 import {
   type ChannelContact,
   type FeishuChannelStatus,
   loadFeishuChannelStatuses,
   loadFeishuContacts,
-} from "@/lib/chat-server";
+} from "@/lib/server/chat-server";
 
 const AUTOMATION_QUERY_KEY = ["automation-tasks"];
 

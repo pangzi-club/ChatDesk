@@ -59,6 +59,7 @@ import {
   copyChatConversationId,
 } from "@/components/chat-conversation-menu-items";
 import { ChatTitleDialog } from "@/components/chat-title-dialog";
+import { useDesktopUi, useDesktopUiSlot } from "@/components/desktop-ui-provider";
 import { ExplorerFileIcon } from "@/components/explorer-file-icon";
 import { FileViewer } from "@/components/file-viewer";
 import { GitCommitDialog } from "@/components/git-commit-dialog";
@@ -90,14 +91,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { rememberReturnPath } from "@/lib/app-return-path";
 import {
   getBrowserPreviewTitle,
   normalizeBrowserPreviewUrl,
   pushBrowserNavigation,
-} from "@/lib/browser-preview";
-import { openBrowserPreview, subscribeBrowserPreviewOpen } from "@/lib/browser-preview-events";
-import { copyChatConversationMarkdown } from "@/lib/chat-conversation-markdown";
+} from "@/lib/browser/browser-preview";
+import {
+  openBrowserPreview,
+  subscribeBrowserPreviewOpen,
+} from "@/lib/browser/browser-preview-events";
 import {
   chatNewNavigationState,
   chatNewPath,
@@ -105,7 +107,43 @@ import {
   getChatWindowKey,
   isChatPath,
   parseChatLocation,
-} from "@/lib/chat-routes";
+} from "@/lib/chat/chat-routes";
+import {
+  type ChatIndexItem,
+  deleteChatSession,
+  loadChatIndex,
+  loadChatSession,
+  searchChatIndex,
+} from "@/lib/chat/chat-store";
+import {
+  subscribeContextDetailOpen,
+  subscribeContextDetailUpdated,
+} from "@/lib/chat/context-detail-events";
+import { copyChatConversationMarkdown } from "@/lib/chat/message/chat-conversation-markdown";
+import { subscribePlanViewerOpen, subscribePlanViewerUpdated } from "@/lib/chat/plan-viewer-events";
+import { subscribeSideChatOpen } from "@/lib/chat/side-chat-events";
+import {
+  type AnyWorkspaceTabContribution,
+  type DesktopActionContribution,
+  type DesktopShellContribution,
+  type DesktopShellScope,
+  patchWorkspaceTab,
+  type SidebarNavigationContribution,
+  type WorkspaceTab,
+  type WorkspaceTabRenderProps,
+  type WorkspaceTabScope,
+  type WorkspaceTabType,
+} from "@/lib/plugins/desktop-ui";
+import { rememberReturnPath } from "@/lib/runtime/app-return-path";
+import { getDesktopBridge, isDesktop } from "@/lib/runtime/desktop-bridge";
+import {
+  DEFAULT_SHORTCUTS,
+  formatShortcut,
+  loadShortcutSettings,
+  matchesShortcut,
+  type ShortcutSettings,
+  subscribeShortcutSettings,
+} from "@/lib/runtime/shortcuts";
 import {
   type ChatServerSession,
   canMonitorChatServer,
@@ -124,50 +162,17 @@ import {
   subscribeChatServerConnection,
   subscribeChatServerEvents,
   updateChatSessionTitle,
-} from "@/lib/chat-server";
+} from "@/lib/server/chat-server";
+import { appendSystemLog } from "@/lib/server/system-log";
 import {
-  type ChatIndexItem,
-  deleteChatSession,
-  loadChatIndex,
-  loadChatSession,
-  searchChatIndex,
-} from "@/lib/chat-store";
-import {
-  subscribeContextDetailOpen,
-  subscribeContextDetailUpdated,
-} from "@/lib/context-detail-events";
-import { getDesktopBridge, isDesktop } from "@/lib/desktop-bridge";
-import {
-  type AnyWorkspaceTabContribution,
-  type DesktopActionContribution,
-  type DesktopShellContribution,
-  type DesktopShellScope,
-  patchWorkspaceTab,
-  type SidebarNavigationContribution,
-  useDesktopUi,
-  useDesktopUiSlot,
-  type WorkspaceTab,
-  type WorkspaceTabRenderProps,
-  type WorkspaceTabScope,
-  type WorkspaceTabType,
-} from "@/lib/desktop-ui";
-import { DEFAULT_DEVELOPER_SETTINGS, loadDeveloperSettings } from "@/lib/developer-settings";
-import { explorerFileIconKind } from "@/lib/explorer-file-icon";
-import { subscribeFileViewerOpen } from "@/lib/file-viewer-events";
-import { loadGeneralSettings, notifyFeishuMessage } from "@/lib/general-settings";
-import { subscribeImagePreviewOpen } from "@/lib/image-preview-events";
-import { subscribePlanViewerOpen, subscribePlanViewerUpdated } from "@/lib/plan-viewer-events";
-import { settingsStore } from "@/lib/settings-store";
-import {
-  DEFAULT_SHORTCUTS,
-  formatShortcut,
-  loadShortcutSettings,
-  matchesShortcut,
-  type ShortcutSettings,
-  subscribeShortcutSettings,
-} from "@/lib/shortcuts";
-import { subscribeSideChatOpen } from "@/lib/side-chat-events";
-import { appendSystemLog } from "@/lib/system-log";
+  DEFAULT_DEVELOPER_SETTINGS,
+  loadDeveloperSettings,
+} from "@/lib/settings/developer-settings";
+import { loadGeneralSettings, notifyFeishuMessage } from "@/lib/settings/general-settings";
+import { settingsStore } from "@/lib/settings/settings-store";
+import { explorerFileIconKind } from "@/lib/workspace/explorer-file-icon";
+import { subscribeFileViewerOpen } from "@/lib/workspace/file-viewer-events";
+import { subscribeImagePreviewOpen } from "@/lib/workspace/image-preview-events";
 import {
   adjacentConversationId,
   clusterConversations,
@@ -183,8 +188,8 @@ import {
   sortWorkspaceConversationGroups,
   sortWorkspaceProjects,
   type WorkspaceSort,
-} from "@/lib/workspace-conversation-utils";
-import { isDefaultWorkspaceId, resolveDefaultSessionCwd } from "@/lib/workspace-path";
+} from "@/lib/workspace/workspace-conversation-utils";
+import { isDefaultWorkspaceId, resolveDefaultSessionCwd } from "@/lib/workspace/workspace-path";
 import {
   addWorkspaceProject,
   loadWorkspaceProjects,
@@ -193,7 +198,7 @@ import {
   type WorkspaceGitInfo,
   type WorkspaceProject,
   workspaceGitQueryKey,
-} from "@/lib/workspaces";
+} from "@/lib/workspace/workspaces";
 
 const WORKBENCH_MOTION_TRANSITION = { duration: 0.16, ease: "easeOut" } as const;
 const WORKBENCH_LAYOUT_TRANSITION = { duration: 0.18, ease: "easeOut" } as const;

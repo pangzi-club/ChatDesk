@@ -33,10 +33,10 @@ import {
   scanKimiSessions,
   sourceLabel,
   uploadImportFile,
-} from "@/lib/chat-archive";
-import { parseClaudeCodeSession } from "@/lib/importers/claude-code";
-import { parseCodexRollout } from "@/lib/importers/codex";
-import { parseCursorSession, parseKimiSession } from "@/lib/importers/generic";
+} from "@/lib/archive/chat-archive";
+import { parseClaudeCodeSession } from "@/lib/archive/importers/claude-code";
+import { parseCodexRollout } from "@/lib/archive/importers/codex";
+import { parseCursorSession, parseKimiSession } from "@/lib/archive/importers/generic";
 
 type HistoryImportDialogProps = {
   open: boolean;

@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import type { ChatMemoryItem, ChatMemoryStore } from "@/lib/chat-memory";
+import type { ChatMemoryItem, ChatMemoryStore } from "@/lib/chat/chat-memory";
 
 type ChatMemorySettingsProps = {
   store: ChatMemoryStore;

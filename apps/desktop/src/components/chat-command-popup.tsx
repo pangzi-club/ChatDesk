@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { ChatCommand } from "@/lib/chat-commands";
+import type { ChatCommand } from "@/lib/chat/chat-commands";
 
 export type ChatCommandPopupProps = {
   commands: ChatCommand[];

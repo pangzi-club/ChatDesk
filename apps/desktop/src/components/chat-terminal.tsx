@@ -3,7 +3,11 @@ import "@xterm/xterm/css/xterm.css";
 import { Eraser, LoaderCircle, SquareTerminal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { type TerminalSessionStatus, terminalSessions, terminalSupported } from "@/lib/terminal";
+import {
+  type TerminalSessionStatus,
+  terminalSessions,
+  terminalSupported,
+} from "@/lib/workspace/terminal";
 
 function pathBasename(path: string) {
   return (

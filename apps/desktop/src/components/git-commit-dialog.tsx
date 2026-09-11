@@ -19,7 +19,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { commitServerWorkspaceGit, pushServerWorkspaceGit } from "@/lib/chat-server";
+import { commitServerWorkspaceGit, pushServerWorkspaceGit } from "@/lib/server/chat-server";
 
 type GitCommitDialogProps = {
   open: boolean;

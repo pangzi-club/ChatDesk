@@ -7,9 +7,9 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
+import { useDesktopUiSlot } from "@/components/desktop-ui-provider";
 import { Button } from "@/components/ui/button";
-import { getReturnPath } from "@/lib/app-return-path";
-import { useDesktopUiSlot } from "@/lib/desktop-ui";
+import { getReturnPath } from "@/lib/runtime/app-return-path";
 
 export function SettingsLayout() {
   const navigate = useNavigate();

@@ -75,8 +75,9 @@ Put new code in the narrowest directory that matches its runtime and responsibil
 - `apps/desktop/src/components/ui/`: shared shadcn/Radix-style primitives only (`Button`, `Dialog`, `AlertDialog`, form controls, and similar). Keep product-specific behavior out of this directory; extend a primitive here only when the primitive itself needs a reusable capability.
 - `apps/desktop/src/layouts/`: shared application chrome and nested route layouts, such as the app shell, navigation, titlebar, and outlet composition. Do not put a one-page screen here.
 - `apps/desktop/src/router/`: route declarations, redirects, route-level layout wiring, and URL parameter mapping only. Keep data fetching and page UI in the page or library that owns it.
-- `apps/desktop/src/lib/`: browser-side domain logic, API clients, persistence adapters, query helpers, parsers, and integrations. Keep this directory free of JSX; wrappers for Chat Server requests and desktop bridge calls belong here so pages and components do not call platform APIs directly.
-- `apps/desktop/src/lib/importers/`: browser-side parsers for imported archive formats. Add a new source-specific importer here and keep the shared archive orchestration in `apps/desktop/src/lib/chat-archive.ts`.
+- `apps/desktop/src/lib/`: browser-side domain logic, API clients, persistence adapters, query helpers, parsers, and integrations. Keep this directory free of JSX; wrappers for Chat Server requests and desktop bridge calls belong here so pages and components do not call platform APIs directly. Only `utils.ts` sits at the root (the shadcn `utils` alias in `components.json` targets `@/lib/utils`); put every other module in the domain subdirectory that matches it — `archive/`, `browser/`, `chat/` (with `chat/composer/` and `chat/message/`), `image-generation/`, `plugins/`, `runtime/`, `server/`, `settings/`, `usage/`, or `workspace/` — instead of adding another flat file.
+- `apps/desktop/src/components/`: also owns the React binding for a `lib/` service. Cordis service classes, contribution types, and runtime factories stay in `lib/`; their context, `*Provider`, and `use*` hooks live beside them in `components/` (for example `components/desktop-ui-provider.tsx` for `lib/plugins/desktop-ui.ts`, and `components/chat-layout-provider.tsx` for `lib/plugins/chat-layout.ts`). A `lib/` module may import React types, but not JSX or providers.
+- `apps/desktop/src/lib/archive/importers/`: browser-side parsers for imported archive formats. Add a new source-specific importer here and keep the shared archive orchestration in `apps/desktop/src/lib/archive/chat-archive.ts`.
 - `packages/shared/`: runtime-neutral TypeScript contracts, constants, and algorithms imported by the browser, `apps/server`, `apps/cli`, and `packages/agent-core`. Keep it private to the workspace until a package publishing boundary is intentionally introduced. Do not import React, DOM, Node.js, Electron, or filesystem APIs from this directory.
 - `apps/desktop/src/assets/`: assets imported by Vite from TypeScript/CSS. Put files that must be served at a stable public URL in `apps/desktop/public/` instead.
 - `apps/desktop/src/App.tsx` and `apps/desktop/src/main.tsx`: application bootstrap, providers, and startup initialization only. `apps/desktop/src/App.css` is for global application styles; keep component/page styles close to their owning UI when the existing styling approach permits it.
@@ -88,7 +89,7 @@ For browser code, use this decision order: JSX that defines a URL screen belongs
 - `packages/chat-server-client/src/index.ts`: runtime-neutral Chat Server HTTP and SSE client (`ChatServerClient`). Inject `fetch` and `EventSource`; do not import React, DOM, Node.js, or Electron.
 - `packages/chat-server-client/src/*.test.ts`: tests colocated with the client they exercise.
 
-Desktop UI must not import this package from pages or components. Wrap it in `apps/desktop/src/lib/chat-server.ts` so port, token, and host `fetch` stay in the desktop adapter.
+Desktop UI must not import this package from pages or components. Wrap it in `apps/desktop/src/lib/server/chat-server.ts` so port, token, and host `fetch` stay in the desktop adapter.
 
 ### Agent Harness (`packages/agent-core`)
 
@@ -120,7 +121,7 @@ The CLI may import `@chatdesk/agent-core`, `@chatdesk/shared`, and Ink/React for
 - `apps/server/src/*.ts`: HTTP connection and product API modules (`cors`, `sse-keepalive`, archive/automation stores).
 - `apps/server/src/*.test.ts`: Tests for HTTP handlers and server-only product APIs.
 
-The Node service may import `@chatdesk/agent-core` and `@chatdesk/shared`, but must not import React components, browser pages, `src/lib/` browser adapters, or Electron host code. Browser callers should reach this service through `@chatdesk/chat-server-client` and the desktop adapter in `apps/desktop/src/lib/chat-server.ts`.
+The Node service may import `@chatdesk/agent-core` and `@chatdesk/shared`, but must not import React components, browser pages, `src/lib/` browser adapters, or Electron host code. Browser callers should reach this service through `@chatdesk/chat-server-client` and the desktop adapter in `apps/desktop/src/lib/server/chat-server.ts`.
 
 ### Electron Desktop Layer (`apps/electron`)
 
@@ -129,7 +130,7 @@ The Node service may import `@chatdesk/agent-core` and `@chatdesk/shared`, but m
 - `apps/electron/src/ipc-contract.ts`: IPC command names, event prefixes, and input validation.
 - `packages/desktop-host`: Chat Server process supervisor used by Electron main.
 
-Frontend code should call native functionality through `apps/desktop/src/lib/desktop-bridge.ts`, not by placing Electron APIs throughout pages or components. Native code must not depend on browser UI code.
+Frontend code should call native functionality through `apps/desktop/src/lib/runtime/desktop-bridge.ts`, not by placing Electron APIs throughout pages or components. Native code must not depend on browser UI code.
 
 ### Tooling, Documentation, and Generated Files
 
@@ -142,4 +143,4 @@ Frontend code should call native functionality through `apps/desktop/src/lib/des
 
 - Keep the dependency direction explicit: pages/layouts/components may use `apps/desktop/src/lib/`, `packages/shared/`, and `apps/desktop/src/components/ui/`; `apps/desktop/src/lib/` may use `packages/shared/` and `@chatdesk/chat-server-client`; `packages/shared/` stays platform-neutral; `packages/chat-server-client` may use `packages/shared/` and `fetch` / `EventSource`; `packages/agent-core` may use `packages/shared/` and Node APIs; `apps/server` and `apps/cli` may use `@chatdesk/agent-core` and `packages/shared/`; `apps/electron` and `packages/desktop-host` remain a separate native host boundary.
 - Put a test beside the implementation it exercises (`*.test.ts` or `*.test.tsx`) and use the test runner for that runtime. Do not introduce a second test framework or a frontend test setup in an unrelated directory without documenting the choice.
-- When a change crosses a boundary, update the adapter and its contract at that boundary instead of reaching through it. For example, add a Chat Server endpoint in `apps/server`, the HTTP/SSE method on `ChatServerClient` in `packages/chat-server-client`, the desktop wrapper in `apps/desktop/src/lib/chat-server.ts`, and the consuming query/mutation in the owning page or component.
+- When a change crosses a boundary, update the adapter and its contract at that boundary instead of reaching through it. For example, add a Chat Server endpoint in `apps/server`, the HTTP/SSE method on `ChatServerClient` in `packages/chat-server-client`, the desktop wrapper in `apps/desktop/src/lib/server/chat-server.ts`, and the consuming query/mutation in the owning page or component.

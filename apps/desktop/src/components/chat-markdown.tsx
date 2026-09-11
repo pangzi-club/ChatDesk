@@ -11,11 +11,15 @@ import {
 import { type Components, defaultRemarkPlugins, Streamdown } from "streamdown";
 import "katex/dist/katex.min.css";
 import "streamdown/styles.css";
-import { isLocalBrowserPreviewUrl, normalizeBrowserPreviewUrl } from "@/lib/browser-preview";
-import { openBrowserPreview } from "@/lib/browser-preview-events";
-import { type ChatLayout, useChatLayoutId } from "@/lib/chat-layout";
-import { resolveMarkdownImageSrc } from "@/lib/chat-markdown-images";
-import { remarkLocalBrowserLinks } from "@/lib/chat-markdown-links";
+import { useChatLayoutId } from "@/components/chat-layout-provider";
+import {
+  isLocalBrowserPreviewUrl,
+  normalizeBrowserPreviewUrl,
+} from "@/lib/browser/browser-preview";
+import { openBrowserPreview } from "@/lib/browser/browser-preview-events";
+import { resolveMarkdownImageSrc } from "@/lib/chat/message/chat-markdown-images";
+import { remarkLocalBrowserLinks } from "@/lib/chat/message/chat-markdown-links";
+import type { ChatLayout } from "@/lib/plugins/chat-layout";
 
 const STREAMDOWN_PLUGINS = {
   cjk,

@@ -1,5 +1,5 @@
 import { Navigate, useParams } from "react-router-dom";
-import { useDesktopUiSlot } from "@/lib/desktop-ui";
+import { useDesktopUiSlot } from "@/components/desktop-ui-provider";
 
 export function SettingsRouteHost() {
   const { "*": path = "" } = useParams();

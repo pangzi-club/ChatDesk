@@ -89,7 +89,7 @@
 | `web_search` | 查询近期公开信息 | 启用 Web Search，模型使用 Responses API | OpenAI Responses provider 内置工具 |
 | `image_generation` | 按 prompt、宽高比和分辨率生成图片 | 启用 Image Generation，并配置 KIE API Key | 服务端 KIE 请求，等待任务完成后返回 URL |
 
-固定工具的参数 schema 以 `client-tools.ts`、`workspace-tools.ts`、`business-tools.ts`、`todo-tool.ts`、`task-tool.ts`、`plan-tool.ts` 和 `skill-tool.ts` 为准；设置页工具包及可用性以 `apps/desktop/src/lib/chat-tools.ts` 为准。
+固定工具的参数 schema 以 `client-tools.ts`、`workspace-tools.ts`、`business-tools.ts`、`todo-tool.ts`、`task-tool.ts`、`plan-tool.ts` 和 `skill-tool.ts` 为准；设置页工具包及可用性以 `apps/desktop/src/lib/chat/chat-tools.ts` 为准。
 
 ### ✅ 模型与配置
 - 多模型配置（`chat-config.ts`），任意 OpenAI 兼容 baseUrl。

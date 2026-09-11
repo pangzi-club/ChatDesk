@@ -80,6 +80,7 @@ import {
   copyChatConversationId,
 } from "@/components/chat-conversation-menu-items";
 import { ChatGitSummary } from "@/components/chat-git-summary";
+import { useChatLayout } from "@/components/chat-layout-provider";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { ChatMessageNav } from "@/components/chat-message-nav";
 import { ChatPathSuggestionPopup } from "@/components/chat-path-suggestion-popup";
@@ -92,6 +93,7 @@ import { ChatTodoPanel } from "@/components/chat-todo-panel";
 import { type ChatToolCallCardProps, ChatToolCallGroup } from "@/components/chat-tool-call-card";
 import { ChatToolLogDialog } from "@/components/chat-tool-log-dialog";
 import { ChatToolsPicker } from "@/components/chat-tools-picker";
+import { useDesktopUiSlot } from "@/components/desktop-ui-provider";
 import { GitCommitDialog } from "@/components/git-commit-dialog";
 import {
   AlertDialog,
@@ -121,56 +123,38 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { loadAgents } from "@/lib/agents";
 import {
   createPendingAttachment,
   mergeChatAttachments,
   type PendingAttachment,
   uploadPendingAttachment,
   validateAttachment,
-} from "@/lib/chat-attachments";
-import { materializeBrowserScreenshots } from "@/lib/chat-browser-screenshots";
+} from "@/lib/chat/chat-attachments";
+import { materializeBrowserScreenshots } from "@/lib/chat/chat-browser-screenshots";
 import {
   type ChatCommand,
   filterChatCommands,
   findActiveCommandTrigger,
-} from "@/lib/chat-commands";
-import { applyMentionSelection, findActiveMentionTrigger } from "@/lib/chat-composer-mentions";
-import { appendComposerSelection, readWindowSelectionText } from "@/lib/chat-composer-selection";
-import { resolveComposerEnterAction } from "@/lib/chat-composer-submit";
+} from "@/lib/chat/chat-commands";
+import { materializeGeneratedImages } from "@/lib/chat/chat-image-generation";
+import { DEFAULT_CHAT_MEMORY, formatMemoryForInject, loadChatMemory } from "@/lib/chat/chat-memory";
 import {
-  canFormatChatConversationMarkdown,
-  copyChatConversationMarkdown,
-} from "@/lib/chat-conversation-markdown";
-import { materializeGeneratedImages } from "@/lib/chat-image-generation";
-import { type ChatLayout, useChatLayout } from "@/lib/chat-layout";
-import {
-  appendLiveDraftText,
-  CHAT_STREAM_UPDATE_THROTTLE_MS,
-  createLiveDraftRenderBatcher,
-  mergeLiveDraft,
-} from "@/lib/chat-live-draft";
-import { DEFAULT_CHAT_MEMORY, formatMemoryForInject, loadChatMemory } from "@/lib/chat-memory";
-import { isWorkspaceMemoryExcludedTool, scheduleMemoryUpdateFromTurn } from "@/lib/chat-memory-ops";
-import {
-  type ChatFilePart,
-  type ChatSourcePart,
-  type ChatToolPart,
-  getChatMessageBlocks,
-} from "@/lib/chat-message-blocks";
-import {
-  previewCollapsedChatUserMessage,
-  shouldCollapseChatUserMessage,
-} from "@/lib/chat-message-collapse";
-import { createUserMessageNavItemsSelector } from "@/lib/chat-message-nav";
+  isWorkspaceMemoryExcludedTool,
+  scheduleMemoryUpdateFromTurn,
+} from "@/lib/chat/chat-memory-ops";
 import {
   findLatestPlanWriteAnchor,
   findLatestPlanWriteContent,
   isPlanExecutionReady,
   lastAssistantMessageHasCompletedPlanInput,
   latestAssistantHasPlanWrite,
-} from "@/lib/chat-plan-state";
-import { chatNewPath, chatRouteKey, chatSessionPath, parseChatLocation } from "@/lib/chat-routes";
+} from "@/lib/chat/chat-plan-state";
+import {
+  chatNewPath,
+  chatRouteKey,
+  chatSessionPath,
+  parseChatLocation,
+} from "@/lib/chat/chat-routes";
 import {
   CHAT_SANDBOX_MODE_DESCRIPTIONS,
   CHAT_SANDBOX_MODE_LABELS,
@@ -179,7 +163,69 @@ import {
   loadChatSandboxMode,
   normalizeChatSandboxMode,
   saveChatSandboxMode,
-} from "@/lib/chat-sandbox";
+} from "@/lib/chat/chat-sandbox";
+import {
+  type ChatAttachment,
+  type ChatSession,
+  createSessionId,
+  loadChatIndex,
+  loadChatSession,
+  saveChatSession,
+} from "@/lib/chat/chat-store";
+import { resolveActiveTools } from "@/lib/chat/chat-tool-defs";
+import {
+  type ChatToolsSettings,
+  DEFAULT_CHAT_TOOLS,
+  loadChatToolsSettings,
+  saveChatToolsSettings,
+} from "@/lib/chat/chat-tools";
+import {
+  isRecoverableChatTransportError,
+  serializeChatTransportError,
+} from "@/lib/chat/chat-transport-diagnostics";
+import {
+  applyMentionSelection,
+  findActiveMentionTrigger,
+} from "@/lib/chat/composer/chat-composer-mentions";
+import {
+  appendComposerSelection,
+  readWindowSelectionText,
+} from "@/lib/chat/composer/chat-composer-selection";
+import { resolveComposerEnterAction } from "@/lib/chat/composer/chat-composer-submit";
+import {
+  appendLiveDraftText,
+  CHAT_STREAM_UPDATE_THROTTLE_MS,
+  createLiveDraftRenderBatcher,
+  mergeLiveDraft,
+} from "@/lib/chat/composer/chat-live-draft";
+import { openContextDetail, updateContextDetail } from "@/lib/chat/context-detail-events";
+import {
+  canFormatChatConversationMarkdown,
+  copyChatConversationMarkdown,
+} from "@/lib/chat/message/chat-conversation-markdown";
+import {
+  type ChatFilePart,
+  type ChatSourcePart,
+  type ChatToolPart,
+  getChatMessageBlocks,
+} from "@/lib/chat/message/chat-message-blocks";
+import {
+  previewCollapsedChatUserMessage,
+  shouldCollapseChatUserMessage,
+} from "@/lib/chat/message/chat-message-collapse";
+import { createUserMessageNavItemsSelector } from "@/lib/chat/message/chat-message-nav";
+import {
+  openPlanViewer,
+  subscribePlanExecutionRequested,
+  updatePlanViewer,
+} from "@/lib/chat/plan-viewer-events";
+import { openSideChat } from "@/lib/chat/side-chat-events";
+import type { ChatLayout } from "@/lib/plugins/chat-layout";
+import type { ChatContributionScope } from "@/lib/plugins/desktop-ui";
+import { getDesktopBridge } from "@/lib/runtime/desktop-bridge";
+import { detectMissingDevelopmentTools } from "@/lib/runtime/developer-environment";
+import { openExternal } from "@/lib/runtime/platform";
+import { loadAgents } from "@/lib/server/agents";
 import {
   appendServerActivityLog,
   type ChatServerSession,
@@ -205,27 +251,31 @@ import {
   subscribeChatServerEvents,
   updateChatPlanMode,
   updateChatSessionTitle,
-} from "@/lib/chat-server";
-import { saveChatDisplaySettings } from "@/lib/chat-settings";
+} from "@/lib/server/chat-server";
+import { loadMcpServers, saveMcpServers } from "@/lib/server/mcp";
 import {
-  type ChatAttachment,
-  type ChatSession,
-  createSessionId,
-  loadChatIndex,
-  loadChatSession,
-  saveChatSession,
-} from "@/lib/chat-store";
-import { resolveActiveTools } from "@/lib/chat-tool-defs";
+  formatModelLabel,
+  loadModels,
+  type ModelConfig,
+  sortModelsByName,
+} from "@/lib/server/models";
 import {
-  type ChatToolsSettings,
-  DEFAULT_CHAT_TOOLS,
-  loadChatToolsSettings,
-  saveChatToolsSettings,
-} from "@/lib/chat-tools";
+  filterAllowedSkills,
+  formatSkillsSystemHint,
+  loadAvailableSkills,
+  loadDisabledSkillIds,
+  type SkillDefinition,
+} from "@/lib/server/skills";
+import { saveChatDisplaySettings } from "@/lib/settings/chat-settings";
 import {
-  isRecoverableChatTransportError,
-  serializeChatTransportError,
-} from "@/lib/chat-transport-diagnostics";
+  DEFAULT_DEVELOPER_SETTINGS,
+  loadDeveloperSettings,
+} from "@/lib/settings/developer-settings";
+import {
+  loadGeneralSettings,
+  notifyChatCompletion,
+  saveGeneralSettings,
+} from "@/lib/settings/general-settings";
 import {
   formatElapsedDuration,
   formatMessageRunDuration,
@@ -234,41 +284,15 @@ import {
   getMessageRunErrorLabel,
   getMessageRunStateLabel,
   getMessageUsage,
-} from "@/lib/chat-usage";
-import { openContextDetail, updateContextDetail } from "@/lib/context-detail-events";
-import { getDesktopBridge } from "@/lib/desktop-bridge";
-import { type ChatContributionScope, useDesktopUiSlot } from "@/lib/desktop-ui";
-import { detectMissingDevelopmentTools } from "@/lib/developer-environment";
-import { DEFAULT_DEVELOPER_SETTINGS, loadDeveloperSettings } from "@/lib/developer-settings";
-import { openFileViewer } from "@/lib/file-viewer-events";
-import {
-  loadGeneralSettings,
-  notifyChatCompletion,
-  saveGeneralSettings,
-} from "@/lib/general-settings";
-import { openImagePreview } from "@/lib/image-preview-events";
-import { loadMcpServers, saveMcpServers } from "@/lib/mcp";
-import { formatModelLabel, loadModels, type ModelConfig, sortModelsByName } from "@/lib/models";
-import {
-  openPlanViewer,
-  subscribePlanExecutionRequested,
-  updatePlanViewer,
-} from "@/lib/plan-viewer-events";
-import { openExternal } from "@/lib/platform";
-import { openSideChat } from "@/lib/side-chat-events";
-import {
-  filterAllowedSkills,
-  formatSkillsSystemHint,
-  loadAvailableSkills,
-  loadDisabledSkillIds,
-  type SkillDefinition,
-} from "@/lib/skills";
+} from "@/lib/usage/chat-usage";
+import { openFileViewer } from "@/lib/workspace/file-viewer-events";
+import { openImagePreview } from "@/lib/workspace/image-preview-events";
 import {
   defaultTaskCwd,
   isDefaultWorkspaceId,
   resolveDefaultSessionCwd,
-} from "@/lib/workspace-path";
-import { loadWorkspaceProjects, workspaceGitQueryKey } from "@/lib/workspaces";
+} from "@/lib/workspace/workspace-path";
+import { loadWorkspaceProjects, workspaceGitQueryKey } from "@/lib/workspace/workspaces";
 
 const EMPTY_STRING_ARRAY: string[] = [];
 const CONTEXT_DETAIL_STREAM_UPDATE_THROTTLE_MS = 500;

@@ -22,16 +22,16 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   BROWSER_SCREENSHOT_TOOL_NAME,
   readBrowserScreenshotOutput,
-} from "@/lib/chat-browser-screenshots";
+} from "@/lib/chat/chat-browser-screenshots";
 import {
   IMAGE_GENERATION_MEDIA_TYPE,
   IMAGE_GENERATION_TOOL_NAME,
   readImageGenerationOutput,
-} from "@/lib/chat-image-generation";
-import { CHAT_TOOL_DISPLAY_NAMES } from "@/lib/chat-tool-defs";
-import { CHAT_WORKSPACE_TOOL_DISPLAY_NAMES } from "@/lib/chat-workspace-tools";
-import { openFileViewer } from "@/lib/file-viewer-events";
-import { assetUrl } from "@/lib/platform";
+} from "@/lib/chat/chat-image-generation";
+import { CHAT_TOOL_DISPLAY_NAMES } from "@/lib/chat/chat-tool-defs";
+import { CHAT_WORKSPACE_TOOL_DISPLAY_NAMES } from "@/lib/chat/chat-workspace-tools";
+import { assetUrl } from "@/lib/runtime/platform";
+import { openFileViewer } from "@/lib/workspace/file-viewer-events";
 import {
   extractBrowserToolDetail,
   extractBrowserToolTitle,

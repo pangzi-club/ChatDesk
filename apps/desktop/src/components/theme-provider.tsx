@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { isDesktop } from "@/lib/desktop-bridge";
-import { settingsStore } from "@/lib/settings-store";
-import { appendSystemLog } from "@/lib/system-log";
+import { isDesktop } from "@/lib/runtime/desktop-bridge";
+import { appendSystemLog } from "@/lib/server/system-log";
+import { settingsStore } from "@/lib/settings/settings-store";
 
 type Theme = "dark" | "light" | "system";
 const themeColorValues = [

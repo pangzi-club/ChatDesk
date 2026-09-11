@@ -1,0 +1,200 @@
+import {
+  type ArchiveAsset,
+  type ArchiveMessage,
+  type ArchiveSession,
+  type ArchiveTokenUsage,
+  createArchiveSessionId,
+  truncateTitle,
+} from "@/lib/archive/chat-archive";
+import { normalizeTokenUsage, sumTokenUsages } from "@/lib/usage/chat-usage";
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+}
+
+function fileNameFromPath(path: string) {
+  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+
+function guessImageMediaType(path: string) {
+  const lower = path.toLowerCase();
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".gif")) return "image/gif";
+  if (lower.endsWith(".webp")) return "image/webp";
+  return undefined;
+}
+
+function extractTextAndAssets(content: unknown): { text: string; assets: ArchiveAsset[] } {
+  if (typeof content === "string") {
+    return { text: content.trim(), assets: [] };
+  }
+  if (!Array.isArray(content)) {
+    return { text: "", assets: [] };
+  }
+
+  const texts: string[] = [];
+  const assets: ArchiveAsset[] = [];
+
+  for (const part of content) {
+    const record = asRecord(part);
+    if (!record) continue;
+    const type = typeof record.type === "string" ? record.type : "";
+
+    if (type === "text" && typeof record.text === "string") {
+      texts.push(record.text);
+      continue;
+    }
+
+    if (type === "tool_result" || type === "tool_use") {
+      continue;
+    }
+
+    if (type === "image" || type === "document" || type === "file") {
+      const source = asRecord(record.source);
+      const kind: ArchiveAsset["kind"] = type === "image" ? "image" : "file";
+      if (source?.type === "base64") {
+        // Skip embedded binaries; keep a placeholder chip only.
+        assets.push({
+          id: crypto.randomUUID(),
+          kind,
+          fileName:
+            typeof record.name === "string" ? record.name : kind === "image" ? "image" : "file",
+          mediaType: typeof source.media_type === "string" ? source.media_type : undefined,
+        });
+        continue;
+      }
+      if (typeof source?.url === "string") {
+        assets.push({
+          id: crypto.randomUUID(),
+          kind,
+          fileName: fileNameFromPath(source.url),
+          url: source.url,
+        });
+        continue;
+      }
+      if (typeof source?.path === "string") {
+        assets.push({
+          id: crypto.randomUUID(),
+          kind,
+          fileName: fileNameFromPath(source.path),
+          path: source.path,
+          mediaType: kind === "image" ? guessImageMediaType(source.path) : undefined,
+        });
+      }
+    }
+  }
+
+  return {
+    text: texts.join("\n").trim(),
+    assets,
+  };
+}
+
+export function parseClaudeCodeSession(
+  contents: string,
+  options: {
+    externalId: string;
+    sourcePath: string;
+    titleHint?: string | null;
+    cwdHint?: string | null;
+  },
+): ArchiveSession {
+  const messages: ArchiveMessage[] = [];
+  const usageByApiMessageId = new Map<string, ArchiveTokenUsage>();
+  const messageIndexByApiId = new Map<string, number>();
+  let cwd = options.cwdHint?.trim() || undefined;
+  let model: string | undefined;
+  let createdAt: string | undefined;
+  let updatedAt: string | undefined;
+
+  for (const line of contents.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let row: Record<string, unknown>;
+    try {
+      row = JSON.parse(trimmed) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+
+    const type = typeof row.type === "string" ? row.type : "";
+    if (type === "system" || type === "summary" || type === "file-history-snapshot") {
+      continue;
+    }
+    if (type !== "user" && type !== "assistant") continue;
+    if (row.isSidechain === true) continue;
+
+    const timestamp = typeof row.timestamp === "string" ? row.timestamp : undefined;
+    if (timestamp) {
+      createdAt ??= timestamp;
+      updatedAt = timestamp;
+    }
+    if (!cwd && typeof row.cwd === "string") cwd = row.cwd;
+
+    const message = asRecord(row.message);
+    if (!message) continue;
+    if (!model && typeof message.model === "string") model = message.model;
+
+    const apiMessageId = typeof message.id === "string" ? message.id : undefined;
+    const usage = normalizeTokenUsage(
+      (message.usage ?? {}) as Parameters<typeof normalizeTokenUsage>[0],
+    );
+    if (apiMessageId && usage) {
+      usageByApiMessageId.set(apiMessageId, usage);
+    }
+
+    const { text, assets } = extractTextAndAssets(message.content);
+    // Skip pure tool-result user turns.
+    if (!text && assets.length === 0) continue;
+    if (
+      !text &&
+      Array.isArray(message.content) &&
+      message.content.every((part) => asRecord(part)?.type === "tool_result")
+    ) {
+      continue;
+    }
+
+    const archiveMessage: ArchiveMessage = {
+      id: typeof row.uuid === "string" ? row.uuid : crypto.randomUUID(),
+      role: type === "user" ? "user" : "assistant",
+      text,
+      createdAt: timestamp,
+      assets: assets.length > 0 ? assets : undefined,
+      usage: !apiMessageId ? usage : undefined,
+    };
+    messages.push(archiveMessage);
+    if (apiMessageId) {
+      messageIndexByApiId.set(apiMessageId, messages.length - 1);
+    }
+  }
+
+  for (const [apiMessageId, usage] of usageByApiMessageId) {
+    const index = messageIndexByApiId.get(apiMessageId);
+    if (index == null) continue;
+    messages[index] = { ...messages[index], usage };
+  }
+
+  const usageTotal = sumTokenUsages([...usageByApiMessageId.values()]);
+  const firstUser = messages.find((message) => message.role === "user" && message.text.trim());
+  const title = options.titleHint?.trim() || truncateTitle(firstUser?.text ?? "");
+  const now = new Date().toISOString();
+  const assetCount = messages.reduce((sum, message) => sum + (message.assets?.length ?? 0), 0);
+
+  return {
+    schemaVersion: 1,
+    id: createArchiveSessionId(),
+    source: "claude-code",
+    externalId: options.externalId,
+    title,
+    cwd,
+    model,
+    sourcePath: options.sourcePath,
+    createdAt: createdAt ?? now,
+    updatedAt: updatedAt ?? createdAt ?? now,
+    importedAt: now,
+    messages,
+    assetCount,
+    usageTotal: Object.keys(usageTotal).length > 0 ? usageTotal : undefined,
+  };
+}

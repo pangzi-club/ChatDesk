@@ -21,13 +21,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { loadArchiveIndex } from "@/lib/archive/chat-archive";
 import {
   analyzeAiUsage,
   tokenTotal,
   type UsageAggregate,
   type UsagePeriod,
-} from "@/lib/ai-usage-statistics";
-import { loadArchiveIndex } from "@/lib/chat-archive";
+} from "@/lib/usage/ai-usage-statistics";
 
 const PERIODS: Array<{ value: UsagePeriod; label: string }> = [
   { value: "today", label: "今天" },

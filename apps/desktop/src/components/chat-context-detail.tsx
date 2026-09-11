@@ -8,9 +8,9 @@ import {
   CONTEXT_DETAIL_CATEGORIES,
   type ContextDetailCategory,
   createChatContextAnalyzer,
-} from "@/lib/chat-context-detail";
-import { loadChatServerSystemPromptPreview } from "@/lib/chat-server";
-import type { ContextDetailPromptInput } from "@/lib/context-detail-events";
+} from "@/lib/chat/chat-context-detail";
+import type { ContextDetailPromptInput } from "@/lib/chat/context-detail-events";
+import { loadChatServerSystemPromptPreview } from "@/lib/server/chat-server";
 
 type ChatContextDetailProps = {
   messages: UIMessage[];

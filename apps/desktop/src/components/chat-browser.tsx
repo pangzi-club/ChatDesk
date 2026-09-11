@@ -2,8 +2,8 @@ import { ArrowLeft, ArrowRight, ExternalLink, Globe2, RefreshCw } from "lucide-r
 import { type FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { normalizeBrowserPreviewUrl } from "@/lib/browser-preview";
-import { openExternal } from "@/lib/platform";
+import { normalizeBrowserPreviewUrl } from "@/lib/browser/browser-preview";
+import { openExternal } from "@/lib/runtime/platform";
 
 type ChatBrowserProps = {
   canGoBack?: boolean;

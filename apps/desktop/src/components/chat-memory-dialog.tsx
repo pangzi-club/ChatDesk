@@ -6,7 +6,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { ChatMemoryStore } from "@/lib/chat-memory";
+import type { ChatMemoryStore } from "@/lib/chat/chat-memory";
 
 type ChatMemoryDialogProps = {
   open: boolean;

@@ -7,8 +7,8 @@ import {
 import { getToolName } from "ai";
 import { Check, ChevronDown, CircleAlert, LoaderCircle, Square } from "lucide-react";
 import { useState } from "react";
-import type { ChatToolPart } from "@/lib/chat-message-blocks";
-import { CHAT_TOOL_DISPLAY_NAMES } from "@/lib/chat-tool-defs";
+import { CHAT_TOOL_DISPLAY_NAMES } from "@/lib/chat/chat-tool-defs";
+import type { ChatToolPart } from "@/lib/chat/message/chat-message-blocks";
 import { compactToolText } from "./chat-tool-call-utils";
 
 export type ChatTaskListProps = {

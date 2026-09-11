@@ -13,8 +13,8 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { loadAgents } from "@/lib/agents";
-import { resolveChannelAgent } from "@/lib/channel-agents";
+import { loadAgents } from "@/lib/server/agents";
+import { resolveChannelAgent } from "@/lib/server/channel-agents";
 import {
   chatServerRequest,
   loadChatServerPort,
@@ -25,8 +25,8 @@ import {
   markFeishuContactRead,
   subscribeChatServerEvents,
   updateFeishuContact,
-} from "@/lib/chat-server";
-import { loadModels } from "@/lib/models";
+} from "@/lib/server/chat-server";
+import { loadModels } from "@/lib/server/models";
 
 function formatMessageTime(value: string) {
   return new Intl.DateTimeFormat(undefined, {

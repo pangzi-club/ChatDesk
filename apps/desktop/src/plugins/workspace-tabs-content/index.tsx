@@ -6,7 +6,7 @@ import {
   ImageTabRenderer,
   PlanTabRenderer,
 } from "@/components/workspace-tab-renderers";
-import type { WorkspaceTabContribution } from "@/lib/desktop-ui";
+import type { WorkspaceTabContribution } from "@/lib/plugins/desktop-ui";
 
 export const manifest = {
   id: "workspace-tabs-content",

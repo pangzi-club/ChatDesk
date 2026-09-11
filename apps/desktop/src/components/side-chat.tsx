@@ -7,16 +7,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ChatComposerInput, type ChatComposerInputHandle } from "@/components/chat-composer-input";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { Button } from "@/components/ui/button";
-import { appendComposerSelection } from "@/lib/chat-composer-selection";
-import { CHAT_STREAM_UPDATE_THROTTLE_MS } from "@/lib/chat-live-draft";
+import { appendComposerSelection } from "@/lib/chat/composer/chat-composer-selection";
+import { CHAT_STREAM_UPDATE_THROTTLE_MS } from "@/lib/chat/composer/chat-live-draft";
 import {
   chatServerFetch,
   chatServerHeaders,
   chatServerUrl,
   initializeChatServer,
-} from "@/lib/chat-server";
-import { loadDeveloperSettings } from "@/lib/developer-settings";
-import { loadModels } from "@/lib/models";
+} from "@/lib/server/chat-server";
+import { loadModels } from "@/lib/server/models";
+import { loadDeveloperSettings } from "@/lib/settings/developer-settings";
 
 function textOf(message: UIMessage) {
   return message.parts

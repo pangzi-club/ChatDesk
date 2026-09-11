@@ -8,7 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { SystemPromptPreview } from "@/lib/chat-server";
+import type { SystemPromptPreview } from "@/lib/server/chat-server";
 
 type ChatContextDialogProps = {
   open: boolean;

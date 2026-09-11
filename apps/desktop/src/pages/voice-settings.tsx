@@ -7,7 +7,7 @@ import {
   loadVoiceSettings,
   saveVoiceSettings,
   type VoiceSettings,
-} from "@/lib/voice-settings";
+} from "@/lib/settings/voice-settings";
 
 export function VoiceSettingsPage() {
   const client = useQueryClient();

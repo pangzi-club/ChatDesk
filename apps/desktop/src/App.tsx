@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ChatLayoutProvider } from "@/components/chat-layout-provider";
 import { ChatLayoutThemeLayer } from "@/components/chat-layout-theme-layer";
+import { DesktopUiProvider } from "@/components/desktop-ui-provider";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/toaster";
-import { ChatLayoutProvider } from "@/lib/chat-layout";
-import { DesktopUiProvider, type DesktopUiRuntime } from "@/lib/desktop-ui";
+import type { DesktopUiRuntime } from "@/lib/plugins/desktop-ui";
 import { AppRouter } from "@/router/routes";
 
 import "./App.css";

@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import type { ChatDisplaySettings, ChatLayout } from "@/lib/chat-settings";
+import type { ChatDisplaySettings, ChatLayout } from "@/lib/settings/chat-settings";
 
 type ChatSettingsDialogProps = {
   open: boolean;

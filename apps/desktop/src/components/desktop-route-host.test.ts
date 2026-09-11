@@ -1,7 +1,7 @@
 import { MessageCircle } from "lucide-react";
 import { describe, expect, it } from "vitest";
 import { resolveDesktopRoute } from "@/components/desktop-route-host";
-import type { DesktopRouteContribution } from "@/lib/desktop-ui";
+import type { DesktopRouteContribution } from "@/lib/plugins/desktop-ui";
 
 function EmptyPage() {
   return null;

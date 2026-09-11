@@ -12,7 +12,7 @@ import {
   type ChatAttachmentKind,
   formatAttachmentSize,
   type PendingAttachment,
-} from "@/lib/chat-attachments";
+} from "@/lib/chat/chat-attachments";
 
 type ChatAttachmentChipsProps = {
   attachments: PendingAttachment[];

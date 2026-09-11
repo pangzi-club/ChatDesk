@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { AgentAvatar, AgentAvatarPicker } from "@/components/agent-avatar";
+import { useChatLayout } from "@/components/chat-layout-provider";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { ChatMemorySettings } from "@/components/chat-memory-settings";
 import { ChatToolsSettings } from "@/components/chat-tools-settings";
@@ -70,22 +71,41 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  type ChatMemoryStore,
+  DEFAULT_CHAT_MEMORY,
+  loadChatMemory,
+  saveChatMemory,
+} from "@/lib/chat/chat-memory";
+import { compactChatMemory } from "@/lib/chat/chat-memory-ops";
+import {
+  CHAT_TOOL_PACKS,
+  type ChatToolsSettings as ChatToolsSettingsValue,
+  DEFAULT_CHAT_TOOLS,
+  loadChatToolsSettings,
+  saveChatToolsSettings,
+} from "@/lib/chat/chat-tools";
+import { clearKieApiKey, loadKieApiKey, saveKieApiKey } from "@/lib/image-generation";
+import { getDesktopBridge, isDesktop } from "@/lib/runtime/desktop-bridge";
+import { pickDirectory } from "@/lib/runtime/platform";
+import {
+  DEFAULT_SHORTCUTS,
+  formatShortcut,
+  loadShortcutSettings,
+  type ShortcutAction,
+  type ShortcutBinding,
+  type ShortcutSettings,
+  saveShortcutSettings,
+  shortcutFromKeyboardEvent,
+} from "@/lib/runtime/shortcuts";
+import {
   type AgentConfig,
   emptyAgent,
   loadAgents,
   prepareAgent,
   saveAgents,
   sortAgents,
-} from "@/lib/agents";
-import { useChatLayout } from "@/lib/chat-layout";
-import {
-  type ChatMemoryStore,
-  DEFAULT_CHAT_MEMORY,
-  loadChatMemory,
-  saveChatMemory,
-} from "@/lib/chat-memory";
-import { compactChatMemory } from "@/lib/chat-memory-ops";
-import type { ChatServerProviderModel, FeishuChannelStatus } from "@/lib/chat-server";
+} from "@/lib/server/agents";
+import type { ChatServerProviderModel, FeishuChannelStatus } from "@/lib/server/chat-server";
 import {
   canRestartChatServer,
   checkChatServer,
@@ -102,36 +122,7 @@ import {
   testChatServerModel,
   testFeishuChannel,
   updateChatServerPort,
-} from "@/lib/chat-server";
-import {
-  type ChatDisplaySettings,
-  type ChatLayout,
-  DEFAULT_CHAT_DISPLAY,
-  loadChatDisplaySettings,
-  saveChatDisplaySettings,
-} from "@/lib/chat-settings";
-import {
-  CHAT_TOOL_PACKS,
-  type ChatToolsSettings as ChatToolsSettingsValue,
-  DEFAULT_CHAT_TOOLS,
-  loadChatToolsSettings,
-  saveChatToolsSettings,
-} from "@/lib/chat-tools";
-import { getDesktopBridge, isDesktop } from "@/lib/desktop-bridge";
-import {
-  DEFAULT_DEVELOPER_SETTINGS,
-  type DeveloperSettings,
-  loadDeveloperSettings,
-  saveDeveloperSettings,
-} from "@/lib/developer-settings";
-import {
-  DEFAULT_GENERAL_SETTINGS,
-  type GeneralSettings,
-  loadGeneralSettings,
-  requestNotificationPermission,
-  saveGeneralSettings,
-} from "@/lib/general-settings";
-import { clearKieApiKey, loadKieApiKey, saveKieApiKey } from "@/lib/image-generation";
+} from "@/lib/server/chat-server";
 import {
   fetchMcpRegistry,
   loadMcpServers,
@@ -139,7 +130,7 @@ import {
   type McpServerConfig,
   saveMcpServers,
   testMcpConnection,
-} from "@/lib/mcp";
+} from "@/lib/server/mcp";
 import {
   formatModelContextSize,
   formatModelLabel,
@@ -148,30 +139,39 @@ import {
   type ModelConfig,
   saveModels,
   sortModelsByName,
-} from "@/lib/models";
-import { pickDirectory } from "@/lib/platform";
-import {
-  DEFAULT_SHORTCUTS,
-  formatShortcut,
-  loadShortcutSettings,
-  type ShortcutAction,
-  type ShortcutBinding,
-  type ShortcutSettings,
-  saveShortcutSettings,
-  shortcutFromKeyboardEvent,
-} from "@/lib/shortcuts";
+} from "@/lib/server/models";
 import {
   loadAvailableSkills,
   loadDisabledSkillIds,
   type SkillDefinition,
   saveDisabledSkillIds,
-} from "@/lib/skills";
+} from "@/lib/server/skills";
 import {
   clearSystemLogs,
   loadSystemLogs,
   type SystemLog,
   type SystemLogLevel,
-} from "@/lib/system-log";
+} from "@/lib/server/system-log";
+import {
+  type ChatDisplaySettings,
+  type ChatLayout,
+  DEFAULT_CHAT_DISPLAY,
+  loadChatDisplaySettings,
+  saveChatDisplaySettings,
+} from "@/lib/settings/chat-settings";
+import {
+  DEFAULT_DEVELOPER_SETTINGS,
+  type DeveloperSettings,
+  loadDeveloperSettings,
+  saveDeveloperSettings,
+} from "@/lib/settings/developer-settings";
+import {
+  DEFAULT_GENERAL_SETTINGS,
+  type GeneralSettings,
+  loadGeneralSettings,
+  requestNotificationPermission,
+  saveGeneralSettings,
+} from "@/lib/settings/general-settings";
 
 const themes: Array<{ value: Theme; label: string; description: string }> = [
   { value: "system", label: "跟随系统", description: "根据操作系统自动切换" },

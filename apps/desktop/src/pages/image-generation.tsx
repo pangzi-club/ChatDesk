@@ -33,13 +33,13 @@ import {
   type ImageGenerationRecord,
   loadImageGenerationLibrary,
   saveImageGenerationRecord,
-} from "@/lib/image-generation-library";
+} from "@/lib/image-generation/image-generation-library";
 import {
   IMAGE_GENERATION_TEMPLATES,
   type ImageGenerationTemplate,
-} from "@/lib/image-generation-templates";
-import { saveBlob } from "@/lib/platform";
-import { appendSystemLog } from "@/lib/system-log";
+} from "@/lib/image-generation/image-generation-templates";
+import { saveBlob } from "@/lib/runtime/platform";
+import { appendSystemLog } from "@/lib/server/system-log";
 
 async function saveImageFile(url: string, filename: string) {
   const blob = await downloadGeneratedImage(url);

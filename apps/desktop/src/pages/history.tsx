@@ -43,20 +43,23 @@ import {
   loadArchiveSession,
   pathExists,
   sourceLabel,
-} from "@/lib/chat-archive";
+} from "@/lib/archive/chat-archive";
 import {
   BROWSER_SCREENSHOT_TOOL_NAME,
   readBrowserScreenshotOutput,
-} from "@/lib/chat-browser-screenshots";
-import { IMAGE_GENERATION_TOOL_NAME, readImageGenerationOutput } from "@/lib/chat-image-generation";
-import { chatSessionPath } from "@/lib/chat-routes";
+} from "@/lib/chat/chat-browser-screenshots";
+import {
+  IMAGE_GENERATION_TOOL_NAME,
+  readImageGenerationOutput,
+} from "@/lib/chat/chat-image-generation";
+import { chatSessionPath } from "@/lib/chat/chat-routes";
 import {
   type ChatIndexItem,
   deleteChatSession,
   loadChatIndex,
   loadChatSession,
-} from "@/lib/chat-store";
-import { assetUrl } from "@/lib/platform";
+} from "@/lib/chat/chat-store";
+import { assetUrl } from "@/lib/runtime/platform";
 
 const MESSAGE_COLLAPSE_CHARS = 700;
 const MESSAGE_COLLAPSE_LINES = 12;

@@ -4,7 +4,7 @@ import {
   CHAT_MESSAGE_NAV_MIN_WIDTH,
   resolveActiveUserMessageId,
   type UserMessageNavItem,
-} from "@/lib/chat-message-nav";
+} from "@/lib/chat/message/chat-message-nav";
 
 const NAV_HIGHLIGHT_MS = 160;
 const NAV_ACTIVE_OFFSET = 24;

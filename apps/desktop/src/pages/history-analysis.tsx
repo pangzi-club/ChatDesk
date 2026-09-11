@@ -5,12 +5,12 @@ import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { ArchiveSource } from "@/lib/chat-archive";
+import type { ArchiveSource } from "@/lib/archive/chat-archive";
 import {
   analyzeHistoryUsage,
   type HistoryUsageAnalysis,
   type UsageCategory,
-} from "@/lib/chat-usage";
+} from "@/lib/usage/chat-usage";
 
 type SourceFilter = "all" | ArchiveSource;
 
