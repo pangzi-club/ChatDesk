@@ -1,4 +1,4 @@
-import { ChatServerSupervisor } from "@chatdesk/desktop-host";
+import { ChatServerSupervisor, createChatServerOutputFormatter } from "@chatdesk/desktop-host";
 import { CHAT_SERVER_DEFAULT_PORT } from "@chatdesk/shared/chat-server";
 import {
   app,
@@ -28,6 +28,7 @@ import {
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { format } from "node:util";
 import {
   IPC_CHANNEL,
   IPC_EVENT_PREFIX,
@@ -98,6 +99,19 @@ const APP_SHUTDOWN_TIMEOUT_MS = 5_000;
 let windowStateSaveTimer: NodeJS.Timeout | undefined;
 const activeNotifications = new Set<Notification>();
 
+// Match the dev launcher and Vite: every dev console line is indented by two spaces.
+const HOST_LOG_INDENT = "  ";
+
+function logHost(level: "info" | "warn" | "error", ...args: unknown[]): void {
+  const message = format(...args)
+    .split("\n")
+    .map((line) => (line.length > 0 ? `${HOST_LOG_INDENT}${line}` : line))
+    .join("\n");
+  if (level === "error") console.error(message);
+  else if (level === "warn") console.warn(message);
+  else console.log(message);
+}
+
 function showNativeNotification(title: string, body: string) {
   if (!Notification.isSupported()) return Promise.resolve(false);
   return new Promise<boolean>((resolve) => {
@@ -119,7 +133,7 @@ function showNativeNotification(title: string, body: string) {
     resultTimer.unref();
     notification.once("show", () => settle(true));
     notification.once("failed", (_event, error) => {
-      console.error("Failed to show desktop notification", error);
+      logHost("error", "Failed to show desktop notification", error);
       activeNotifications.delete(notification);
       settle(false);
     });
@@ -170,7 +184,7 @@ const computerUseManager = new ComputerUseManager((status) => {
   ) {
     delete chatServerEnvironment.CHATDESK_CUA_MCP_CONFIG;
     void supervisor?.restart().catch((error) => {
-      console.error("Computer Use MCP 配置清理后重启 Chat Server 失败", error);
+      logHost("error", "Computer Use MCP 配置清理后重启 Chat Server 失败", error);
     });
   }
 });
@@ -244,7 +258,7 @@ function saveWindowState() {
     renameSync(temporary, target);
     if (process.platform !== "win32") chmodSync(target, 0o600);
   } catch (error) {
-    console.error("保存窗口状态失败", error);
+    logHost("error", "保存窗口状态失败", error);
   }
 }
 
@@ -378,7 +392,7 @@ function createWindow() {
             "Boolean(document.getElementById('root')?.firstElementChild)",
           );
         } catch (error) {
-          console.error("Renderer boot check failed", error);
+          logHost("error", "Renderer boot check failed", error);
         }
         if (booted) {
           bootReloadCount = 0;
@@ -389,11 +403,12 @@ function createWindow() {
           return;
         }
         if (bootReloadCount >= RENDERER_BOOT_MAX_RELOADS) {
-          console.error("Renderer failed to boot after repeated refreshes; giving up");
+          logHost("error", "Renderer failed to boot after repeated refreshes; giving up");
           return;
         }
         bootReloadCount += 1;
-        console.warn(
+        logHost(
+          "warn",
           `Renderer did not boot; refreshing (${bootReloadCount}/${RENDERER_BOOT_MAX_RELOADS})`,
         );
         window.webContents.reload();
@@ -409,7 +424,7 @@ function createWindow() {
             devRendererRetryTimer = undefined;
             if (window.isDestroyed()) return;
             void window.loadURL(entry).catch((error) => {
-              console.error("Renderer load failed", error);
+              logHost("error", "Renderer load failed", error);
             });
           },
           retryDelay,
@@ -453,7 +468,7 @@ function createWindow() {
     if (mainWindow === window) mainWindow = null;
   });
   void window.loadURL(entry).catch((error) => {
-    console.error("Renderer load failed", error);
+    logHost("error", "Renderer load failed", error);
     showWindow();
   });
 }
@@ -591,9 +606,11 @@ async function setupSupervisor() {
       const config = computerUseManager.mcpConfig();
       if (config) environment.CHATDESK_CUA_MCP_CONFIG = JSON.stringify(config);
     } catch (error) {
-      console.error("Computer Use 启动失败", error);
+      logHost("error", "Computer Use 启动失败", error);
     }
   }
+  // Chat Server output shares the same two-space dev console indent.
+  const formatOutput = createChatServerOutputFormatter({ indent: HOST_LOG_INDENT });
   supervisor = new ChatServerSupervisor({
     command: nodeRuntime,
     args: chatServerLaunchArgs(worker, watch),
@@ -602,8 +619,12 @@ async function setupSupervisor() {
     env: environment,
     production: !watch,
     onOutput: (stream, text) => {
-      const write = stream === "stderr" ? console.error : console.log;
-      write(`[Chat Server] ${text.trimEnd()}`);
+      // One `[Chat Server]` prefix per line, even when a chunk spans several
+      // lines or the server already labelled its own message.
+      const formatted = formatOutput(stream, text);
+      if (formatted.length === 0) return;
+      if (stream === "stderr") process.stderr.write(formatted);
+      else process.stdout.write(formatted);
     },
     port: supervisorPort() ?? CHAT_SERVER_DEFAULT_PORT,
     ...(supervisorToken() ? { token: supervisorToken() } : {}),
@@ -855,7 +876,7 @@ function setupRendererProtocol() {
       return await net.fetch(rendererFileUrl(resolveRendererFile(root, request.url)));
     } catch (error) {
       if (chatServerRequest) {
-        console.error("Chat Server proxy request failed", request.url, error);
+        logHost("error", "Chat Server proxy request failed", request.url, error);
         const detail = error instanceof Error ? error.message : String(error);
         return Response.json({ error: `Chat Server 代理请求失败：${detail}` }, { status: 502 });
       }
@@ -887,7 +908,7 @@ async function setupSystemProxy() {
   try {
     await session.defaultSession.setProxy({ mode: "system" });
   } catch (error) {
-    console.error("System proxy configuration failed", error);
+    logHost("error", "System proxy configuration failed", error);
   }
 }
 
@@ -911,7 +932,7 @@ if (!gotSingleInstanceLock) {
     if (process.platform === "darwin" && iconPath) app.dock?.setIcon(iconPath);
     ensureTray();
     await setupSupervisor().catch((error) => {
-      console.error("Chat Server startup failed", error);
+      logHost("error", "Chat Server startup failed", error);
     });
     createWindow();
   });
@@ -924,7 +945,7 @@ if (!gotSingleInstanceLock) {
     saveWindowState();
     terminalManager.shutdown();
     const forceExitTimer = setTimeout(() => {
-      console.error("应用清理超时，强制退出");
+      logHost("error", "应用清理超时，强制退出");
       app.exit(0);
     }, APP_SHUTDOWN_TIMEOUT_MS);
     void (supervisor?.stop() ?? Promise.resolve())

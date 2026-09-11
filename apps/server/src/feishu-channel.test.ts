@@ -208,4 +208,38 @@ describe("FeishuChannelManager outbound messages", () => {
     assert.equal(saved[0]?.text, "语音消息");
     assert.deepEqual(send.mock.calls, [["contact-1", { text: "当前环境暂不支持语音输入" }]]);
   });
+
+  it("configures a scoped single-line logger for the Feishu SDK", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    createLarkChannelMock.mockReturnValue({
+      botIdentity: { openId: "bot-1", name: "Bot" },
+      on: vi.fn(),
+      connect: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+    });
+    const manager = new FeishuChannelManager(
+      "channel-1",
+      {} as never,
+      { publish: vi.fn() } as never,
+      undefined,
+      () => testAgent(),
+    );
+    await manager.configure({
+      id: "channel-1",
+      name: "Test",
+      appId: "app-1",
+      appSecret: "secret",
+      agentId: "agent-1",
+    });
+
+    const options = createLarkChannelMock.mock.calls[0]?.[0] as {
+      logger: { info: (...args: unknown[]) => void };
+    };
+    options.logger.info(["[ws]", "receive events\n  through persistent connection"]);
+
+    assert.deepEqual(log.mock.calls, [
+      ["[Chat Server] feishu: [ws] receive events through persistent connection"],
+    ]);
+    log.mockRestore();
+  });
 });

@@ -1,10 +1,23 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveCuaDriver } from "./cua-driver.mjs";
+import { createIndentedWriter, DEV_CONSOLE_INDENT } from "./dev-console.mjs";
+
+function logInfo(message) {
+  process.stdout.write(`${DEV_CONSOLE_INDENT}${message}\n`);
+}
+
+function logWarn(message) {
+  process.stderr.write(`${DEV_CONSOLE_INDENT}${message}\n`);
+}
+
+function logError(message) {
+  process.stderr.write(`${DEV_CONSOLE_INDENT}${message}\n`);
+}
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
@@ -21,24 +34,19 @@ const playwrightBrowsers =
   process.env.CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH ||
   path.join(root, "apps/desktop/assets/resources/playwright-browsers");
 if (!existsSync(worker)) {
-  console.error(`找不到 Chat Server 入口：${worker}`);
+  logError(`找不到 Chat Server 入口：${worker}`);
   process.exit(1);
 }
 if (runtimeRoot && !existsSync(runtimeRoot)) {
-  console.error("找不到 Chat Server runtime。首次运行前请执行：pnpm desktop:sidecars");
+  logError("找不到 Chat Server runtime。首次运行前请执行：pnpm desktop:sidecars");
   process.exit(1);
 }
 
 // Resolve the Cua Driver in parallel with the Electron build and Vite startup.
 const cuaDriverPromise = resolveDevelopmentCuaDriver();
 
-const build = spawnSync(pnpm, ["electron:build"], {
-  cwd: root,
-  env: process.env,
-  stdio: "inherit",
-});
-if (build.error) throw build.error;
-if (build.status !== 0) process.exit(build.status ?? 1);
+const buildStatus = await runElectronBuild();
+if (buildStatus !== 0) process.exit(buildStatus);
 
 const children = new Set();
 let shuttingDown = false;
@@ -60,7 +68,7 @@ try {
   await waitForRenderer(rendererUrl, renderer);
 } catch (error) {
   if (!shuttingDown) {
-    console.error(error instanceof Error ? error.message : error);
+    logError(error instanceof Error ? error.message : error);
     shutdown(1);
   }
 }
@@ -108,6 +116,39 @@ function resolveElectronBinary() {
 }
 
 /**
+ * Runs the Electron build with piped output so its lines (`Verified sandboxed
+ * Electron preload is self-contained`, tsc errors, pnpm script echoes) share
+ * the dev console indentation instead of printing flush-left.
+ */
+async function runElectronBuild() {
+  const writeStdout = createIndentedWriter((text) => process.stdout.write(text));
+  const writeStderr = createIndentedWriter((text) => process.stderr.write(text));
+  try {
+    const child = spawn(pnpm, ["electron:build"], {
+      cwd: root,
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    child.stdout.on("data", (chunk) => writeStdout(chunk));
+    child.stderr.on("data", (chunk) => writeStderr(chunk));
+    const { code, signal } = await new Promise((resolve, reject) => {
+      child.once("error", reject);
+      child.once("close", (code, signal) => resolve({ code, signal }));
+    });
+    writeStdout.flush();
+    writeStderr.flush();
+    if (signal) {
+      logError(`Electron 构建被信号中断：${signal}`);
+      return 1;
+    }
+    return code ?? 1;
+  } catch (error) {
+    logError(`Electron 构建失败：${error instanceof Error ? error.message : error}`);
+    return 1;
+  }
+}
+
+/**
  * Development never fails on a missing driver: Computer Use simply stays
  * unavailable. A local Cua Driver installation is used as-is; otherwise the
  * pinned release is downloaded once into the staged assets directory. Set
@@ -118,13 +159,13 @@ async function resolveDevelopmentCuaDriver() {
   try {
     const driver = await resolveCuaDriver({ download });
     if (driver) {
-      console.log(`Cua Driver：${driver}`);
+      logInfo(`Cua Driver：${driver}`);
       return driver;
     }
   } catch (error) {
-    console.warn(`准备 Cua Driver 失败：${error instanceof Error ? error.message : error}`);
+    logWarn(`准备 Cua Driver 失败：${error instanceof Error ? error.message : error}`);
   }
-  console.warn(
+  logWarn(
     "未找到 cua-driver，开发环境中的 Computer Use 将不可用。安装：/bin/bash -c " +
       '"$(curl -fsSL https://cua.ai/driver/install.sh)"，或设置 CHATDESK_CUA_DRIVER。',
   );
@@ -141,7 +182,7 @@ function start(command, args, options) {
   children.add(child);
   child.once("error", (error) => {
     if (shuttingDown) return;
-    console.error(error.message);
+    logError(error.message);
     shutdown(1);
   });
   child.once("exit", (code, signal) => {

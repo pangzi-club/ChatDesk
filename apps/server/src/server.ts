@@ -1,4 +1,5 @@
 import { acquireDataDirectoryLock, installAiSdkWarningFilter } from "@chatdesk/agent-core";
+import { logServerError, logServerInfo, logServerWarn } from "./server-log.ts";
 
 installAiSdkWarningFilter();
 
@@ -21,19 +22,19 @@ function installProductionProcessErrorHandlers() {
   if (process.env.CHAT_SERVER_PRODUCTION !== "1") return;
 
   const handleFatalError = (kind: string, reason: unknown) => {
-    console.error(`[Chat Server] ${kind}: ${errorText(reason)}`);
+    logServerError(`${kind}: ${errorText(reason)}`);
     if (fatalErrorHandled) return;
     fatalErrorHandled = true;
 
     const forceExit = setTimeout(() => {
-      console.error("[Chat Server] 致命错误清理超时，强制退出");
+      logServerError("致命错误清理超时，强制退出");
       process.exit(1);
     }, 5_000);
     forceExit.unref();
 
     void Promise.resolve()
       .then(() => shutdownServer?.())
-      .catch((error) => console.error(`[Chat Server] 致命错误清理失败: ${errorText(error)}`))
+      .catch((error) => logServerError(`致命错误清理失败: ${errorText(error)}`))
       .finally(() => {
         clearTimeout(forceExit);
         process.exit(1);
@@ -58,8 +59,8 @@ async function main() {
     ]);
   const config = await loadServerConfig();
   const browserWorker = resolveBrowserWorkerScript();
-  if (browserWorker) console.log(`[Chat Server] browser worker: ${browserWorker}`);
-  else console.warn("[Chat Server] 未配置 browser worker，浏览器工具将不可用");
+  if (browserWorker) logServerInfo(`browser worker: ${browserWorker}`);
+  else logServerWarn("未配置 browser worker，浏览器工具将不可用");
   const dataDirectoryLock = await acquireDataDirectoryLock(config.dataDir);
   let server: Awaited<ReturnType<typeof createChatServer>>;
   try {
@@ -72,7 +73,7 @@ async function main() {
   try {
     httpServer = serve(
       { fetch: server.app.fetch, hostname: config.host, port: config.port },
-      (info) => console.log(`Chat server listening on http://${info.address}:${info.port}`),
+      (info) => logServerInfo(`Chat server listening on http://${info.address}:${info.port}`),
     );
   } catch (error) {
     await server.shutdown();
@@ -96,7 +97,7 @@ async function main() {
     try {
       if (isProduction) await server.shutdown();
     } catch (error) {
-      console.error(`[Chat Server] 关闭失败: ${errorText(error)}`);
+      logServerError(`关闭失败: ${errorText(error)}`);
     }
 
     await new Promise<void>((resolve, reject) => {
@@ -114,7 +115,7 @@ async function main() {
         httpServer.closeAllConnections();
       }
     }).catch((error) => {
-      console.error(`[Chat Server] 关闭 HTTP 服务失败: ${errorText(error)}`);
+      logServerError(`关闭 HTTP 服务失败: ${errorText(error)}`);
     });
 
     await dataDirectoryLock.release();
@@ -129,6 +130,6 @@ async function main() {
 }
 
 void main().catch((error) => {
-  console.error(error);
+  logServerError(errorText(error));
   process.exitCode = 1;
 });

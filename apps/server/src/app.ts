@@ -60,6 +60,7 @@ import type { ServerConfig } from "./config.ts";
 import { chatServerCorsOrigin } from "./cors.ts";
 import { FeishuChannelManager } from "./feishu-channel.ts";
 import { createMockLongResponse } from "./mock-long-response.ts";
+import { logServerError } from "./server-log.ts";
 import { withSseKeepAlive } from "./sse-keepalive.ts";
 
 const runInputSchema = z.object({
@@ -148,7 +149,7 @@ function loadRuntimeMcpServers() {
     const id = (value as { id?: unknown }).id;
     return typeof id === "string" && id.trim() ? [value] : [];
   } catch (error) {
-    console.error(`[Chat Server] 读取运行时 MCP 配置失败: ${String(error)}`);
+    logServerError(`读取运行时 MCP 配置失败: ${String(error)}`);
     return [];
   }
 }

@@ -6,8 +6,25 @@ import type {
   FeishuChannelConfig,
   FeishuChannelStatus,
 } from "@chatdesk/shared";
-import { createLarkChannel, type LarkChannel } from "@larksuiteoapi/node-sdk";
+import { createLarkChannel, type LarkChannel, type Logger } from "@larksuiteoapi/node-sdk";
 import type { ChannelStore } from "./channel-store.ts";
+import { formatLogArguments, logServerError, logServerInfo, logServerWarn } from "./server-log.ts";
+
+/**
+ * The SDK ships a console logger that prints `[info]: [ 'client ready' ]` and
+ * spreads one message across many lines. Route it through the Chat Server log
+ * helpers so every Feishu line is scoped and single-line.
+ */
+function createFeishuLogger(): Logger {
+  const scoped = (args: unknown[]) => `feishu: ${formatLogArguments(args)}`;
+  return {
+    error: (...args) => logServerError(scoped(args)),
+    warn: (...args) => logServerWarn(scoped(args)),
+    info: (...args) => logServerInfo(scoped(args)),
+    debug: () => undefined,
+    trace: () => undefined,
+  };
+}
 
 export class FeishuChannelManager {
   private readonly channelId: string;
@@ -77,6 +94,7 @@ export class FeishuChannelManager {
       appId: config.appId,
       appSecret: config.appSecret,
       domain: "https://open.feishu.cn",
+      logger: createFeishuLogger(),
       policy: { dmMode: "open", requireMention: false },
     });
     this.channel = channel;
