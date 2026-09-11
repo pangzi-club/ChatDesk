@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveCuaDriver } from "./cua-driver.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
@@ -27,6 +28,9 @@ if (runtimeRoot && !existsSync(runtimeRoot)) {
   console.error("找不到 Chat Server runtime。首次运行前请执行：pnpm desktop:sidecars");
   process.exit(1);
 }
+
+// Resolve the Cua Driver in parallel with the Electron build and Vite startup.
+const cuaDriverPromise = resolveDevelopmentCuaDriver();
 
 const build = spawnSync(pnpm, ["electron:build"], {
   cwd: root,
@@ -62,6 +66,7 @@ try {
 }
 
 if (!shuttingDown) {
+  const cuaDriver = await cuaDriverPromise;
   start(resolveElectronBinary(), [path.join(root, "apps/electron")], {
     cwd: path.join(root, "apps/electron"),
     env: {
@@ -71,6 +76,7 @@ if (!shuttingDown) {
       CHATDESK_NODE_RUNTIME: process.env.CHATDESK_NODE_RUNTIME || process.execPath,
       ...(runtimeRoot ? { CHATDESK_CHAT_SERVER_RUNTIME_ROOT: runtimeRoot } : {}),
       ...(configuredWorker ? {} : { CHATDESK_CHAT_SERVER_WATCH: "1" }),
+      ...(cuaDriver ? { CHATDESK_CUA_DRIVER: cuaDriver } : {}),
       ...(existsSync(playwrightBrowsers)
         ? { CHAT_SERVER_PLAYWRIGHT_BROWSERS_PATH: playwrightBrowsers }
         : {}),
@@ -99,6 +105,30 @@ function resolveElectronBinary() {
     throw new Error("找不到 Electron 可执行文件");
   }
   return binary;
+}
+
+/**
+ * Development never fails on a missing driver: Computer Use simply stays
+ * unavailable. A local Cua Driver installation is used as-is; otherwise the
+ * pinned release is downloaded once into the staged assets directory. Set
+ * CHATDESK_CUA_DRIVER_FETCH=0 to skip that download.
+ */
+async function resolveDevelopmentCuaDriver() {
+  const download = process.platform === "darwin" && process.env.CHATDESK_CUA_DRIVER_FETCH !== "0";
+  try {
+    const driver = await resolveCuaDriver({ download });
+    if (driver) {
+      console.log(`Cua Driver：${driver}`);
+      return driver;
+    }
+  } catch (error) {
+    console.warn(`准备 Cua Driver 失败：${error instanceof Error ? error.message : error}`);
+  }
+  console.warn(
+    "未找到 cua-driver，开发环境中的 Computer Use 将不可用。安装：/bin/bash -c " +
+      '"$(curl -fsSL https://cua.ai/driver/install.sh)"，或设置 CHATDESK_CUA_DRIVER。',
+  );
+  return null;
 }
 
 function start(command, args, options) {

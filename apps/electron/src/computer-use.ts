@@ -43,19 +43,43 @@ export type ComputerUseMcpConfig = {
 const MACOS_HOST_BUNDLE_ID = "org.bohao.mdashboard";
 const STOP_TIMEOUT_MS = 2_000;
 
-function resolveDriverPath() {
-  const candidates = [
-    process.env.CHATDESK_CUA_DRIVER,
-    process.env.CUA_DRIVER_BINARY,
-    process.platform === "darwin"
-      ? join(process.resourcesPath, "cua-driver", "cua-driver")
-      : join(process.resourcesPath, "cua-driver", "cua-driver.exe"),
-    join(process.resourcesPath, "binaries/cua-driver"),
-    join(app.getAppPath(), "apps/electron/assets/binaries/cua-driver"),
-    join(app.getAppPath(), "apps/electron/assets/binaries/cua-driver.exe"),
-    "/Applications/CuaDriver.app/Contents/MacOS/cua-driver",
-    join(app.getPath("home"), ".local/bin/cua-driver"),
+type CuaDriverCandidatesInput = {
+  platform: NodeJS.Platform;
+  packaged: boolean;
+  appPath: string;
+  resourcesPath: string;
+  home: string;
+  env: NodeJS.ProcessEnv;
+};
+
+/**
+ * Every place a `cua-driver` executable may live, in priority order. Export the
+ * list so the ordering stays testable without touching the filesystem.
+ */
+export function cuaDriverCandidatePaths(input: CuaDriverCandidatesInput): string[] {
+  const binary = input.platform === "win32" ? "cua-driver.exe" : "cua-driver";
+  return [
+    input.env.CHATDESK_CUA_DRIVER,
+    input.env.CUA_DRIVER_BINARY,
+    join(input.resourcesPath, "cua-driver", binary),
+    join(input.resourcesPath, "binaries", binary),
+    // `pnpm dev` runs Electron from `apps/electron`, so the staged binary in the
+    // repository lives one directory over. The packaged app uses Resources.
+    input.packaged ? undefined : join(input.appPath, "..", "desktop", "assets", "binaries", binary),
+    input.platform === "darwin" ? "/Applications/CuaDriver.app/Contents/MacOS/cua-driver" : undefined,
+    join(input.home, ".local", "bin", binary),
   ].filter((value): value is string => Boolean(value));
+}
+
+function resolveDriverPath() {
+  const candidates = cuaDriverCandidatePaths({
+    platform: process.platform,
+    packaged: app.isPackaged,
+    appPath: app.getAppPath(),
+    resourcesPath: process.resourcesPath,
+    home: app.getPath("home"),
+    env: process.env,
+  });
 
   try {
     const fromPath = execFileSync("which", ["cua-driver"], { encoding: "utf8" }).trim();

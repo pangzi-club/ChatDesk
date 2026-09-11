@@ -63,9 +63,11 @@ CUA_DRIVER_SHA256_MACOS_ARM64=<64-character SHA-256 digest of the tar.gz>
 ```
 
 For the pinned Cua Driver release, the URL is
-`https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.23.2/cua-driver-rs-0.23.2-darwin-arm64.tar.gz`
+`https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.24.0/cua-driver-rs-0.24.0-darwin-arm64.tar.gz`
 and the SHA-256 is
-`c606a0410eb1bf59ee81d697f6fbf8b7126b2e9a3f802272a34807b45b6ecd6f`.
+`fd0cf565db831ad34d44a3c2321439575e02a6ce3ca97d04f267db1da7883685`.
+`scripts/cua-driver.mjs` holds the same pinned version and per-platform
+digests; update both together when the driver release moves.
 The workflow verifies the archive, extracts the top-level `cua-driver`, sets
 its executable bit, and passes it to `desktop:sidecars`; the package check then
 confirms it exists at `Contents/Resources/binaries/cua-driver`. The archive
@@ -99,16 +101,29 @@ System Settings > Privacy & Security > Accessibility and Screen Recording. The
 settings page reports the two grants separately and opens these panes when
 requested. A custom executable can be selected with `CHATDESK_CUA_DRIVER`.
 
+`pnpm dev` prepares the driver before it starts Electron and passes the result
+as `CHATDESK_CUA_DRIVER`. It resolves, in order: the `CHATDESK_CUA_DRIVER` /
+`CUA_DRIVER_BINARY` environment, the binary staged at
+`apps/desktop/assets/binaries/cua-driver`, `/Applications/CuaDriver.app`,
+`~/.local/bin/cua-driver`, and `PATH`. When none of them exists it downloads the
+pinned release into that staged path and verifies the archive against the
+SHA-256 in `scripts/cua-driver.mjs`; set `CHATDESK_CUA_DRIVER_FETCH=0` to skip
+the download and leave Computer Use unavailable. A missing driver only disables
+Computer Use — it never fails `pnpm dev` or a package build.
+
 For a packaged build, stage the signed executable while building sidecars:
 
 ```sh
 CHATDESK_CUA_DRIVER=/path/to/cua-driver pnpm desktop:build
 ```
 
-The sidecar script copies it to the app's `Resources/binaries` directory and
-preserves its executable bit. Sign and notarize the driver before signing the
-enclosing Electron application. Builds without a staged binary remain valid but
-show Computer Use as unavailable until a compatible driver is installed.
+Packaging resolves the driver exactly like development, but does not download
+it unless `CHATDESK_CUA_DRIVER_FETCH=1` is set, so release builds stay
+reproducible and use the artifact CI prepared. The sidecar script copies it to
+the app's `Resources/binaries` directory and preserves its executable bit. Sign
+and notarize the driver before signing the enclosing Electron application.
+Builds without a staged binary remain valid but show Computer Use as
+unavailable until a compatible driver is installed.
 
 Electron native modules, including ONNX Runtime and Sharp, are unpacked from asar so their `.node` binaries can be loaded by the Electron main process. Each macOS artifact must be built on a runner matching its target architecture; do not cross-build the native runtime from Rosetta.
 

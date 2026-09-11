@@ -31,7 +31,7 @@ vi.mock("electron", () => ({
   shell: { openExternal: mocks.openExternal },
 }));
 
-import { ComputerUseManager } from "./computer-use.js";
+import { ComputerUseManager, cuaDriverCandidatePaths } from "./computer-use.js";
 
 describe("ComputerUseManager permissions", () => {
   beforeEach(() => {
@@ -77,5 +77,40 @@ describe("ComputerUseManager permissions", () => {
     expect(mocks.openExternal).toHaveBeenCalledWith(
       "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
     );
+  });
+});
+
+describe("cuaDriverCandidatePaths", () => {
+  const base = {
+    platform: "darwin",
+    appPath: "/repo/apps/electron",
+    resourcesPath: "/resources",
+    home: "/home/test",
+    env: {},
+  } as const;
+
+  it("finds the repository-staged driver in development", () => {
+    const candidates = cuaDriverCandidatePaths({ ...base, packaged: false });
+
+    expect(candidates).toContain("/repo/apps/desktop/assets/binaries/cua-driver");
+  });
+
+  it("does not look into the source tree in a packaged app", () => {
+    const candidates = cuaDriverCandidatePaths({ ...base, packaged: true });
+
+    expect(candidates).toContain("/resources/binaries/cua-driver");
+    expect(candidates.some((candidate) => candidate.includes("desktop/assets"))).toBe(false);
+  });
+
+  it("honours an explicit environment override first and the platform executable name", () => {
+    const candidates = cuaDriverCandidatePaths({
+      ...base,
+      platform: "win32",
+      packaged: false,
+      env: { CHATDESK_CUA_DRIVER: "D:\\cua\\cua-driver.exe" },
+    });
+
+    expect(candidates[0]).toBe("D:\\cua\\cua-driver.exe");
+    expect(candidates).toContain("/resources/binaries/cua-driver.exe");
   });
 });

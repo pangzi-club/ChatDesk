@@ -2,9 +2,9 @@ import { spawn } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { chmod, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { stageCuaDriver } from "./cua-driver.mjs";
 
 const NODE_RUNTIME_VERSION = "v22.20.0";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -50,7 +50,7 @@ await Promise.all([
   mkdir(browserPath, { recursive: true }),
 ]);
 
-await stageCuaDriver();
+await stageCuaDriver({ download: process.env.CHATDESK_CUA_DRIVER_FETCH === "1" });
 
 await copyNodeRuntime();
 await writeFile(
@@ -110,31 +110,6 @@ async function copyNodeRuntime() {
   if (process.platform !== "win32") await chmod(nodeRuntimePath, 0o755);
   const license = findNodeLicense(executable);
   await cp(license, path.join(runtimeRoot, "licenses/node-LICENSE"));
-}
-
-async function stageCuaDriver() {
-  const configured = process.env.CHATDESK_CUA_DRIVER;
-  const candidates = [
-    configured,
-    process.platform === "darwin"
-      ? "/Applications/CuaDriver.app/Contents/MacOS/cua-driver"
-      : undefined,
-    path.join(os.homedir(), ".local/bin/cua-driver"),
-  ].filter((value) => value && existsSync(value));
-  const source = candidates[0];
-  if (!source) {
-    console.warn(
-      "Cua Driver binary not staged; set CHATDESK_CUA_DRIVER when building a packaged app.",
-    );
-    return;
-  }
-  const target = path.join(
-    binariesDir,
-    process.platform === "win32" ? "cua-driver.exe" : "cua-driver",
-  );
-  if (path.resolve(source) !== path.resolve(target)) await cp(source, target);
-  if (process.platform !== "win32") await chmod(target, 0o755);
-  console.log(`Staged Cua Driver binary: ${target}`);
 }
 
 function findNodeLicense(executable) {
