@@ -1,5 +1,4 @@
-import { isDesktop } from "@/lib/runtime/desktop-bridge";
-import { settingsStore } from "@/lib/settings/settings-store";
+import { createSettingsAdapter } from "@/lib/settings/create-settings-adapter";
 
 export type ShortcutAction =
   | "mainSidebar"
@@ -57,8 +56,8 @@ export const DEFAULT_SHORTCUTS: ShortcutSettings = {
   },
 };
 
-const SHORTCUTS_STORE_KEY = "shortcuts";
-const SHORTCUTS_STORAGE_KEY = "m-dashboard-shortcuts-v1";
+const SHORTCUTS_STORAGE_KEY = "chatdesk-shortcuts-v1";
+const SHORTCUTS_LEGACY_STORAGE_KEY = "m-dashboard-shortcuts-v1";
 const SHORTCUTS_CHANGED_EVENT = "chatdesk-shortcuts-changed";
 
 function isBinding(value: unknown): value is ShortcutBinding {
@@ -110,40 +109,22 @@ function keyToCode(key: string) {
   return /^[a-z]$/i.test(key) ? `Key${key.toUpperCase()}` : undefined;
 }
 
-export async function loadShortcutSettings(): Promise<ShortcutSettings> {
-  if (isDesktop()) {
-    try {
-      const stored = await settingsStore.get<unknown>(SHORTCUTS_STORE_KEY);
-      if (stored) return normalizeShortcuts(stored);
-    } catch (error) {
-      console.error("Failed to load shortcut settings from desktop store", error);
-    }
-  }
+const SHORTCUTS_ADAPTER = createSettingsAdapter<ShortcutSettings>({
+  storeKey: "shortcuts",
+  storageKey: SHORTCUTS_STORAGE_KEY,
+  legacyStorageKeys: [SHORTCUTS_LEGACY_STORAGE_KEY],
+  eventName: SHORTCUTS_CHANGED_EVENT,
+  normalize: normalizeShortcuts,
+  defaultValue: DEFAULT_SHORTCUTS,
+  label: "shortcut settings",
+});
 
-  try {
-    const raw = window.localStorage.getItem(SHORTCUTS_STORAGE_KEY);
-    if (raw) return normalizeShortcuts(JSON.parse(raw));
-  } catch (error) {
-    console.error("Failed to load shortcut settings from localStorage", error);
-  }
-
-  return DEFAULT_SHORTCUTS;
+export function loadShortcutSettings(): Promise<ShortcutSettings> {
+  return SHORTCUTS_ADAPTER.load();
 }
 
-export async function saveShortcutSettings(settings: ShortcutSettings) {
-  if (isDesktop()) {
-    try {
-      await settingsStore.set(SHORTCUTS_STORE_KEY, settings);
-      await settingsStore.save();
-      window.localStorage.removeItem(SHORTCUTS_STORAGE_KEY);
-    } catch (error) {
-      console.error("Failed to save shortcut settings to desktop store", error);
-      window.localStorage.setItem(SHORTCUTS_STORAGE_KEY, JSON.stringify(settings));
-    }
-  } else {
-    window.localStorage.setItem(SHORTCUTS_STORAGE_KEY, JSON.stringify(settings));
-  }
-  window.dispatchEvent(new Event(SHORTCUTS_CHANGED_EVENT));
+export function saveShortcutSettings(settings: ShortcutSettings): Promise<void> {
+  return SHORTCUTS_ADAPTER.save(settings);
 }
 
 export function subscribeShortcutSettings(onChange: () => void) {

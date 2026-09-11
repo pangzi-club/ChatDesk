@@ -1,5 +1,6 @@
 import {
   DEFAULT_WORKSPACE_ID,
+  fileNameFromPath as pathBasename,
   type WorkspaceFileEntry,
   type WorkspaceGitFile,
 } from "@chatdesk/shared";
@@ -92,6 +93,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useChatServerPort } from "@/components/use-chat-server-port";
 import {
   getBrowserPreviewTitle,
   normalizeBrowserPreviewUrl,
@@ -109,6 +111,10 @@ import {
   isChatPath,
   parseChatLocation,
 } from "@/lib/chat/chat-routes";
+import {
+  regenerateChatSessionTitleAndRefresh,
+  saveChatSessionTitleAndRefresh,
+} from "@/lib/chat/chat-session-title";
 import {
   type ChatIndexItem,
   deleteChatSession,
@@ -136,7 +142,8 @@ import {
   type WorkspaceTabType,
 } from "@/lib/plugins/desktop-ui";
 import { rememberReturnPath } from "@/lib/runtime/app-return-path";
-import { getDesktopBridge, isDesktop, subscribeBridgeEvent } from "@/lib/runtime/desktop-bridge";
+import { isDesktop, isElectronRuntime, subscribeBridgeEvent } from "@/lib/runtime/desktop-bridge";
+import { describeError } from "@/lib/runtime/errors";
 import {
   DEFAULT_SHORTCUTS,
   formatShortcut,
@@ -158,12 +165,10 @@ import {
   loadServerWorkspaceFiles,
   loadServerWorkspaceGit,
   loadServerWorkspaceGitDiff,
-  regenerateChatSessionTitle,
   restartChatServer,
   restoreServerWorkspaceGit,
   subscribeChatServerConnection,
   subscribeChatServerEvents,
-  updateChatSessionTitle,
 } from "@/lib/server/chat-server";
 import { appendSystemLog } from "@/lib/server/system-log";
 import {
@@ -716,8 +721,7 @@ function AppShell() {
   }, [navigate]);
 
   useEffect(() => {
-    const bridge = getDesktopBridge();
-    if (bridge?.runtime !== "electron") return;
+    if (!isElectronRuntime()) return;
 
     const listen = (event: string, listener: (payload: Record<string, unknown>) => void) =>
       subscribeBridgeEvent(event, (payload) => {
@@ -1898,7 +1902,7 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
     {},
   );
   const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(loadUnreadChatIds);
-  const [serverPort, setServerPort] = useState(CHAT_SERVER_DEFAULT_PORT);
+  const serverPort = useChatServerPort() ?? CHAT_SERVER_DEFAULT_PORT;
   const [sessionToDelete, setSessionToDelete] = useState<ChatIndexItem | null>(null);
   const [copiedConversation, setCopiedConversation] = useState<{
     id: string;
@@ -1992,15 +1996,6 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
       setWorkspaceToDelete(null);
     },
   });
-  useEffect(() => {
-    let active = true;
-    void loadChatServerPort().then((port) => {
-      if (active) setServerPort(port);
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
 
   useEffect(() => {
     if (!isDesktop()) return;
@@ -2198,16 +2193,14 @@ function WorkspaceConversationGroups({ view }: { view: SidebarConversationView }
 
   async function saveConversationTitle(title: string) {
     if (!titleDialogSession) return;
-    await updateChatSessionTitle(titleDialogSession.id, title);
-    await queryClient.invalidateQueries({ queryKey: ["chat-index"] });
+    await saveChatSessionTitleAndRefresh(queryClient, titleDialogSession.id, title);
   }
 
   async function generateConversationTitle() {
     if (!titleDialogSession) return;
     setRenamingSessionId(titleDialogSession.id);
     try {
-      await regenerateChatSessionTitle(titleDialogSession.id);
-      await queryClient.invalidateQueries({ queryKey: ["chat-index"] });
+      await regenerateChatSessionTitleAndRefresh(queryClient, titleDialogSession.id);
     } finally {
       setRenamingSessionId((current) => (current === titleDialogSession.id ? null : current));
     }
@@ -2680,23 +2673,10 @@ function groupChatsByWorkspace(
   return [...sortWorkspaceConversationGroups(workspaceGroups, sort), recentGroup];
 }
 
-function pathBasename(path: string) {
-  return (
-    path
-      .replace(/[\\/]+$/, "")
-      .split(/[\\/]/)
-      .pop() ?? path
-  );
-}
-
 function pathDirectory(path: string) {
   const normalized = path.replace(/\\/g, "/");
   const separator = normalized.lastIndexOf("/");
   return separator > 0 ? `${normalized.slice(0, separator)}/` : "";
-}
-
-function describeError(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
 }
 
 type ChatWindowTab = WorkspaceTab;

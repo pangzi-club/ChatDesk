@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  isChatServerProtocolInput,
   resolveChatServerBaseUrl,
-  resolveChatServerRequestInput,
   resolveElectronProxyOrigin,
 } from "@/lib/server/chat-server";
 
@@ -34,20 +34,8 @@ describe("resolveChatServerBaseUrl", () => {
     ).toBe("http://localhost:1420");
   });
 
-  it("keeps packaged Electron REST requests on the renderer protocol", () => {
-    expect(
-      resolveChatServerRequestInput("chatdesk://localhost/v1/sessions?limit=20", {
-        runtime: "electron",
-        development: false,
-        port: 19000,
-      }),
-    ).toBe("chatdesk://localhost/v1/sessions?limit=20");
-    expect(
-      resolveChatServerRequestInput("http://localhost:1420/v1/sessions", {
-        runtime: "electron",
-        development: true,
-        port: 19000,
-      }),
-    ).toBe("http://localhost:1420/v1/sessions");
+  it("recognizes requests already on the packaged Electron renderer protocol", () => {
+    expect(isChatServerProtocolInput("chatdesk://localhost/v1/sessions?limit=20")).toBe(true);
+    expect(isChatServerProtocolInput("http://localhost:1420/v1/sessions")).toBe(false);
   });
 });

@@ -1,5 +1,6 @@
 import "@xterm/xterm/css/xterm.css";
 
+import { fileNameFromPath as pathBasename } from "@chatdesk/shared";
 import { Eraser, LoaderCircle, SquareTerminal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -8,15 +9,6 @@ import {
   terminalSessions,
   terminalSupported,
 } from "@/lib/workspace/terminal";
-
-function pathBasename(path: string) {
-  return (
-    path
-      .replace(/[\\/]+$/, "")
-      .split(/[\\/]/)
-      .pop() ?? path
-  );
-}
 
 function shellBasename(path: string) {
   return path.split(/[\\/]/).pop() ?? path;

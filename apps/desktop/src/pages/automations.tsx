@@ -1,15 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Clock3,
-  Edit3,
-  Eye,
-  ListChecks,
-  MoreHorizontal,
-  Pause,
-  Play,
-  Plus,
-  Trash2,
-} from "lucide-react";
+import { Clock3, Edit3, Eye, ListChecks, Pause, Play, Plus, Trash2 } from "lucide-react";
 import { type FormEvent, useMemo, useState } from "react";
 import {
   AlertDialog,
@@ -645,15 +635,6 @@ function TaskRow({
           variant="ghost"
         >
           <Trash2 className="size-4" />
-        </Button>
-        <Button
-          aria-label="更多操作"
-          className="hidden sm:inline-flex"
-          size="icon"
-          type="button"
-          variant="ghost"
-        >
-          <MoreHorizontal className="size-4" />
         </Button>
       </div>
     </article>

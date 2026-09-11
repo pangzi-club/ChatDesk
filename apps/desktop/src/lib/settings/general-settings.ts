@@ -1,5 +1,5 @@
-import { getDesktopBridge, isDesktop } from "@/lib/runtime/desktop-bridge";
-import { settingsStore } from "@/lib/settings/settings-store";
+import { getDesktopBridge } from "@/lib/runtime/desktop-bridge";
+import { createSettingsAdapter } from "@/lib/settings/create-settings-adapter";
 
 export type GeneralSettings = {
   notifyOnChatCompletion: boolean;
@@ -15,8 +15,7 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   notifyOnFeishuMessage: false,
 };
 
-const GENERAL_SETTINGS_STORE_KEY = "general";
-const GENERAL_SETTINGS_STORAGE_KEY = "m-dashboard-general-settings-v1";
+const GENERAL_SETTINGS_STORAGE_KEY = "chatdesk-general-settings-v1";
 
 function normalizeGeneralSettings(value: unknown): GeneralSettings {
   if (!value || typeof value !== "object") return DEFAULT_GENERAL_SETTINGS;
@@ -34,40 +33,22 @@ function normalizeGeneralSettings(value: unknown): GeneralSettings {
   };
 }
 
-export async function loadGeneralSettings(): Promise<GeneralSettings> {
-  if (isDesktop()) {
-    try {
-      const stored = await settingsStore.get<unknown>(GENERAL_SETTINGS_STORE_KEY);
-      if (stored) return normalizeGeneralSettings(stored);
-    } catch (error) {
-      console.error("Failed to load general settings from desktop store", error);
-    }
-  }
+const GENERAL_SETTINGS_ADAPTER = createSettingsAdapter<GeneralSettings>({
+  storeKey: "general",
+  storageKey: GENERAL_SETTINGS_STORAGE_KEY,
+  legacyStorageKeys: ["m-dashboard-general-settings-v1"],
+  eventName: "general-settings-change",
+  normalize: normalizeGeneralSettings,
+  defaultValue: DEFAULT_GENERAL_SETTINGS,
+  label: "general settings",
+});
 
-  try {
-    const raw = window.localStorage.getItem(GENERAL_SETTINGS_STORAGE_KEY);
-    if (raw) return normalizeGeneralSettings(JSON.parse(raw));
-  } catch (error) {
-    console.error("Failed to load general settings from localStorage", error);
-  }
-  return DEFAULT_GENERAL_SETTINGS;
+export function loadGeneralSettings(): Promise<GeneralSettings> {
+  return GENERAL_SETTINGS_ADAPTER.load();
 }
 
-export async function saveGeneralSettings(settings: GeneralSettings) {
-  const normalized = normalizeGeneralSettings(settings);
-  if (isDesktop()) {
-    try {
-      await settingsStore.set(GENERAL_SETTINGS_STORE_KEY, normalized);
-      await settingsStore.save();
-      window.localStorage.removeItem(GENERAL_SETTINGS_STORAGE_KEY);
-      window.dispatchEvent(new CustomEvent("general-settings-change", { detail: normalized }));
-      return;
-    } catch (error) {
-      console.error("Failed to save general settings to desktop store", error);
-    }
-  }
-  window.localStorage.setItem(GENERAL_SETTINGS_STORAGE_KEY, JSON.stringify(normalized));
-  window.dispatchEvent(new CustomEvent("general-settings-change", { detail: normalized }));
+export function saveGeneralSettings(settings: GeneralSettings): Promise<void> {
+  return GENERAL_SETTINGS_ADAPTER.save(settings);
 }
 
 export async function requestNotificationPermission() {

@@ -1,5 +1,7 @@
+import { isRecord } from "@chatdesk/shared";
 import { getToolName, isToolUIPart, type UIMessage } from "ai";
 
+import { mergeChatAttachments } from "@/lib/chat/chat-attachments";
 import { type ChatAttachment, writeChatAttachment } from "@/lib/chat/chat-store";
 import { downloadGeneratedImage } from "@/lib/image-generation";
 
@@ -21,10 +23,6 @@ export type MaterializeGeneratedImagesResult = {
   attachments: ChatAttachment[];
   changed: boolean;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object";
-}
 
 function decodeBase64(base64: string): Uint8Array {
   const normalized = base64.includes(",") ? (base64.split(",").pop() ?? base64) : base64;
@@ -128,18 +126,6 @@ export function readImageGenerationOutput(output: unknown): {
   return { taskId };
 }
 
-function mergeAttachments(
-  existing: ChatAttachment[],
-  incoming: ChatAttachment[],
-): ChatAttachment[] {
-  if (incoming.length === 0) return existing;
-  const byId = new Map(existing.map((item) => [item.id, item]));
-  for (const item of incoming) {
-    byId.set(item.id, item);
-  }
-  return [...byId.values()];
-}
-
 /** 将 image_generation 结果落盘（桌面）或转为 data URL（Web），并改写 message parts。 */
 export async function materializeGeneratedImages(
   sessionId: string,
@@ -230,7 +216,7 @@ export async function materializeGeneratedImages(
 
   return {
     messages: nextMessages,
-    attachments: mergeAttachments(existingAttachments, created),
+    attachments: mergeChatAttachments(existingAttachments, created),
     changed,
   };
 }

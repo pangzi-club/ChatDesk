@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookImage, Check, Copy, Download, Image, Library, Sparkles } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
@@ -375,13 +375,26 @@ function PhotoRecordCard({ record }: { record: ImageGenerationRecord }) {
   const [failedUrls, setFailedUrls] = useState<string[]>([]);
   const [copied, setCopied] = useState(false);
   const [actionNotice, setActionNotice] = useState("");
+  const copiedResetRef = useRef<number | undefined>(undefined);
   const date = new Date(record.createdAt);
+
+  useEffect(
+    () => () => {
+      if (copiedResetRef.current !== undefined) window.clearTimeout(copiedResetRef.current);
+    },
+    [],
+  );
 
   async function copyPrompt() {
     setActionNotice("");
     try {
       await navigator.clipboard.writeText(record.prompt);
       setCopied(true);
+      if (copiedResetRef.current !== undefined) window.clearTimeout(copiedResetRef.current);
+      copiedResetRef.current = window.setTimeout(() => {
+        copiedResetRef.current = undefined;
+        setCopied(false);
+      }, 1500);
     } catch {
       setActionNotice("提示词复制失败，请重试。");
     }

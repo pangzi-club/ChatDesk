@@ -1,5 +1,4 @@
-import { isDesktop } from "@/lib/runtime/desktop-bridge";
-import { settingsStore } from "@/lib/settings/settings-store";
+import { createSettingsAdapter } from "@/lib/settings/create-settings-adapter";
 
 export type DeveloperSettings = {
   mockLongResponse: boolean;
@@ -13,7 +12,6 @@ export const DEFAULT_DEVELOPER_SETTINGS: DeveloperSettings = {
   showDemoPlugins: false,
 };
 
-const DEVELOPER_SETTINGS_STORE_KEY = "developer";
 const DEVELOPER_SETTINGS_STORAGE_KEY = "chatdesk-developer-settings-v1";
 
 export function normalizeDeveloperSettings(value: unknown): DeveloperSettings {
@@ -25,38 +23,19 @@ export function normalizeDeveloperSettings(value: unknown): DeveloperSettings {
   };
 }
 
-export async function loadDeveloperSettings(): Promise<DeveloperSettings> {
-  if (isDesktop()) {
-    try {
-      const stored = await settingsStore.get<unknown>(DEVELOPER_SETTINGS_STORE_KEY);
-      if (stored) return normalizeDeveloperSettings(stored);
-    } catch (error) {
-      console.error("Failed to load developer settings from desktop store", error);
-    }
-  }
+const DEVELOPER_SETTINGS_ADAPTER = createSettingsAdapter<DeveloperSettings>({
+  storeKey: "developer",
+  storageKey: DEVELOPER_SETTINGS_STORAGE_KEY,
+  eventName: "developer-settings-change",
+  normalize: normalizeDeveloperSettings,
+  defaultValue: DEFAULT_DEVELOPER_SETTINGS,
+  label: "developer settings",
+});
 
-  try {
-    const raw = window.localStorage.getItem(DEVELOPER_SETTINGS_STORAGE_KEY);
-    if (raw) return normalizeDeveloperSettings(JSON.parse(raw));
-  } catch (error) {
-    console.error("Failed to load developer settings from localStorage", error);
-  }
-  return DEFAULT_DEVELOPER_SETTINGS;
+export function loadDeveloperSettings(): Promise<DeveloperSettings> {
+  return DEVELOPER_SETTINGS_ADAPTER.load();
 }
 
-export async function saveDeveloperSettings(settings: DeveloperSettings) {
-  const normalized = normalizeDeveloperSettings(settings);
-  if (isDesktop()) {
-    try {
-      await settingsStore.set(DEVELOPER_SETTINGS_STORE_KEY, normalized);
-      await settingsStore.save();
-      window.localStorage.removeItem(DEVELOPER_SETTINGS_STORAGE_KEY);
-      window.dispatchEvent(new CustomEvent("developer-settings-change", { detail: normalized }));
-      return;
-    } catch (error) {
-      console.error("Failed to save developer settings to desktop store", error);
-    }
-  }
-  window.localStorage.setItem(DEVELOPER_SETTINGS_STORAGE_KEY, JSON.stringify(normalized));
-  window.dispatchEvent(new CustomEvent("developer-settings-change", { detail: normalized }));
+export function saveDeveloperSettings(settings: DeveloperSettings): Promise<void> {
+  return DEVELOPER_SETTINGS_ADAPTER.save(settings);
 }

@@ -1,3 +1,4 @@
+import { isRecord } from "@chatdesk/shared";
 import { desktopFetch } from "@/lib/runtime/desktop-fetch";
 import { chatServerRequest, loadChatServerMcp, saveChatServerMcp } from "@/lib/server/chat-server";
 
@@ -26,10 +27,8 @@ export type McpServerConfig = {
 export type McpRegistryEntry = McpServerConfig & { installed: boolean; popularity: number };
 
 const REGISTRY_URL = "https://registry.modelcontextprotocol.io/v0/servers";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object";
-}
+// The MCP registry is a third-party endpoint: cap the request so a hung connection cannot stall the UI.
+const MCP_REGISTRY_TIMEOUT_MS = 10_000;
 
 function cleanString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -117,7 +116,9 @@ export async function fetchMcpRegistry(query = ""): Promise<McpRegistryEntry[]> 
   const url = new URL(REGISTRY_URL);
   url.searchParams.set("limit", "100");
   if (query.trim()) url.searchParams.set("search", query.trim());
-  const response = await desktopFetch(url);
+  const response = await desktopFetch(url, {
+    signal: AbortSignal.timeout(MCP_REGISTRY_TIMEOUT_MS),
+  });
   if (!response.ok) throw new Error(`MCP Registry 请求失败 (${response.status})`);
   const payload = (await response.json()) as { servers?: unknown[] } | unknown[];
   const rows = Array.isArray(payload) ? payload : (payload.servers ?? []);

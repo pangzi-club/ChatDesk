@@ -1,4 +1,9 @@
-import type { ChatContextCompaction, ChatContextUsage, ChatRunSummary } from "@chatdesk/shared";
+import {
+  type ChatContextCompaction,
+  type ChatContextUsage,
+  type ChatRunSummary,
+  mapWithConcurrency,
+} from "@chatdesk/shared";
 import { isToolUIPart, type UIMessage } from "ai";
 
 import {
@@ -313,6 +318,10 @@ function makeSourceBreakdown(
   };
 }
 
+// Session bodies must be fetched one request at a time from storage, so load a
+// small bounded batch in parallel and keep the aggregation itself serial.
+const USAGE_SESSION_LOAD_CONCURRENCY = 6;
+
 export async function analyzeHistoryUsage(): Promise<HistoryUsageAnalysis> {
   const [nativeIndex, archiveIndex] = await Promise.all([loadChatIndex(), loadArchiveIndex()]);
 
@@ -352,14 +361,22 @@ export async function analyzeHistoryUsage(): Promise<HistoryUsageAnalysis> {
     });
   };
 
-  for (const item of nativeIndex) {
-    const session = await loadChatSession(item.id);
+  const nativeSessions = await mapWithConcurrency(
+    nativeIndex,
+    USAGE_SESSION_LOAD_CONCURRENCY,
+    (item) => loadChatSession(item.id),
+  );
+  for (const session of nativeSessions) {
     if (!session) continue;
     bump("native", session.messages.length, sessionUsageFromNative(session.messages));
   }
 
-  for (const item of archiveIndex) {
-    const session = await loadArchiveSession(item.id);
+  const archiveSessions = await mapWithConcurrency(
+    archiveIndex,
+    USAGE_SESSION_LOAD_CONCURRENCY,
+    (item) => loadArchiveSession(item.id),
+  );
+  for (const session of archiveSessions) {
     if (!session) continue;
     bump(session.source, session.messages.length, sessionUsageFromArchive(session));
   }

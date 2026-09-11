@@ -37,6 +37,7 @@ import { useChatLayout } from "@/components/chat-layout-provider";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { ChatMemorySettings } from "@/components/chat-memory-settings";
 import { ChatToolsSettings } from "@/components/chat-tools-settings";
+import { ImportDeveloperEnvironmentDialog } from "@/components/import-developer-environment-dialog";
 import { type Theme, type ThemeColor, useTheme } from "@/components/theme-provider";
 import {
   AlertDialog,
@@ -85,7 +86,14 @@ import {
   saveChatToolsSettings,
 } from "@/lib/chat/chat-tools";
 import { clearKieApiKey, loadKieApiKey, saveKieApiKey } from "@/lib/image-generation";
-import { getDesktopBridge, isDesktop, subscribeBridgeEvent } from "@/lib/runtime/desktop-bridge";
+import {
+  loadComputerUseStatus,
+  openComputerUsePermissions,
+  setComputerUseEnabled,
+  subscribeComputerUseStatus,
+} from "@/lib/runtime/computer-use";
+import { isDesktop } from "@/lib/runtime/desktop-bridge";
+import { describeError } from "@/lib/runtime/errors";
 import { pickDirectory } from "@/lib/runtime/platform";
 import {
   DEFAULT_SHORTCUTS,
@@ -180,10 +188,6 @@ const themes: Array<{ value: Theme; label: string; description: string }> = [
   { value: "light", label: "浅色", description: "明亮、清晰的工作界面" },
   { value: "dark", label: "深色", description: "适合夜间和低光环境" },
 ];
-
-function describeError(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
 
 function stripSkillFrontmatter(content: string) {
   const lines = content.split(/\r?\n/);
@@ -453,48 +457,27 @@ function SystemLogsSettingsPage() {
 }
 
 export function ComputerUseSettingsPage() {
-  const bridge = getDesktopBridge();
   const queryClient = useQueryClient();
   const statusQuery = useQuery<ComputerUseStatus>({
     queryKey: ["computer-use-status"],
     refetchOnWindowFocus: true,
-    queryFn: async () => {
-      if (!bridge?.computerUseStatus) {
-        return {
-          supported: false,
-          enabled: false,
-          driverInstalled: false,
-          driverPath: null,
-          hostRunning: false,
-          permissions: { accessibility: false, screenRecording: false },
-          error: null,
-        };
-      }
-      return bridge.computerUseStatus();
-    },
+    queryFn: loadComputerUseStatus,
   });
   const enableMutation = useMutation({
-    mutationFn: async (enabled: boolean) => {
-      if (!bridge?.setComputerUseEnabled) throw new Error("当前运行环境不支持 Computer Use");
-      return bridge.setComputerUseEnabled(enabled);
-    },
+    mutationFn: (enabled: boolean) => setComputerUseEnabled(enabled),
     onSuccess: (value) => queryClient.setQueryData(["computer-use-status"], value),
   });
   const permissionMutation = useMutation({
-    mutationFn: async () => {
-      if (!bridge?.openComputerUsePermissions) throw new Error("当前运行环境不支持权限设置");
-      return bridge.openComputerUsePermissions();
-    },
+    mutationFn: () => openComputerUsePermissions(),
     onSuccess: (value) => queryClient.setQueryData(["computer-use-status"], value),
   });
   const status = statusQuery.data;
 
   useEffect(() => {
-    if (!bridge?.subscribe) return;
-    return subscribeBridgeEvent("computer-use-status", (value) => {
+    return subscribeComputerUseStatus((value) => {
       queryClient.setQueryData(["computer-use-status"], value);
     });
-  }, [bridge, queryClient]);
+  }, [queryClient]);
 
   return (
     <>
@@ -2091,31 +2074,14 @@ function EnvironmentSettingsPage() {
         )}
       </section>
 
-      <AlertDialog onOpenChange={setImportOpen} open={importOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>从终端导入开发工具？</AlertDialogTitle>
-            <AlertDialogDescription>
-              ChatDesk 会启动一次当前登录
-              Shell，并执行其启动配置。只解析常用开发工具的绝对可执行路径；不会保存其他环境变量、Token
-              或 API Key。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={importMutation.isPending}>取消</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={importMutation.isPending}
-              onClick={(event) => {
-                event.preventDefault();
-                importMutation.mutate();
-              }}
-            >
-              {importMutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-              确认导入
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ImportDeveloperEnvironmentDialog
+        description="ChatDesk 会启动一次当前登录 Shell，并执行其启动配置。只解析常用开发工具的绝对可执行路径；不会保存其他环境变量、Token 或 API Key。"
+        isPending={importMutation.isPending}
+        onConfirm={() => importMutation.mutate()}
+        onOpenChange={setImportOpen}
+        open={importOpen}
+        title="从终端导入开发工具？"
+      />
     </>
   );
 }

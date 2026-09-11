@@ -1,3 +1,5 @@
+import { isRecord } from "@chatdesk/shared";
+
 import type { ImageAspectRatio, ImageModel, ImageResolution } from "@/lib/image-generation";
 import { loadServerImageGeneration, saveServerImageGeneration } from "@/lib/server/chat-server";
 
@@ -13,10 +15,6 @@ export type ImageGenerationRecord = {
   aspectRatio: ImageAspectRatio;
   resolution: ImageResolution;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object";
-}
 
 function asString(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;

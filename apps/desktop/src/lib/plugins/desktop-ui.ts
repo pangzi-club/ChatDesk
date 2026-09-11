@@ -4,7 +4,11 @@ import type {
   DesktopPluginManifest as SdkDesktopPluginManifest,
   DesktopPluginModule as SdkDesktopPluginModule,
 } from "@chatdesk/desktop-plugin-sdk";
-import type { SystemPromptSnapshot } from "@chatdesk/shared";
+import {
+  DESKTOP_UI_SLOTS,
+  type DesktopUiSlotName,
+  type SystemPromptSnapshot,
+} from "@chatdesk/shared";
 import type { UIMessage } from "ai";
 import { Context, type Fiber, Service } from "cordis";
 import type { ComponentType } from "react";
@@ -39,32 +43,7 @@ export type DesktopPluginHandle = SdkDesktopPluginHandle;
 export type DesktopPluginInstallResult = SdkDesktopPluginInstallResult;
 export { validateDesktopPluginManifest };
 
-export type DesktopUiSlot =
-  | "sidebar.navigation"
-  | "settings.page"
-  | "route"
-  | "workspace.tab"
-  | "action"
-  | "shell.overlay"
-  | "shell.before"
-  | "shell.after"
-  | "sidebar.before"
-  | "sidebar.after"
-  | "sidebar.footer"
-  | "chat.header.action"
-  | "chat.composer.tool"
-  | "chat.messages.before"
-  | "chat.messages.after"
-  | "chat.messages.empty"
-  | "chat.composer.float"
-  | "chat.message.action"
-  | "chat.message.before"
-  | "chat.message.after"
-  | "chat.message.meta"
-  | "chat.generating"
-  | "chat.status"
-  | "chat.theme"
-  | "chat.layout";
+export type DesktopUiSlot = DesktopUiSlotName;
 export type DesktopIcon = ComponentType<{ className?: string }>;
 
 export type DesktopShortcut = {
@@ -383,6 +362,14 @@ export type SlotMap = {
   "chat.layout": ChatLayoutContribution;
 };
 
+type DesktopUiSnapshot = SlotMap[DesktopUiSlot];
+
+function createSlotRecord<T>(create: () => T): { [K in DesktopUiSlot]: T } {
+  return Object.fromEntries(DESKTOP_UI_SLOTS.map((slot) => [slot, create()])) as {
+    [K in DesktopUiSlot]: T;
+  };
+}
+
 function sortContributions<T extends { order?: number }>(items: T[]) {
   return items
     .map((item, index) => ({ item, index }))
@@ -399,86 +386,18 @@ export class DesktopUiService extends Service {
   });
   uninstallPlugin: (id: string) => Promise<boolean> = async () => false;
   refreshPlugins: () => Promise<void> = async () => {};
-  private readonly definitions: { [K in DesktopUiSlot]: Map<string, SlotMap[K]> } = {
-    "sidebar.navigation": new Map(),
-    "settings.page": new Map(),
-    route: new Map(),
-    "workspace.tab": new Map(),
-    action: new Map(),
-    "shell.overlay": new Map(),
-    "shell.before": new Map(),
-    "shell.after": new Map(),
-    "sidebar.before": new Map(),
-    "sidebar.after": new Map(),
-    "sidebar.footer": new Map(),
-    "chat.header.action": new Map(),
-    "chat.composer.tool": new Map(),
-    "chat.messages.before": new Map(),
-    "chat.messages.after": new Map(),
-    "chat.messages.empty": new Map(),
-    "chat.composer.float": new Map(),
-    "chat.message.action": new Map(),
-    "chat.message.before": new Map(),
-    "chat.message.after": new Map(),
-    "chat.message.meta": new Map(),
-    "chat.generating": new Map(),
-    "chat.status": new Map(),
-    "chat.theme": new Map(),
-    "chat.layout": new Map(),
-  };
+  private readonly definitions = createSlotRecord<Map<string, SlotMap[DesktopUiSlot]>>(
+    () => new Map(),
+  ) as { [K in DesktopUiSlot]: Map<string, SlotMap[K]> };
   private readonly listeners = new Set<() => void>();
   private readonly workspaceTabInstances = new Map<
     string,
     { tab: WorkspaceTab; scope: WorkspaceTabScope }
   >();
   private readonly pendingWorkspaceTabClosures = new Set<Promise<unknown>>();
-  private snapshots: Record<
-    DesktopUiSlot,
-    readonly (
-      | SidebarNavigationContribution
-      | SettingsPageContribution
-      | DesktopRouteContribution
-      | AnyWorkspaceTabContribution
-      | DesktopActionContribution
-      | DesktopShellContribution
-      | ChatHeaderActionContribution
-      | ChatComposerToolContribution
-      | ChatRegionContribution
-      | ChatMessageActionContribution
-      | ChatEmptyStateContribution
-      | ChatGeneratingContribution
-      | ChatMessageRegionContribution
-      | ChatMessageMetaContribution
-      | ChatThemeContribution
-      | ChatLayoutContribution
-    )[]
-  > = {
-    "sidebar.navigation": [],
-    "settings.page": [],
-    route: [],
-    "workspace.tab": [],
-    action: [],
-    "shell.overlay": [],
-    "shell.before": [],
-    "shell.after": [],
-    "sidebar.before": [],
-    "sidebar.after": [],
-    "sidebar.footer": [],
-    "chat.header.action": [],
-    "chat.composer.tool": [],
-    "chat.messages.before": [],
-    "chat.messages.after": [],
-    "chat.messages.empty": [],
-    "chat.composer.float": [],
-    "chat.message.action": [],
-    "chat.message.before": [],
-    "chat.message.after": [],
-    "chat.message.meta": [],
-    "chat.generating": [],
-    "chat.status": [],
-    "chat.theme": [],
-    "chat.layout": [],
-  };
+  private snapshots: Record<DesktopUiSlot, readonly DesktopUiSnapshot[]> = createSlotRecord<
+    readonly DesktopUiSnapshot[]
+  >(() => []);
 
   constructor(ctx: Context) {
     super(ctx, "desktopUi");

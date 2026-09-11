@@ -1,5 +1,6 @@
 import type { RunStartInput, SystemPromptSnapshot } from "@chatdesk/shared";
 import type { UIMessage } from "ai";
+import { createWindowEventBus } from "@/lib/runtime/window-event-bus";
 
 export type ContextDetailPromptInput = Pick<
   RunStartInput,
@@ -20,37 +21,27 @@ export type ContextDetailUpdateRequest = {
   systemPrompt?: SystemPromptSnapshot;
 };
 
-const OPEN_EVENT_NAME = "chatdesk:context-detail-open";
-const UPDATE_EVENT_NAME = "chatdesk:context-detail-updated";
+const contextDetailOpenBus = createWindowEventBus<ContextDetailOpenRequest>(
+  "chatdesk:context-detail-open",
+);
+const contextDetailUpdatedBus = createWindowEventBus<ContextDetailUpdateRequest>(
+  "chatdesk:context-detail-updated",
+);
 
 export function openContextDetail(request: ContextDetailOpenRequest) {
-  window.dispatchEvent(
-    new CustomEvent<ContextDetailOpenRequest>(OPEN_EVENT_NAME, { detail: request }),
-  );
+  contextDetailOpenBus.dispatch(request);
 }
 
 export function updateContextDetail(request: ContextDetailUpdateRequest) {
-  window.dispatchEvent(
-    new CustomEvent<ContextDetailUpdateRequest>(UPDATE_EVENT_NAME, { detail: request }),
-  );
+  contextDetailUpdatedBus.dispatch(request);
 }
 
 export function subscribeContextDetailOpen(listener: (request: ContextDetailOpenRequest) => void) {
-  const handler = (event: Event) => {
-    const detail = (event as CustomEvent<ContextDetailOpenRequest>).detail;
-    if (detail) listener(detail);
-  };
-  window.addEventListener(OPEN_EVENT_NAME, handler);
-  return () => window.removeEventListener(OPEN_EVENT_NAME, handler);
+  return contextDetailOpenBus.subscribe(listener);
 }
 
 export function subscribeContextDetailUpdated(
   listener: (request: ContextDetailUpdateRequest) => void,
 ) {
-  const handler = (event: Event) => {
-    const detail = (event as CustomEvent<ContextDetailUpdateRequest>).detail;
-    if (detail) listener(detail);
-  };
-  window.addEventListener(UPDATE_EVENT_NAME, handler);
-  return () => window.removeEventListener(UPDATE_EVENT_NAME, handler);
+  return contextDetailUpdatedBus.subscribe(listener);
 }

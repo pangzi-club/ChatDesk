@@ -10,6 +10,7 @@ type ToasterToast = ToastProps & {
   title?: React.ReactNode;
   description?: React.ReactNode;
   action?: ToastActionElement;
+  duration?: number;
 };
 
 let count = 0;
@@ -31,13 +32,13 @@ interface State {
 
 const toastTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 
-function addToRemoveQueue(toastId: string) {
+function addToRemoveQueue(toastId: string, duration?: number) {
   if (toastTimeouts.has(toastId)) return;
 
   const timeout = setTimeout(() => {
     toastTimeouts.delete(toastId);
     dispatch({ type: "REMOVE_TOAST", toastId });
-  }, TOAST_REMOVE_DELAY);
+  }, duration ?? TOAST_REMOVE_DELAY);
 
   toastTimeouts.set(toastId, timeout);
 }
@@ -104,7 +105,7 @@ function toast({ ...props }: Toast) {
     },
   });
 
-  addToRemoveQueue(id);
+  addToRemoveQueue(id, props.duration);
 
   return { id, dismiss, update };
 }

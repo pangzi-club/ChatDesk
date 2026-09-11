@@ -1,5 +1,7 @@
+import { isRecord } from "@chatdesk/shared";
 import { getToolName, isToolUIPart, type UIMessage } from "ai";
 
+import { mergeChatAttachments } from "@/lib/chat/chat-attachments";
 import type { ChatAttachment } from "@/lib/chat/chat-store";
 
 export const BROWSER_SCREENSHOT_TOOL_NAME = "browser_screenshot";
@@ -13,10 +15,6 @@ export type BrowserScreenshotOutput = {
   width?: number;
   height?: number;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object";
-}
 
 /** 从 browser_screenshot tool output 读取已落盘的附件信息。 */
 export function readBrowserScreenshotOutput(output: unknown): BrowserScreenshotOutput | null {
@@ -44,18 +42,6 @@ export function readBrowserScreenshotOutput(output: unknown): BrowserScreenshotO
     ...(typeof data.width === "number" ? { width: data.width } : {}),
     ...(typeof data.height === "number" ? { height: data.height } : {}),
   };
-}
-
-function mergeAttachments(
-  existing: ChatAttachment[],
-  incoming: ChatAttachment[],
-): ChatAttachment[] {
-  if (incoming.length === 0) return existing;
-  const byId = new Map(existing.map((item) => [item.id, item]));
-  for (const item of incoming) {
-    byId.set(item.id, item);
-  }
-  return [...byId.values()];
 }
 
 /** 把已落盘的 browser_screenshot 结果合并进 session.attachments，不重复上传。 */
@@ -89,5 +75,5 @@ export function materializeBrowserScreenshots(
   }
 
   if (created.length === 0) return { attachments: existingAttachments, changed: false };
-  return { attachments: mergeAttachments(existingAttachments, created), changed: true };
+  return { attachments: mergeChatAttachments(existingAttachments, created), changed: true };
 }

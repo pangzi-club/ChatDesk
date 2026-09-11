@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Import, LoaderCircle, Upload } from "lucide-react";
+import { Import, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -27,10 +27,7 @@ import {
   readImportTextFile,
   type ScannedSession,
   saveArchiveSession,
-  scanClaudeSessions,
-  scanCodexSessions,
-  scanCursorSessions,
-  scanKimiSessions,
+  scanArchiveSessions,
   sourceLabel,
   uploadImportFile,
 } from "@/lib/archive/chat-archive";
@@ -69,6 +66,35 @@ function formatTime(value?: string | null) {
   return date.toLocaleString("zh-CN");
 }
 
+function HistoryScanSkeleton() {
+  return (
+    <div aria-busy="true" className="space-y-4" role="status">
+      {[0, 1].map((section) => (
+        <section className="space-y-2" key={section}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="h-5 w-28 animate-pulse rounded bg-muted" />
+            <div className="h-7 w-14 animate-pulse rounded-md bg-muted" />
+          </div>
+          <div className="overflow-hidden rounded-lg border border-border">
+            <div className="divide-y divide-border">
+              {[0, 1].map((row) => (
+                <div className="flex items-start gap-3 px-4 py-3" key={row}>
+                  <div className="mt-0.5 size-4 shrink-0 animate-pulse rounded-sm bg-muted" />
+                  <div className="min-w-0 flex-1">
+                    <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
+                    <div className="mt-1 h-3 w-1/4 animate-pulse rounded bg-muted" />
+                    <div className="mt-1 h-3 w-1/2 animate-pulse rounded bg-muted" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
 function HistoryImportDialog({
   open,
   onOpenChange,
@@ -94,10 +120,10 @@ function HistoryImportDialog({
     queryKey: ["history-scan"],
     queryFn: async () => {
       const [codex, claude, cursor, kimi] = await Promise.all([
-        scanCodexSessions(),
-        scanClaudeSessions(),
-        scanCursorSessions(),
-        scanKimiSessions(),
+        scanArchiveSessions("codex"),
+        scanArchiveSessions("claude-code"),
+        scanArchiveSessions("cursor"),
+        scanArchiveSessions("kimi"),
       ]);
       return [...codex, ...claude, ...cursor, ...kimi].sort((left, right) =>
         (right.updatedAt ?? "").localeCompare(left.updatedAt ?? ""),
@@ -311,12 +337,7 @@ function HistoryImportDialog({
               <p className="basis-full text-destructive text-xs">{uploadError}</p>
             ) : null}
           </div>
-          {scanQuery.isPending ? (
-            <div className="flex items-center gap-2 text-muted-foreground text-sm">
-              <LoaderCircle className="size-4 animate-spin" />
-              正在扫描本地会话…
-            </div>
-          ) : null}
+          {scanQuery.isPending ? <HistoryScanSkeleton /> : null}
           {scanQuery.isError ? (
             <p className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-destructive text-sm">
               扫描失败：

@@ -1,3 +1,5 @@
+import { asRecord, fileNameFromPath, guessImageMediaType } from "@chatdesk/shared";
+
 import {
   type ArchiveAsset,
   type ArchiveMessage,
@@ -7,10 +9,6 @@ import {
   truncateTitle,
 } from "@/lib/archive/chat-archive";
 import { hasTokenUsage, normalizeTokenUsage, sumTokenUsages } from "@/lib/usage/chat-usage";
-
-function fileNameFromPath(path: string) {
-  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
-}
 
 function isRemoteUrl(value: string) {
   return /^https?:\/\//i.test(value);
@@ -46,19 +44,6 @@ function collectAssets(images: unknown, localImages: unknown): ArchiveAsset[] {
     for (const item of images) pushPath(item, "image");
   }
   return assets;
-}
-
-function guessImageMediaType(path: string) {
-  const lower = path.toLowerCase();
-  if (lower.endsWith(".png")) return "image/png";
-  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
-  if (lower.endsWith(".gif")) return "image/gif";
-  if (lower.endsWith(".webp")) return "image/webp";
-  return undefined;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
 }
 
 function usageSignature(usage: ArchiveTokenUsage) {

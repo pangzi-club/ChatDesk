@@ -19,6 +19,24 @@ export function isDesktop() {
   return getDesktopBridge() !== null;
 }
 
+/** Whether the renderer is hosted by the Electron desktop app. */
+export function isElectronRuntime(): boolean {
+  return getDesktopBridge()?.runtime === "electron";
+}
+
+/**
+ * Toggle window maximize. Bridge failures are reported instead of thrown so
+ * callers can fire this from keyboard/gesture handlers without unhandled
+ * rejections.
+ */
+export function toggleWindowMaximize(): void {
+  const bridge = getDesktopBridge();
+  if (!bridge) return;
+  void bridge.toggleWindowMaximize().catch((error) => {
+    console.error("Failed to toggle window maximize", error);
+  });
+}
+
 /**
  * Subscribe to a desktop bridge event and return a synchronous disposer, which
  * makes it safe to use directly as a `useEffect` cleanup.

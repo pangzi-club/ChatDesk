@@ -292,26 +292,10 @@ export async function findArchiveByExternal(
   return index.find((item) => item.source === source && item.externalId === externalId);
 }
 
-export async function scanCodexSessions(): Promise<ScannedSession[]> {
-  const response = await chatServerRequest("/v1/archive/scan/codex", { method: "POST" });
-  const items = (await response.json()) as unknown;
-  return Array.isArray(items) ? items.filter(isScannedSession) : [];
-}
-
-export async function scanClaudeSessions(): Promise<ScannedSession[]> {
-  const response = await chatServerRequest("/v1/archive/scan/claude-code", { method: "POST" });
-  const items = (await response.json()) as unknown;
-  return Array.isArray(items) ? items.filter(isScannedSession) : [];
-}
-
-export async function scanCursorSessions(): Promise<ScannedSession[]> {
-  const response = await chatServerRequest("/v1/archive/scan/cursor", { method: "POST" });
-  const items = (await response.json()) as unknown;
-  return Array.isArray(items) ? items.filter(isScannedSession) : [];
-}
-
-export async function scanKimiSessions(): Promise<ScannedSession[]> {
-  const response = await chatServerRequest("/v1/archive/scan/kimi", { method: "POST" });
+export async function scanArchiveSessions(
+  source: ImportedArchiveSource,
+): Promise<ScannedSession[]> {
+  const response = await chatServerRequest(`/v1/archive/scan/${source}`, { method: "POST" });
   const items = (await response.json()) as unknown;
   return Array.isArray(items) ? items.filter(isScannedSession) : [];
 }

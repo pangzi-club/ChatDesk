@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { isDesktop } from "@/lib/runtime/desktop-bridge";
 import { appendSystemLog } from "@/lib/server/system-log";
 import { settingsStore } from "@/lib/settings/settings-store";
@@ -44,14 +44,7 @@ type ThemeProviderState = {
   setThemeColor: (themeColor: ThemeColor) => void;
 };
 
-const initialState: ThemeProviderState = {
-  theme: "system",
-  themeColor: "ocean",
-  setTheme: () => null,
-  setThemeColor: () => null,
-};
-
-const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
+const ThemeProviderContext = createContext<ThemeProviderState | null>(null);
 
 const THEME_STORE_KEY = "theme";
 const THEME_COLOR_STORE_KEY = "themeColor";
@@ -75,7 +68,7 @@ export function ThemeProvider({
   storageKey = "vite-ui-theme",
   ...props
 }: ThemeProviderProps) {
-  const [theme, setTheme] = useState<Theme>(() => {
+  const [theme, setThemeState] = useState<Theme>(() => {
     if (typeof window === "undefined") {
       return defaultTheme;
     }
@@ -89,36 +82,24 @@ export function ThemeProvider({
     return isThemeColor(stored) ? stored : "ocean";
   });
 
-  // Sync with desktop user store on mount
+  // Sync with desktop user store on mount. Both reads stay independent so one
+  // failing store read cannot suppress the other saved value.
   useEffect(() => {
     let isActive = true;
 
-    settingsStore
+    void settingsStore
       .get<string>(THEME_STORE_KEY)
       .then((savedTheme) => {
-        if (!isActive || !isTheme(savedTheme)) {
-          return;
-        }
-
-        setTheme(savedTheme);
+        if (isActive && isTheme(savedTheme)) setThemeState(savedTheme);
       })
       .catch(() => {
         // Not running as desktop app, ignore
       });
 
-    return () => {
-      isActive = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    let isActive = true;
-
-    settingsStore
+    void settingsStore
       .get<string>(THEME_COLOR_STORE_KEY)
       .then((savedColor) => {
-        if (!isActive || !isThemeColor(savedColor)) return;
-        setThemeColorState(savedColor);
+        if (isActive && isThemeColor(savedColor)) setThemeColorState(savedColor);
       })
       .catch(() => {
         // Not running as desktop app, ignore
@@ -171,12 +152,10 @@ export function ThemeProvider({
     root.style.colorScheme = theme;
   }, [theme, themeColor]);
 
-  const value = {
-    theme,
-    themeColor,
-    setTheme: (theme: Theme) => {
+  const setTheme = useCallback(
+    (theme: Theme) => {
       if (!isDesktop()) window.localStorage.setItem(storageKey, theme);
-      setTheme(theme);
+      setThemeState(theme);
       void appendSystemLog({
         level: "success",
         source: "主题",
@@ -193,24 +172,31 @@ export function ThemeProvider({
           // Not running as desktop app, ignore
         });
     },
-    setThemeColor: (nextColor: ThemeColor) => {
-      if (!isDesktop()) window.localStorage.setItem("vite-ui-theme-color", nextColor);
-      setThemeColorState(nextColor);
-      void appendSystemLog({
-        level: "success",
-        source: "主题",
-        message: `已切换配色：${nextColor}`,
-      }).catch(() => {
-        // Logging must never prevent a theme change.
+    [storageKey],
+  );
+
+  const setThemeColor = useCallback((nextColor: ThemeColor) => {
+    if (!isDesktop()) window.localStorage.setItem("vite-ui-theme-color", nextColor);
+    setThemeColorState(nextColor);
+    void appendSystemLog({
+      level: "success",
+      source: "主题",
+      message: `已切换配色：${nextColor}`,
+    }).catch(() => {
+      // Logging must never prevent a theme change.
+    });
+    settingsStore
+      .set(THEME_COLOR_STORE_KEY, nextColor)
+      .then(() => settingsStore.save())
+      .catch(() => {
+        // Not running as desktop app, ignore
       });
-      settingsStore
-        .set(THEME_COLOR_STORE_KEY, nextColor)
-        .then(() => settingsStore.save())
-        .catch(() => {
-          // Not running as desktop app, ignore
-        });
-    },
-  };
+  }, []);
+
+  const value = useMemo(
+    () => ({ theme, themeColor, setTheme, setThemeColor }),
+    [theme, themeColor, setTheme, setThemeColor],
+  );
 
   return (
     <ThemeProviderContext.Provider {...props} value={value}>
@@ -222,7 +208,7 @@ export function ThemeProvider({
 export const useTheme = () => {
   const context = useContext(ThemeProviderContext);
 
-  if (context === undefined) {
+  if (context === null) {
     throw new Error("useTheme must be used within a ThemeProvider");
   }
 

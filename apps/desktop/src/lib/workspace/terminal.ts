@@ -1,6 +1,7 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { type ITheme, Terminal } from "@xterm/xterm";
 import { getDesktopBridge } from "@/lib/runtime/desktop-bridge";
+import { describeError } from "@/lib/runtime/errors";
 
 export type TerminalSessionStatus =
   | { phase: "starting" }
@@ -60,10 +61,6 @@ function terminalTheme(): ITheme {
 
 export function terminalEventBytes(data: number[] | Uint8Array) {
   return data instanceof Uint8Array ? data : Uint8Array.from(data);
-}
-
-function describeError(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
 }
 
 export function terminalSupported() {

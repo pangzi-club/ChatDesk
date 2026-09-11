@@ -1,5 +1,6 @@
 import type { SandboxMode } from "@chatdesk/shared";
 import { loadChatServerConfig, saveChatServerConfig } from "@/lib/server/chat-server";
+import { createSettingsAdapter } from "@/lib/settings/create-settings-adapter";
 
 export const CHAT_SANDBOX_MODES = ["ask", "auto", "full"] as const;
 
@@ -19,41 +20,32 @@ export const CHAT_SANDBOX_MODE_DESCRIPTIONS: Record<ChatSandboxMode, string> = {
   full: "工具将直接执行，适合你信任的工作区。",
 };
 
-const CHAT_SANDBOX_STORAGE_KEY = "m-dashboard-chat-sandbox-mode-v1";
+const CHAT_SANDBOX_STORAGE_KEY = "chatdesk-chat-sandbox-mode-v1";
+const CHAT_SANDBOX_LEGACY_STORAGE_KEY = "m-dashboard-chat-sandbox-mode-v1";
 
 export function normalizeChatSandboxMode(value: unknown): ChatSandboxMode {
   return value === "ask" || value === "auto" || value === "full" ? value : "full";
 }
 
-export async function loadChatSandboxMode(): Promise<ChatSandboxMode> {
-  try {
-    const config = await loadChatServerConfig();
-    if (config.sandboxMode) return normalizeChatSandboxMode(config.sandboxMode);
-  } catch (error) {
-    console.error("Failed to load global chat sandbox mode", error);
-  }
+const CHAT_SANDBOX_ADAPTER = createSettingsAdapter<ChatSandboxMode>({
+  storageKey: CHAT_SANDBOX_STORAGE_KEY,
+  legacyStorageKeys: [CHAT_SANDBOX_LEGACY_STORAGE_KEY],
+  normalize: normalizeChatSandboxMode,
+  defaultValue: DEFAULT_CHAT_SANDBOX_MODE,
+  label: "chat sandbox mode",
+  // The Chat Server config is the source of truth; localStorage only backs it up.
+  primaryStore: {
+    read: async () => (await loadChatServerConfig()).sandboxMode || undefined,
+    write: async (value) => {
+      await saveChatServerConfig({ sandboxMode: value });
+    },
+  },
+});
 
-  try {
-    return normalizeChatSandboxMode(window.localStorage.getItem(CHAT_SANDBOX_STORAGE_KEY));
-  } catch (error) {
-    console.error("Failed to load chat sandbox mode from localStorage", error);
-    return DEFAULT_CHAT_SANDBOX_MODE;
-  }
+export function loadChatSandboxMode(): Promise<ChatSandboxMode> {
+  return CHAT_SANDBOX_ADAPTER.load();
 }
 
-export async function saveChatSandboxMode(mode: ChatSandboxMode): Promise<void> {
-  const next = normalizeChatSandboxMode(mode);
-  try {
-    await saveChatServerConfig({ sandboxMode: next });
-    window.localStorage.removeItem(CHAT_SANDBOX_STORAGE_KEY);
-    return;
-  } catch (error) {
-    console.error("Failed to save global chat sandbox mode", error);
-  }
-
-  try {
-    window.localStorage.setItem(CHAT_SANDBOX_STORAGE_KEY, next);
-  } catch (error) {
-    console.error("Failed to save chat sandbox mode to localStorage", error);
-  }
+export function saveChatSandboxMode(mode: ChatSandboxMode): Promise<void> {
+  return CHAT_SANDBOX_ADAPTER.save(mode);
 }

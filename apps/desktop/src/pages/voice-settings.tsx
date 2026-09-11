@@ -1,6 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Mic } from "lucide-react";
-import { useEffect, useState } from "react";
 import { Switch } from "@/components/ui/switch";
 import {
   DEFAULT_VOICE_SETTINGS,
@@ -12,17 +11,13 @@ import {
 export function VoiceSettingsPage() {
   const client = useQueryClient();
   const settingsQuery = useQuery({ queryKey: ["voice-settings"], queryFn: loadVoiceSettings });
-  const [settings, setSettings] = useState<VoiceSettings>(DEFAULT_VOICE_SETTINGS);
-
-  useEffect(() => {
-    if (settingsQuery.data) setSettings(settingsQuery.data);
-  }, [settingsQuery.data]);
+  const settings = settingsQuery.data ?? DEFAULT_VOICE_SETTINGS;
 
   const update = (enabled: boolean) => {
-    const next = { enabled };
-    setSettings(next);
+    // Spread the loaded settings so future fields are preserved, not dropped.
+    const next: VoiceSettings = { ...settings, enabled };
     void saveVoiceSettings(next).then(() => {
-      void client.invalidateQueries({ queryKey: ["voice-settings"] });
+      client.setQueryData(["voice-settings"], next);
     });
   };
 

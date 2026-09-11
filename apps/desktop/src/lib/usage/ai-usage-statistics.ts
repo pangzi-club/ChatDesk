@@ -1,3 +1,4 @@
+import { mapWithConcurrency } from "@chatdesk/shared";
 import type { UIMessage } from "ai";
 
 import {
@@ -162,19 +163,26 @@ export function removeMessageAggregatesCoveredByCallLogs(
   );
 }
 
+// Statistics span every session, so cap the in-flight session loads instead of
+// opening one request per index entry at once.
+const USAGE_SESSION_LOAD_CONCURRENCY = 6;
+
 async function collectRecords(models: ModelConfig[]): Promise<UsageRecord[]> {
   const records: UsageRecord[] = [];
   const modelById = new Map(models.map((model) => [model.id, model]));
   const modelByName = new Map(models.map((model) => [model.name, model]));
   const [nativeIndex, archiveIndex] = await Promise.all([loadChatIndex(), loadArchiveIndex()]);
 
-  await Promise.all(
-    nativeIndex.map(async (item) => {
+  const nativeRecords = await mapWithConcurrency(
+    nativeIndex,
+    USAGE_SESSION_LOAD_CONCURRENCY,
+    async (item): Promise<UsageRecord[]> => {
       const session = await loadChatSession(item.id);
-      if (!session) return;
+      if (!session) return [];
       const config = session.modelId ? modelById.get(session.modelId) : undefined;
       const model = config?.name ?? session.modelId ?? "未知模型";
       const provider = config?.provider ?? "未知供应商";
+      const sessionRecords: UsageRecord[] = [];
       for (const message of session.messages) {
         const record = recordFromMessage(
           "native",
@@ -184,15 +192,19 @@ async function collectRecords(models: ModelConfig[]): Promise<UsageRecord[]> {
           new Date(session.updatedAt),
           session.id,
         );
-        if (record) records.push(record);
+        if (record) sessionRecords.push(record);
       }
-    }),
+      return sessionRecords;
+    },
   );
+  records.push(...nativeRecords.flat());
 
-  await Promise.all(
-    archiveIndex.map(async (item) => {
+  const archiveRecords = await mapWithConcurrency(
+    archiveIndex,
+    USAGE_SESSION_LOAD_CONCURRENCY,
+    async (item): Promise<UsageRecord[]> => {
       const session = await loadArchiveSession(item.id);
-      if (!session) return;
+      if (!session) return [];
       const config = session.model ? modelByName.get(session.model) : undefined;
       const model = session.model ?? "未知模型";
       const provider =
@@ -206,24 +218,25 @@ async function collectRecords(models: ModelConfig[]): Promise<UsageRecord[]> {
               : "Kimi");
       // Prefer the importer-provided total so usage attached to hidden tool results is included.
       if (session.usageTotal && hasTokenUsage(session.usageTotal)) {
-        records.push({
-          date: dateKey(session.updatedAt, new Date()),
-          source: session.source,
-          provider,
-          model,
-          usage: session.usageTotal,
-          messageCount: session.messages.filter((message) => message.role === "assistant").length,
-        });
-        return;
+        return [
+          {
+            date: dateKey(session.updatedAt, new Date()),
+            source: session.source,
+            provider,
+            model,
+            usage: session.usageTotal,
+            messageCount: session.messages.filter((message) => message.role === "assistant").length,
+          },
+        ];
       }
-      const archiveRecords = session.messages
+      return session.messages
         .map((message) =>
           recordFromMessage(session.source, provider, model, message, new Date(session.updatedAt)),
         )
         .filter((record): record is UsageRecord => record !== null);
-      records.push(...archiveRecords);
-    }),
+    },
   );
+  records.push(...archiveRecords.flat());
 
   let reviewerLogs: Awaited<ReturnType<typeof loadChatServerReviewerLogs>> = [];
   try {

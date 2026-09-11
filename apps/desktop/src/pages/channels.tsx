@@ -59,9 +59,6 @@ export function ChannelsPage() {
   });
   const agents = useQuery({ queryKey: ["agents"], queryFn: loadAgents });
   const models = useQuery({ queryKey: ["models"], queryFn: loadModels });
-  useEffect(() => {
-    void Promise.all([contacts.refetch(), unread.refetch()]);
-  }, [contacts.refetch, unread.refetch]);
   const messages = useQuery({
     queryKey: ["feishu-messages", selected],
     queryFn: () => {
@@ -147,6 +144,17 @@ export function ChannelsPage() {
         models.data ?? [],
       )
     : undefined;
+  const markContactRead = useCallback(
+    async (channelId: string, contactId: string) => {
+      await markFeishuContactRead(channelId, contactId);
+      window.dispatchEvent(new Event("chatdesk:feishu-unread-updated"));
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ["feishu-unread"] }),
+        client.invalidateQueries({ queryKey: ["feishu-contacts"] }),
+      ]);
+    },
+    [client],
+  );
   const clearUnread = useCallback(async () => {
     if (!selected || clearingUnreadRef.current === selected) return;
     const unreadCount =
@@ -156,16 +164,11 @@ export function ChannelsPage() {
     clearingUnreadRef.current = selected;
     try {
       const [channelId, contactId] = selected.split("::");
-      await markFeishuContactRead(channelId, contactId);
-      window.dispatchEvent(new Event("chatdesk:feishu-unread-updated"));
-      await Promise.all([
-        client.invalidateQueries({ queryKey: ["feishu-unread"] }),
-        client.invalidateQueries({ queryKey: ["feishu-contacts"] }),
-      ]);
+      await markContactRead(channelId, contactId);
     } finally {
       clearingUnreadRef.current = undefined;
     }
-  }, [client, selected, unread.data]);
+  }, [markContactRead, selected, unread.data]);
   const handleMessagesScroll = useCallback(
     (event: UIEvent<HTMLElement>) => {
       const element = event.currentTarget;
@@ -185,12 +188,9 @@ export function ChannelsPage() {
     async (id: string) => {
       setSelected(id);
       const [channelId, contactId] = id.split("::");
-      await markFeishuContactRead(channelId, contactId);
-      window.dispatchEvent(new Event("chatdesk:feishu-unread-updated"));
-      await client.invalidateQueries({ queryKey: ["feishu-unread"] });
-      await client.invalidateQueries({ queryKey: ["feishu-contacts"] });
+      await markContactRead(channelId, contactId);
     },
-    [client],
+    [markContactRead],
   );
   useEffect(() => {
     if (!selected && contacts.data?.[0])

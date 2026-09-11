@@ -1,4 +1,4 @@
-import { DEFAULT_WORKSPACE_ID } from "@chatdesk/shared";
+import { DEFAULT_WORKSPACE_ID, fileNameFromPath as pathBasename } from "@chatdesk/shared";
 import type { ChatIndexItem } from "@/lib/chat/chat-store";
 import { normalizeWorkspacePath } from "./workspace-path";
 import type { WorkspaceProject } from "./workspaces";
@@ -289,15 +289,6 @@ export function sortWorkspaceConversationGroups<T extends WorkspaceConversationG
     if (countDifference !== 0) return countDifference;
     return left.label.localeCompare(right.label, undefined, { sensitivity: "base" });
   });
-}
-
-function pathBasename(path: string) {
-  return (
-    path
-      .replace(/[\\/]+$/, "")
-      .split(/[\\/]/)
-      .pop() ?? path
-  );
 }
 
 function localDateKey(date: Date) {

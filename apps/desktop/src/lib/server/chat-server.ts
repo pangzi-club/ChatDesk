@@ -40,6 +40,8 @@ export { CHAT_SERVER_DEFAULT_PORT };
 
 const CHAT_SERVER_PORT_KEY = "chatServerPort";
 const CHAT_SERVER_PORT_STORAGE_KEY = "m-dashboard-chat-server-port-v1";
+// Fail fast so the UI can surface an offline Chat Server without waiting on the full request timeout.
+const CHAT_SERVER_HEALTH_TIMEOUT_MS = 1500;
 const runtimeConfig: { port: number; token: string; managed: boolean } = {
   port: normalizePort(import.meta.env.VITE_CHAT_SERVER_PORT),
   token: import.meta.env.VITE_CHAT_SERVER_TOKEN ?? "",
@@ -141,15 +143,10 @@ async function runtimeFetch(input: RequestInfo | URL, init: RequestInit | undefi
     else headers.delete("Authorization");
     const bridge = getDesktopBridge();
     const packagedElectron = bridge?.runtime === "electron" && !import.meta.env.DEV;
-    const resolvedInput = resolveChatServerRequestInput(input, {
-      runtime: bridge?.runtime,
-      development: import.meta.env.DEV,
-      port: runtimeConfig.port,
-    });
     // Keep Chat Server requests on the registered protocol so Electron can
     // return the native Response body stream to the renderer.
-    const useElectronBridge = packagedElectron && !isChatServerProtocolInput(resolvedInput);
-    return (useElectronBridge ? desktopFetch : fetch)(resolvedInput, {
+    const useElectronBridge = packagedElectron && !isChatServerProtocolInput(input);
+    return (useElectronBridge ? desktopFetch : fetch)(input, {
       ...init,
       headers,
       ...({ targetAddressSpace: "loopback" } as RequestInit),
@@ -185,14 +182,7 @@ async function runtimeFetch(input: RequestInfo | URL, init: RequestInit | undefi
   return response;
 }
 
-export function resolveChatServerRequestInput(
-  input: RequestInfo | URL,
-  _options: { runtime?: string; development: boolean; port: number },
-) {
-  return input;
-}
-
-function isChatServerProtocolInput(input: RequestInfo | URL) {
+export function isChatServerProtocolInput(input: RequestInfo | URL) {
   const source = input instanceof Request ? input.url : String(input);
   try {
     const url = new URL(source);
@@ -202,8 +192,13 @@ function isChatServerProtocolInput(input: RequestInfo | URL) {
   }
 }
 
+// One client per port: token, fetch, and reconnect stay late-bound through callbacks.
+const chatServerClients = new Map<number, ChatServerClient>();
+
 function createClient(port = CHAT_SERVER_DEFAULT_PORT) {
-  return new ChatServerClient({
+  const cached = chatServerClients.get(port);
+  if (cached) return cached;
+  const client = new ChatServerClient({
     baseUrl: chatServerUrl(port),
     token: () => runtimeConfig.token,
     fetchImpl: (input, init) => runtimeFetch(input, init),
@@ -211,6 +206,8 @@ function createClient(port = CHAT_SERVER_DEFAULT_PORT) {
       await refreshChatServerRuntime();
     },
   });
+  chatServerClients.set(port, client);
+  return client;
 }
 
 export function initializeChatServer() {
@@ -388,7 +385,7 @@ export async function checkChatServer(port = CHAT_SERVER_DEFAULT_PORT) {
   await initializeChatServer();
   const response = await requestChatServerResponse(
     "/health",
-    { signal: AbortSignal.timeout(1500) },
+    { signal: AbortSignal.timeout(CHAT_SERVER_HEALTH_TIMEOUT_MS) },
     port,
   );
   if (!response.ok) {
@@ -983,45 +980,22 @@ export async function chatServerFetch(input: RequestInfo | URL, init?: RequestIn
 }
 
 export async function loadFeishuChannelStatuses(port?: number) {
-  const response = await chatServerRequest("/v1/channels/feishu/configs", undefined, port);
-  return (await response.json()) as FeishuChannelStatus[];
+  return createClient(port).getFeishuConfigs();
 }
 export async function saveFeishuChannelConfig(
   input: { channelId?: string; name: string; appId: string; appSecret?: string; agentId: string },
   port?: number,
 ) {
-  const response = await chatServerRequest(
-    input.channelId
-      ? `/v1/channels/feishu/configs/${encodeURIComponent(input.channelId)}`
-      : "/v1/channels/feishu/configs",
-    {
-      method: input.channelId ? "PUT" : "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
-    },
-    port,
-  );
-  return (await response.json()) as FeishuChannelStatus;
+  return createClient(port).saveFeishuConfig(input);
 }
 export async function testFeishuChannel(channelId: string, port?: number) {
-  const response = await chatServerRequest(
-    `/v1/channels/feishu/configs/${encodeURIComponent(channelId)}/test`,
-    { method: "POST" },
-    port,
-  );
-  return (await response.json()) as FeishuChannelStatus;
+  return createClient(port).testFeishuConnection(channelId);
 }
 export async function deleteFeishuChannelConfig(channelId: string, port?: number) {
-  const response = await chatServerRequest(
-    `/v1/channels/feishu/configs/${encodeURIComponent(channelId)}`,
-    { method: "DELETE" },
-    port,
-  );
-  return (await response.json()) as FeishuChannelStatus;
+  return createClient(port).deleteFeishuConfig(channelId);
 }
 export async function loadFeishuContacts(port?: number) {
-  const response = await chatServerRequest("/v1/channels/feishu/contacts", undefined, port);
-  return (await response.json()) as ChannelContact[];
+  return createClient(port).listFeishuContacts();
 }
 export async function updateFeishuContact(
   channelId: string,
@@ -1029,35 +1003,16 @@ export async function updateFeishuContact(
   update: { pinned?: boolean; completed?: boolean },
   port?: number,
 ) {
-  const response = await chatServerRequest(
-    `/v1/channels/feishu/configs/${encodeURIComponent(channelId)}/contacts/${encodeURIComponent(contactId)}`,
-    {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(update),
-    },
-    port,
-  );
-  return (await response.json()) as ChannelContact;
+  return createClient(port).updateFeishuContact(channelId, contactId, update);
 }
 export async function loadFeishuUnread(port?: number) {
-  const response = await chatServerRequest("/v1/channels/feishu/unread", undefined, port);
-  return (await response.json()) as ChannelUnreadState[];
+  return createClient(port).listFeishuUnread();
 }
 export async function loadFeishuMessages(channelId: string, contactId: string, port?: number) {
-  const response = await chatServerRequest(
-    `/v1/channels/feishu/configs/${encodeURIComponent(channelId)}/contacts/${encodeURIComponent(contactId)}/messages`,
-    undefined,
-    port,
-  );
-  return (await response.json()) as ChannelMessage[];
+  return createClient(port).listFeishuMessages(channelId, contactId);
 }
 export async function markFeishuContactRead(channelId: string, contactId: string, port?: number) {
-  await chatServerRequest(
-    `/v1/channels/feishu/configs/${encodeURIComponent(channelId)}/contacts/${encodeURIComponent(contactId)}/read`,
-    { method: "POST" },
-    port,
-  );
+  await createClient(port).markFeishuRead(channelId, contactId);
 }
 
 export function subscribeChatServerEvents(

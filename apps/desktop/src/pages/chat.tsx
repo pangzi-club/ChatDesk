@@ -16,6 +16,7 @@ import {
   type PlanUserInputResponse,
   parsePlanUserInputRequest,
   parsePlanUserInputResponse,
+  fileNameFromPath as pathBasename,
   type RunStartInput,
   resolveSessionTitle,
   type SystemPromptSnapshot,
@@ -99,16 +100,7 @@ import { ChatToolLogDialog } from "@/components/chat-tool-log-dialog";
 import { ChatToolsPicker } from "@/components/chat-tools-picker";
 import { useDesktopUiSlot } from "@/components/desktop-ui-provider";
 import { GitCommitDialog } from "@/components/git-commit-dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { ImportDeveloperEnvironmentDialog } from "@/components/import-developer-environment-dialog";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import {
@@ -127,6 +119,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useChatServerPort } from "@/components/use-chat-server-port";
 import {
   createPendingAttachment,
   mergeChatAttachments,
@@ -168,6 +161,10 @@ import {
   normalizeChatSandboxMode,
   saveChatSandboxMode,
 } from "@/lib/chat/chat-sandbox";
+import {
+  regenerateChatSessionTitleAndRefresh,
+  saveChatSessionTitleAndRefresh,
+} from "@/lib/chat/chat-session-title";
 import {
   type ChatAttachment,
   type ChatSession,
@@ -226,7 +223,7 @@ import {
 import { openSideChat } from "@/lib/chat/side-chat-events";
 import type { ChatLayout } from "@/lib/plugins/chat-layout";
 import type { ChatContributionScope } from "@/lib/plugins/desktop-ui";
-import { getDesktopBridge } from "@/lib/runtime/desktop-bridge";
+import { isElectronRuntime } from "@/lib/runtime/desktop-bridge";
 import { detectMissingDevelopmentTools } from "@/lib/runtime/developer-environment";
 import { openExternal } from "@/lib/runtime/platform";
 import { loadAgents } from "@/lib/server/agents";
@@ -244,17 +241,14 @@ import {
   loadChatPlan,
   loadChatPlans,
   loadChatServerConfig,
-  loadChatServerPort,
   loadChatServerSystemPromptPreview,
   loadDeveloperEnvironment,
   loadServerWorkspaceGit,
   loadServerWorkspacePathSuggestions,
-  regenerateChatSessionTitle,
   saveChatServerConfig,
   stopChatServerRun,
   subscribeChatServerEvents,
   updateChatPlanMode,
-  updateChatSessionTitle,
 } from "@/lib/server/chat-server";
 import { loadMcpServers, saveMcpServers } from "@/lib/server/mcp";
 import {
@@ -1011,162 +1005,159 @@ function ChatPage() {
     };
   }, [liveDraftRenderBatcher, sessionId, stop]);
 
-  useEffect(() => {
-    let active = true;
-    let cleanup: (() => void) | undefined;
-    void loadChatServerPort().then((port) => {
-      if (!active) return;
-      cleanup = subscribeChatServerEvents(port, {
-        onSnapshot: (sessions) => {
-          setServerSessionStatuses(
-            Object.fromEntries(sessions.map((session) => [session.id, session.status])),
-          );
-          setServerRunSummaries(
-            Object.fromEntries(
-              sessions.flatMap((session) =>
-                session.lastRunSummary ? [[session.id, session.lastRunSummary]] : [],
-              ),
-            ),
-          );
-          setRunStartedAtBySession(
-            Object.fromEntries(
-              sessions.flatMap((session) =>
-                session.runStartedAt ? [[session.id, session.runStartedAt]] : [],
-              ),
-            ),
-          );
-        },
-        onStatus: ({ sessionId: eventSessionId, status: eventStatus }) => {
-          setServerSessionStatuses((current) => ({
-            ...current,
-            [eventSessionId]: eventStatus,
-          }));
-        },
-        onDelta: ({ sessionId: eventSessionId, runId, messageId, delta }) => {
-          const next = appendLiveDraftText(
-            liveDraftsRef.current.get(eventSessionId),
-            messageId ?? runId ?? `run-${eventSessionId}`,
-            delta,
-          );
-          liveDraftsRef.current.set(eventSessionId, next);
+  const serverPort = useChatServerPort();
 
-          if (
-            activeSessionRef.current === eventSessionId &&
-            attachedStreamSessionRef.current !== eventSessionId
-          ) {
-            liveDraftRenderBatcher.schedule(eventSessionId);
-          }
-        },
-        onMessageUpdated: ({ sessionId: eventSessionId, message }) => {
-          liveDraftRenderBatcher.cancel(eventSessionId);
-          if (message) liveDraftsRef.current.set(eventSessionId, message);
-          if (activeSessionRef.current === eventSessionId && message) {
-            setMessages((messages) => mergeLiveDraft(messages, message));
-          }
-        },
-        onContextCompacted: ({ sessionId: eventSessionId, contextCompaction }) => {
-          if (activeSessionRef.current === eventSessionId) {
-            setContextCompaction(contextCompaction);
-            setLiveContextUsage({
-              inputTokens: contextCompaction.estimatedTokensAfter,
-              source: "estimate",
-              stepNumber: contextCompaction.stepNumber,
-            });
-          }
-        },
-        onContextUsage: ({ sessionId: eventSessionId, contextUsage }) => {
-          if (activeSessionRef.current === eventSessionId) {
-            setLiveContextUsage(contextUsage);
-          }
-        },
-        onRunProgress: ({ sessionId: eventSessionId, runProgress: nextProgress }) => {
-          const startedAt = nextProgress?.startedAt;
-          if (startedAt) {
-            setRunStartedAtBySession((current) => ({
-              ...current,
-              [eventSessionId]: startedAt,
-            }));
-          }
-          if (activeSessionRef.current === eventSessionId && nextProgress) {
-            setRunProgress(nextProgress);
-          }
-        },
-        onRunFinished: ({ sessionId: eventSessionId, runSummary }) => {
-          if (runSummary.touchedPaths?.some((file) => file.includes("/.agents/skills/"))) {
-            void queryClient.invalidateQueries({ queryKey: availableSkillsQueryKey });
-          }
-          liveDraftRenderBatcher.flush(eventSessionId);
-          if (activeSessionRef.current === eventSessionId) {
-            attachedStreamSessionRef.current = null;
-          }
-          setRunStartedAtBySession((current) => {
-            const next = { ...current };
-            delete next[eventSessionId];
-            return next;
-          });
-          setServerRunSummaries((current) => ({
-            ...current,
-            [eventSessionId]: runSummary,
-          }));
-          if (runSummary.outcome === "completed") {
-            void loadGeneralSettings().then((settings) => {
-              if (settings.notifyOnChatCompletion && getDesktopBridge()?.runtime === "electron") {
-                void notifyChatCompletion(
-                  activeSessionRef.current === eventSessionId
-                    ? sessionTitleRef.current
-                    : "有一个对话已完成",
-                  settings.notifyOnlyWhenWindowUnfocused,
-                ).then((shown) => {
-                  if (shown) return;
-                  void saveGeneralSettings({
-                    ...settings,
-                    notifyOnChatCompletion: false,
-                    notificationPermissionVerified: false,
-                  });
-                });
-              }
-            });
-          }
-        },
-        onPlanUpdated: ({
-          sessionId: eventSessionId,
-          planId,
-          planFileName,
-          planContent,
-          planUpdatedAt,
-        }) => {
-          if (activeSessionRef.current !== eventSessionId || !planId) return;
-          setPlans((current) =>
-            current.map((plan) =>
-              plan.id === planId
-                ? {
-                    ...plan,
-                    fileName: planFileName ?? plan.fileName,
-                    updatedAt: planUpdatedAt ?? plan.updatedAt,
-                  }
-                : plan,
+  useEffect(() => {
+    if (serverPort === null) return;
+    const cleanup = subscribeChatServerEvents(serverPort, {
+      onSnapshot: (sessions) => {
+        setServerSessionStatuses(
+          Object.fromEntries(sessions.map((session) => [session.id, session.status])),
+        );
+        setServerRunSummaries(
+          Object.fromEntries(
+            sessions.flatMap((session) =>
+              session.lastRunSummary ? [[session.id, session.lastRunSummary]] : [],
             ),
-          );
-          if (planContent !== undefined) {
-            if (activePlanIdRef.current === planId) {
-              setActivePlanHasContent(Boolean(planContent.trim()));
+          ),
+        );
+        setRunStartedAtBySession(
+          Object.fromEntries(
+            sessions.flatMap((session) =>
+              session.runStartedAt ? [[session.id, session.runStartedAt]] : [],
+            ),
+          ),
+        );
+      },
+      onStatus: ({ sessionId: eventSessionId, status: eventStatus }) => {
+        setServerSessionStatuses((current) => ({
+          ...current,
+          [eventSessionId]: eventStatus,
+        }));
+      },
+      onDelta: ({ sessionId: eventSessionId, runId, messageId, delta }) => {
+        const next = appendLiveDraftText(
+          liveDraftsRef.current.get(eventSessionId),
+          messageId ?? runId ?? `run-${eventSessionId}`,
+          delta,
+        );
+        liveDraftsRef.current.set(eventSessionId, next);
+
+        if (
+          activeSessionRef.current === eventSessionId &&
+          attachedStreamSessionRef.current !== eventSessionId
+        ) {
+          liveDraftRenderBatcher.schedule(eventSessionId);
+        }
+      },
+      onMessageUpdated: ({ sessionId: eventSessionId, message }) => {
+        liveDraftRenderBatcher.cancel(eventSessionId);
+        if (message) liveDraftsRef.current.set(eventSessionId, message);
+        if (activeSessionRef.current === eventSessionId && message) {
+          setMessages((messages) => mergeLiveDraft(messages, message));
+        }
+      },
+      onContextCompacted: ({ sessionId: eventSessionId, contextCompaction }) => {
+        if (activeSessionRef.current === eventSessionId) {
+          setContextCompaction(contextCompaction);
+          setLiveContextUsage({
+            inputTokens: contextCompaction.estimatedTokensAfter,
+            source: "estimate",
+            stepNumber: contextCompaction.stepNumber,
+          });
+        }
+      },
+      onContextUsage: ({ sessionId: eventSessionId, contextUsage }) => {
+        if (activeSessionRef.current === eventSessionId) {
+          setLiveContextUsage(contextUsage);
+        }
+      },
+      onRunProgress: ({ sessionId: eventSessionId, runProgress: nextProgress }) => {
+        const startedAt = nextProgress?.startedAt;
+        if (startedAt) {
+          setRunStartedAtBySession((current) => ({
+            ...current,
+            [eventSessionId]: startedAt,
+          }));
+        }
+        if (activeSessionRef.current === eventSessionId && nextProgress) {
+          setRunProgress(nextProgress);
+        }
+      },
+      onRunFinished: ({ sessionId: eventSessionId, runSummary }) => {
+        if (runSummary.touchedPaths?.some((file) => file.includes("/.agents/skills/"))) {
+          void queryClient.invalidateQueries({ queryKey: availableSkillsQueryKey });
+        }
+        liveDraftRenderBatcher.flush(eventSessionId);
+        if (activeSessionRef.current === eventSessionId) {
+          attachedStreamSessionRef.current = null;
+        }
+        setRunStartedAtBySession((current) => {
+          const next = { ...current };
+          delete next[eventSessionId];
+          return next;
+        });
+        setServerRunSummaries((current) => ({
+          ...current,
+          [eventSessionId]: runSummary,
+        }));
+        if (runSummary.outcome === "completed") {
+          void loadGeneralSettings().then((settings) => {
+            if (settings.notifyOnChatCompletion && isElectronRuntime()) {
+              void notifyChatCompletion(
+                activeSessionRef.current === eventSessionId
+                  ? sessionTitleRef.current
+                  : "有一个对话已完成",
+                settings.notifyOnlyWhenWindowUnfocused,
+              ).then((shown) => {
+                if (shown) return;
+                void saveGeneralSettings({
+                  ...settings,
+                  notifyOnChatCompletion: false,
+                  notificationPermissionVerified: false,
+                });
+              });
             }
-            updatePlanViewer({
-              sessionId: eventSessionId,
-              planId,
-              fileName: planFileName ?? `plan-${planId}.md`,
-              content: planContent,
-            });
+          });
+        }
+      },
+      onPlanUpdated: ({
+        sessionId: eventSessionId,
+        planId,
+        planFileName,
+        planContent,
+        planUpdatedAt,
+      }) => {
+        if (activeSessionRef.current !== eventSessionId || !planId) return;
+        setPlans((current) =>
+          current.map((plan) =>
+            plan.id === planId
+              ? {
+                  ...plan,
+                  fileName: planFileName ?? plan.fileName,
+                  updatedAt: planUpdatedAt ?? plan.updatedAt,
+                }
+              : plan,
+          ),
+        );
+        if (planContent !== undefined) {
+          if (activePlanIdRef.current === planId) {
+            setActivePlanHasContent(Boolean(planContent.trim()));
           }
-        },
-      });
+          updatePlanViewer({
+            sessionId: eventSessionId,
+            planId,
+            fileName: planFileName ?? `plan-${planId}.md`,
+            content: planContent,
+          });
+        }
+      },
     });
     return () => {
-      active = false;
-      cleanup?.();
+      cleanup();
       liveDraftRenderBatcher.cancelAll();
     };
-  }, [liveDraftRenderBatcher, setMessages, queryClient]);
+  }, [liveDraftRenderBatcher, queryClient, serverPort, setMessages]);
 
   useEffect(() => {
     const handleDisplaySettingsChange = (event: Event) => {
@@ -2414,10 +2405,9 @@ function ChatPage() {
     }
     setIsRenamingTitle(true);
     try {
-      const result = await regenerateChatSessionTitle(sessionId);
+      const result = await regenerateChatSessionTitleAndRefresh(queryClient, sessionId);
       if (activeSessionRef.current !== sessionId) return;
       setSessionTitle(result.title);
-      void queryClient.invalidateQueries({ queryKey: ["chat-index"] });
     } catch (renameError) {
       if (activeSessionRef.current !== sessionId) return;
       throw renameError;
@@ -2427,10 +2417,9 @@ function ChatPage() {
   }
 
   async function saveConversationTitle(title: string) {
-    const result = await updateChatSessionTitle(sessionId, title);
+    const result = await saveChatSessionTitleAndRefresh(queryClient, sessionId, title);
     if (activeSessionRef.current !== sessionId) return;
     setSessionTitle(result.title);
-    void queryClient.invalidateQueries({ queryKey: ["chat-index"] });
   }
 
   function keepConversationMenuOpen() {
@@ -3592,58 +3581,29 @@ function ChatPage() {
           open={titleDialogOpen}
           title={sessionTitle}
         />
-        <AlertDialog
+        <ImportDeveloperEnvironmentDialog
+          confirmIcon={<Download className="size-4" />}
+          description="ChatDesk 会启动一次当前登录 Shell，并执行其启动配置。只解析白名单内开发工具的绝对路径；不会保存其他环境变量、Token 或 API Key。"
+          errorMessage={
+            environmentImportMutation.isError
+              ? environmentImportMutation.error instanceof Error
+                ? environmentImportMutation.error.message
+                : "开发工具导入失败。"
+              : null
+          }
+          isPending={environmentImportMutation.isPending}
+          onConfirm={() => environmentImportMutation.mutate()}
           onOpenChange={(open) => {
             if (open) environmentImportMutation.reset();
             setEnvironmentImportOpen(open);
           }}
           open={environmentImportOpen}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>导入本机开发工具？</AlertDialogTitle>
-              <AlertDialogDescription>
-                ChatDesk 会启动一次当前登录
-                Shell，并执行其启动配置。只解析白名单内开发工具的绝对路径；不会保存其他环境变量、Token
-                或 API Key。
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            {environmentImportMutation.isError ? (
-              <p className="text-destructive text-sm" role="alert">
-                {environmentImportMutation.error instanceof Error
-                  ? environmentImportMutation.error.message
-                  : "开发工具导入失败。"}
-              </p>
-            ) : null}
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={environmentImportMutation.isPending}>
-                取消
-              </AlertDialogCancel>
-              <AlertDialogAction
-                disabled={environmentImportMutation.isPending}
-                onClick={(event) => {
-                  event.preventDefault();
-                  environmentImportMutation.mutate();
-                }}
-              >
-                {environmentImportMutation.isPending ? (
-                  <LoaderCircle className="size-4 animate-spin" />
-                ) : (
-                  <Download className="size-4" />
-                )}
-                确认导入
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+          title="导入本机开发工具？"
+        />
         <Outlet />
       </section>
     </ChatLayoutComponent>
   );
-}
-
-function pathBasename(path: string) {
-  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
 
 function toChatToolCall(part: ChatToolPart): ChatToolCallCardProps {

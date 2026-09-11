@@ -1,9 +1,8 @@
-import { isDesktop } from "@/lib/runtime/desktop-bridge";
-import { settingsStore } from "@/lib/settings/settings-store";
+import { createSettingsAdapter } from "@/lib/settings/create-settings-adapter";
 
 export type VoiceSettings = { enabled: boolean };
 export const DEFAULT_VOICE_SETTINGS: VoiceSettings = { enabled: false };
-const STORE_KEY = "voice";
+const VOICE_SETTINGS_STORAGE_KEY = "chatdesk-voice-settings-v1";
 
 export function normalizeVoiceSettings(value: unknown): VoiceSettings {
   if (!value || typeof value !== "object") return DEFAULT_VOICE_SETTINGS;
@@ -11,21 +10,19 @@ export function normalizeVoiceSettings(value: unknown): VoiceSettings {
   return { enabled: source.enabled === true };
 }
 
-export async function loadVoiceSettings() {
-  if (isDesktop()) return normalizeVoiceSettings(await settingsStore.get(STORE_KEY));
-  try {
-    const raw = window.localStorage.getItem("chatdesk-voice-settings-v1");
-    return normalizeVoiceSettings(raw ? JSON.parse(raw) : undefined);
-  } catch {
-    return DEFAULT_VOICE_SETTINGS;
-  }
+const VOICE_SETTINGS_ADAPTER = createSettingsAdapter<VoiceSettings>({
+  storeKey: "voice",
+  storageKey: VOICE_SETTINGS_STORAGE_KEY,
+  eventName: "voice-settings-change",
+  normalize: normalizeVoiceSettings,
+  defaultValue: DEFAULT_VOICE_SETTINGS,
+  label: "voice settings",
+});
+
+export function loadVoiceSettings(): Promise<VoiceSettings> {
+  return VOICE_SETTINGS_ADAPTER.load();
 }
 
-export async function saveVoiceSettings(value: VoiceSettings) {
-  const settings = normalizeVoiceSettings(value);
-  if (isDesktop()) {
-    await settingsStore.set(STORE_KEY, settings);
-    await settingsStore.save();
-  } else window.localStorage.setItem("chatdesk-voice-settings-v1", JSON.stringify(settings));
-  window.dispatchEvent(new CustomEvent("voice-settings-change", { detail: settings }));
+export function saveVoiceSettings(value: VoiceSettings): Promise<void> {
+  return VOICE_SETTINGS_ADAPTER.save(value);
 }

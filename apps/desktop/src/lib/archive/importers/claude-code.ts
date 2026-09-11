@@ -1,3 +1,5 @@
+import { asRecord, fileNameFromPath, guessImageMediaType } from "@chatdesk/shared";
+
 import {
   type ArchiveAsset,
   type ArchiveMessage,
@@ -7,23 +9,6 @@ import {
   truncateTitle,
 } from "@/lib/archive/chat-archive";
 import { normalizeTokenUsage, sumTokenUsages } from "@/lib/usage/chat-usage";
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
-}
-
-function fileNameFromPath(path: string) {
-  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
-}
-
-function guessImageMediaType(path: string) {
-  const lower = path.toLowerCase();
-  if (lower.endsWith(".png")) return "image/png";
-  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
-  if (lower.endsWith(".gif")) return "image/gif";
-  if (lower.endsWith(".webp")) return "image/webp";
-  return undefined;
-}
 
 function extractTextAndAssets(content: unknown): { text: string; assets: ArchiveAsset[] } {
   if (typeof content === "string") {
