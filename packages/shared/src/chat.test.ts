@@ -261,6 +261,14 @@ describe("shared chat contracts", () => {
             input: { command: "pnpm test" },
           },
           {
+            type: "dynamic-tool",
+            toolName: "web_search",
+            toolCallId: "web-1",
+            state: "output-available",
+            input: { query: "chatdesk" },
+            output: { result: "ok" },
+          },
+          {
             type: "text",
             text: "## 结论\n子任务写了一大段 markdown。\n## 建议\n保持概览即可。",
           },
@@ -271,6 +279,7 @@ describe("shared chat contracts", () => {
     assert.deepEqual(progress.tools, [
       { name: "read_file", detail: "app.ts" },
       { name: "bash", detail: "pnpm test", pending: true },
+      { name: "web_search", detail: "chatdesk" },
     ]);
   });
 });

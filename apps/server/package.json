@@ -1,5 +1,5 @@
 {
-  "name": "chatdesk-chat-server",
+  "name": "chatdesk-server",
   "private": true,
   "version": "0.6.1",
   "license": "MIT",
@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "node --watch --experimental-strip-types src/server.ts",
     "start": "node --experimental-strip-types src/server.ts",
-    "test": "vitest run --root ../.. --project chatdesk-chat-server",
+    "test": "vitest run --root ../.. --project chatdesk-server",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -1,4 +1,4 @@
-import { getToolName, isToolUIPart, type UIMessage } from "ai";
+import type { DynamicToolUIPart, ToolUIPart, UIMessage } from "ai";
 
 export const CHAT_SCHEMA_VERSION = 2 as const;
 export const DEFAULT_WORKSPACE_ID = "default";
@@ -620,6 +620,15 @@ function toolGlanceDetail(name: string, input: unknown, output: unknown) {
     stringField(input, "command") ||
     stringField(input, "title")
   );
+}
+
+// 本地实现 ai 的 isToolUIPart / getToolName（行为保持一致），shared 对 ai 只保留类型依赖。
+function isToolUIPart(part: UIMessage["parts"][number]): part is ToolUIPart | DynamicToolUIPart {
+  return part.type === "dynamic-tool" || part.type.startsWith("tool-");
+}
+
+function getToolName(part: ToolUIPart | DynamicToolUIPart): string {
+  return part.type === "dynamic-tool" ? part.toolName : part.type.split("-").slice(1).join("-");
 }
 
 function toolGlanceFromPart(part: UIMessage["parts"][number]): CreateTaskToolGlance | null {

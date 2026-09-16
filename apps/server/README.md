@@ -28,12 +28,12 @@ pnpm server:test
 `apps/server` 现在是仓库 pnpm workspace 中的一个独立 package。推荐从仓库根目录安装依赖并运行脚本：
 
 ```sh
-pnpm --filter chatdesk-chat-server dev
-pnpm --filter chatdesk-chat-server test
-pnpm --filter chatdesk-chat-server typecheck
+pnpm --filter chatdesk-server dev
+pnpm --filter chatdesk-server test
+pnpm --filter chatdesk-server typecheck
 ```
 
-`pnpm --filter chatdesk-chat-server dev` 会以 Node.js watch 模式执行 `src/server.ts`，修改 `apps/server/src` 或 `packages/agent-core/src` 下的代码后会自动重启；`pnpm --filter chatdesk-chat-server start` 用于不启用 watch 的运行方式。开发模式下服务默认监听 `http://127.0.0.1:14317`。从仓库根目录启动完整开发环境请使用 `pnpm dev`。
+`pnpm --filter chatdesk-server dev` 会以 Node.js watch 模式执行 `src/server.ts`，修改 `apps/server/src` 或 `packages/agent-core/src` 下的代码后会自动重启；`pnpm --filter chatdesk-server start` 用于不启用 watch 的运行方式。开发模式下服务默认监听 `http://127.0.0.1:14317`。从仓库根目录启动完整开发环境请使用 `pnpm dev`。
 
 ## 配置
 

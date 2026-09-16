@@ -23,7 +23,7 @@
     "version:set": "node scripts/set-workspace-version.mjs",
     "server:dev": "node --watch --experimental-strip-types apps/server/src/server.ts",
     "test": "vitest run && node --test \"scripts/*.test.mjs\"",
-    "server:test": "vitest run --project chatdesk-chat-server",
+    "server:test": "vitest run --project chatdesk-server",
     "shared:test": "vitest run packages/shared/src",
     "shared:typecheck": "pnpm --filter @chatdesk/shared typecheck",
     "agent-core:test": "vitest run --project @chatdesk/agent-core",

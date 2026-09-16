@@ -50,7 +50,7 @@ async function createTestServer(seed?: {
     agentId: string;
   }>;
 }) {
-  const dataDir = await mkdtemp(path.join(os.tmpdir(), "chatdesk-chat-server-"));
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), "chatdesk-server-"));
   temporaryDirectories.push(dataDir);
   if (seed?.agents) {
     await writeFile(path.join(dataDir, "settings.json"), JSON.stringify({ agents: seed.agents }));

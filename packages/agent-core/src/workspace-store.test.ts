@@ -37,7 +37,7 @@ describe("WorkspaceStore default tasks", () => {
   });
 
   it("keeps tasks inside test data directories that are not named chat-server", () => {
-    const dataDir = "/tmp/chatdesk-chat-server-abc";
+    const dataDir = "/tmp/chatdesk-server-abc";
     assert.equal(defaultTasksRoot(dataDir), path.join(dataDir, "tasks"));
   });
 

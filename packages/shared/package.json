@@ -10,15 +10,14 @@
     ".": "./src/index.ts",
     "./chat-server": "./src/chat-server.ts"
   },
-  "dependencies": {
-    "ai": "^7.0.51"
-  },
+  "dependencies": {},
   "scripts": {
     "test": "vitest run --root ../.. packages/shared/src",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
+    "ai": "^7.0.51",
     "typescript": "7.0.2"
   }
 }
