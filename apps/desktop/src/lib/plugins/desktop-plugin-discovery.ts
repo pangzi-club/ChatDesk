@@ -77,7 +77,7 @@ export function validateDesktopPluginManifest(manifest: unknown): PluginValidati
   return errors;
 }
 
-const staticModules = import.meta.glob<DesktopPluginModule>("../plugins/*/index.tsx", {
+const staticModules = import.meta.glob<DesktopPluginModule>("../../plugins/*/index.tsx", {
   eager: true,
 });
 
